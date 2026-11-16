@@ -328,7 +328,7 @@ python -m pip install -r requirements.lock
 python -m mypy          # 读取 pyproject 里的 [tool.mypy]，当前只检查 app/narration
 ```
 
-`[tool.mypy]` 先只对 `app/narration` 开启严格检查（`disallow_untyped_defs`、`check_untyped_defs`、`warn_return_any`），其余模块尚未注解，全量打开会淹没真问题。让某个旧模块也纳入时，把它加进 `files` 并先补齐注解，不要直接放宽全局设置。当前CI使用同一锁文件安装后执行这组类型检查。
+`[tool.mypy]` 先只对 `app/narration` 开启严格检查（`disallow_untyped_defs`、`check_untyped_defs`、`warn_return_any`），其余模块尚未注解，全量打开会淹没真问题。让某个旧模块也纳入时，把它加进 `files` 并先补齐注解，不要直接放宽全局设置。本机提交前使用同一锁文件安装后执行这组类型检查。
 
 Windows测试进程显式使用UTF-8，避免旧夹具的默认文本读取采用系统GBK；这些设置只影响当前终端及其子进程，不修改系统语言。pytest临时目录保持在项目忽略目录内。
 
@@ -336,7 +336,7 @@ Windows测试进程显式使用UTF-8，避免旧夹具的默认文本读取采�
 
 后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。真实迁移、重复seed和PostgreSQL锁验证仍独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关，最新结果见acceptance。
 
-CI继续保留docs、backend、frontend、admin、browser五个检查名，只监听main的push/PR并支持手动触发，不部署、不推送。官方Actions按已核对发布版本固定SHA；升级依据见[checkout](https://github.com/actions/checkout/releases)、[setup-node](https://github.com/actions/setup-node/releases)、[setup-python](https://github.com/actions/setup-python/releases)、[upload-artifact](https://github.com/actions/upload-artifact/releases)。运行环境固定ubuntu-24.04、Node 22、Python 3.13；依赖缓存按锁文件，取消同分支旧运行，任务限时，浏览器失败保留测试结果和隔离服务日志7天。PostgreSQL服务同时提供REBORN_DATABASE_URL和REBORN_TEST_DATABASE_URL，避免并发/迁移专项被静默跳过。独立空库升级两次、alembic check及重复seed均需通过。此工作流不等同于真实模型、TTS或正式判题集成验证。
+2026-11-16按用户要求删除GitHub Actions工作流并关闭仓库Actions。每次提交由开发者自行负责本机验证，不再依赖远端CI，也不擅自恢复工作流。按变更运行双端check、后端检查、文档/模块检查及必要的隔离数据库与浏览器验收；独立PostgreSQL专项需显式配置测试库，缺少条件时如实记录跳过。真实模型、TTS和正式判题另做授权集成验证。
 
 地图/素材相关修改从仓库根检查：
 
@@ -361,7 +361,7 @@ git diff --check
 
 Playwright不会自动启动服务器。先准备独立验收数据库、媒体/交换目录及专用教师账号，设置E2E_URL、ADMIN_E2E_URL（同域入口）、E2E_TEACHER_STUDENT_ID、E2E_TEACHER_PASSWORD。跨教师权限另需E2E_OTHER_TEACHER_STUDENT_ID/PASSWORD。将解压后的完整测试包放进隔离交换目录，设置 REBORN_E2E_COURSE_PACKAGE 为清单的 package_id。学生用例先创建班级并显式导入。后台包往返测试在同一隔离环境运行，测试进程的 REBORN_COURSE_EXCHANGE_ROOT 指向可访问的交换目录。
 
-复现CI按`.github/workflows/reborn.yml`使用 tests/fixture_package 生成 v3 合成测试包并解压到隔离交换目录，再启动API、React和Vue。依赖在启动服务器前安装，浏览器运行期间不要执行npm ci。后台e2e在admin执行`npx playwright test --workers=1`；游戏按下方命令。
+本机浏览器验收使用 tests/fixture_package 生成 v3 合成测试包并解压到隔离交换目录，再启动API、React和Vue。依赖在启动服务器前安装，浏览器运行期间不要执行npm ci。后台e2e在admin执行`npx playwright test --workers=1`；游戏按下方命令。
 
 从 `frontend` 安装匹配浏览器并执行：
 
@@ -370,7 +370,7 @@ npx playwright install chromium
 npm run test:e2e -- --project=desktop --workers=1
 ```
 
-也可将 `PLAYWRIGHT_CHANNEL=chrome` 指向已安装的Chrome。默认门禁为桌面Chromium、1920×1080，文字偏好100%–200%；额外小屏/手机视口仅在显式E2E_EXTRA_VIEWPORTS=1时运行，不作为CI门槛。PYTHON_RUNNER_DEV_URL指向已准备Python运行时的Vite，CI显式启用公开样例真实WASM验证。资料转换测试必须启动API生命周期中的资料处理worker，并使用独立存储目录，不能用lifespan=off后把一直排队误认成业务失败。
+也可将 `PLAYWRIGHT_CHANNEL=chrome` 指向已安装的Chrome。默认门禁为桌面Chromium、1920×1080，文字偏好100%–200%；额外小屏/手机视口仅在显式E2E_EXTRA_VIEWPORTS=1时运行，不作为默认提交前门槛。PYTHON_RUNNER_DEV_URL指向已准备Python运行时的Vite，公开样例真实WASM验证需显式启用该变量。资料转换测试必须启动API生命周期中的资料处理worker，并使用独立存储目录，不能用lifespan=off后把一直排队误认成业务失败。
 
 | 专项 | 前置条件与命令（在 `frontend`） |
 | --- | --- |

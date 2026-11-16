@@ -28,6 +28,7 @@ This branch is a Web-only Python-learning RPG. Students enter /world; teachers u
 - 教师管理页遵循 [后台界面规范](docs/design/teacher-interface.md)。新后台采用 React + shadcn/ui 重建，按真实业务需要组合组件，不要求迁移旧 Vue 包装组件；旧Vue后台在替代验收后退场，不恢复其包装组件和主题。不要在后台导入游戏主题，也不要把后台主题、Tailwind Preflight 或无范围控件规则引入学生页面。统一按[分阶段计划](docs/content-authoring.md#分阶段实施计划与验收标准)推进数据契约、班级隔离、包交换与后台重建，验收替代能力后才删除旧实现。
 
 ## Documentation and validation
+GitHub Actions/CI is disabled at the user's request. Do not restore automated workflows unless explicitly requested. Run the appropriate checks locally before each commit and record actual results.
 Every round must review and update [confirmed requirements](docs/requirements.md): record affected requirement IDs, whether requirements changed, synchronized documents, verification and unexecuted scope. Even with no new requirement, record that existing requirements remain in force. Preserve the user's latest decisions; never restore a withdrawn design because old code, tests or archives describe it.
 
 Follow the [documentation maintenance workflow](docs/README.md#每轮维护流程). Keep product/design/API/content rules in their owning current documents, executable procedures in development.md, latest validation and limits in acceptance.md, and concise continuation in reborn-migration.md. Archive old validation/deployment narratives with source and evidence; preserve failures, skips and local evidence paths without committing secrets or datasets. Do not duplicate complete rounds across documents or create parallel plans.

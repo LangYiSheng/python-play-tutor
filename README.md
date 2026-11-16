@@ -6,6 +6,8 @@
 
 学生游戏使用 Vue 3 + TypeScript + Phaser 3，教师后台使用独立 React + TypeScript + shadcn/ui；两者共用 Python FastAPI 模块化单体。正式存储为独立 PostgreSQL；本机轻量开发可使用 SQLite。普通游戏行为不调用大模型，学习场景的主动提问使用统一 LangChain create_agent。正式代码执行使用同一 Compose 内的独立 Python-only go-judge 容器。
 
+提交前由开发者按[开发手册](docs/development.md#基础检查)完成本机检查；本仓库不使用 GitHub Actions。
+
 ## 运行
 
 当前源代码不依赖旧 Java、旧 Graph/RAG 服务或非 Web 客户端。
