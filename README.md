@@ -1,5 +1,7 @@
 # Pythontopia Reborn
 
+当前开发仓库：[LangYiSheng/python-play-tutor](https://github.com/LangYiSheng/python-play-tutor)，默认分支 `main`。仓库独立迁移不改变 Pythontopia Reborn 产品名称；开发与 Git 约定见[开发手册](docs/development.md#仓库与开发分支)。
+
 面向 Python 初学者的像素学习 RPG。学生在小镇与人物交谈、接取任务、读课件和完成真实练习；教师通过后台管理班级、材料、任务、发布规则与学习记录。
 
 学生游戏使用 Vue 3 + TypeScript + Phaser 3，教师后台使用独立 React + TypeScript + shadcn/ui；两者共用 Python FastAPI 模块化单体。正式存储为独立 PostgreSQL；本机轻量开发可使用 SQLite。普通游戏行为不调用大模型，学习场景的主动提问使用统一 LangChain create_agent。正式代码执行使用同一 Compose 内的独立 Python-only go-judge 容器。

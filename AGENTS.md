@@ -4,8 +4,8 @@ This branch is a Web-only Python-learning RPG. Students enter /world; teachers u
 
 ## Scope and safety
 - Git提交标题和正文统一使用中文。
-- Work only on reborn. Check the branch before commits. Never change/push main, force-push, rewrite history, replace production, connect to old databases/volumes, or remove another person's changes.
-- Main evolves independently: never automatically merge it. Review and port individual UI changes with their dependencies.
+- Work on main in https://github.com/LangYiSheng/python-play-tutor. Check the branch before commits. Never force-push, rewrite the published history, replace production, connect to old databases/volumes, or remove another person's changes.
+- The former cypre5s/Pythontopia repository is historical reference only. Do not push to it, fetch its old history into this repository, or automatically merge its branches; review and port individual changes with their dependencies.
 - Do not restore Java, old multi-agent orchestration, profiles, autonomous learning paths, mine/expedition/boss systems, independent student feature pages, economy or non-Web clients.
 - Preserve LICENSE, attribution and licensed/editable sources of retained assets. No commercial game art, invented citations, fake live AI/judge/data.
 

@@ -336,7 +336,7 @@ Windows测试进程显式使用UTF-8，避免旧夹具的默认文本读取采�
 
 后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。真实迁移、重复seed和PostgreSQL锁验证仍独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关，最新结果见acceptance。
 
-CI继续保留docs、backend、frontend、admin、browser五个检查名，只监听reborn的push/PR并支持手动触发，不部署、不推送。官方Actions按已核对发布版本固定SHA；升级依据见[checkout](https://github.com/actions/checkout/releases)、[setup-node](https://github.com/actions/setup-node/releases)、[setup-python](https://github.com/actions/setup-python/releases)、[upload-artifact](https://github.com/actions/upload-artifact/releases)。运行环境固定ubuntu-24.04、Node 22、Python 3.13；依赖缓存按锁文件，取消同分支旧运行，任务限时，浏览器失败保留测试结果和隔离服务日志7天。PostgreSQL服务同时提供REBORN_DATABASE_URL和REBORN_TEST_DATABASE_URL，避免并发/迁移专项被静默跳过。独立空库升级两次、alembic check及重复seed均需通过。此工作流不等同于真实模型、TTS或正式判题集成验证。
+CI继续保留docs、backend、frontend、admin、browser五个检查名，只监听main的push/PR并支持手动触发，不部署、不推送。官方Actions按已核对发布版本固定SHA；升级依据见[checkout](https://github.com/actions/checkout/releases)、[setup-node](https://github.com/actions/setup-node/releases)、[setup-python](https://github.com/actions/setup-python/releases)、[upload-artifact](https://github.com/actions/upload-artifact/releases)。运行环境固定ubuntu-24.04、Node 22、Python 3.13；依赖缓存按锁文件，取消同分支旧运行，任务限时，浏览器失败保留测试结果和隔离服务日志7天。PostgreSQL服务同时提供REBORN_DATABASE_URL和REBORN_TEST_DATABASE_URL，避免并发/迁移专项被静默跳过。独立空库升级两次、alembic check及重复seed均需通过。此工作流不等同于真实模型、TTS或正式判题集成验证。
 
 地图/素材相关修改从仓库根检查：
 
@@ -506,3 +506,17 @@ python scripts/check-python-imports.py
 升级前停止写入并备份数据库、私有存储和课程目录，先在隔离副本演练迁移。`e51b92fa60c3` 将旧单资料关联及学习要求、已读页、位置、有效体验检查点迁入当前结构；旧已失效检查点不重新激活。数据库原成绩、任务和会话不重置。此迁移不可无损降级，回退使用升级前的完整备份，不运行 seed 覆盖已有课程。随后执行 Alembic 元数据检查，逐表比较未变更数据，并验证活动资料对应关系和学习记录。
 
 课程目录清单格式为3。此前格式2私有目录先复制备份，再将活动 `material_id` 及 `content.learning/completion` 转为单项 `resources`，其他资料、媒体和答案不变；完整语义校验通过后使用。学生实测须用隔离班级/体验账号，不能重置演示学习记录。
+
+## 仓库与开发分支
+
+当前仓库为 https://github.com/LangYiSheng/python-play-tutor.git，开发分支是 `main`，跟踪 `origin/main`。已有开发目录继续原地使用，新环境按以下方式获取：
+
+```sh
+git clone https://github.com/LangYiSheng/python-play-tutor.git
+cd python-play-tutor
+git pull --ff-only
+```
+
+日常提交后直接 `git push`；不向原 cypre5s/Pythontopia 推送，不将其旧分支、标签或历史拉回当前仓库。产品名、依赖、环境变量、Compose 项目名及现有私有目录不随仓库名改动。服务器切换不属于本次迁移，后续另行备份、核验并操作。
+
+独立历史以原提交 `ab507e254a5f7ffeb40f84124b400d35286a32aa` 的完整树为根，随后保留109个开发提交和2个合并节点。旧到新SHA的[映射](archive/repository-migration-20261116/commit-map.json)只含文本标识，不引入旧Git对象；历史记录中的原SHA保留其当时语义。归档清单的 `source_commit` 指向新历史中的相同代码树，`original_source_commit` 保留原出处，文档检查不得为追溯而重新引入原仓库历史。

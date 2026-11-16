@@ -2,9 +2,9 @@ name: Reborn checks
 on:
   workflow_dispatch:
   push:
-    branches: [reborn]
+    branches: [main]
   pull_request:
-    branches: [reborn]
+    branches: [main]
 permissions:
   contents: read
 concurrency:
