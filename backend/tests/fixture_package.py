@@ -18,6 +18,7 @@ from fixture_instances import clone_current_course
 from app.course_packages.manifest import PackageError
 from app.db import Base
 from app.models import Chapter, ChapterRelease, Classroom, User
+from app.narration import models as narration_models  # noqa: F401 -- register tables before create_all
 from fixture_seed import seed
 from app.materials.storage import get_storage
 

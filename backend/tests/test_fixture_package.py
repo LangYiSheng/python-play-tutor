@@ -1,6 +1,9 @@
 """Fixture generation must not open the configured app database or overwrite artifacts."""
+import json
 from pathlib import Path
 import os
+import subprocess
+import sys
 
 import pytest
 from fixture_package import build_fixture_package
@@ -38,3 +41,30 @@ def test_fixture_package_isolated_and_paused(tmp_path, monkeypatch):
     with pytest.raises(PackageError):
         build_fixture_package(source, content, destination, package_id="x", name="x")
     assert destination.read_bytes() == original
+
+
+def test_fixture_package_cli_registers_models_in_fresh_process(tmp_path: Path) -> None:
+    backend = Path(__file__).resolve().parents[1]
+    destination = tmp_path / "cli-fixture.zip"
+    configured_db = tmp_path / "must-not-open.db"
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join((str(backend / "tests"), str(backend))),
+        "PYTHONUTF8": "1",
+        "REBORN_DATABASE_URL": f"sqlite:///{configured_db.as_posix()}",
+        "REBORN_ENV": "development",
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "fixture_package",
+         "--source", env["REBORN_COURSE_ROOT"],
+         "--content", env["REBORN_CONTENT_ROOT"],
+         "--output", str(destination), "--package-id", "cli-test", "--name", "CLI测试课程"],
+        cwd=backend, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["package_id"] == "cli-test"
+    assert not configured_db.exists()
+    directory = tmp_path / "unpacked"
+    directory.mkdir()
+    unpack_archive(destination, directory)
+    assert load_bundle(directory)["manifest"]["package_id"] == "cli-test"
