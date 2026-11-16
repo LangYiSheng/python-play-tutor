@@ -1,42 +1,35 @@
-# Pythontopia Reborn
+# Pythontopia Reborn 协作约定
 
-This branch is a Web-only Python-learning RPG. Students enter /world; teachers use management pages. Start each development, fix or documentation round with docs/requirements.md, then use docs/README.md to find the owning current specification. Historical records under docs/archive are evidence, not current requirements or operating instructions.
+面向 Python 初学者的 Web 学习 RPG。学生端使用 Vue、TypeScript、Phaser，教师后台使用 React、TypeScript、shadcn/ui，后端使用 FastAPI、SQLAlchemy、PostgreSQL。
 
-## Scope and safety
-- Git提交标题和正文统一使用中文。
-- Work on main in https://github.com/LangYiSheng/python-play-tutor. Check the branch before commits. Never force-push, rewrite the published history, replace production, connect to old databases/volumes, or remove another person's changes.
-- The former cypre5s/Pythontopia repository is historical reference only. Do not push to it, fetch its old history into this repository, or automatically merge its branches; review and port individual changes with their dependencies.
-- Do not restore Java, old multi-agent orchestration, profiles, autonomous learning paths, mine/expedition/boss systems, independent student feature pages, economy or non-Web clients.
-- Preserve LICENSE, attribution and licensed/editable sources of retained assets. No commercial game art, invented citations, fake live AI/judge/data.
+## 协作与提交
 
-## Implementation
-- Student game: Vue 3, strict TypeScript, Pinia, Phaser 3. One Phaser.Game per student session. Phaser owns world rendering; Vue owns readable learning UI through typed events. Teacher frontend: independent React + TypeScript + shadcn/ui application in admin/ at /teacher/. Keep course/classroom contracts explicit; do not restore retired Vue teacher wrappers or rewrite the student game.
-- One primary workspace at a time. Lesson, practice, journal, library, classroom and settings replace each other. Preserve drafts/reading position. Focused editors block movement. Logout clears user state.
-- FastAPI modular monolith, SQLAlchemy 2, Alembic, PostgreSQL. Share one project; no old compatibility API. Validate DTOs, authorize server-side, use transactions and unique constraints.
-- Current task DAG definitions are separate from player state. Validate scripts, branches, ALL/ANY, optional nodes and effects. No eval/exec in config. Progress and grades require server-verified evidence. Retries are idempotent.
-- Course content is independently managed, not automatically seeded at service startup. Explicit imports may use the real Python语言基础 pack 43; its original counts describe that package, not a mandatory database shape. Keep only current teaching questions on normal import; AI-generated questions require review. Missing media remains explicitly missing.
-- Materials and questions use structured many-to-many chapter associations; questions are reusable through one ordered ActivityQuestion relation. Do not restore Question.activity_id or duplicate activity question_ids state. No required/supplementary material classification. Question sources are only ai_generated/imported; reference materials/pages are optional evidence. Preserve activity-specific learning/assessment records and private answers.
-- Movement, NPC scripts, task progress, page turns and world loading make zero model calls. Only explicit student questions in authorized activities invoke one create_agent runtime. Role configuration, limited tools, budgets and persisted sessions are isolated by user/class/activity. No grading/unlock/publish tools; missing credentials means unavailable.
-- Deploy db/api/web/judge together with deploy/compose.yml. Execute formal student submissions only through its isolated Python-only go-judge container, never on the API host. Keep durable jobs in the existing database; retain historical receipt fields without restoring retired execution providers. Public samples run in an isolated browser Python environment and cannot create grading evidence. Never expose hidden cases, answers or reference code to students/prompts/bundles. Unknown external dispatches require reconciliation, not blind resubmission.
-- Uploads are private, checked and bounded; replacements update current content. Conversions fail visibly. Retrieval citations must belong to authorized current materials.
-- Ordinary student replay requires `REBORN_ENV=development` and `REBORN_DEV_TOOLS=1`; production never mounts `/dev/progress/reset`. The teacher town preview uses a separate identity and reset endpoint restricted to the teacher's own saved preview in the selected class. Acceptance tests use new isolated accounts and never reset real demonstration records.
+- 当前仓库为 `LangYiSheng/python-play-tutor`，在 `main` 开发；提交前核对分支和改动范围，保留无关本地修改，不强推或改写已发布历史。
+- 提交标题使用 `类型(模块): 中文描述`，如 `feat(course): 支持课程包导出`；类型按实际改动选择 `feat`、`fix`、`refactor`、`docs`、`test`、`chore`，正文使用中文。
+- 部署、清空数据、替换数据库或持久卷等操作需要明确授权；程序更新应保留现有环境配置、课程媒体与学习记录。
 
-## Interface design
-- 游戏页面与教师后台使用两套界面规范，入口见 [设计规范索引](docs/design/README.md)。新增或修改页面前，先读对应规范，不将一套主题移植到另一套页面。
-- 学生游戏工作区遵循 [游戏界面规范](docs/design/game-interface.md)：复用 `OverlayHost.vue` 的单一图标标题、一级返回与“回到小镇”；共享令牌、控件和交互状态由 `gameDesign.css` 提供，目录与正文布局由 `townWorkspaces.css` 提供。工作区外壳透明，各内容卡片独立，卡片间可见小镇，不再添加覆盖整页的大底板或重复页面标题。
-- 游戏共享样式限定在 `.game-workspace` 内。新增控件优先复用现有组件与语义化原生 `button`、`input`、`select`、`textarea`；保持可见焦点、44px 基础操作目标、100%–200% 文字偏好、减少动效和输入时暂停角色移动。页面局部样式只负责其内容差异，不复制共享控件主题。
-- 教师管理页遵循 [后台界面规范](docs/design/teacher-interface.md)。新后台采用 React + shadcn/ui 重建，按真实业务需要组合组件，不要求迁移旧 Vue 包装组件；旧Vue后台在替代验收后退场，不恢复其包装组件和主题。不要在后台导入游戏主题，也不要把后台主题、Tailwind Preflight 或无范围控件规则引入学生页面。统一按[分阶段计划](docs/content-authoring.md#分阶段实施计划与验收标准)推进数据契约、班级隔离、包交换与后台重建，验收替代能力后才删除旧实现。
+## 核心业务边界
 
-## Documentation and validation
-GitHub Actions/CI is disabled at the user's request. Do not restore automated workflows unless explicitly requested. Run the appropriate checks locally before each commit and record actual results.
-Every round must review and update [confirmed requirements](docs/requirements.md): record affected requirement IDs, whether requirements changed, synchronized documents, verification and unexecuted scope. Even with no new requirement, record that existing requirements remain in force. Preserve the user's latest decisions; never restore a withdrawn design because old code, tests or archives describe it.
+- 学生游戏与教师后台使用各自的界面规范。学生会话只创建一个游戏实例，同时只打开一个主要工作区；保留草稿和阅读位置，编辑时暂停角色移动，退出登录清理用户状态。
+- 课程由教师显式导入和维护，服务启动不自动导入；AI生成题目需要审核，缺失媒体明确显示不可用。
+- 班级、用户与活动的数据和权限在服务端隔离；进度、解锁与成绩必须有服务端验证的证据，重试保持幂等。
+- 走路、剧情、翻页和进度更新不触发模型调用；AI仅由明确操作触发，并隔离会话、工具权限与预算，不赋予模型改分、解锁或发布权限。
+- 正式代码提交通过隔离的判题服务执行，浏览器样例运行不计成绩；隐藏用例、私有答案和参考代码不得暴露给学生或模型。
+- 上传文件保持私有并校验大小与内容，引用必须来自当前有权访问的资料；模型、判题或转换失败如实显示，不伪造结果。
+- 开发重置与教师体验按身份和班级隔离；验收使用专用测试账号，不重置真实演示或生产学习记录。
 
-Follow the [documentation maintenance workflow](docs/README.md#每轮维护流程). Keep product/design/API/content rules in their owning current documents, executable procedures in development.md, latest validation and limits in acceptance.md, and concise continuation in reborn-migration.md. Archive old validation/deployment narratives with source and evidence; preserve failures, skips and local evidence paths without committing secrets or datasets. Do not duplicate complete rounds across documents or create parallel plans.
+## 开发与验证
 
-Use Context7 for library/API usage: npx ctx7@latest library <official-name> "<specific question>", then docs <returned-id> "<question>"; outside sandbox, maximum 3 commands per question. Report quota errors and suggest login/CONTEXT7_API_KEY.
+- 不使用 GitHub Actions；未经明确要求不恢复自动工作流，本机验证由开发者负责。
+- 先完成一轮功能实现，在准备合并或交付时集中测试、修复问题，确认稳定后再合并；直接在 `main` 开发时，也应在功能交付前完成验证。
+- 默认“改哪里，测哪里”，选择覆盖改动及直接影响范围的最小、稳定测试集；不因每次编辑或阶段性提交反复运行全量测试。
+- 修复后先复测失败用例及相关回归；通过后没有新改动或新问题就不重复运行。公共逻辑、跨模块或数据库变更才扩大相关验证，确有必要时再跑全量。
+- 依赖未变且环境可用时不重复安装；纯文档修改只检查文档一致性、`node scripts/check-docs.mjs` 和 `git diff --check`。
+- 如实记录通过、失败、跳过和未验证范围，不把历史测试当成本轮重跑；具体命令见[开发手册](docs/development.md#基础检查)。
 
-The only built-in main quest is arrival (初来小镇：第一堂 Python 课). Retain the full course materials and knowledge points; do not restore retired chapter quests to provide test coverage. Use test-only task definitions for generic branching and merge tests.
+## 文档入口
 
-For implementation/content changes, run frontend npm ci, typecheck, lint, test and build; backend locked install, ruff, pytest, fresh Alembic migration and repeated seed as applicable to the change. Validate the authored main quest including resume and account-switch scenarios, permissions, idempotency, zero incidental AI calls, map reachability, independent deployment and browser viewports. Accurately record passed/failed/skipped and live-versus-contract results in acceptance.md.
-
-For documentation-only rounds, run `node scripts/check-docs.mjs`, `git diff --check`, and review requirement/specification consistency and changed-file scope. Do not relabel previous functional checks as rerun. Before each commit, verify documentation checks and the requirements round record; use Chinese commit titles and bodies.
+- 开始任务先核对[已确认需求](docs/requirements.md)，通过[文档索引](docs/README.md)查阅相关规范；需求或行为变化时同步对应文档，不为每次小修改机械追加流水。
+- 修改界面先读[设计规范索引](docs/design/README.md)，复用对应端的组件与样式，不混用两套主题。
+- 库、框架和API用法先查 Context7，先解析库再取文档，沙箱外执行；命令与配额处理见[开发手册](docs/development.md#查询库与api文档)。
+- 验证结论与限制放在[验收记录](docs/acceptance.md)，必要交接放在[续做入口](docs/reborn-migration.md)；只更新受影响文档，历史归档不作为当前操作指令。

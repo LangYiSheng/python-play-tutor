@@ -6,7 +6,7 @@
 
 学生游戏使用 Vue 3 + TypeScript + Phaser 3，教师后台使用独立 React + TypeScript + shadcn/ui；两者共用 Python FastAPI 模块化单体。正式存储为独立 PostgreSQL；本机轻量开发可使用 SQLite。普通游戏行为不调用大模型，学习场景的主动提问使用统一 LangChain create_agent。正式代码执行使用同一 Compose 内的独立 Python-only go-judge 容器。
 
-提交前由开发者按[开发手册](docs/development.md#基础检查)完成本机检查；本仓库不使用 GitHub Actions。
+功能实现后按[开发手册](docs/development.md#基础检查)做最小范围的本机验证，修复问题、测稳再合并或交付；不随阶段性提交反复跑全量，本仓库不使用GitHub Actions。
 
 ## 运行
 
@@ -24,7 +24,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 默认包含 `db / judge / api / web` 四个服务；判题没有宿主机公开端口，队列使用已有数据库，不另加 Redis。PPT转换器仍通过 `documents` profile按需启用；课程内容由教师显式导入，AI需单独配置凭据。
 
-每轮开发先复核[已确认要求](docs/requirements.md)，再从[文档总索引](docs/README.md)选择对应规范与操作。当前流程、验收摘要和[历史归档](docs/archive/README.md)分开查阅，每轮同步维护需求与相关文档。
+每轮开发先复核[已确认要求](docs/requirements.md)，再从[文档总索引](docs/README.md)选择对应规范与操作。当前流程、验收摘要和[历史归档](docs/archive/README.md)分开查阅，需求或行为变化时只同步受影响文档。
 
 ## 当前教学流程
 

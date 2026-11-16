@@ -107,7 +107,7 @@ $env:REBORN_ENV = 'development'
 Set-Location backend
 python -m venv .venv
 ./.venv/Scripts/Activate.ps1
-python -m pip install -r requirements.lock
+python -m pip install -r requirements.lock  # 仅准备或更新依赖时执行
 python -m alembic upgrade head
 # 首次演示环境按下文显式导入课程，空库也可直接启动。
 python -m uvicorn app.main:app --host 127.0.0.1 --port 18081
@@ -301,21 +301,33 @@ docker build -t pythontopia-reborn-converter:local deploy/converter
 
 ### 基础检查
 
-游戏从`frontend`、后台从`admin`分别执行以下完整检查：
+先完成一轮功能实现，在合并或交付前集中验证、修复问题，复测稳定后再合并；直接在main开发也需在功能交付前完成这一步。阶段性编辑或提交不要求重复全量测试。默认选择覆盖改动及直接影响范围的最小、稳定测试集；通过后无新变化不重跑。
+
+| 改动范围 | 默认验证范围 |
+| --- | --- |
+| 文档 | 一致性、链接/锚点、`node scripts/check-docs.mjs`及`git diff --check` |
+| 单个前端功能 | 对应组件或功能测试、涉及文件的lint；类型或构建链受影响时再检查对应端类型/构建 |
+| 单个后端功能 | 对应pytest用例及涉及文件的Ruff；影响类型约定时增加相应类型检查 |
+| 公共逻辑、接口或多模块联动 | 扩展到实际调用方、权限和关键交互回归，必要时执行相关浏览器专项 |
+| 数据模型、迁移或课程导入 | 隔离环境中的相关迁移、数据保留和幂等用例；适用时重复升级或导入 |
+
+修复后先复测失败用例及相关回归；全量套件只在影响广泛或定向检查不足以覆盖风险时运行，不通过删用例、放宽断言来制造通过。依赖未变且环境可用时不重装；新环境、锁文件变更或缺失依赖时才按锁文件安装。
+
+以下命令保留作完整检查入口，按上述范围选用，不是每次提交的必跑清单。需要时从受影响的`frontend`或`admin`执行：
 
 ```powershell
-npm ci
+npm ci  # 仅首次准备、锁文件变化或环境缺失时执行
 npm run check
 ```
 
-`check` 依次执行 lint、完整单元测试（最多2个worker）和带类型检查的构建；不再额外重复同一类型检查。只需快速反馈时仍可单独运行typecheck或指定测试文件。
+`check` 依次执行 lint、完整单元测试（最多2个worker）和带类型检查的构建；不再额外重复同一类型检查。局部改动优先指定测试文件或用例，只运行相关检查；只有影响两个前端时才同时验证两端。
 
-后端使用独立虚拟环境与锁文件，从 `backend` 执行：
+后端使用独立虚拟环境；局部改动按测试文件或用例选择pytest并指定Ruff范围。确需完整后端检查时，从`backend`执行：
 
 ```powershell
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
-python -m pip install -r requirements.lock
+python -m pip install -r requirements.lock  # 仅准备或更新依赖时执行
 python -m ruff check app tests
 python -m mypy
 python -m pytest -q --durations=10 --basetemp .pytest-local
@@ -324,19 +336,19 @@ python -m pytest -q --durations=10 --basetemp .pytest-local
 新增或修改的 Python 代码要写完整类型声明：参数、返回值、容器元素（`list[str]` 而不写 `list`），跨模块传递的结构用 `TypedDict` 描述，不用裸 `dict`。`requirements.lock` 同时锁定运行与验证依赖（包括 mypy）：
 
 ```powershell
-python -m pip install -r requirements.lock
+python -m pip install -r requirements.lock  # 仅准备或更新依赖时执行
 python -m mypy          # 读取 pyproject 里的 [tool.mypy]，当前只检查 app/narration
 ```
 
-`[tool.mypy]` 先只对 `app/narration` 开启严格检查（`disallow_untyped_defs`、`check_untyped_defs`、`warn_return_any`），其余模块尚未注解，全量打开会淹没真问题。让某个旧模块也纳入时，把它加进 `files` 并先补齐注解，不要直接放宽全局设置。本机提交前使用同一锁文件安装后执行这组类型检查。
+`[tool.mypy]` 先只对 `app/narration` 开启严格检查（`disallow_untyped_defs`、`check_untyped_defs`、`warn_return_any`），其余模块尚未注解，全量打开会淹没真问题。让某个旧模块也纳入时，把它加进 `files` 并先补齐注解，不要直接放宽全局设置。涉及该包的类型约定时执行此检查；未改依赖且环境可用时无需重新安装。
 
 Windows测试进程显式使用UTF-8，避免旧夹具的默认文本读取采用系统GBK；这些设置只影响当前终端及其子进程，不修改系统语言。pytest临时目录保持在项目忽略目录内。
 
-自动化测试使用 backend/tests/source_fixtures.py 和 tests/fixtures/teaching-scripts 的合成课程，不代表原教材正确。fixture_seed/fixture_package/fixture_instances 仅位于 tests，不是运行导入入口。浏览器测试包通过 PYTHONPATH=tests 调用 fixture_package 生成 v3 目录，放入独立交换区；课程包 ID 通过 REBORN_E2E_COURSE_PACKAGE 指定。全新隔离数据库执行迁移、重复升级和包重复导入检查。PostgreSQL并发专项需要显式 `REBORN_TEST_DATABASE_URL`，测试会创建临时 schema 并清理，不能指向真实演示库或生产库。当前live判题使用 `REBORN_LIVE_GO_JUDGE_URL` 和 `REBORN_GO_JUDGE_AUTH_TOKEN`；未配置的外部专项应记录为跳过。
+自动化测试使用 backend/tests/source_fixtures.py 和 tests/fixtures/teaching-scripts 的合成课程，不代表原教材正确。fixture_seed/fixture_package/fixture_instances 仅位于 tests，不是运行导入入口。浏览器测试包通过 PYTHONPATH=tests 调用 fixture_package 生成 v3 目录，放入独立交换区；课程包 ID 通过 REBORN_E2E_COURSE_PACKAGE 指定。涉及迁移或导入时，在全新隔离数据库执行相应升级、重复升级或重复导入检查。PostgreSQL并发专项需要显式 `REBORN_TEST_DATABASE_URL`，测试会创建临时 schema 并清理，不能指向真实演示库或生产库。当前live判题使用 `REBORN_LIVE_GO_JUDGE_URL` 和 `REBORN_GO_JUDGE_AUTH_TOKEN`；未配置的外部专项应记录为跳过。
 
-后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。真实迁移、重复seed和PostgreSQL锁验证仍独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关，最新结果见acceptance。
+后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。涉及相应改动时，真实迁移、重复seed和PostgreSQL锁验证独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关，最新结果见acceptance。
 
-2026-11-16按用户要求删除GitHub Actions工作流并关闭仓库Actions。每次提交由开发者自行负责本机验证，不再依赖远端CI，也不擅自恢复工作流。按变更运行双端check、后端检查、文档/模块检查及必要的隔离数据库与浏览器验收；独立PostgreSQL专项需显式配置测试库，缺少条件时如实记录跳过。真实模型、TTS和正式判题另做授权集成验证。
+2026-11-16按用户要求删除GitHub Actions工作流并关闭仓库Actions。功能完成后的本机验证由开发者负责，不依赖远端CI，也不擅自恢复工作流；阶段性提交不强制跑完整套件。按上表选择受影响端、模块、数据库或浏览器检查；独立PostgreSQL专项需显式配置测试库，缺少条件时如实记录跳过。真实模型、TTS和正式判题另做授权集成验证。
 
 地图/素材相关修改从仓库根检查：
 
@@ -361,9 +373,9 @@ git diff --check
 
 Playwright不会自动启动服务器。先准备独立验收数据库、媒体/交换目录及专用教师账号，设置E2E_URL、ADMIN_E2E_URL（同域入口）、E2E_TEACHER_STUDENT_ID、E2E_TEACHER_PASSWORD。跨教师权限另需E2E_OTHER_TEACHER_STUDENT_ID/PASSWORD。将解压后的完整测试包放进隔离交换目录，设置 REBORN_E2E_COURSE_PACKAGE 为清单的 package_id。学生用例先创建班级并显式导入。后台包往返测试在同一隔离环境运行，测试进程的 REBORN_COURSE_EXCHANGE_ROOT 指向可访问的交换目录。
 
-本机浏览器验收使用 tests/fixture_package 生成 v3 合成测试包并解压到隔离交换目录，再启动API、React和Vue。依赖在启动服务器前安装，浏览器运行期间不要执行npm ci。后台e2e在admin执行`npx playwright test --workers=1`；游戏按下方命令。
+本机浏览器验收使用 tests/fixture_package 生成 v3 合成测试包并解压到隔离交换目录，再启动API、React和Vue。依赖在启动服务器前安装，浏览器运行期间不要执行npm ci。后台e2e在admin指定相关测试文件执行；游戏按下方专项表选择用例，只有需要完整浏览器回归时才不指定文件。
 
-从 `frontend` 安装匹配浏览器并执行：
+浏览器尚未准备或版本变更时安装匹配版本。以下为`frontend`完整浏览器回归入口，局部改动优先使用后面的专项命令：
 
 ```powershell
 npx playwright install chromium
@@ -389,7 +401,7 @@ npm run test:e2e -- --project=desktop --workers=1
 
 `node scripts/load-world.mjs` 需要显式 `REBORN_LOAD_TOKEN` 和 `REBORN_LOAD_CLASSROOM`，可通过 `REBORN_LOAD_URL` 选择隔离API；默认200次请求、10并发，仅测已登录世界读取，不能作为学生AI或判题并发能力的证明。
 
-实际执行后，将通过、失败、跳过、环境和真实/模拟边界写入[验收记录](acceptance.md)，将仍需延续的工作写入[续做记录](reborn-migration.md)。不要在本手册反复追加某轮“当前运行”、备份文件名、测试数量或历史迁移头。
+功能交付时，在[验收记录](acceptance.md)汇总有效的通过、失败、跳过和未验证边界；只在有待办或交接变化时更新[续做记录](reborn-migration.md)，不为每次调试重复追加记录。不要在本手册反复追加某轮“当前运行”、备份文件名、测试数量或历史迁移头。
 
 ## 常见故障
 
@@ -499,7 +511,7 @@ python -m unittest discover -s scripts/tests -p "test_*.py"
 python scripts/check-python-imports.py
 ```
 
-检查已进入现有 Reborn checks 的文档与后端任务，无需单独流水线。Python 检查只静态读取 `backend/app`，包含函数内导入、常量动态导入、循环依赖与跨模块私有访问，不加载应用或连接数据库。边界违规阻断，行数与压行只提醒复核职责；仍须按本轮变更执行原有双端与后端检查。删除旧路径时同步真实调用、测试模拟和命令，不用兼容转发遮蔽缺漏。
+模块拆分或依赖关系变化时在本机运行此检查，不使用自动流水线。Python 检查只静态读取 `backend/app`，包含函数内导入、常量动态导入、循环依赖与跨模块私有访问，不加载应用或连接数据库。边界违规阻断，行数与压行只提醒复核职责；其他验证按[基础检查](#基础检查)选择受影响模块。删除旧路径时同步真实调用、测试模拟和命令，不用兼容转发遮蔽缺漏。
 
 ## 多资料活动升级
 
@@ -520,3 +532,15 @@ git pull --ff-only
 日常提交后直接 `git push`；不向原 cypre5s/Pythontopia 推送，不将其旧分支、标签或历史拉回当前仓库。产品名、依赖、环境变量、Compose 项目名及现有私有目录不随仓库名改动。服务器切换不属于本次迁移，后续另行备份、核验并操作。
 
 独立历史以原提交 `ab507e254a5f7ffeb40f84124b400d35286a32aa` 的完整树为根，随后保留109个开发提交和2个合并节点。旧到新SHA的[映射](archive/repository-migration-20261116/commit-map.json)只含文本标识，不引入旧Git对象；历史记录中的原SHA保留其当时语义。归档清单的 `source_commit` 指向新历史中的相同代码树，`original_source_commit` 保留原出处，文档检查不得为追溯而重新引入原仓库历史。
+
+### 提交格式
+
+标题使用`类型(模块): 中文描述`，如`feat(course): 支持课程包导出`、`fix(reader): 修复阅读位置恢复`、`docs(workflow): 精简协作规则`。类型按实际改动选择feat、fix、refactor、docs、test或chore，模块使用简短明确的名称，正文用中文。提交前核对分支、差异和暂存范围；功能交付前按[基础检查](#基础检查)测稳，不把阶段性提交当成全量测试触发器。
+
+### 查询库与API文档
+
+库、框架、SDK、API和CLI的用法问题先使用Context7查询当前文档；普通业务逻辑分析、重构和文档措辞整理无需查询。
+
+1. 在沙箱外执行`npx ctx7@latest library <官方库名> "<具体问题>"`，按官方名称、相关性与来源质量选择返回的库ID。
+2. 执行`npx ctx7@latest docs <返回的库ID> "<具体问题>"`；已有明确库ID时可直接查文档，版本问题使用返回的对应版本ID。
+3. 每个问题最多3次命令，不在查询中携带凭据。配额错误如实说明，可使用`npx ctx7@latest login`或配置`CONTEXT7_API_KEY`提高限额；网络或DNS错误确认在沙箱外重试，不静默以记忆冒充查询结果。
