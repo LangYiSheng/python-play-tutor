@@ -13,12 +13,13 @@ from ..models import Material, now
 from . import client as model_client
 from . import config, prompts, render, repository
 from .contracts import AuthoringSettings, GeneratedPage, Quota
+from .input_policy import PDF_TEXT_ONLY_THRESHOLD, prefers_image
 from .models import PageNarration
 
 log = logging.getLogger("narration")
 
-# Slides with a long text layer do not need the (much) more expensive image input.
-TEXT_ONLY_THRESHOLD = 200
+# 生成侧 PDF 的旧阀值；演示文稿已改用 <60，见 input_policy。
+TEXT_ONLY_THRESHOLD = PDF_TEXT_ONLY_THRESHOLD
 
 
 class NarrationUnavailable(RuntimeError):
@@ -26,9 +27,7 @@ class NarrationUnavailable(RuntimeError):
 
 
 def with_image(material: Material, page_text: str) -> bool:
-    if material.kind == "presentation":
-        return True
-    return len(page_text.strip()) < TEXT_ONLY_THRESHOLD
+    return prefers_image(material, page_text, purpose="generation")
 
 
 def input_hash(*, page_hash: str, image: bytes | None, settings: AuthoringSettings, model: str,

@@ -79,6 +79,10 @@ def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: 
         with httpx.Client(base_url=settings["base_url"], timeout=settings["timeout"]) as client:
             response = client.post("/chat/completions",
                                    headers={"Authorization": f"Bearer {settings['api_key']}"}, json=body)
+    except httpx.TimeoutException as exc:
+        # 校准窗口带思考时可以跑很久，超时必须和“请求失败”分开说。
+        raise ModelFailed(f"作者期模型 {settings['timeout']} 秒内未返回，请稍后重试或调高超时",
+                          hint="timeout") from exc
     except httpx.HTTPError as exc:
         raise ModelFailed("作者期模型请求失败，请稍后重试") from exc
     if response.status_code in {401, 403}:

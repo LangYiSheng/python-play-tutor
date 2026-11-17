@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from ..models import Material, now
 from . import client as model_client
 from . import config, repository, render
+from .input_policy import prefers_image, policy_fingerprint
 from .contracts import AuthoringSettings, AppliedCalibration, CalibrationIssue
 from .models import NarrationCalibration, PageNarration
 
@@ -39,7 +40,7 @@ SHRUNK_IMAGE_LIMIT = 2
 # 一次 HTTP 请求最多跑这么久；超时前至少跑完一个窗口，避免永远不前进。
 SLICE_SECONDS = 45
 # 提示词或前缀结构变了就必须重算：这个版本号进 deck 指纹。
-CALIBRATE_VERSION = "cal-v1"
+CALIBRATE_VERSION = "cal-v2"
 
 SYSTEM = (
     "你在校对一份课程讲解稿的整体质量。只依据给出的原文、页面图像与讲解判断，不要虚构页面内容。"
@@ -66,14 +67,8 @@ def page_limits(budget: int, count: int) -> tuple[int, int]:
 
 
 def image_input(material: Material, source_text: str) -> bool:
-    """PPT pages with a fragmented text layer are read from the rendered slide instead.
-
-    A PDF keeps the old rule: only a page with no text at all needs the image.
-    """
-    text = source_text.strip()
-    if material.kind == "presentation":
-        return len(text) < repository.TEXT_AS_IMAGE_BELOW
-    return not text
+    """校准只看页图与文本的二选一，规则与生成共用 input_policy。"""
+    return prefers_image(material, source_text, purpose="calibration")
 
 
 def prefix_text(material: Material) -> str:
@@ -88,7 +83,7 @@ def prefix_fingerprint(material: Material) -> str:
 def deck_fingerprint(material: Material, items: list[PageNarration], settings: AuthoringSettings) -> str:
     """Everything that changes the review: prompt prefix, model, windowing and page revisions."""
     parts = [CALIBRATE_VERSION, prefix_fingerprint(material), settings["vision_model"], "low",
-             str(WINDOW), str(WINDOW_TEXT_BUDGET)]
+             str(WINDOW), str(WINDOW_TEXT_BUDGET), policy_fingerprint()]
     parts += [f"{item.page_no}:{repository.revision(item)}" for item in items]
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 

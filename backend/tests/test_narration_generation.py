@@ -68,22 +68,24 @@ def test_generate_writes_a_draft_and_reuses_identical_input(client, db, classroo
     assert narration["anchors"] == ["变量", "赋值"]
 
 
-def test_presentation_pages_always_send_the_slide_image(client, db, classroom, teacher, calls, monkeypatch):
-    material = slide_material(db, classroom, "这一页文本很长" * 40)
+def test_presentation_pages_send_the_slide_image_only_when_the_text_is_fragmented(client, db, classroom, teacher, calls, monkeypatch):
+    """演示文稿不再无条件发图：文本层够长就只发文本（2026-11-17 实验结论）。"""
+    long_slide = slide_material(db, classroom, "这一页文本很长" * 40)
     db.commit()
-    seen = {}
+    rendered = []
+    monkeypatch.setattr(service.render, "render_page", lambda item, page_no: rendered.append(page_no) or b"\xff\xd8jpeg")
+    long_result = generate(client, classroom, long_slide, 1, teacher["headers"])
+    assert long_result.status_code == 200, long_result.text
+    assert long_result.json()["image_used"] is False and rendered == []
+    assert all(part.get("type") != "image_url" for part in calls[0]["messages"][1]["content"])
 
-    def fake_render(item, page_no):
-        seen["page_no"] = page_no
-        return b"\xff\xd8fakejpeg"
-
-    monkeypatch.setattr(service.render, "render_page", fake_render)
-    result = generate(client, classroom, material, 1, teacher["headers"])
+    short_slide = slide_material(db, classroom, "这一页很短")
+    db.commit()
+    result = generate(client, classroom, short_slide, 1, teacher["headers"])
     assert result.status_code == 200, result.text
-    assert result.json()["image_used"] is True
-    assert seen["page_no"] == 1
+    assert result.json()["image_used"] is True and rendered == [1]
     # The image must ride along as a real content part, not a text note.
-    parts = calls[0]["messages"][1]["content"]
+    parts = calls[-1]["messages"][1]["content"]
     assert parts[-1]["type"] == "image_url" and parts[-1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 

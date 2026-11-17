@@ -16,8 +16,6 @@ from .models import VISIBLE_STATUSES, NarrationJob, NarrationRun, PageNarration
 
 MAX_TEXT = 4000
 MIN_SECONDS, MAX_SECONDS = 30, 300
-# 文本层短到这个长度以下就当作碎片：改成看页图，比把碎片喂给模型更准。
-TEXT_AS_IMAGE_BELOW = 60
 
 
 def text_hash(text: str) -> str:
