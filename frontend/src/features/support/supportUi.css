@@ -1,6 +1,7 @@
 /* Learning sidebar tabs, goals, content outline and question navigation. */
 .game-workspace .learning-support {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
@@ -270,6 +271,7 @@
 }
 
 .game-workspace .support-chat {
+  min-width: 0;
   min-height: 0;
   display: flex;
 }

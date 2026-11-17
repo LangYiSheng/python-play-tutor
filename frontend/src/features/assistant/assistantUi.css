@@ -51,6 +51,7 @@
 }
 
 .game-workspace .chat-history {
+  min-width: 0;
   min-height: 0;
   flex: 1 1 0;
   overflow: auto;
@@ -317,6 +318,11 @@
 
 .game-workspace .assistant-markdown > :not(:last-child) {
   margin-bottom: .75rem;
+}
+
+.game-workspace .assistant-markdown :is(pre, table) {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
 }
 
 .game-workspace .assistant-markdown pre {
