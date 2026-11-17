@@ -1,4 +1,4 @@
-# Reborn HTTP contract
+# HTTP接口契约
 
 All routes use /api. JSON fields use snake_case. Bearer session authentication is required except auth/register, auth/login and health. Student requests carry explicit classroom_id. Public registration never accepts a teacher/admin role. Errors return detail; malformed inputs return422. All public timestamps include an explicit UTC offset; release inputs must carry a timezone and are normalized to UTC before storage.
 
@@ -71,7 +71,7 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - One create_agent runtime: learning exposes list_material_pages/search_material_pages/read_material_page/get_reading_progress; practice exposes list_activity_questions/read_activity_question/read_current_attempt/get_current_question_feedback/search_practice_materials/read_practice_material. Feedback source is displayed/local_run/submission and is bound to the current turn's question. Text readers accept offset/limit (default2000,max4000) and return total_chars/next_offset. Search examines complete authorized text and returns bounded excerpts. No execution, hidden answers, grading or unlock tools.
 - GET/PUT /teacher/assistant/model is administrator-only. PUT uses expected_revision plus base_url/model/api_key?/clear_key/reasoning_effort/context_window/compression_threshold/output_tokens/model_calls/tool_calls/timeout_seconds/request_tokens. Null/empty api_key preserves the prior key; clear_key removes it. Responses expose only key_configured/key_mask, never plaintext. POST /teacher/assistant/model/test explicitly invokes one short saved-model request. Teacher course settings expose system_limits and reject budgets above the global configuration. Model connection fields are excluded from course packages.
 
-Paused policy denies new content/progress/assistant requests immediately and preserves history; reopening continues stored state. The only built-in main quest is arrival (stable ID arrival, 初来小镇：第一堂 Python 课; database IDs are instance-specific). Retired shared quest definitions are removed only during explicit course import, so stored player history does not restore them to the current world. Teacher-owned definitions and learner grades remain intact. Normal course import includes only currently selected teaching questions, not an automatic legacy archive. Explicit development cleanup skips real learner and authoring references; ordinary migration does not delete grades. Validation results and external-service skips are documented in acceptance.md.
+Paused policy denies new content/progress/assistant requests immediately and preserves history; reopening continues stored state. The only built-in main quest is arrival (stable ID arrival, 初来小镇：第一堂 Python 课; database IDs are instance-specific). Retired shared quest definitions are removed only during explicit course import, so stored player history does not restore them to the current world. Teacher-owned definitions and learner grades remain intact. Normal course import includes only currently selected teaching questions, not an automatic legacy archive. Ordinary migration does not delete grades.
 
 ### 全站讲稿与语音服务设置
 
@@ -133,7 +133,7 @@ Paused policy denies new content/progress/assistant requests immediately and pre
 
 GET /world?classroom_id增加当前可用interactions、building_access及building_unlock解锁建筑ID列表；NPC可见性按同一条件解释器过滤。POST /story/interactions {classroom_id,npc_key? ,interaction_id?}只允许一个目标，距离和当前条件均由服务端验证。故事action支持open_workspace(library/journal/classroom)及enter_building；响应只描述允许的动作，客户端等待服务端advance确认才打开界面或切图。POST /story/sessions/{id}/end {classroom_id,event_id,revision}显式结束当前演出，退出工作区/暂时离开不冒充活动完成。故事幂等键、revision、等待/恢复和服务端证据要求保持。
 
-## 目录课程包接口更新2026-11-12
+## 目录课程包接口
 
 `GET /teacher/classrooms/{id}/course/packages` 列出共享默认包和全部导出目录，不按班级或导出者过滤。`POST .../imports/available/preview` 对目录创建私有副本，生成内容指纹并执行完整校验与影响分析；确认应用时再次核对指纹、课程修订和授权。教师可将任意共享包导入本人管理的班级，不能借共享包修改其他教师的班级。
 

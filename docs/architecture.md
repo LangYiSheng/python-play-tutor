@@ -79,7 +79,7 @@ AssessmentAttempt按用户、班级、测验活动唯一保存答题草稿、题
 
 ## 环境隔离
 
-Reborn Compose 项目、数据库、卷、对象存储前缀和端口独立。主栈默认包含 db/api/web/judge 四个服务，统一Compose管理；judge是独立Python隔离容器，无宿主机端口，仅API加入其内部网络。API启动只执行结构迁移、必要管理员初始化与服务启动，不再自动导入课程或归档题。课程包来自显式外部来源，后台修改不因镜像更新/重启被seed覆盖；数据库卷保存元信息与关系，私有文件卷保存媒体和解析产物。默认数据库不对外发布，开发覆盖文件也只绑定 loopback。现有线上数据库、生产服务和 main 不参与迁移。CI 只检查 reborn，不发布生产。
+Reborn Compose 项目、数据库、卷、对象存储前缀和端口独立。主栈默认包含 db/api/web/judge 四个服务，统一Compose管理；judge是独立Python隔离容器，无宿主机端口，仅API加入其内部网络。API启动只执行结构迁移、必要管理员初始化与服务启动，不再自动导入课程或归档题。课程包来自显式外部来源，后台修改不因镜像更新/重启被seed覆盖；数据库卷保存元信息与关系，私有文件卷保存媒体和解析产物。默认数据库不对外发布，开发覆盖文件也只绑定 loopback。开发、验收与生产使用独立环境，部署操作遵循显式授权。
 
 教师后台 `/teacher/` 由独立 React 应用提供，使用项目维护的 shadcn/ui 组件源码。表单草稿、选择和预览按班级隔离。React Flow 只负责编辑界面中的节点、端口、连线与布局，画布修改转换回现有受限流程定义。后台样式仅在后台 HTML 加载，权限、发布与成绩由服务端判定。
 
@@ -90,7 +90,7 @@ Reborn Compose 项目、数据库、卷、对象存储前缀和端口独立。�
 
 ## 班级课程与前端边界
 
-完整包和阶段门槛由[内容规范](content-authoring.md#班级课程完整包设计)拥有。CourseInstance按classroom_id唯一；九类内容保存course_instance_id与stable_id。包内稳定ID在本班映射为运行ID，不能直接将另一个班的数据库ID作为引用。数据库与私有存储是运行来源，data/course只是私有交换区，程序启动不seed。
+完整包与数据边界由[内容规范](content-authoring.md#班级课程完整包设计)拥有。CourseInstance按classroom_id唯一；九类内容保存course_instance_id与stable_id。包内稳定ID在本班映射为运行ID，不能直接将另一个班的数据库ID作为引用。数据库与私有存储是运行来源，data/course只是私有交换区，程序启动不seed。
 
 运行和教师编辑只使用当前班级课程。未导入课程返回明确 409，可创建空课程或导入 v3 目录包。旧来源克隆、转换和运行 fallback 已退出；DDL 只处理结构，含旧 NPC 的库不会自动转换或清空。
 
@@ -118,7 +118,7 @@ BuildingUnlock 以学生、班级、课程实例和建筑 ID 标识；不再读�
 
 ### 正式 Python 判题队列
 
-用户于2026-11-14将新提交执行器改为go-judge。Submission与私有SubmissionPayload复用现有数据库，prepared为持久等待状态；单API进程后台每批最多4份条件认领，逐例调用同步 `/run`，直接保存最终反馈。go-judge内部环境池/等待队列只负责临时执行调度，不代替持久业务队列。每批会等待全部4份结束后取下一批；长耗时程序可能增加后续等待，不保证所有提交秒内完成。
+正式提交使用go-judge执行器。Submission与私有SubmissionPayload复用现有数据库，prepared为持久等待状态；单API进程后台每批最多4份条件认领，逐例调用同步 `/run`，直接保存最终反馈。go-judge内部环境池/等待队列只负责临时执行调度，不代替持久业务队列。每批会等待全部4份结束后取下一批；长耗时程序可能增加后续等待，不保证所有提交秒内完成。
 
 go-judge本身返回的Accepted仅表示程序正常退出；GoJudgeAdapter在服务端比较输出后才产生答对证据。隐藏用例的预期、实际输出和诊断不出现在学生回执。超时、无效响应或已有用例执行后的断连可能已经执行，置submission_unknown，不重送；首次连接建立失败可确认未送出，保留prepared等待恢复。服务重启只恢复prepared，dispatching转待对账。旧执行器适配器与轮询已删除。历史queued/running在启动恢复时转为待对账，token仍保留且不会转送新执行器；既有成绩和失败记录不重判，不回退API宿主机执行。
 
@@ -144,7 +144,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 
 ## 模块组织与依赖边界
 
-2026-11-15 用户确认并实施完整整理。按业务职责组织源码，保留 HTTP 路径、请求响应字段、课程包格式、数据库表与稳定 ID；旧入口删除，不设置兼容转发层。当前验收结果与未执行范围单独记录于[验收](acceptance.md)，这里维护长期结构规则。
+源码按业务职责组织；调整模块边界时保留HTTP契约、课程包格式、数据库表与稳定ID，不用无意义兼容转发代替真实调用迁移。本节维护结构规则，验证方式见[开发手册](development.md#模块边界检查)。
 
 ### 学生端
 
@@ -179,6 +179,6 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 
 学生基础样式在 `app/styles/base.css`，入口展示与关于页各自维护；世界/HUD/对白归入 `features/world/`，游戏共享控件在 `gameDesign.css`、普通工作区布局在 `townWorkspaces.css`。学习正文、支持侧卡、助教与练习样式各归功能目录。教师 `styles.css` 是导入入口，基础令牌、外壳和控件在 `styles/`，业务样式跟随 features。两端主题隔离，删除已退场 Vue 后台和旧登录/HUD覆盖，不复制主题到新模块。
 
-`node scripts/check-modules.mjs` 检查明确的导入边界和已退场入口；`python scripts/check-python-imports.py` 静态检查后端的循环依赖与跨模块私有访问，包含函数内和常量动态导入。两项进入既有 CI，配套合成测试覆盖规则。行数超过500或超过10行长于200字符只提醒人工复核，不能通过压行、机械切片或无意义转调达标。编译器、行为测试与浏览器仍负责真实正确性，依赖检查不替代它们。操作步骤见[开发手册](development.md)。
+`node scripts/check-modules.mjs` 检查明确的导入边界和已退场入口；`python scripts/check-python-imports.py` 静态检查后端的循环依赖与跨模块私有访问，包含函数内和常量动态导入。两项按模块改动在本机执行，配套合成测试覆盖规则。行数超过500或超过10行长于200字符只提醒人工复核，不能通过压行、机械切片或无意义转调达标。编译器、行为测试与浏览器仍负责真实正确性，依赖检查不替代它们。操作步骤见[开发手册](development.md)。
 
 多资料阅读的聚合与规则校验归 `course_content/resources.py`，累计证据仍在 `ActivityProgress`，其中 `media_progress.reading_pages/reading_positions` 按资料ID保存，视频的时间/覆盖/会话也按资料隔离。移除活动单资料列通过一次性迁移处理，课程包格式3显式交换资源关联，不增设旧格式运行适配层。

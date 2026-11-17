@@ -32,6 +32,7 @@ playwright-report/
 test-results/
 output/
 .tmp/
+.local/dev-notes/
 assets/inbox/incoming/
 data/course-pack-43/pdfs/
 data/course-pack-43/videos/

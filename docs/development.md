@@ -6,12 +6,12 @@
 
 当前ZIP上传关闭。历史ZIP离线校验工具保留，但新运行流程直接使用目录。迁移已有交换目录时应保留 `imports/`，使未过期预览仍可应用。交换目录包含私有答案和素材，不能由Web静态服务公开。
 
-本手册说明当前 `reborn` 的操作流程，不代表某个本机环境正在运行。产品范围与内容格式分别见[产品说明](product.md)、[内容编写](content-authoring.md)；实际检查结果见[验收记录](acceptance.md)。原先按轮次追加的完整记录保存在[整理前原文](archive/2026-11-08-documentation-baseline/development.md)，其中的端口、迁移头和运行状态仅属于当时环境。
+本手册维护安装、更新、内容交换与排查方法，不描述任何个人环境的运行状态。产品能力见[产品说明](product.md)，包格式见[内容规范](content-authoring.md)。
 
 ## 环境与数据隔离
 
 - 容器部署使用 Docker Engine / Docker Desktop 与 Compose v2。本机开发使用 Python 3.12 或 3.13、Node.js 22；依赖分别来自 `backend/requirements.lock` 、`frontend/package-lock.json`和`admin/package-lock.json`。
-- 只操作 `reborn`。不得复用 `main`、旧项目或生产的数据库、数据卷、对象存储前缀与凭据；不得自动合并 `main`。
+- 开发仓库使用 `main`，Git操作见[仓库与开发分支](#仓库与开发分支)。开发和验收不得复用其他项目或生产的数据库、数据卷、对象存储前缀与凭据。
 - 每个开发、演示或验收环境使用独立的 Compose 项目名、端口、数据库与存储。下文基础环境统一为 `pythontopia-reborn`，并显式传入环境文件。
 - 同一环境的启动、更新、导入、查看日志和停止，始终使用同一组 `--env-file`、`-p` 和 `-f` 参数。启用了开发工具或转换器的环境，后续更新也要保留对应 override / profile。
 - 环境文件、凭据、数据库备份、截图与 trace 放在忽略目录，不提交 Git。不要输出含凭据的完整 Compose 配置或数据库连接串。
@@ -81,16 +81,6 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 `stop` 保留账号、学习记录、成绩及数据库/存储卷。修改 `shared/world/world.json` 等 API/Web 共同使用的地图配置时，同时重建 API 和 Web。
 
-### 已存在环境的配置示例
-
-若操作者确认要沿用已有的独立预览配置 `.tmp/story-qa.env`、项目 `pythontopia-story-qa`，其中 Web/API 端口为 `15176/18083`，并且该环境原本需要开发工具，可使用：
-
-```powershell
-docker compose --env-file .tmp/story-qa.env -p pythontopia-story-qa -f deploy/compose.yml -f deploy/compose.dev-tools.yml up --build -d api web
-```
-
-这是已有配置的使用示例，不证明该环境存在或正在运行，也不作为新验收环境模板。实际状态通过该项目的 `ps`、日志、health 和浏览器核对；凭据文件保持私有。
-
 ## 本机开发
 
 ### 后端
@@ -156,7 +146,6 @@ npm run dev -- --host 127.0.0.1 --port 15174
 
 课程包不纳入 Git 或镜像。将编写完成的 v3 解压目录放入私有 data/course，在教师后台选择班级、预览目录包，核对差异后确认导入。新引擎明确拒绝旧格式，不提供 app.seed、convert_legacy_course、migrate_classroom_courses 或旧来源 initialize 接口。
 
-本机 data/course/python-town-chapter1 已更新为 v3，四个角色、立绘/精灵引用、人设、日常公共流程和图书馆设置与包一起维护，原 41 份媒体资源保留。当前包只是私有文件，不随启动自动导入。
 
 ### 私有交换区
 
@@ -209,13 +198,13 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 图书馆资料助教与活动助教共用下列模型配置和预算。升级到资料级会话结构前备份当前库和私有存储；执行head迁移即可，无需新建Activity、重新导入资料或重置账号。没有凭据时图书管理员入口仍保留，但真实显示不可用。
 
-基础 Compose 已显式透传 AI 预算、S3、上传上限、判题 language id 与开发工具开关（见 `deploy/.env.example`）；在 `deploy/.env` 里填值即生效，留空则用代码内默认。仍不在 Compose 里的两个键：`REBORN_CORS_ORIGINS`（生产同源，仅供分离源开发）与 `REBORN_CONVERTER_IMAGE`（API 直连 Docker 的另一种模式；Compose 用 `converter` 服务，配 `REBORN_CONVERTER_URL/TOKEN`）。需要额外的自定义变量时再用私有 Compose override。所有凭据只在后端配置，不进入前端构建。
+基础Compose显式传入服务所需环境配置（见 `deploy/.env.example`）；在 `deploy/.env` 里填值即生效，留空则用代码内默认。仍不在 Compose 里的两个键：`REBORN_CORS_ORIGINS`（生产同源，仅供分离源开发）与 `REBORN_CONVERTER_IMAGE`（API 直连 Docker 的另一种模式；Compose 用 `converter` 服务，配 `REBORN_CONVERTER_URL/TOKEN`）。需要额外的自定义变量时再用私有 Compose override。所有凭据只在后端配置，不进入前端构建。
 
 ### AI助教
 
 配置 `REBORN_AI_API_KEY`、`REBORN_AI_MODEL`，按供应商需要设置 `REBORN_AI_BASE_URL`。未配置时主动提问明确返回不可用，世界、对白、翻页、概念题和进度继续工作。只有授权活动内学生主动提问才创建 `create_agent` 请求，普通操作必须保持零模型调用。
 
-本地 DeepSeek 官方配置示例（2026-11-14 核对[官方文档](https://api-docs.deepseek.com/)）：在实际 Compose 使用的私有 `--env-file` 中设置下列变量，Key 不写进源码或课程包。当前 17254 体验环境使用 `.tmp/npc-demo-20261113.env`。
+DeepSeek配置示例：在实际Compose使用的私有环境文件中设置模型、地址与密钥，模型标识以供应商实际提供的服务为准。密钥不写进源码或课程包。
 
 ```dotenv
 REBORN_AI_BASE_URL=https://api.deepseek.com
@@ -224,17 +213,17 @@ REBORN_AI_REASONING_EFFORT=none
 REBORN_AI_API_KEY=
 ```
 
-`deepseek-flash` 当前对应 V4.1-Flash-1017。可选 `REBORN_AI_REASONING_EFFORT` 仅在非空时传给 Chat Completions；此配置用 `none` 关闭思考，适配现有短回复预算，其他供应商按其支持值配置或留空。官方 DeepSeek 的输出上限通过请求体 `max_tokens` 发送，避免 SDK 自动改名为 OpenAI 的 `max_completion_tokens`；仍受课程上限约束。手填 Key 后，需要重建 API 容器以重新读取环境变量，单纯 `restart` 不会加载新变量：
+可选 `REBORN_AI_REASONING_EFFORT` 仅在非空时传给 Chat Completions；此配置用 `none` 关闭思考，适配现有短回复预算，其他供应商按其支持值配置或留空。官方 DeepSeek 的输出上限通过请求体 `max_tokens` 发送，避免 SDK 自动改名为 OpenAI 的 `max_completion_tokens`；仍受课程上限约束。手填 Key 后，需要重建 API 容器以重新读取环境变量，单纯 `restart` 不会加载新变量：
 
 ```powershell
-docker compose --env-file .tmp/npc-demo-20261113.env -p pythontopia-npc-demo-20261113 -f deploy/compose.yml up -d --no-deps api
+docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml up -d --no-deps api
 ```
 
 以上环境配置仅在尚未保存后台全站模型设置时生效。管理员可在“智能体设置 → 学生助教 API”填写 API 地址、模型和密钥，保存后无需重启；教师只能维护本班开关、默认角色及不高于全站上限的预算。保存不调用模型，点击“测试已保存连接”才发一次短请求。缺 Key 时显示不可用。
 
 默认每次提问最多6次助教模型调用、12次工具调用、120秒，回复最多2048 tokens，累计请求预算262144 tokens；最多另加一次摘要调用，计入实际额度。每日仍为用户12请求/120000 tokens、班级100请求/1200000 tokens；实际可用请求预算还受每日剩余额度限制。默认应用上下文上限32768、压缩触发24576，须根据供应商模型容量调整；未知模型使用保守估算。显式设置的 `REBORN_AI_REQUEST_TOKEN_RESERVATION`、`REBORN_AI_TIMEOUT_SECONDS` 仍可收紧运行上限，不再默认固定为12000/45。重启不自动重发。
 
-后台 API Key 使用 Fernet 加密保存在独立配置表，主密钥默认 `REBORN_STORAGE_ROOT/.secrets/assistant.key`（Compose 为 `/app/storage/.secrets/assistant.key`）；可用 `REBORN_AI_MASTER_KEY_FILE` 指定私有路径。首次保存自动以独占创建方式生成，Linux权限0600，存储目录0700。备份数据库必须同时备份对应主密钥；主密钥丢失或不匹配时调用明确失败，管理员可重新填写密钥。禁止提交到 Git、放入课程包或公开文件服务；API日志和响应不输出密钥。沿用现有存储卷，无需增加容器或消息队列。迁移先执行 `alembic upgrade head` 至 f942bc358da1，再更新双前端；旧聊天历史保留，新消息会补全状态。
+后台 API Key 使用 Fernet 加密保存在独立配置表，主密钥默认 `REBORN_STORAGE_ROOT/.secrets/assistant.key`（Compose 为 `/app/storage/.secrets/assistant.key`）；可用 `REBORN_AI_MASTER_KEY_FILE` 指定私有路径。首次保存自动以独占创建方式生成，Linux权限0600，存储目录0700。备份数据库必须同时备份对应主密钥；主密钥丢失或不匹配时调用明确失败，管理员可重新填写密钥。禁止提交到 Git、放入课程包或公开文件服务；API日志和响应不输出密钥。沿用现有存储卷，无需增加容器或消息队列。升级前按数据库结构升级小节备份并迁移到head，再更新相关前端；旧聊天历史保留，新消息会补全状态。
 
 ### go-judge（默认包含，仅 Python）
 
@@ -263,7 +252,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 讲解生成使用一套独立的作者期模型配置，与助教预算分开：`REBORN_AUTHORING_AI_API_KEY`、`REBORN_AUTHORING_AI_BASE_URL`、`REBORN_AUTHORING_AI_MODEL`、`REBORN_AUTHORING_AI_VISION_MODEL`，以及可选 `REBORN_AUTHORING_AI_EFFORT`、`REBORN_AUTHORING_AI_MAX_TOKENS`、`REBORN_AUTHORING_AI_TIMEOUT_SECONDS`、`REBORN_AUTHORING_AI_DAILY_PAGES`。接口为 OpenAI 兼容的 chat completions；上述变量统一放在 `deploy/.env`（模板 `deploy/.env.example`）。管理员也可在“智能体设置 → 讲稿生成 / 语音合成”分别填写连接、模型/音色与额度。每项服务未保存时读取环境初始化值；保存后以数据库配置为准，新请求生效，无需重启。未配置时审校界面显示真实不可用，不伪造讲解。
 
-页图渲染需要宿主机或镜像内有 `pdftoppm`（poppler）。当前 Windows 本机为 `B:/Latex/2026/bin/windows/pdftoppm.EXE`（poppler 25.02），**不支持 `-jpeg`**，只能先转 PNG 再交 Pillow 压成 JPEG；渲染宽 1600px、质量 82，单页约 200KB，在供应商每图 token 封顶内。
+页图渲染需要宿主机或镜像内安装并可执行 `pdftoppm`（poppler）。程序先转PNG，再由Pillow压成JPEG；不要求某台机器的固定安装路径。缺少依赖或字体时应检查具体材料的渲染结果。
 
 生成参数按实测锁定：关思考（`reasoning_effort=none`）、`max_tokens` 至少8000、`response_format=json_object`；成功判定需同时满足 JSON 可解析、正文非空、`finish_reason` 不为 `length`。开着思考时单页耗时升到15–55秒，且预算不足会返回空正文。批量校准按页窗滚动摘要，参数见 `backend/app/narration/calibrate.py`。改动 `prompts.py` 的正文会自动改变幂等键（提示词指纹参与哈希），不需要手动改版本号也不会复用旧讲解；`PROMPT_VERSION` 只用于追踪。校准每窗最多4页，携带原文/必要页图及完整讲解，回复上限2048 tokens；逐窗续租。整册仍是同步请求，大资料可能超过网关300秒上限，应检查任务状态后再操作，不盲目重复调用。
 
@@ -271,7 +260,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 ### 语音合成现状
 
-当前只使用云端语音：`REBORN_TTS_PROTOCOL=deepseek` + `REBORN_TTS_BASE_URL=https://api.deepseek.com`。自托管方案（Zonos3-Mini、Kokoro-82M ONNX）在 2026-11-14 试过并暂缓：Kokoro 的中文普通话质量不达标，Zonos3 未做基准；相关脚本与镜像已从仓库移除，评测数据见[验收记录](acceptance.md#本地语音合成试跑核验2026-11-14)。
+项目使用云端语音，配置入口见上方“资料讲解与语音合成”；当前支持的协议及参数见环境模板和后台配置。仓库不提供自托管语音镜像，部署者需在自己的授权环境验证音质、格式和容量。
 
 ### PPT / PPTX转换
 
@@ -346,9 +335,9 @@ Windows测试进程显式使用UTF-8，避免旧夹具的默认文本读取采�
 
 自动化测试使用 backend/tests/source_fixtures.py 和 tests/fixtures/teaching-scripts 的合成课程，不代表原教材正确。fixture_seed/fixture_package/fixture_instances 仅位于 tests，不是运行导入入口。浏览器测试包通过 PYTHONPATH=tests 调用 fixture_package 生成 v3 目录，放入独立交换区；课程包 ID 通过 REBORN_E2E_COURSE_PACKAGE 指定。涉及迁移或导入时，在全新隔离数据库执行相应升级、重复升级或重复导入检查。PostgreSQL并发专项需要显式 `REBORN_TEST_DATABASE_URL`，测试会创建临时 schema 并清理，不能指向真实演示库或生产库。当前live判题使用 `REBORN_LIVE_GO_JUDGE_URL` 和 `REBORN_GO_JUDGE_AUTH_TOKEN`；未配置的外部专项应记录为跳过。
 
-后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。涉及相应改动时，真实迁移、重复seed和PostgreSQL锁验证独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关，最新结果见acceptance。
+后端通用db夹具每次测试复制独立的SQLite内存库，只将合成建表和seed准备一次；测试中的提交、删除和Session均隔离。涉及相应改动时，真实迁移、重复seed和PostgreSQL锁验证独立执行，不用快照代替这些断言。默认串行，不依赖未锁定的pytest-xdist；实际耗时与机器、启用专项有关。
 
-2026-11-16按用户要求删除GitHub Actions工作流并关闭仓库Actions。功能完成后的本机验证由开发者负责，不依赖远端CI，也不擅自恢复工作流；阶段性提交不强制跑完整套件。按上表选择受影响端、模块、数据库或浏览器检查；独立PostgreSQL专项需显式配置测试库，缺少条件时如实记录跳过。真实模型、TTS和正式判题另做授权集成验证。
+本项目不使用GitHub Actions，本机验证按上表选择。真实模型、TTS、判题及外部存储的集成验证需具备对应环境与授权；缺少条件时如实说明跳过。
 
 地图/素材相关修改从仓库根检查：
 
@@ -370,6 +359,8 @@ git diff --check
 `town_hub.json` 的生成入口为 `scripts/generate-maps.mjs`，图书馆为 `scripts/generate-library.mjs`；实际生成会写文件，不能用来替代只读检查。资源存在审计只证明文件存在，不证明视觉排版或真实渲染已经通过。
 
 ### 浏览器环境与专项
+
+已知待核实项（记录于2026-11-16，本次文档整理未重跑）：学生浏览器用例assessmentPaper仍引用已移除的禁用按钮，narrationLearning仍使用旧material_id请求字段。相关套件不能视为全通过；修改对应功能时需先核对现行界面与契约，再修复用例并定向验证。
 
 Playwright不会自动启动服务器。先准备独立验收数据库、媒体/交换目录及专用教师账号，设置E2E_URL、ADMIN_E2E_URL（同域入口）、E2E_TEACHER_STUDENT_ID、E2E_TEACHER_PASSWORD。跨教师权限另需E2E_OTHER_TEACHER_STUDENT_ID/PASSWORD。将解压后的完整测试包放进隔离交换目录，设置 REBORN_E2E_COURSE_PACKAGE 为清单的 package_id。学生用例先创建班级并显式导入。后台包往返测试在同一隔离环境运行，测试进程的 REBORN_COURSE_EXCHANGE_ROOT 指向可访问的交换目录。
 
@@ -401,15 +392,17 @@ npm run test:e2e -- --project=desktop --workers=1
 
 `node scripts/load-world.mjs` 需要显式 `REBORN_LOAD_TOKEN` 和 `REBORN_LOAD_CLASSROOM`，可通过 `REBORN_LOAD_URL` 选择隔离API；默认200次请求、10并发，仅测已登录世界读取，不能作为学生AI或判题并发能力的证明。
 
-功能交付时，在[验收记录](acceptance.md)汇总有效的通过、失败、跳过和未验证边界；只在有待办或交接变化时更新[续做记录](reborn-migration.md)，不为每次调试重复追加记录。不要在本手册反复追加某轮“当前运行”、备份文件名、测试数量或历史迁移头。
+交付回复说明实际通过、失败、跳过及未验证范围；需要长期留存时将日志与交接信息保存在本地忽略目录。公开手册不追加个人运行状态、测试次数或备份路径。
 
 ## 常见故障
+
+外部模型、TTS、S3、PPT/PPTX转换及go-judge的可用性与隔离能力必须在目标环境验证，历史本机结果不构成新部署保证。容量需按实际班级与AI/判题负载测试，单账号世界读取不能代表这些服务的容量。
 
 | 现象 | 先检查 |
 | --- | --- |
 | Web能打开，但API/登录失败 | 同项目 `ps`、API日志和 `/api/health`；区分镜像构建、数据库迁移、代理与账号问题 |
 | 端口被占用或启动到了另一环境 | 环境文件、项目名和端口；给新环境换端口，不停止无关服务 |
-| YAML修改不生效 | 校验是否通过、是否显式import-course、挂载来源与目标数据库是否正确；重建API不再自动导入内容 |
+| YAML修改不生效 | 校验是否通过、是否在后台完成目录包预览并确认导入、挂载来源与目标数据库是否正确；重建API不再自动导入内容 |
 | 页面显示旧地图或旧前端 | API/Web共同配置是否同时重建，Web镜像和浏览器缓存是否更新 |
 | PDF/视频缺失或无权限 | 是否显式导入材料包、导入的数据库与存储是否一致、章节是否开放；文本测试夹具不包含原教材媒体 |
 | 助教不可用或回复中断 | 后端模型凭据/预算、活动授权和真实供应商状态；中断不自动重发，不能用假回复替代 |
@@ -418,20 +411,6 @@ npm run test:e2e -- --project=desktop --workers=1
 | 没有开发工具或重置返回409 | API两个显式开关、学生身份、班级关系与未完成判题/助教；不通过前端改状态绕过 |
 | Playwright首次运行失败 | 浏览器安装、`E2E_URL`、专用教师凭据、服务/媒体前置与用例skip原因；不要误报为业务失败或成功 |
 | 迁移失败或升级后资料异常 | 保留日志，核对所选库、锁文件、在线迁移条件与备份；不要删库、改迁移标记或覆盖学生记录 |
-
-## 开发环境废弃内容清理
-
-先确认目标是独立开发数据库与私有存储。`python -m app.cli cleanup-content`默认仅报告候选与跳过原因；`--apply`执行实际清理并要求显式`REBORN_ENV=development`。先移除自动导入路径，再执行清理及重启核对，避免旧题复活。命令不清空用户或班级，不删除仍被当前第一堂课、活动、正式提交、试卷凭据、任务剧情或助教会话引用的内容；普通数据库迁移不承担业务删除。真实环境的清理范围必须另行限定，不能将开发apply直接照搬生产。
-
-容器首次课程导入示例（同一独立Compose项目，两个来源路径均由操作者提供）：
-
-```powershell
-$courseSource = (Resolve-Path 'E:\path\course-pack-43').Path
-$courseContent = (Resolve-Path 'E:\path\content').Path
-docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml run --rm --no-deps -v "${courseSource}:/import/course:ro" -v "${courseContent}:/import/content:ro" api python -m app.cli import-course --source /import/course --content /import/content
-```
-
-导入操作复用同一数据库和文件卷；先完成数据库迁移，业务使用中另择维护时间导入。媒体包通过前述独立可信来源导入，不复制进镜像或前端公共目录。
 
 ## 课程包离线清单预检
 
@@ -447,17 +426,16 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 当前字段、资源格式、限额及未覆盖范围见[预检契约](content-authoring.md#清单与资源预检契约)。
 
-## v2 结构升级前置条件
+## 旧数据库升级前置条件
 
 迁移 ea30c9b172f4 要求旧 NPC 表为空，只修改结构，不转换旧课程。它不会自动清空数据，也不提供旧格式运行。未授权清理的环境须停止升级并保留备份，不得套用本机测试清理操作。
 
-本轮 17234 的处理限定四个现有班级：先导出数据库与私有文件，恢复到独立数据库验证；停写后在事务中清理课程定义和关联学习/作答/成绩/体验进度，核对账号、班级、成员和体验身份指纹，随后运行新迁移。原 data/course 包和资源保留，升级后由用户自行导入。备份路径、恢复演练和前后数量统一记录在 acceptance。
 
-课程包表格展示目录名与摘要。新导出目录格式为 export-<班级ID>-<安全课程名>-<北京时间YYYYMMDD-HHMMSS>-<8位随机串>，课程名称中的文件系统禁用字符替换为短横线，名称最多48字符。旧目录可继续使用。
+课程包导出文件夹名称见[目录课程包操作](#目录课程包操作)，既有目录可继续选择，但清单及内容必须通过当前格式校验。
 
 角色图片清理与课程交换清理共用启动/每10分钟后台周期。角色保存事务提交后立即尝试清理退休图片，失败保留在课程私有状态队列重试；未提交上传超过24小时过期。文件只允许清理所属课程的 characters 前缀，系统素材不参与清理。
 
-课程设置升级至 f318a72c90de：先备份当前环境，再执行 alembic upgrade head；一次性将存储字段 library_npc_id 改名为 default_npc_id，并允许 activities.npc_key 为空。旧包不会转换，需更新 assistant/settings.yaml 后重新校验。不要为兼容旧包恢复旧字段。课程包源仅保留 data/course/python-town-chapter1；私有包与媒体不入 Git，导出产生新目录时由教师决定保留/清理。
+课程设置升级至 f318a72c90de：先备份当前环境，再执行 alembic upgrade head；一次性将存储字段 library_npc_id 改名为 default_npc_id，并允许 activities.npc_key 为空。旧包不会转换，需更新 assistant/settings.yaml 后重新校验。不要为兼容旧包恢复旧字段。私有包与媒体不入Git，导出目录按课程交换规则保留或清理。
 
 ## Python 浏览器运行验证
 
@@ -469,9 +447,9 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 后台进入“评测管理”：先检查连接状态、检测时间、队列处理器心跳，再按学生或提交编号查看详情。管理员可立即检测；维护前填写原因并暂停全站派发，等待正在执行的任务结束，处理服务后检查连接并恢复。暂停状态跨API重启保留，恢复不会重判已有成绩。不可用期间新提交保留prepared，UI显示等待；浏览器样例仍可运行。
 
-结果待核查表示请求可能执行但完整回执缺失，不能盲目重送；保存提交编号并核对服务事件、已记录用例与部署日志。页面只展示业务诊断和受限健康事件，不展示Docker原始日志或提供重启容器按钮。宿主机故障、自动告警、历史日志回填和人工改分/重判均不属于本轮功能。私有输出与代码属于教学数据，应随数据库备份保护，不放入公开日志或AI提示。
+结果待核查表示请求可能执行但完整回执缺失，不能盲目重送；保存提交编号并核对服务事件、已记录用例与部署日志。页面只展示业务诊断和受限健康事件，不展示Docker原始日志或提供重启容器按钮。宿主机故障、自动告警、历史日志回填和人工改分/重判均不属于当前管理能力。私有输出与代码属于教学数据，应随数据库备份保护，不放入公开日志或AI提示。
 
-评测页默认查看近七个自然日（含今天），可改为近一天/三十天、自定义日期或全部时间。后台日期以VITE_TIME_ZONE为准；历史异常超出所选范围后不计入卡片，仍可用“全部时间”查回。查看老待处理任务时，同时核对不受筛选影响的全站实时队列。服务事件只保留最近50条，日期筛选不承诺恢复更早事件。本轮日期筛选不增加迁移、不清理业务数据。
+评测页默认查看近七个自然日（含今天），可改为近一天/三十天、自定义日期或全部时间。后台日期以VITE_TIME_ZONE为准；历史异常超出所选范围后不计入卡片，仍可用“全部时间”查回。查看老待处理任务时，同时核对不受筛选影响的全站实时队列。服务事件只保留最近50条，日期筛选不承诺恢复更早事件。日期筛选不清理业务数据。
 
 ## 级联删除维护
 
@@ -479,7 +457,7 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 排查删除失败先查看预览blockers、过期和课程修订；确认冲突应重新预览，禁止绕过为直接SQL删除。历史评测已使用include_deleted读取；其他默认ORM查询只读当前内容，显式历史查询必须另行校验用户与班级。历史私有文件和已移除稳定ID继续保留，不能按“当前页面看不到”当作无用数据清理。删除预览和成功回执持久保存，本版未加入自动回收、恢复或永久清除入口。
 
-PR #2 集成迁移为 `a52e901c7d41`，合并 `f942bc358da1` 与 `f2a7c5d81b34` 两条已发布迁移链，不改写历史迁移。任一分支数据库升级前备份，然后执行 `alembic upgrade head` 与 `alembic check`。旧讲解因缺少新资料指纹会失效，保留正文、审校记录与学生历史，需教师重新核对；不会自动重生成或消耗模型额度。
+迁移链合并节点为 `a52e901c7d41`，合并 `f942bc358da1` 与 `f2a7c5d81b34` 两条已发布迁移链，不改写历史迁移。任一分支数据库升级前备份，然后执行 `alembic upgrade head` 与 `alembic check`。旧讲解因缺少新资料指纹会失效，保留正文、审校记录与学生历史，需教师重新核对；不会自动重生成或消耗模型额度。
 
 
 ### 语音配置示例与任务排查
@@ -492,7 +470,7 @@ PR #2 集成迁移为 `a52e901c7d41`，合并 `f942bc358da1` 与 `f2a7c5d81b34` 
 
 迁移到head后，从小镇菜单打开开发工具。普通学生需development和REBORN_DEV_TOOLS=1；生产教师使用后台“进入小镇”创建的本人隔离体验身份。先保存检查点，再定位章节/内容或预览任务阶段；确认前核对当前账号班级。定位阶段回到出生点，目标角色按当前节点继续剧情。检查点不回退正式提交、成绩与聊天，课程变更会失效。
 
-回归覆盖backend/tests/test_experience_tools.py、frontend/tests/experienceTools.spec.ts及原重玩/剧情/账号切换测试。使用新建隔离班级/账号执行内容定位→保存→阶段定位→恢复→继续学习；不得重置演示账号。迁移与重复导入在独立数据库进行，非生产普通学生路由必须缺席。验收边界见[本轮记录](acceptance.md#开发工具与检查点核验2026-11-15)。
+回归覆盖backend/tests/test_experience_tools.py、frontend/tests/experienceTools.spec.ts及原重玩/剧情/账号切换测试。使用新建隔离班级/账号执行内容定位→保存→阶段定位→恢复→继续学习；不得重置演示账号。迁移与重复导入在独立数据库进行，生产环境的普通学生重置路由必须缺席。
 
 ### 操作节点提示清理
 
@@ -521,7 +499,7 @@ python scripts/check-python-imports.py
 
 ## 仓库与开发分支
 
-当前仓库为 https://github.com/LangYiSheng/python-play-tutor.git，开发分支是 `main`，跟踪 `origin/main`。已有开发目录继续原地使用，新环境按以下方式获取：
+当前仓库为 [LangYiSheng/python-play-tutor](https://github.com/LangYiSheng/python-play-tutor)，开发分支是 `main`，跟踪 `origin/main`。已有开发目录继续原地使用，新环境按以下方式获取：
 
 ```sh
 git clone https://github.com/LangYiSheng/python-play-tutor.git
@@ -529,13 +507,12 @@ cd python-play-tutor
 git pull --ff-only
 ```
 
-日常提交后直接 `git push`；不向原 cypre5s/Pythontopia 推送，不将其旧分支、标签或历史拉回当前仓库。产品名、依赖、环境变量、Compose 项目名及现有私有目录不随仓库名改动。服务器切换不属于本次迁移，后续另行备份、核验并操作。
+日常提交后使用 `git push` 推送到 `origin/main`。保留当前环境配置、数据库与私有课程，变更Git管理关系不构成部署或数据操作授权。
 
-独立历史以原提交 `ab507e254a5f7ffeb40f84124b400d35286a32aa` 的完整树为根，随后保留109个开发提交和2个合并节点。旧到新SHA的[映射](archive/repository-migration-20261116/commit-map.json)只含文本标识，不引入旧Git对象；历史记录中的原SHA保留其当时语义。归档清单的 `source_commit` 指向新历史中的相同代码树，`original_source_commit` 保留原出处，文档检查不得为追溯而重新引入原仓库历史。
 
 ### 提交格式
 
-标题使用`类型(模块): 中文描述`，如`feat(course): 支持课程包导出`、`fix(reader): 修复阅读位置恢复`、`docs(workflow): 精简协作规则`。类型按实际改动选择feat、fix、refactor、docs、test或chore，模块使用简短明确的名称，正文用中文。提交前核对分支、差异和暂存范围；功能交付前按[基础检查](#基础检查)测稳，不把阶段性提交当成全量测试触发器。
+提交格式以[协作约定](../AGENTS.md#协作与提交)为准。提交前核对分支、差异和暂存范围；功能交付前按[基础检查](#基础检查)测稳，不把阶段性提交当成全量测试触发器。
 
 ### 查询库与API文档
 
