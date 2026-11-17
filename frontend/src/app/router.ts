@@ -5,7 +5,7 @@ import type { User } from "../shared/types";
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/change-password", component: () => import("../features/ChangePasswordPage.vue") },
+    { path: "/change-password", redirect: "/" },
     { path: "/", component: () => import("../features/EntryPage.vue") },
     { path: "/world", component: () => import("../features/WorldPage.vue") },
     {
@@ -22,10 +22,10 @@ export const router = createRouter({
 });
 router.beforeEach(async (to) => {
   if (to.path !== "/" && to.path !== "/credits" && !api.token()) return "/";
-  if (api.token() && to.path !== "/" && to.path !== "/credits") {
+  if (api.token() && to.path !== "/credits") {
     const session = useSession();
     try { session.user = await api.get<User>("/auth/me"); }
-    catch { session.reset(); return "/"; }
-    if (session.user.must_change_password && to.path !== "/change-password") return "/change-password";
+    catch { session.reset(); return to.path === "/" ? undefined : "/"; }
+    if (session.user.must_change_password && to.path !== "/") return "/";
   }
 });
