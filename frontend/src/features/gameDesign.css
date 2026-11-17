@@ -16,6 +16,7 @@
   --game-label-size: .875rem;
   --game-caption-size: .8125rem;
   --game-panel-padding: 16px;
+  --game-panel-header-height: 2.25rem;
   --game-control-height: 34px;
   --game-scroll-thumb: #a99b7e;
   color: var(--game-ink);

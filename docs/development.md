@@ -439,7 +439,7 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 ## Python 浏览器运行验证
 
-公开样例首次运行需要加载本地 /python-runtime/0.27.7/ 固定运行时；不可用时显示加载错误，不回退到服务端运行。标准输入输出与基础 Python 为支持范围，本机耗时不等同于正式判题耗时。运行 Vite 后，设置 PYTHON_RUNNER_DEV_URL 指向 Vite 地址，执行 frontend/e2e/pythonRunner.spec.ts；测试验证真实 WASM、超时、取消和 API 网络隔离。正式评测按 go-judge 小节部署独立 Linux 隔离服务。新增迁移 c421b8e091aa 只增加提示及初始代码字段，保留提交记录。Windows 测试设置 PYTHONUTF8=1 并为 pytest 指定工作区内独立 basetemp。
+公开样例首次运行需要加载本地 /python-runtime/0.27.7/ 固定运行时；不可用时显示加载错误，不回退到服务端运行。标准输入输出与基础 Python 为支持范围，本机耗时不等同于正式判题耗时。运行 Vite 后，设置 PYTHON_RUNNER_DEV_URL 指向 Vite 地址，执行 frontend/e2e/pythonRunner.spec.ts；测试验证真实 WASM、超时、取消和 API 网络隔离。练习正式提交复用浏览器运行时评测公开样例，保存完成回执且不进入后台评测管理；测验评测按 go-judge 小节部署独立 Linux 隔离服务。新增迁移 c421b8e091aa 只增加提示及初始代码字段，保留提交记录。Windows 测试设置 PYTHONUTF8=1 并为 pytest 指定工作区内独立 basetemp。
 
 ## 评测管理与故障排查
 

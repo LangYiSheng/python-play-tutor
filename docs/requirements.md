@@ -28,7 +28,7 @@
 | LEARN-06 | 测验满分 100，按 `correct_count * 100 // total` 向下取整；未判完为 `null`，不能显示成 0 分。所有题目真实判定结束即完成测验，全对另行表示；错误答案不阻断一次性测验剧情，基础设施故障不算答错。 | [产品](product.md)、[HTTP 契约](api-contract.md) |
 | LEARN-07 | NPC 可按目标、任务、章节状态与真实测验分数回应；镇长结束回复区分成绩。条件组合、入口、分支与选项均受限并在服务端鉴权，显示过的选项提交时也要复验。 | [内容配置](content-authoring.md)、[架构](architecture.md) |
 | LEARN-08 | 任务结束后仍可进行脚本日常聊天，条件满足时出现更多选项。日常独立于任务，复用演出引擎；随机结果落入会话，恢复与幂等重试不重抽。当前 NPC 的可执行教学和等待活动优先；闲聊不新增任务、学习或成绩记录、世界解锁标记及 AI 调用。 | [内容配置](content-authoring.md)、[架构](architecture.md) |
-| LEARN-09 | 正式Python提交通过独立go-judge容器执行，与db/api/web统一部署，任务使用现有数据库持久队列。API主机不执行学生代码，隐藏用例不外泄；未知派发先对账，旧成绩不重评。 | [架构](architecture.md)、[部署](development.md#可选服务与配置) |
+| LEARN-09 | 测验Python提交通过独立go-judge容器执行；练习提交在浏览器重新评测全部公开样例，后端校验回传结果、幂等保存完成记录，不进入judge队列。go-judge与db/api/web统一部署，任务使用现有数据库持久队列。API主机不执行学生代码，隐藏用例不外泄；未知派发先对账，旧成绩不重评。 | [架构](architecture.md)、[部署](development.md#可选服务与配置) |
 
 ## 学生与教师界面
 
@@ -84,7 +84,7 @@
 | ADMIN-04 | 教师进入小镇时使用本教师、本班的独立体验学生，可以完成任务并保存进度。首次进入创建身份，再进入恢复存档。开发工具只允许重玩该体验存档，体验数据不计入正式学生名册和班级统计。 | [后台规范](design/teacher-interface.md)、[接口契约](api-contract.md#session-and-classes) |
 | ADMIN-05 | 地图、对象、流程与任务使用一致编辑方式，支持多轮对白、明确分支、错误定位及草稿保护；操作节点只执行目标，说明文字使用对白节点。 | [后台规范](design/teacher-interface.md)、[内容规范](content-authoring.md) |
 | ADMIN-06 | 影响互动或任务的保存须先预览并确认，只重置本班受影响状态；保留阅读、作答、成绩与无关任务，包导入仍遵守证据保留规则。活动可选择同班课程的多章知识点。 | [后台规范](design/teacher-interface.md)、[接口契约](api-contract.md#teachers-and-authoring) |
-| ADMIN-07 | 教师可按日期查询本班正式Python提交和授权诊断，管理员可检测、暂停和恢复全站派发。实时队列不受历史筛选影响；未知派发先对账，不伪造诊断、不重判旧成绩。 | [后台](design/teacher-interface.md#评测管理)、[接口](api-contract.md#评测管理) |
+| ADMIN-07 | 教师可按日期查询本班服务器Python评测和授权诊断，排除练习浏览器提交，管理员可检测、暂停和恢复全站派发。实时队列不受历史筛选影响；未知派发先对账，不伪造诊断、不重判旧成绩。 | [后台](design/teacher-interface.md#评测管理)、[接口](api-contract.md#评测管理) |
 
 ## 开发与协作
 

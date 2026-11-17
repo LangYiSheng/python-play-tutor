@@ -36,6 +36,8 @@ def _latest_legacy(db, user_id, classroom_id, activity_id, question_ids):
     latest = {}
     for row in db.scalars(select(Submission).where(Submission.user_id == user_id, Submission.classroom_id == classroom_id,
             Submission.activity_id == activity_id, Submission.mode == "submit").order_by(Submission.created_at.desc(), Submission.id.desc())):
+        if row.feedback.get("source") == "browser_practice":
+            continue
         if row.question_id in question_ids and row.question_id not in latest:
             latest[row.question_id] = row
     return latest

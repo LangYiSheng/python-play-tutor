@@ -1,3 +1,4 @@
+from conftest import stage_server_submission
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
@@ -19,11 +20,7 @@ def submission(client, db, teacher, student, classroom, branching_course, monkey
     factory = sessionmaker(db.bind, expire_on_commit=False)
     monkeypatch.setattr(practice, "SessionLocal", factory)
     monkeypatch.setattr(management, "SessionLocal", factory)
-    response = client.post("/api/submissions", headers=student["headers"], json={
-        "classroom_id": classroom["id"], "activity_id": "ch2-code", "question_id": "course-476",
-        "idempotency_key": "management-submission", "code": "print(input())"})
-    assert response.status_code == 201, response.text
-    sid = response.json()["id"]
+    sid = stage_server_submission(db, student, classroom, key="management-submission")["id"]
     payload = db.get(SubmissionPayload, sid)
     payload.cases, payload.public_count = [{"input": "ok", "output": "ok"}, {"input": "PRIVATE-IN", "output": "PRIVATE-EXPECTED"}], 1
     db.commit()

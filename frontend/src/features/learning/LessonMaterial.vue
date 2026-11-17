@@ -15,11 +15,7 @@
     />
     <template v-else>
       <div class="lesson-reading-card">
-        <h2 class="game-card-title reader-card-title">
-          <GameIcon :name="material.kind === 'video' ? 'video' : 'book'" />{{
-            material.kind === "video" ? "视频浏览" : "文本浏览"
-          }}<span :title="material.title">{{ material.title }}</span>
-        </h2>
+        <GamePanelHeader class="reader-card-title" :title="material.kind === 'video' ? '视频浏览' : '文本浏览'" :icon="material.kind === 'video' ? 'video' : 'book'" :detail="material.title" heading />
         <article
           v-if="material.kind === 'text' && currentPage"
           class="lesson-text"
@@ -97,6 +93,7 @@ import {
   type ComponentPublicInstance,
 } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
+import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import type { Material } from "../../shared/types";
 import type { LectureSegment } from "../../shared/lectureTimeline";
 import type { useLessonVideo } from "./useLessonVideo";

@@ -1,14 +1,14 @@
 <template>
   <aside v-bind="attrs" v-show="!sidebarCollapsed" :hidden="sidebarCollapsed || attributeEnabled(attrs.hidden)" :inert="sidebarCollapsed || attributeEnabled(attrs.inert)" class="learning-support" aria-label="学习目标与助教">
-    <div class="support-heading">
+    <GamePanelHeader class="support-heading" tabs>
     <div class="support-tabs" :style="{ '--support-tab-count': tabs.length }" role="tablist" aria-label="学习支持" @keydown="moveTab">
-      <button :id="`${panelId}-goals-tab`" ref="goalsTab" role="tab" :aria-selected="tab === 'goals'" :tabindex="tab === 'goals' ? 0 : -1" :aria-controls="`${panelId}-goals`" @click="tab = 'goals'"><GameIcon name="target" />{{ questionOutline?.length ? "题目列表" : "学习目标" }}</button>
-      <button v-if="hasOutline" :id="`${panelId}-outline-tab`" ref="outlineTab" role="tab" :aria-selected="tab === 'outline'" :tabindex="tab === 'outline' ? 0 : -1" :aria-controls="`${panelId}-outline`" @click="tab = 'outline'"><GameIcon name="list" />快速跳转</button>
-      <button v-if="questionOutline?.length" :id="`${panelId}-questions-tab`" ref="questionsTab" role="tab" :aria-selected="tab === 'questions'" :tabindex="tab === 'questions' ? 0 : -1" :aria-controls="`${panelId}-questions`" @click="tab = 'questions'"><GameIcon name="list" />快速跳转</button>
-      <button :id="`${panelId}-assistant-tab`" ref="assistantTab" role="tab" :aria-selected="tab === 'assistant'" :tabindex="tab === 'assistant' ? 0 : -1" :aria-controls="`${panelId}-assistant`" @click="tab = 'assistant'"><GameIcon name="message" />{{ roleName }}</button>
+      <button :id="`${panelId}-goals-tab`" ref="goalsTab" role="tab" :aria-selected="tab === 'goals'" :tabindex="tab === 'goals' ? 0 : -1" :aria-controls="`${panelId}-goals`" @click="tab = 'goals'"><GameIcon name="target" /><span class="game-panel-header-tab-label">{{ questionOutline?.length ? "题目列表" : "学习目标" }}</span></button>
+      <button v-if="hasOutline" :id="`${panelId}-outline-tab`" ref="outlineTab" role="tab" :aria-selected="tab === 'outline'" :tabindex="tab === 'outline' ? 0 : -1" :aria-controls="`${panelId}-outline`" @click="tab = 'outline'"><GameIcon name="list" /><span class="game-panel-header-tab-label">快速跳转</span></button>
+      <button v-if="questionOutline?.length" :id="`${panelId}-questions-tab`" ref="questionsTab" role="tab" :aria-selected="tab === 'questions'" :tabindex="tab === 'questions' ? 0 : -1" :aria-controls="`${panelId}-questions`" @click="tab = 'questions'"><GameIcon name="list" /><span class="game-panel-header-tab-label">快速跳转</span></button>
+      <button :id="`${panelId}-assistant-tab`" ref="assistantTab" role="tab" :aria-selected="tab === 'assistant'" :tabindex="tab === 'assistant' ? 0 : -1" :aria-controls="`${panelId}-assistant`" @click="tab = 'assistant'"><GameIcon name="message" /><span class="game-panel-header-tab-label" :title="roleName">{{ roleName }}</span></button>
     </div>
-    <SidebarToggle />
-    </div>
+    <template #actions><SidebarToggle /></template>
+    </GamePanelHeader>
     <section :id="`${panelId}-goals`" class="support-goals" role="tabpanel" :aria-labelledby="`${panelId}-goals-tab`" tabindex="0" :hidden="tab !== 'goals'" :inert="tab !== 'goals'">
       <slot name="goals">
       <p v-if="!goals.length" class="support-goals-empty">按照当前资料或题目，完成本次学习。</p>
@@ -91,6 +91,7 @@ import type { AssistantState } from "../../shared/assistantState";
 import { Comment, Fragment, Text, computed, isVNode, nextTick, ref, useAttrs, useSlots, watch, type VNodeChild } from "vue";
 import AssistantPanel from "../assistant/AssistantPanel.vue";
 import GameIcon from "../../shared/GameIcon.vue";
+import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import { lectureStamp } from "../../shared/lectureTimeline";
 import SidebarToggle from "../../shared/SidebarToggle.vue";
 import { useWorkspaceSidebar } from "../../shared/workspaceSidebar";

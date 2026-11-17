@@ -4,6 +4,27 @@ import { createPinia, setActivePinia } from "pinia";
 import AssistantPanel from "../src/features/assistant/AssistantPanel.vue";
 import { api } from "../src/shared/api";
 import { useSession } from "../src/shared/session";
+it('uses the send-button shape for an accessible stop icon and cancels the response', async () => {
+  sessionStorage.clear();
+  const pinia=createPinia(); setActivePinia(pinia);
+  const session=useSession(); session.user={id:9,student_id:'fixture',name:'测试',role:'student'}; session.classroomId=4;
+  const get=vi.spyOn(api,'get').mockResolvedValue({available:true,reason:''});
+  const post=vi.spyOn(api,'post').mockResolvedValue({id:'stop-test'});
+  let signal: AbortSignal | undefined;
+  const fetch=vi.spyOn(globalThis,'fetch').mockImplementation((_url,init)=>new Promise((_resolve,reject)=>{
+    signal=init?.signal as AbortSignal;
+    signal.addEventListener('abort',()=>reject(new DOMException('Stopped','AbortError')),{once:true});
+  }));
+  const wrapper=mount(AssistantPanel,{props:{activityId:'practice',allowed:true},global:{plugins:[pinia]}});
+  await flushPromises();
+  const sendClasses=wrapper.get('[aria-label="发送"]').classes();
+  await wrapper.get('textarea').setValue('问题'); await wrapper.get('form').trigger('submit'); await flushPromises();
+  const stop=wrapper.get('[aria-label="停止回复"]');
+  expect(stop.classes()).toEqual(sendClasses); expect(stop.text()).toBe(''); expect(stop.find('svg').exists()).toBe(true);
+  await stop.trigger('click'); await flushPromises(); expect(signal?.aborted).toBe(true);
+  expect(wrapper.find('[aria-label="发送"]').exists()).toBe(true);
+  wrapper.unmount(); get.mockRestore(); post.mockRestore(); fetch.mockRestore(); sessionStorage.clear();
+});
 describe("explicit isolated assistant stream fixture", () => {
   it('sends a frozen state only with an explicit question and retains failed input', async () => {
     sessionStorage.clear();

@@ -297,3 +297,13 @@ def read_activity(client, headers, classroom_id, activity_id):
                 response = client.post(f"/api/activities/{activity_id}/progress", headers=headers,
                     json={"classroom_id": classroom_id, "material_id": resource["material_id"], "page_no": page["page_no"]})
                 assert response.status_code == 200, response.text
+
+
+def stage_server_submission(db, student, classroom, *, key="server-judge-test", code="print(input())"):
+    """Seed a historical/server queue job independently of the browser practice API."""
+    from app.models import Activity, Question
+    from app.practice import public_submission, stage_submission
+    row = stage_submission(db, db.get(User, student["id"]), classroom["id"], db.get(Activity, "ch2-code"),
+                           db.get(Question, "course-476"), None, code, key, "submit")
+    db.commit()
+    return public_submission(row)

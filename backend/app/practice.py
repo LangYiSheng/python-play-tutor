@@ -18,6 +18,7 @@ from .judge import JudgeNotDispatched, JudgeSubmissionUnknown, JudgeUnavailable
 from .judge_management import probe_service, save_health
 from .go_judge import GoJudgeAdapter
 from .models import Classroom, QuestionSecret, Submission, User, now
+from .browser_practice import BrowserCase, stage_browser_submission
 
 router = APIRouter(tags=["practice"])
 
@@ -31,6 +32,7 @@ class SubmissionInput(BaseModel):
     mode: Literal["submit"] = "submit"
     answer: dict | list | str | bool | None = None
     code: str | None = Field(default=None, max_length=20000)
+    browser_cases: list[BrowserCase] | None = Field(default=None, min_length=1, max_length=20)
 
 
 def public_submission(row: Submission) -> dict:
@@ -92,6 +94,7 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
     activity = authorize_activity(db, user, body.classroom_id, body.activity_id)
     if user.role != "student":
         raise HTTPException(403, "教师预览不能写入学生成绩")
+    submitted_answer = [case.model_dump() for case in body.browser_cases] if body.browser_cases is not None else body.answer
     query = select(Submission).where(
         Submission.user_id == user.id, Submission.classroom_id == body.classroom_id, Submission.idempotency_key == body.idempotency_key
     )
@@ -101,7 +104,7 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
             body.activity_id,
             body.question_id,
             body.mode,
-            body.answer,
+            submitted_answer,
             body.code,
         ):
             raise HTTPException(409, "幂等键已用于不同提交")
@@ -114,7 +117,13 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
     if activity.kind == "assessment":
         raise HTTPException(409, "测验需要完成所有题目后统一提交试卷")
     try:
-        row = stage_submission(db, user, body.classroom_id, activity, question, body.answer, body.code, body.idempotency_key, body.mode)
+        if question.kind == "python":
+            row = stage_browser_submission(db, user, body.classroom_id, activity, question,
+                                           body.code, body.idempotency_key, body.browser_cases)
+        else:
+            if body.browser_cases is not None:
+                raise HTTPException(422, "非编程题不接受浏览器评测结果")
+            row = stage_submission(db, user, body.classroom_id, activity, question, body.answer, body.code, body.idempotency_key, body.mode)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -125,7 +134,7 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
             body.activity_id,
             body.question_id,
             body.mode,
-            body.answer,
+            submitted_answer,
             body.code,
         ):
             raise HTTPException(409, "幂等键已用于不同提交")

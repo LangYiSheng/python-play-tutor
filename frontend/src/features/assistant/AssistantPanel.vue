@@ -58,7 +58,7 @@
       ></textarea>
       <p v-if="overLimit" :id="`${inputId}-error`" class="assistant-input-error" role="alert">问题最多 2000 字，请删减 {{ questionLength - 2000 }} 字后发送。</p>
       <div class="assistant-form-actions">
-        <button v-if="busy" type="button" @click="cancel">停止回复</button
+        <button v-if="busy" type="button" class="primary assistant-send" aria-label="停止回复" title="停止回复" @click="cancel"><GameIcon name="stop" /></button
         ><button
           v-else
           type="submit"

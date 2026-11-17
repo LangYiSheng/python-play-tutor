@@ -1,7 +1,7 @@
 <template>
   <div class="pdf-reader" :aria-busy="loading || rendering">
     <div class="pdf-page-surface" :class="{ 'with-narration': materialId && hasNarration }">
-      <h2 class="game-card-title reader-card-title"><GameIcon name="description"/>{{ kind === "presentation" ? "PPT 浏览" : "PDF 浏览" }}</h2>
+      <GamePanelHeader class="reader-card-title" :title="kind === 'presentation' ? 'PPT 浏览' : 'PDF 浏览'" icon="description" heading />
       <div ref="stage" class="pdf-page-stage">
         <canvas
           v-show="rendered && !error"
@@ -47,6 +47,7 @@
 import LectureStage from "./LectureStage.vue";
 import type { LectureSegment } from "../../shared/lectureTimeline";
 import GameIcon from "../../shared/GameIcon.vue";
+import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../shared/api";
 import { fitPdfPage } from "../../shared/pdfPageLayout";

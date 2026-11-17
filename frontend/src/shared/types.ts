@@ -208,6 +208,7 @@ export interface PublicSampleResult {
   compile_output: string;
 }
 export interface SubmissionFeedback {
+  source?: 'browser_practice';
   passed_count?: number;
   total_count?: number;
   detail?: string;

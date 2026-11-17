@@ -1,3 +1,4 @@
+from conftest import stage_server_submission
 import asyncio
 import pytest
 from sqlalchemy import func, select
@@ -53,9 +54,9 @@ def test_boolean_requires_boolean_and_fill_handles_whitelist(client, student, cl
 
 def test_judge_dispatch_once_unknown_does_not_blindly_resend(client, db, student, classroom, monkeypatch, branching_course):
     monkeypatch.setattr(practice, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
-    result = submit(client, student, classroom, activity_id="ch2-code", question_id="course-476", code="print(input())", answer=None)
-    sid = result.json()["id"]
-    assert result.json()["status"] == "prepared"
+    result = stage_server_submission(db, student, classroom)
+    sid = result["id"]
+    assert result["status"] == "prepared"
     assert db.get(SubmissionPayload, sid).public_count == 3
 
     class Unknown:
@@ -75,8 +76,8 @@ def test_judge_dispatch_once_unknown_does_not_blindly_resend(client, db, student
 
 def test_worker_completes_without_browser(client, db, student, classroom, monkeypatch, branching_course):
     monkeypatch.setattr(practice, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
-    result = submit(client, student, classroom, activity_id="ch2-code", question_id="course-476", code="print(input())", answer=None)
-    sid = result.json()["id"]
+    result = stage_server_submission(db, student, classroom)
+    sid = result["id"]
 
     class FakeJudge:
         async def execute(self, code, cases, public_count):
@@ -93,8 +94,8 @@ def test_worker_completes_without_browser(client, db, student, classroom, monkey
 def test_judge_worker_recovers_database_outage_without_replaying_dispatch(client, db, student, classroom, monkeypatch, caplog, branching_course):
     from sqlalchemy.exc import OperationalError
 
-    response = submit(client, student, classroom, activity_id="ch2-code", question_id="course-476", code="print('x')", answer=None)
-    sid = response.json()["id"]
+    response = stage_server_submission(db, student, classroom, code="print('x')")
+    sid = response["id"]
     row = db.get(Submission, sid)
     row.status = "dispatching"
     db.commit()
@@ -133,8 +134,8 @@ def test_judge_worker_recovers_database_outage_without_replaying_dispatch(client
 @pytest.mark.parametrize("state", ["queued", "running"])
 def test_retired_pending_jobs_require_reconciliation_without_erasing_tokens(client, db, student, classroom, monkeypatch, branching_course, state):
     monkeypatch.setattr(practice, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
-    response = submit(client, student, classroom, activity_id="ch2-code", question_id="course-476", code="print(input())", answer=None)
-    sid = response.json()["id"]
+    response = stage_server_submission(db, student, classroom)
+    sid = response["id"]
     row = db.get(Submission, sid)
     row.status, row.judge_token = state, '["historical-receipt"]'
     db.commit()

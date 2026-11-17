@@ -317,7 +317,7 @@ def test_twenty_bounded_cases_publish_and_formally_submit_without_runtime_config
     activity_id = "twenty-cases-practice"
     response = client.post(
         "/api/teacher/activities",
-        json={"id": activity_id, "chapter_id": 179, "title": "Bounded cases", "kind": "practice", "npc_key": "mayor_py", "assistant_allowed": False},
+        json={"id": activity_id, "chapter_id": 179, "title": "Bounded cases", "kind": "assessment", "npc_key": "mayor_py", "assistant_allowed": False},
         headers=teacher["headers"],
      params={"classroom_id": classroom["id"]})
     assert response.status_code == 201, response.text
@@ -343,19 +343,14 @@ def test_twenty_bounded_cases_publish_and_formally_submit_without_runtime_config
     )
     assert response.status_code == 200
     response = client.post(
-        "/api/submissions",
-        json={
-            "classroom_id": classroom["id"],
-            "activity_id": activity_id,
-            "question_id": question_id,
-            "idempotency_key": str(uuid4()),
-            "mode": "submit",
-            "code": "print(input())"},
+        f"/api/activities/{activity_id}/assessment/submit",
+        json={"classroom_id": classroom["id"], "idempotency_key": str(uuid4()),
+              "answers": [{"question_id": question_id, "code": "print(input())"}]},
         headers=student["headers"],
     )
     assert response.status_code == 201, response.text
-    assert response.json()["status"] == "prepared"
+    assert response.json()["status"] == "grading"
     from app.integration_models import SubmissionPayload
 
-    payload = db.get(SubmissionPayload, response.json()["id"])
+    payload = db.get(SubmissionPayload, response.json()["results"][0]["id"])
     assert len(payload.cases) == 20 and payload.public_count == 19

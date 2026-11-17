@@ -1,3 +1,4 @@
+from conftest import stage_server_submission
 import asyncio
 import json
 import os
@@ -93,17 +94,14 @@ def test_connection_loss_after_a_case_is_unknown():
 
 def test_go_judge_unknown_dispatch_is_durable(client, db, student, classroom, monkeypatch, branching_course):
     monkeypatch.setattr(practice, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
-    response = client.post("/api/submissions", headers=student["headers"], json={
-        "classroom_id": classroom["id"], "activity_id": "ch2-code", "question_id": "course-476",
-        "idempotency_key": "go-judge-unknown-test", "code": "print(input())"})
-    assert response.status_code == 201
+    response = stage_server_submission(db, student, classroom, key="go-judge-unknown-test")
     calls = []
 
     def handler(request):
         calls.append(1)
         raise httpx.ReadTimeout("lost response", request=request)
 
-    sid = response.json()["id"]
+    sid = response["id"]
     adapter = GoJudgeAdapter("http://judge", httpx.MockTransport(handler))
     asyncio.run(practice.dispatch_one(sid, adapter))
     asyncio.run(practice.dispatch_one(sid, adapter))
@@ -137,12 +135,9 @@ def test_live_durable_dispatch_and_authenticated_receipt(client, db, student, cl
     secret = db.get(QuestionSecret, question.id)
     secret.hidden_cases = [{"input": "7", "output": "8"}]
     db.commit()
-    body = {"classroom_id": classroom["id"], "activity_id": "ch2-code", "question_id": question.id,
-            "idempotency_key": "live-go-judge-receipt", "code": "print(int(input())+1)"}
-    response = client.post("/api/submissions", json=body, headers=student["headers"])
-    assert response.status_code == 201, response.text
-    sid = response.json()["id"]
-    assert response.json()["status"] == "prepared"
+    response = stage_server_submission(db, student, classroom, key="live-go-judge-receipt", code="print(int(input())+1)")
+    sid = response["id"]
+    assert response["status"] == "prepared"
     asyncio.run(practice.dispatch_one(sid, adapter))
     db.expire_all()
     row = db.get(Submission, sid)
@@ -150,7 +145,6 @@ def test_live_durable_dispatch_and_authenticated_receipt(client, db, student, cl
     assert not row.judge_token
     receipt = client.get(f"/api/submissions/{sid}?classroom_id={classroom['id']}", headers=student["headers"]).json()
     assert receipt["status"] == "accepted" and len(receipt["feedback"]["samples"]) == 1
-    assert client.post("/api/submissions", json=body, headers=student["headers"]).json()["id"] == sid
     # A completed receipt cannot be dispatched again, even with an unavailable adapter.
     asyncio.run(practice.dispatch_one(sid, GoJudgeAdapter("")))
     db.expire_all()

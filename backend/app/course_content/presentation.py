@@ -19,7 +19,8 @@ def public_question(question: Question):
         "kind": question.kind,
         "prompt": question.prompt,
         "options": question.options,
-        "samples": question.samples,
+        "samples": [{"input": sample.get("input", ""), "output": sample.get("expected_output", sample.get("output", ""))}
+                    for sample in question.samples],
         "hints": question.hints,
         "starter_code": question.starter_code,
         "source": question.source,

@@ -187,25 +187,6 @@
   padding: 0;
 }
 
-.game-workspace .reader-card-title {
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  background: #e9e5da;
-  border-bottom: 1px solid var(--game-line);
-  font-size: .85rem;
-}
-
-.game-workspace .reader-card-title > span {
-  margin-left: auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--game-muted);
-  font-size: .8125rem;
-  font-weight: 400;
-}
-
 .game-workspace .lesson-reading-card > .notice {
   margin: 16px;
 }

@@ -114,11 +114,11 @@ BuildingUnlock 以学生、班级、课程实例和建筑 ID 标识；不再读�
 
 ## 浏览器公开样例执行
 
-固定 Pyodide 0.27.7 随 Web 镜像本地分发，在 opaque-origin sandbox iframe 的独立 Worker 中运行，不传入应用凭据。CSP 只允许版本化静态运行时目录，禁止应用 API 和任意网络请求；仅该静态目录允许跨源读取。编辑编程题时最多提前准备两个空白执行环境，取用后补充；每个环境只执行一个样例，变量、文件和被修改的 Python 模块不复用。输出最多16000字符，加载最多60秒，执行最多5秒；退出、换题或停止会回收相关执行环境。预热不运行学生代码、不调用模型、不产生学习证据。Worker 不是授权或成绩边界，结果仅供本机反馈；API 不接受浏览器通过状态作为证据。正式判题走持久化 go-judge 提交、幂等及未知派发对账路径；旧执行器token字段仅保留历史证据，不再运行旧适配器。
+固定 Pyodide 0.27.7 随 Web 镜像本地分发，在 opaque-origin sandbox iframe 的独立 Worker 中运行，不传入应用凭据。CSP 只允许版本化静态运行时目录，禁止应用 API 和任意网络请求；仅该静态目录允许跨源读取。编辑编程题时最多提前准备两个空白执行环境，取用后补充；每个环境只执行一个样例，变量、文件和被修改的 Python 模块不复用。输出最多16000字符，加载最多60秒，执行最多5秒；退出、换题或停止会回收相关执行环境。预热不运行学生代码、不调用模型、不产生学习证据。Worker 不是可信执行证明。普通“运行公开样例”仅提供反馈；练习“提交代码”重新执行全部公开样例，API 校验身份、班级、活动与题目归属、样例完整性及当前输入/预期输出，并自行比较回传 stdout/stderr，保存标记为 browser_practice 的 Submission，不创建 SubmissionPayload。客户端不能指定通过数量；浏览器回传本身仍可被篡改，因此仅用作练习完成依据，不用于测验评分。网络重试复用原代码、结果和幂等键；执行失败、中止或页面/身份失效不提交完成记录。测验判题走持久化 go-judge 提交、幂等及未知派发对账路径；旧执行器token字段仅保留历史证据，不再运行旧适配器。
 
 ### 正式 Python 判题队列
 
-正式提交使用go-judge执行器。Submission与私有SubmissionPayload复用现有数据库，prepared为持久等待状态；单API进程后台每批最多4份条件认领，逐例调用同步 `/run`，直接保存最终反馈。go-judge内部环境池/等待队列只负责临时执行调度，不代替持久业务队列。每批会等待全部4份结束后取下一批；长耗时程序可能增加后续等待，不保证所有提交秒内完成。
+测验代码提交使用go-judge执行器；历史服务器提交继续保留原回执及队列语义。评测管理的列表、数量和详情排除 browser_practice 回执；练习记录也不能转成测验旧成绩。Submission与私有SubmissionPayload复用现有数据库，prepared为持久等待状态；单API进程后台每批最多4份条件认领，逐例调用同步 `/run`，直接保存最终反馈。go-judge内部环境池/等待队列只负责临时执行调度，不代替持久业务队列。每批会等待全部4份结束后取下一批；长耗时程序可能增加后续等待，不保证所有提交秒内完成。
 
 go-judge本身返回的Accepted仅表示程序正常退出；GoJudgeAdapter在服务端比较输出后才产生答对证据。隐藏用例的预期、实际输出和诊断不出现在学生回执。超时、无效响应或已有用例执行后的断连可能已经执行，置submission_unknown，不重送；首次连接建立失败可确认未送出，保留prepared等待恢复。服务重启只恢复prepared，dispatching转待对账。旧执行器适配器与轮询已删除。历史queued/running在启动恢复时转为待对账，token仍保留且不会转送新执行器；既有成绩和失败记录不重判，不回退API宿主机执行。
 
@@ -153,7 +153,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `frontend/src/shared/session/` | `index.ts` 是唯一身份、班级和世界快照所有者；navigation、position、story、reading、experience 分别处理工作区导航、实时位置、对白幂等请求、串行阅读保存和恢复前准备。子模块显式接收引用与回调，不自行创建相互依赖的 store。 |
 | `frontend/src/features/developer/` | DeveloperWorkspace 组装账户概要、内容定位、任务阶段、体验检查点四个图标侧标签。模块内 API 和请求协调器负责权限范围、并发动作与迟到结果；重置指向当前学生在当前班级的进度。 |
 | `frontend/src/features/learning/` | LessonWorkspace 组装阅读与支持侧栏；LessonMaterial 负责 PDF、文本、视频展示；source、reading evidence、video、completion、goals 分别管理资料生命周期、阅读证据、播放采样、显式完成和目标展示。旧资料的迟到响应不能覆盖新资料，离开释放媒体 URL。 |
-| `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。正式判题仍由 API/隔离判题服务提供证据，浏览器运行不产生分数。 |
+| `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
 | `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境、输入、场景生命周期；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。 |
 

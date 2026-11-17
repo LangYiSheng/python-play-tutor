@@ -1,0 +1,51 @@
+import {test,expect} from '@playwright/test';
+
+test('practice submission runs real public Python samples, saves a receipt and shares card headers',async({page},info)=>{
+  test.skip(!process.env.PYTHON_RUNNER_DEV_URL,'Requires isolated Vite preview');
+  test.setTimeout(120000);
+  await page.goto(process.env.PYTHON_RUNNER_DEV_URL!+'/e2e/fixtures/browserPractice.html');
+  await page.getByRole('button',{name:'运行公开样例',exact:true}).click();
+  await expect(page.locator('.coding-outcome')).toHaveText('通过',{timeout:70000});
+  expect(await page.evaluate(()=>Reflect.get(window,'fixtureSubmissions')??[])).toHaveLength(0);
+  await page.getByRole('button',{name:'提交代码',exact:true}).click();
+  await expect(page.locator('.result-origin')).toHaveText('正式提交',{timeout:30000});
+  await expect(page.locator('.coding-pass-count')).toHaveText('2 / 2 个测试用例通过');
+  const saved=await page.evaluate(()=>Reflect.get(window,'fixtureSubmissions'));
+  expect(saved).toHaveLength(1); expect(saved[0].browser_cases).toHaveLength(2);
+  expect(saved[0].browser_cases[1].stdout).toBe('你好，Python！\n');
+  await page.screenshot({path:info.outputPath('browser-practice-passed.png'),fullPage:true});
+  await page.reload();
+  await expect(page.locator('.coding-pass-count')).toHaveText('2 / 2 个测试用例通过');
+  await page.locator('.monaco-editor').click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText('print("wrong")');
+  await page.getByRole('button',{name:'提交代码',exact:true}).click();
+  await expect(page.locator('.coding-outcome')).toHaveText('解答错误',{timeout:30000});
+  await expect(page.locator('.coding-pass-count')).toHaveText('0 / 2 个测试用例通过');
+  await expect(page.locator('.coding-failure-hints')).not.toContainText('其他数据和边界情况');
+  const headerColor=await page.locator('.coding-problem .coding-pane-title').evaluate(node=>getComputedStyle(node).backgroundColor);
+  const codingHeaders=await page.locator('.game-panel-header:visible').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
+  expect(codingHeaders).toHaveLength(4);
+  for(const height of codingHeaders) expect(height).toBe(36);
+  for(let i=0;i<3;i++) {
+    await page.getByRole('button',{name:'下一题',exact:true}).click();
+    const header=page.locator('.practice-heading');
+    await expect(header).toBeVisible();
+    expect(await header.evaluate(node=>getComputedStyle(node).backgroundColor)).toBe(headerColor);
+    const container=await page.locator('#practice-content-region').boundingBox(), bar=await header.boundingBox();
+    expect(Math.abs(bar!.x-container!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(bar!.y-container!.y)).toBeLessThanOrEqual(1);
+    const support=await page.locator('.support-heading').boundingBox();
+    expect(bar!.height).toBe(36);
+    expect(bar!.height).toBe(support!.height);
+    expect(bar!.y).toBe(support!.y);
+    await expect(header).toContainText('小镇练习：公开样例评测');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:info.outputPath(`question-header-${i}.png`),fullPage:true});
+  }
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  const enlarged=await page.locator('.game-panel-header:visible').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
+  expect(enlarged).toEqual([72,72]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('shared-header-200-percent.png'),fullPage:true});
+});

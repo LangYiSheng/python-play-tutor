@@ -1,7 +1,7 @@
 <template>
   <article ref="workbench" class="practice-question-card coding-workbench" :class="{ 'is-dragging': dragAxis }" :style="{ '--problem-fr': problemWidth + 'fr', '--code-fr': (100 - problemWidth) + 'fr', '--editor-fr': editorHeight + 'fr', '--cases-fr': (100 - editorHeight) + 'fr' }" :data-question-id="question.id">
     <section class="coding-pane coding-problem" aria-label="题目内容">
-      <header class="coding-pane-title"><GameIcon name="description" />题目描述</header>
+      <GamePanelHeader class="coding-pane-title" title="题目描述" icon="description" />
       <div class="coding-pane-body">
         <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
         <p class="question-prompt">{{ question.prompt }}</p>
@@ -14,15 +14,15 @@
     <div class="coding-divider coding-divider-vertical"><div class="pane-resize-handle" role="separator" tabindex="0" aria-label="调整题目与代码宽度" aria-orientation="vertical" :aria-valuenow="problemWidth" :aria-valuemin="25" :aria-valuemax="70" @pointerdown="startResize($event, 'width')" @pointermove="resize" @pointerup="finishResize" @pointercancel="finishResize" @lostpointercapture="finishResize" @keydown="resizeKeys($event, 'width')" @dblclick="resetSize('width')"><span></span></div></div>
     <div class="coding-divider coding-divider-horizontal"><div class="pane-resize-handle" role="separator" tabindex="0" aria-label="调整代码与用例高度" aria-orientation="horizontal" :aria-valuenow="editorHeight" :aria-valuemin="25" :aria-valuemax="75" @pointerdown="startResize($event, 'height')" @pointermove="resize" @pointerup="finishResize" @pointercancel="finishResize" @lostpointercapture="finishResize" @keydown="resizeKeys($event, 'height')" @dblclick="resetSize('height')"><span></span></div></div>
     <section class="coding-pane coding-source" aria-label="代码编辑器">
-      <header class="coding-pane-title"><GameIcon name="code" />代码 <span>Python · 标准输入输出</span></header>
-      <pre v-if="readOnly || pendingMode" class="question-readonly-code">{{ code }}</pre>
+      <GamePanelHeader class="coding-pane-title" title="代码" icon="code" detail="Python · 标准输入输出" />
+      <pre v-if="readOnly || pendingMode || busy" class="question-readonly-code">{{ code }}</pre>
       <CodeEditor v-else :model-value="code" @update:model-value="$emit('update:code', $event)" />
     </section>
     <section class="coding-pane coding-tests" aria-label="用例与结果">
-      <header class="coding-pane-title coding-tabs" role="group" aria-label="用例视图">
-        <button :aria-pressed="tab === 'cases'" @click="tab = 'cases'"><GameIcon name="cases" />测试用例</button>
-        <button :aria-pressed="tab === 'results'" @click="tab = 'results'"><GameIcon :name="judging ? 'spinner' : 'terminal'" :class="{ 'is-spinning': judging }" />测试结果</button>
-      </header>
+      <GamePanelHeader class="coding-pane-title coding-tabs" tabs role="group" aria-label="用例视图">
+        <button :aria-pressed="tab === 'cases'" @click="tab = 'cases'"><GameIcon name="cases" /><span class="game-panel-header-tab-label">测试用例</span></button>
+        <button :aria-pressed="tab === 'results'" @click="tab = 'results'"><GameIcon :name="judging ? 'spinner' : 'terminal'" :class="{ 'is-spinning': judging }" /><span class="game-panel-header-tab-label">测试结果</span></button>
+      </GamePanelHeader>
       <div class="coding-pane-body" :class="{ 'is-empty': tab === 'results' && !judging && !outcome }" :aria-busy="judging">
         <template v-if="tab === 'results' && judging">
           <div class="coding-run-progress" role="status">正在判题…<button v-if="running" class="stop-run" @click="controller?.abort()"><GameIcon name="stop" />停止运行</button></div>
@@ -41,7 +41,7 @@
             <p v-if="resultSource === 'submission' && resultDetail">{{ resultDetail }}</p>
             <pre v-if="resultSource === 'submission' && publicDiagnostic" class="coding-error" role="alert">{{ publicDiagnostic }}</pre>
             <section v-if="resultSource === 'submission' && failureHints.length" class="coding-failure-hints" aria-label="排查建议">
-              <h5>{{ outcome === 'wrong_answer' ? '为什么运行正确，提交却错误？' : '可以检查这些地方' }}</h5>
+              <h5>{{ outcome === 'wrong_answer' && result?.feedback.source !== 'browser_practice' ? '为什么运行正确，提交却错误？' : '可以检查这些地方' }}</h5>
               <ul><li v-for="hint in failureHints" :key="hint">{{ hint }}</li></ul>
               <p>以上是排查方向，不代表已确定的错误原因。</p>
             </section>
@@ -82,6 +82,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
+import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import { randomUUID } from '../../shared/uuid';
 import type { AssistantFeedback, AssistantLocalRun } from '../../shared/assistantState';
 import { createPythonRunner, sameOutput } from "./pythonRunner";
@@ -147,7 +148,7 @@ const submissionCounts = computed(() => {
 });
 const failureHints = computed(() => {
   switch (outcome.value) {
-    case 'wrong_answer': return ['公开样例只覆盖部分输入，正式提交还会检查其他数据和边界情况。', '核对空格、换行、中英文标点；不要输出 input() 提示、调试文字或多余说明。', '检查最小值、零、负数、重复值及多行输入，避免只针对示例写死答案。'];
+    case 'wrong_answer': return [props.result?.feedback.source === 'browser_practice' ? '提交时会用本次代码重新执行全部公开样例，请检查未通过的样例。' : '公开样例只覆盖部分输入，正式提交还会检查其他数据和边界情况。', '核对空格、换行、中英文标点；不要输出 input() 提示、调试文字或多余说明。', '检查最小值、零、负数、重复值及多行输入，避免只针对示例写死答案。'];
     case 'runtime_error': case 'compile_error': return ['检查缩进、语法、变量名，以及输入是否按题目要求读取。', '考虑空输入、下标越界、除零或类型转换失败；浏览器与判题环境的 Python 版本、可用库也可能不同。'];
     case 'time_limit': return ['检查循环是否能够结束，是否读取了超出题目范围的输入。', '较大的测试数据可能使重复计算超时，尝试减少循环和重复工作。'];
     case 'memory_limit': return ['检查是否创建了过大的列表、字符串，或不断向容器中添加数据。'];

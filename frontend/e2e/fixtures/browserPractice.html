@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>浏览器练习验收夹具</title></head>
+<body><main id="fixture" class="game-workspace"></main>
+<script type="module">
+import {createApp, h} from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import PracticeWorkspace from '/src/features/practice/PracticeWorkspace.vue';
+import {useSession} from '/src/shared/session';
+import {api} from '/src/shared/api';
+import '/src/features/gameDesign.css';
+const pinia=createPinia(); setActivePinia(pinia);
+const session=useSession();
+session.user={id:999,name:'测试学生',student_id:'999',role:'student'}; session.classroomId=999;
+session.world={player:{map_key:'town_hub',tile_x:22,tile_y:36,direction:'down'},quests:[],chapters:[],flags:[],npcs:[]};
+const samples=[{input:'小林',output:'你好，小林！'},{input:'Python',output:'你好，Python！'}];
+const question={id:'browser-python',kind:'python',title:'向小镇问好',prompt:'读取一个名字，输出：你好，名字！',samples,starter_code:'print("你好，" + input() + "！")'};
+const other=['single_choice','boolean','fill'].map((kind,index)=>({id:`question-${index}`,kind,title:['选择正确答案','判断语句','填写答案'][index],prompt:'用于验证题目卡片标题栏',options:kind==='single_choice'?['甲','乙']:[],samples:[]}));
+session.activity=async()=>({id:'browser-practice',title:'小镇练习：公开样例评测',kind:'practice',chapter_id:1,assistant_allowed:false,resources:[],questions:[question,...other]});
+api.get=async path=>{
+  if(path.startsWith('/submissions/')) return JSON.parse(sessionStorage.getItem('fixture-receipt'));
+  if(path.includes('/progress')) return {completed:false,accepted_question_ids:['browser-python']};
+  return {available:false,reason:'验收不调用模型'};
+};
+api.post=async(path,body)=>{
+  if(path!=='/submissions') throw Error('Unexpected write');
+  window.fixtureSubmissions ??= []; window.fixtureSubmissions.push(body);
+  const cases=body.browser_cases.map(item=>({...item,status:item.stderr?'runtime_error':item.stdout.trimEnd()===item.output.trimEnd()?'accepted':'wrong_answer'}));
+  const passed=cases.filter(item=>item.status==='accepted').length;
+  const receipt={id:'fixture-receipt',activity_id:'browser-practice',question_id:body.question_id,mode:'submit',status:passed===cases.length?'accepted':'wrong_answer',created_at:new Date().toISOString(),feedback:{source:'browser_practice',passed_count:passed,total_count:cases.length,samples:cases}};
+  sessionStorage.setItem('fixture-receipt',JSON.stringify(receipt)); return receipt;
+};
+createApp({setup:()=>()=>h('div',{class:'fixture-layout'},[
+  h('nav',{id:'fixture-toolbar'}),h('div',{class:'fixture-workspace'},[h(PracticeWorkspace,{activityId:'browser-practice',toolbarTarget:'#fixture-toolbar'})])
+])}).use(pinia).mount('#fixture');
+</script>
+<style>body{margin:0;background:#254638;font-family:Arial,'Microsoft YaHei',sans-serif}.fixture-layout{height:100vh;padding:0 16px 12px;box-sizing:border-box;display:flex;flex-direction:column}#fixture-toolbar{min-height:44px;display:flex;justify-content:center;align-items:center}.fixture-workspace{flex:1;min-height:0}</style>
+</body></html>

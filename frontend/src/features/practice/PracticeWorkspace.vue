@@ -14,14 +14,13 @@
       <button :aria-pressed="showAssistant" aria-controls="practice-assistant-region" @click="switchView(true)">目标与目录</button>
     </nav>
     <section id="practice-content-region" class="practice-content" :class="{ 'coding-content': current?.kind === 'python' && viewMode === 'single' }" tabindex="-1" aria-label="题目与代码" :hidden="compact && showAssistant" :inert="compact && showAssistant" :aria-busy="loading">
-      <header class="content-heading practice-heading" :class="{ 'assessment-heading': isAssessment && !modeTarget }">
-        <h2 class="game-card-title"><GameIcon name="practice"/>{{ activity?.title ?? "正在读取题目" }}</h2>
+      <GamePanelHeader class="practice-heading" :class="{ 'assessment-heading': isAssessment && !modeTarget }" :title="activity?.title ?? '正在读取题目'" icon="practice" heading>
         <Teleport defer :to="modeTarget || 'body'" :disabled="!modeTarget">
           <button v-if="isAssessment" class="assessment-mode-toggle" type="button" :title="viewMode === 'single' ? '切换到试卷模式' : '切换到单题模式'" @click="setViewMode(viewMode === 'single' ? 'paper' : 'single')">
             <GameIcon :name="viewMode === 'single' ? 'list' : 'practice'" /><span>{{ viewMode === 'single' ? '试卷模式' : '单题模式' }}</span>
           </button>
         </Teleport>
-      </header>
+      </GamePanelHeader>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="draftError" class="error" role="alert">{{ draftError }} <button v-if="draftConflict" @click="load">重新载入试卷</button><button v-else-if="!paper?.locked" @click="retryDraft">重试保存</button></p>
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
@@ -61,15 +60,17 @@ import { useSession } from "../../shared/session";
 import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, Submission } from "../../shared/types";
 import { pendingSubmissionStates } from "./practicePresentation";
 import { createAssessmentDraftQueue } from "./assessmentDraft";
+import { evaluateBrowserSubmission, type BrowserCase } from './browserSubmission';
 import { useWorkspaceSidebar } from "../../shared/workspaceSidebar";
 import GameIcon from "../../shared/GameIcon.vue";
+import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import LearningSupportPanel from "../support/LearningSupportPanel.vue";
 import LearningSplitLayout from "../support/LearningSplitLayout.vue";
 import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
 import "./programmingUi.css";
-interface Draft { answer: string; code: string; submission_id?: string; pending?: { key: string; mode: 'submit'; answer: string | boolean; code: string } }
+interface Draft { answer: string; code: string; submission_id?: string; pending?: { key: string; mode: 'submit'; answer: string | boolean; code: string; browser_cases?: BrowserCase[] } }
 const props = defineProps<{ activityId: string; storySessionId?: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
 const emit = defineEmits<{ complete: []; activityKind: [kind: string] }>();
 const session = useSession(), { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
@@ -87,6 +88,7 @@ const draftTasks = new Set<Promise<void>>();
 const mutationTasks = new Set<Promise<unknown>>();
 function trackMutation<T>(task: Promise<T>) { mutationTasks.add(task); void task.then(() => mutationTasks.delete(task), () => mutationTasks.delete(task)); return task; }
 let unregisterPreparation: (() => void) | undefined;
+let browserSubmission: AbortController | undefined;
 const ownerActive = () => session.user?.id === contextUserId && session.classroomId === contextClassroomId && api.token() === contextToken;
 const currentOwner = () => !closed && ownerActive();
 const isAssessment = computed(() => activity.value?.kind === 'assessment');
@@ -155,10 +157,11 @@ function updateCode(id: string, value: string) { edit(id, 'code', value); }
 function trackDraftTask(task: Promise<void>) { draftTasks.add(task); void task.finally(() => draftTasks.delete(task)); return task; }
 async function flushDrafts() { clearTimeout(saveTimer); if (draftQueue) await trackDraftTask(draftQueue.flush()); }
 async function retryDraft() { draftError.value = ''; await flushDrafts(); }
-async function prepareRestart() { clearTimeout(saveTimer); await flushDrafts(); await Promise.all([...draftTasks]); await Promise.allSettled([...mutationTasks]); if (draftQueue?.hasPending()) throw new Error(draftError.value || '试卷草稿尚未保存，请重试。'); }
+async function prepareRestart() { browserSubmission?.abort(); clearTimeout(saveTimer); await flushDrafts(); await Promise.all([...draftTasks]); await Promise.allSettled([...mutationTasks]); if (draftQueue?.hasPending()) throw new Error(draftError.value || '试卷草稿尚未保存，请重试。'); }
 function updateCompact() { if (!compactMedia) return; if (compactMedia.matches && !compact.value) showAssistant.value = Boolean(document.getElementById('practice-assistant-region')?.contains(document.activeElement)); compact.value = compactMedia.matches; }
 async function switchView(support: boolean) { if (support) sidebarCollapsed.value = false; showAssistant.value = support; await nextTick(); document.getElementById(support ? 'practice-assistant-region' : 'practice-content-region')?.focus({ preventScroll: true }); }
 async function selectQuestion(id: string) {
+  if (requestBusy.value) return;
   const index = questions.value.findIndex(question => question.id === id);
   if (index < 0) return;
   questionIndex.value = index;
@@ -185,6 +188,7 @@ function configureDraftQueue(saved: AssessmentAttempt, ticket: number, activityI
   draftQueue.set(allAnswers());
 }
 async function load() {
+  browserSubmission?.abort(); requestBusy.value = false; busyQuestionId.value = '';
   const ticket = ++generation;
   clearTimeout(saveTimer); clearTimeout(paperPoll); for (const timer of polls.values()) clearTimeout(timer); polls.clear();
   if (draftQueue) trackDraftTask(draftQueue.flush());
@@ -213,13 +217,20 @@ async function load() {
 }
 async function submitQuestion(id: string, mode: 'submit') {
   const question = questions.value.find(item => item.id === id), draft = drafts.value[id];
-  if (!question || !draft || !activity.value || !hasAnswer(question) || requestBusy.value || isAssessment.value && (paper.value?.locked || mode === 'submit')) return;
+  if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
   const ticket = generation; requestBusy.value = true; busyQuestionId.value = id; error.value = '';
   const body = { answer: question.kind === 'boolean' ? draft.answer === 'true' : draft.answer, code: draft.code, mode };
-  const pending = draft.pending ?? { ...body, key: randomUUID() };
-  draft.pending = pending; persistLocal();
+  const pending: NonNullable<Draft['pending']> = draft.pending ?? { ...body, key: randomUUID() };
   try {
-    const received = await trackMutation(api.post<Submission>('/submissions', { classroom_id: contextClassroomId, activity_id: activity.value.id, question_id: id, idempotency_key: pending.key, answer: pending.answer, code: pending.code, mode: pending.mode }));
+    // An older saved request may already have reached the server judge. Resolve
+    // its original key first; a missing receipt returns 422 and allows a fresh run.
+    if (question.kind === 'python' && !draft.pending) {
+      const controller = new AbortController(); browserSubmission = controller;
+      pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal);
+      if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;
+    }
+    draft.pending = pending; persistLocal();
+    const received = await trackMutation(api.post<Submission>('/submissions', { classroom_id: contextClassroomId, activity_id: activity.value.id, question_id: id, idempotency_key: pending.key, answer: pending.answer, code: pending.code, mode: pending.mode, browser_cases: pending.browser_cases }));
     if (!currentOwner() || ticket !== generation) return;
     results.value[id] = received; draft.submission_id = received.id; draft.pending = undefined; persistLocal();
     await handleQuestionResult(id, received, ticket);
@@ -288,7 +299,8 @@ async function refreshPaper(ticket: number) {
 }
 function cite(id: number, page: number) { session.navigate({ kind: 'material', material_id: id, page_no: page }); }
 watch(() => props.activityId, load);
+watch(ownerActive, active => { if (!active) browserSubmission?.abort(); });
 watch(sidebarCollapsed, value => { if (value) showAssistant.value = false; });
 onMounted(() => { compactMedia = window.matchMedia?.('(max-width: 900px), (max-height: 540px)'); updateCompact(); compactMedia?.addEventListener('change', updateCompact); unregisterPreparation = session.registerRestartPreparation(prepareRestart); void load(); });
-onBeforeUnmount(() => { clearTimeout(saveTimer); persistLocal(); const finalSave = flushDrafts(); closed = true; clearTimeout(paperPoll); for (const timer of polls.values()) clearTimeout(timer); compactMedia?.removeEventListener('change', updateCompact); void Promise.allSettled([finalSave, ...draftTasks, ...mutationTasks]).finally(() => unregisterPreparation?.()); });
+onBeforeUnmount(() => { browserSubmission?.abort(); clearTimeout(saveTimer); persistLocal(); const finalSave = flushDrafts(); closed = true; clearTimeout(paperPoll); for (const timer of polls.values()) clearTimeout(timer); compactMedia?.removeEventListener('change', updateCompact); void Promise.allSettled([finalSave, ...draftTasks, ...mutationTasks]).finally(() => unregisterPreparation?.()); });
 </script>

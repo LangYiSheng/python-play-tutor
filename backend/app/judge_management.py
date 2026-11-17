@@ -175,7 +175,9 @@ def python_submission():
     # Payload is historical evidence even if the teacher later changes the question kind.
     # Legacy failures may predate payload storage; never count concept answers with code="".
     return or_(select(SubmissionPayload.submission_id).where(SubmissionPayload.submission_id == Submission.id).exists(),
-               (Question.kind == "python") & Submission.code.is_not(None) & (Submission.code != ""))
+               (Question.kind == "python") & Submission.code.is_not(None) & (Submission.code != "")
+               & (Submission.feedback["source"].as_string().is_(None)
+                  | (Submission.feedback["source"].as_string() != "browser_practice")))
 
 
 @router.get("/submissions")

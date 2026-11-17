@@ -12,28 +12,12 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: var(--game-panel-padding);
+  padding: 0;
   border: 1px solid var(--learn-border);
   border-radius: var(--game-radius);
   background: var(--learn-paper);
   box-shadow: none;
   scroll-padding: 1rem;
-}
-
-.game-workspace .learning-layout .content-heading {
-  padding: 0 0 12px;
-  margin: 0 0 12px;
-  border-bottom: 1px solid var(--learn-border);
-}
-
-.game-workspace .learning-layout .content-heading h2 {
-  font-size: var(--game-label-size);
-  font-family: inherit;
-  font-weight: 700;
-  line-height: 1.5;
-  color: var(--learn-forest);
-  overflow-wrap: anywhere;
-  margin: 0;
 }
 
 .game-workspace .learning-layout .question-kind {
@@ -214,12 +198,7 @@
 @media (max-width: 900px), (max-height: 540px) {
   .game-workspace .learning-layout.is-compact > .practice-content {
     height: auto;
-    padding: 1.2rem max(1rem, env(safe-area-inset-right)) 1.6rem
-      max(1rem, env(safe-area-inset-left));
-  }
-  .game-workspace .learning-layout .content-heading {
-    margin-bottom: 1.2rem;
-    padding-bottom: 1rem;
+    padding: 0;
   }
   .game-workspace .learning-layout .submission-actions button {
     flex: 1 1 10rem;
@@ -233,36 +212,24 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: var(--game-panel-padding);
+  padding: 0;
 }
 
 .game-workspace .learning-layout .practice-content > :not(.question-body) {
   flex-shrink: 0;
 }
 
-.game-workspace .learning-layout .practice-content .content-heading {
-  margin-bottom: .8rem;
-  padding-bottom: .8rem;
-}
-
 .game-workspace .learning-layout .question-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-right: .5rem;
+  padding: var(--game-panel-padding);
 }
 
-.game-workspace .practice-heading {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.game-workspace .learning-layout .practice-heading h2 {
-  margin: 0;
-  min-width: 0;
+.game-workspace .practice-content > .error,
+.game-workspace .practice-content > .learning-empty,
+.game-workspace .practice-content > .practice-complete {
+  margin: 12px;
 }
 
 .game-workspace .practice-question-card {
