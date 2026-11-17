@@ -229,3 +229,59 @@ it('keeps submission below goals and disables it while public samples are runnin
   expect(wrapper.get('.support-goals .assessment-actions button').attributes('disabled')).toBeUndefined();
   wrapper.unmount();
 });
+
+
+describe("multiple-choice answers", () => {
+  it("keeps array drafts across questions and remounts and submits an independent copy", async () => {
+    const { pinia, session } = setup("practice");
+    const activity = await session.activity("test");
+    vi.mocked(session.activity).mockResolvedValue({ ...activity, questions: [
+      { id: "q1", title: "多选", kind: "multiple_choice", prompt: "选择数字类型", options: ["int", "float", "str"], samples: [] },
+      activity.questions[1]!,
+    ] });
+    const post = vi.spyOn(api, "post").mockResolvedValue(result("q1", "wrong_answer"));
+    const options = { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } };
+    let wrapper = mount(PracticeWorkspace, options);
+    await flushPromises();
+    await wrapper.get('input[value="float"]').setValue(true);
+    await wrapper.get('input[value="int"]').setValue(true);
+    await wrapper.get('button[aria-label="下一题"]').trigger('click');
+    await wrapper.get('button[aria-label="上一题"]').trigger('click');
+    expect((wrapper.get('input[value="float"]').element as HTMLInputElement).checked).toBe(true);
+    wrapper.unmount();
+    wrapper = mount(PracticeWorkspace, options);
+    await flushPromises();
+    expect((wrapper.get('input[value="int"]').element as HTMLInputElement).checked).toBe(true);
+    await wrapper.get('.submission-actions button').trigger('click');
+    await flushPromises();
+    expect(post.mock.calls[0]![1]).toMatchObject({ answer: ['float', 'int'] });
+    await wrapper.get('input[value="int"]').setValue(false);
+    expect(post.mock.calls[0]![1]).toMatchObject({ answer: ['float', 'int'] });
+    wrapper.unmount();
+  });
+  it("shares multi-select drafts between paper modes and disables every checkbox after hand-in", async () => {
+    const { pinia, session } = setup();
+    const activity = await session.activity('test');
+    vi.mocked(session.activity).mockResolvedValue({ ...activity, questions: [
+      { id: 'q1', title: '多选', kind: 'multiple_choice', prompt: '选择数字类型', options: ['int', 'float', 'str'], samples: [] },
+      activity.questions[1]!,
+    ] });
+    vi.spyOn(api, 'get').mockResolvedValue(paper({ answers: [{ question_id: 'q1', answer: ['float', 'int'] }, { question_id: 'q2', answer: false }] }));
+    const post = vi.spyOn(api, 'post').mockImplementation(async (_url, body) => paper({
+      locked: true, status: 'graded', score: 50, correct_count: 1, completed: true,
+      answers: (body as { answers: AssessmentAnswer[] }).answers,
+      results: [result('q1', 'wrong_answer'), result('q2', 'accepted')],
+    }));
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: 'test', storySessionId: 'story' }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    await flushPromises();
+    expect(wrapper.findAll('input[type="checkbox"]:checked')).toHaveLength(2);
+    await wrapper.findAll('button').find(button => button.text() === '试卷模式')!.trigger('click');
+    expect(wrapper.findAll('input[type="checkbox"]:checked')).toHaveLength(2);
+    await wrapper.get('.assessment-actions button').trigger('click');
+    await flushPromises();
+    expect(post.mock.calls[0]![1]).toMatchObject({ answers: [{ question_id: 'q1', answer: ['float', 'int'] }, { question_id: 'q2', answer: false }] });
+    expect(wrapper.findAll('input[type="checkbox"]').every(input => (input.element as HTMLInputElement).disabled)).toBe(true);
+    expect(wrapper.findAll('input[type="checkbox"]:checked')).toHaveLength(2);
+    wrapper.unmount();
+  });
+});

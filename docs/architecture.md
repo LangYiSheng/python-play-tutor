@@ -182,3 +182,9 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 `node scripts/check-modules.mjs` 检查明确的导入边界和已退场入口；`python scripts/check-python-imports.py` 静态检查后端的循环依赖与跨模块私有访问，包含函数内和常量动态导入。两项按模块改动在本机执行，配套合成测试覆盖规则。行数超过500或超过10行长于200字符只提醒人工复核，不能通过压行、机械切片或无意义转调达标。编译器、行为测试与浏览器仍负责真实正确性，依赖检查不替代它们。操作步骤见[开发手册](development.md)。
 
 多资料阅读的聚合与规则校验归 `course_content/resources.py`，累计证据仍在 `ActivityProgress`，其中 `media_progress.reading_pages/reading_positions` 按资料ID保存，视频的时间/覆盖/会话也按资料隔离。移除活动单资料列通过一次性迁移处理，课程包格式3显式交换资源关联，不增设旧格式运行适配层。
+
+### 题型扩展入口
+
+`backend/app/question_types.py` 集中声明题型、定义校验、交卷完整性校验、客观题评分与执行方式，教师题库及课程包共用定义校验；通用提交服务保留鉴权、事务、幂等和进度，Python仍按练习浏览器/测验服务器的边界执行。未知题型明确拒绝，不回退为字符串比较。
+
+`shared/questions.ts` 是两端共享的公开题型与答案契约，管理标签、草稿恢复、序列化和作答完整性，不包含标准答案或评分。学生组件由 `frontend/src/features/practice/questions/registry.ts` 注册，教师表单及私有答案编解码由 `admin/src/features/questions/editor-registry.tsx` 注册，两端主题保持独立。新增题型时补齐服务端策略、共享答案策略和两个组件注册表，并覆盖录入/包交换、练习提交、测验保存/锁卷及权限测试；注册表穷尽性检查防止漏配。不修改已有历史题目的题型，不重算旧成绩。

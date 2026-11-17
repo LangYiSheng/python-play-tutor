@@ -5,12 +5,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.question_types import QuestionKind, question_type
+
 
 class QuestionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=200)
-    kind: Literal["single_choice", "boolean", "fill", "python"]
+    kind: QuestionKind
     prompt: str = Field(min_length=1, max_length=30000)
     chapter_ids: list[int] = Field(default_factory=list, max_length=65)
     knowledge_point_ids: list[int] = Field(default_factory=list, max_length=65)
@@ -63,28 +65,17 @@ class QuestionInput(BaseModel):
         return cases
 
     @model_validator(mode="after")
-    def validate_judge_budget(self):
-        if self.kind == "python" and len(self.samples) + len(self.hidden_cases) > 20:
-            raise ValueError("编程题公开样例与隐藏用例合计不能超过20个")
-        if self.status == "ready":
-            if not self.chapter_ids:
-                raise ValueError("就绪题目必须关联章节")
-            if self.kind == "python" and not self.hidden_cases:
-                raise ValueError("就绪编程题必须设置私有用例")
-            expected = self.answer.get("value") if isinstance(self.answer, dict) and "value" in self.answer else self.answer
-            if self.kind == "boolean" and not isinstance(expected, bool):
-                raise ValueError("判断题答案必须是布尔值")
-            if self.kind == "single_choice" and (not self.options or expected not in self.options):
-                raise ValueError("单选答案必须属于选项")
-            if self.kind == "fill" and (not isinstance(expected, (str, list)) or not expected):
-                raise ValueError("填空题必须设置答案")
+    def validate_question_type(self):
+        if self.status == "ready" and not self.chapter_ids:
+            raise ValueError("就绪题目必须关联章节")
+        question_type(self.kind).validate_definition(self)
         return self
 
 
 class QuestionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = None
-    kind: Literal["single_choice", "boolean", "fill", "python"] | None = None
+    kind: QuestionKind | None = None
     prompt: str | None = None
     chapter_ids: list[int] | None = None
     knowledge_point_ids: list[int] | None = None

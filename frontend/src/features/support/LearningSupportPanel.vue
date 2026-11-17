@@ -85,6 +85,7 @@
   </aside>
 </template>
 <script setup lang="ts">
+import { questionKindLabels, type QuestionKind } from "../../../../shared/questions";
 import { useCharacterImage } from "../../shared/characterImage";
 import type { Npc } from "../../shared/types";
 import type { AssistantState } from "../../shared/assistantState";
@@ -129,7 +130,7 @@ const props = defineProps<{
   }[];
   outline?: { pageNo: number; title: string; important?: boolean; highlightLabel?: string; timeSeconds?: number }[];
   timeOutline?: { timeSeconds: number; title: string }[];
-  questionOutline?: { id: string; index?: number; title: string; kind?: "single_choice" | "boolean" | "fill" | "python"; state?: "unanswered" | "answered" | "accepted" | "wrong" | "pending"; current?: boolean }[];
+  questionOutline?: { id: string; index?: number; title: string; kind?: QuestionKind; state?: "unanswered" | "answered" | "accepted" | "wrong" | "pending"; current?: boolean }[];
   currentQuestionId?: string;
   pageNo?: number;
   videoTime?: number;
@@ -141,7 +142,7 @@ const { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
 const tab = ref<"goals" | "outline" | "questions" | "assistant">("goals"),
   goalsTab = ref<HTMLButtonElement>(), outlineTab = ref<HTMLButtonElement>(), questionsTab = ref<HTMLButtonElement>(), assistantTab = ref<HTMLButtonElement>();
 const questionStateLabel = { unanswered: "未作答", answered: "已作答", accepted: "正确", wrong: "错误", pending: "判定中" };
-const questionKindLabel = { single_choice: "单选题", boolean: "判断题", fill: "填空题", python: "编程题", unknown: "题目" };
+const questionKindLabel = { ...questionKindLabels, unknown: "题目" };
 const questionGroups = computed(() => {
   const items = (props.questionOutline ?? []).map((question, index) => ({ ...question, index: question.index ?? index + 1 }));
   return [...new Set(items.map(question => question.kind ?? 'unknown' as const))].map(kind => ({ kind, items: items.filter(question => (question.kind ?? 'unknown') === kind) }));

@@ -929,3 +929,24 @@ def test_export_can_be_copied_renamed_imported_and_deleted_by_another_teacher(cl
     db.refresh(instance)
     assert instance.revision == revision
     assert db.scalar(select(Question).where(Question.course_instance_id == instance.id)) is not None
+
+
+def test_multiple_choice_roundtrip_keeps_array_answers_and_class_isolation(client, db, teacher, exchange):
+    source, target = exchange
+    source_id = content_mapping(db, source)["question"]["ch1-computation"]
+    question = db.get(Question, source_id)
+    question.kind, question.options = "multiple_choice", ["int", "float", "str"]
+    db.get(QuestionSecret, source_id).answer = ["float", "int"]
+    db.commit()
+    payload = export(client, teacher, source)
+    item = preview(client, teacher, target.id, payload)
+    response = apply(client, teacher, target.id, item)
+    assert response.status_code == 200, response.text
+    imported = db.get(CourseInstance, response.json()["instance_id"])
+    imported_id = content_mapping(db, imported)["question"]["ch1-computation"]
+    assert imported_id != source_id
+    assert db.get(Question, imported_id).kind == "multiple_choice"
+    assert db.get(QuestionSecret, imported_id).answer == ["float", "int"]
+    db.get(QuestionSecret, imported_id).answer = ["int", "str"]
+    db.commit()
+    assert db.get(QuestionSecret, source_id).answer == ["float", "int"]

@@ -1,3 +1,4 @@
+import type { AnswerValue } from "../../../shared/questions";
 import type { SubmissionStatus } from './types';
 
 export interface AssistantLocalRun {
@@ -20,6 +21,6 @@ export interface AssistantState extends AssistantFeedback {
   page_no?: number;
   video_time?: number;
   question_id?: string;
-  answer?: string | boolean;
+  answer?: AnswerValue;
   code?: string;
 }

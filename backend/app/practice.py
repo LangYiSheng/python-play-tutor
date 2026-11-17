@@ -19,6 +19,7 @@ from .judge_management import probe_service, save_health
 from .go_judge import GoJudgeAdapter
 from .models import Classroom, QuestionSecret, Submission, User, now
 from .browser_practice import BrowserCase, stage_browser_submission
+from .question_types import grade_answer, question_type
 
 router = APIRouter(tags=["practice"])
 
@@ -47,19 +48,6 @@ def public_submission(row: Submission) -> dict:
     }
 
 
-def grade_answer(answer, expected, kind: str) -> bool:
-    if isinstance(expected, dict) and "value" in expected:
-        expected = expected["value"]
-    if kind == "boolean":
-        return isinstance(answer, bool) and isinstance(expected, bool) and answer is expected
-    if kind == "fill":
-        if not isinstance(answer, str):
-            return False
-        accepted = expected if isinstance(expected, list) else [expected]
-        return answer.strip().casefold() in [str(x).strip().casefold() for x in accepted]
-    return type(answer) is type(expected) and answer == expected
-
-
 def stage_submission(db, user, classroom_id, activity, question, answer, code, key, mode):
     """Stage existing grading evidence inside the caller's atomic transaction."""
     secret = db.get(QuestionSecret, question.id)
@@ -67,7 +55,7 @@ def stage_submission(db, user, classroom_id, activity, question, answer, code, k
         raise HTTPException(503, "题目尚未配置评分规则")
     row = Submission(user_id=user.id, classroom_id=classroom_id, activity_id=activity.id,
         question_id=question.id, idempotency_key=key, mode=mode, answer=answer, code=code)
-    if question.kind == "python":
+    if question_type(question.kind).execution == "python":
         if not code or not code.strip():
             raise HTTPException(422, "请填写代码")
         cases = list(question.samples)
@@ -81,7 +69,7 @@ def stage_submission(db, user, classroom_id, activity, question, answer, code, k
         row.feedback = {"detail": "回答正确" if row.status == "accepted" else "请结合课件重新思考", "status": row.status}
     db.add(row)
     db.flush()
-    if question.kind == "python":
+    if question_type(question.kind).execution == "python":
         db.add(SubmissionPayload(submission_id=row.id, cases=cases, public_count=public_count))
     return row
 
@@ -117,7 +105,7 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
     if activity.kind == "assessment":
         raise HTTPException(409, "测验需要完成所有题目后统一提交试卷")
     try:
-        if question.kind == "python":
+        if question_type(question.kind).execution == "python":
             row = stage_browser_submission(db, user, body.classroom_id, activity, question,
                                            body.code, body.idempotency_key, body.browser_cases)
         else:

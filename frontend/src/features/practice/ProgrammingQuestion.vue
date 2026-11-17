@@ -80,6 +80,7 @@
   </article>
 </template>
 <script setup lang="ts">
+import type { AnswerValue } from "../../../../shared/questions";
 import { computed, defineAsyncComponent, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
@@ -90,7 +91,7 @@ import { outputDiff, visibleDiffText } from "./outputDiff";
 import type { Question, Submission, SubmissionStatus } from "../../shared/types";
 import { pendingSubmissionStates, submissionStatusName } from "./practicePresentation";
 const CodeEditor = defineAsyncComponent(() => import("./CodeEditor.vue"));
-const props = withDefaults(defineProps<{ question: Question; index: number; answer: string; code: string; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
+const props = withDefaults(defineProps<{ question: Question; index: number; answer: AnswerValue; code: string; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
 const emit = defineEmits<{ runningChange: [running: boolean]; "update:answer": [value: string]; "update:code": [value: string]; submit: [mode: "submit"]; assistantFeedback: [feedback: AssistantFeedback] }>();
 const workbench = ref<HTMLElement>();
 const problemWidth = ref(47), editorHeight = ref(57);
@@ -209,7 +210,7 @@ async function runSamples() {
 }
 onBeforeUnmount(()=>{ runVersion++; controller?.abort(); pythonRunner?.dispose(); emit('runningChange', false); });
 const headingId = computed(() => `practice-question-${props.question.id}`);
-const hasAnswer = computed(() => props.question.kind === "python" ? Boolean(props.code.trim()) : Boolean(props.answer.trim()));
+const hasAnswer = computed(() => Boolean(props.code.trim()));
 const resultDetail = computed(() => {
   const detail = props.result?.feedback.detail?.trim() ?? "";
   return props.result && detail !== submissionStatusName[props.result.status] ? detail : "";

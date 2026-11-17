@@ -1,3 +1,4 @@
+import type { QuestionKind, AnswerValue } from "../../../shared/questions";
 export interface User {
   id: number;
   student_id: string;
@@ -120,7 +121,7 @@ export interface Question {
   starter_code?: string;
   id: string;
   title: string;
-  kind: "single_choice" | "boolean" | "fill" | "python";
+  kind: QuestionKind;
   prompt: string;
   options: string[];
   samples: { input: string; output: string }[];
@@ -226,7 +227,7 @@ export interface Submission {
 }
 export interface AssessmentAnswer {
   question_id: string;
-  answer?: string | boolean | Record<string, unknown> | unknown[] | null;
+  answer?: AnswerValue;
   code?: string | null;
 }
 export interface AssessmentAttempt {

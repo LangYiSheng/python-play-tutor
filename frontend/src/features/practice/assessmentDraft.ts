@@ -1,5 +1,9 @@
 import type { AssessmentAnswer, AssessmentAttempt } from "../../shared/types";
 
+function copyAnswers(answers: AssessmentAnswer[]) {
+  return answers.map(entry => ({ ...entry, answer: Array.isArray(entry.answer) ? [...entry.answer] : entry.answer }));
+}
+
 /** One serial save stream per student, classroom and activity. */
 export function createAssessmentDraftQueue(options: {
   revision: number;
@@ -9,9 +13,9 @@ export function createAssessmentDraftQueue(options: {
   saved: (attempt: AssessmentAttempt) => void;
   failed: (cause: unknown) => void;
 }) {
-  let revision = options.revision, baseline = JSON.stringify(options.initial), latest = options.initial;
+  let revision = options.revision, baseline = JSON.stringify(options.initial), latest = copyAnswers(options.initial);
   let task: Promise<void> | null = null, failure: unknown;
-  function set(answers: AssessmentAnswer[]) { latest = answers.map(answer => ({ ...answer })); }
+  function set(answers: AssessmentAnswer[]) { latest = copyAnswers(answers); }
   function flush(): Promise<void> {
     if (task) return task;
     failure = undefined;

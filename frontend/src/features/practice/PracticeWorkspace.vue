@@ -3,7 +3,7 @@
     <nav v-if="questions.length && viewMode === 'single'" class="practice-navigation" aria-label="答题翻页">
       <button :disabled="questionIndex <= 0 || requestBusy" aria-label="上一题" title="上一题" @click="selectQuestion(questions[questionIndex - 1]!.id)"><GameIcon name="arrowLeft" /><span class="navigation-label">上一题</span></button>
       <div id="practice-question-actions" class="practice-question-actions">
-        <span v-if="current?.kind !== 'python'" class="practice-question-location" :title="`${questionIndex + 1}/${questions.length} ${current?.title ?? ''}`"><span>{{ questionIndex + 1 }}/{{ questions.length }}</span><span class="practice-question-name">{{ current?.title }}</span></span>
+        <span v-if="!isCodeQuestion" class="practice-question-location" :title="`${questionIndex + 1}/${questions.length} ${current?.title ?? ''}`"><span>{{ questionIndex + 1 }}/{{ questions.length }}</span><span class="practice-question-name">{{ current?.title }}</span></span>
       </div>
       <button :disabled="questionIndex >= questions.length - 1 || requestBusy" aria-label="下一题" title="下一题" @click="selectQuestion(questions[questionIndex + 1]!.id)"><span class="navigation-label">下一题</span><GameIcon name="arrowRight" /></button>
     </nav>
@@ -13,7 +13,7 @@
       <button :aria-pressed="!showAssistant" aria-controls="practice-content-region" @click="switchView(false)">题目与代码</button>
       <button :aria-pressed="showAssistant" aria-controls="practice-assistant-region" @click="switchView(true)">目标与目录</button>
     </nav>
-    <section id="practice-content-region" class="practice-content" :class="{ 'coding-content': current?.kind === 'python' && viewMode === 'single' }" tabindex="-1" aria-label="题目与代码" :hidden="compact && showAssistant" :inert="compact && showAssistant" :aria-busy="loading">
+    <section id="practice-content-region" class="practice-content" :class="{ 'coding-content': isCodeQuestion && viewMode === 'single' }" tabindex="-1" aria-label="题目与代码" :hidden="compact && showAssistant" :inert="compact && showAssistant" :aria-busy="loading">
       <GamePanelHeader class="practice-heading" :class="{ 'assessment-heading': isAssessment && !modeTarget }" :title="activity?.title ?? '正在读取题目'" icon="practice" heading>
         <Teleport defer :to="modeTarget || 'body'" :disabled="!modeTarget">
           <button v-if="isAssessment" class="assessment-mode-toggle" type="button" :title="viewMode === 'single' ? '切换到试卷模式' : '切换到单题模式'" @click="setViewMode(viewMode === 'single' ? 'paper' : 'single')">
@@ -52,6 +52,7 @@
   </LearningSplitLayout>
 </template>
 <script setup lang="ts">
+import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
 import { randomUUID } from "../../shared/uuid";
 import type { AssistantFeedback } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -70,7 +71,7 @@ import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
 import "./programmingUi.css";
-interface Draft { answer: string; code: string; submission_id?: string; pending?: { key: string; mode: 'submit'; answer: string | boolean; code: string; browser_cases?: BrowserCase[] } }
+interface Draft extends QuestionDraft { submission_id?: string; pending?: { key: string; mode: 'submit'; answer: AnswerValue; code: string; browser_cases?: BrowserCase[] } }
 const props = defineProps<{ activityId: string; storySessionId?: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
 const emit = defineEmits<{ complete: []; activityKind: [kind: string] }>();
 const session = useSession(), { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
@@ -100,13 +101,14 @@ const questions = computed(() => {
     const known = available.find(question => question.id === id);
     if (known) return known;
     const submitted = paper.value?.answers.find(answer => answer.question_id === id);
-    return { id, title: '题目已调整', kind: submitted?.code ? 'python' : typeof submitted?.answer === 'boolean' ? 'boolean' : 'fill', prompt: '原题内容已调整，以下保留已提交答案和判定结果。', options: [], samples: [] } as Question;
+    return { id, title: '题目已调整', kind: submitted?.code ? 'python' : typeof submitted?.answer === 'boolean' ? 'boolean' : Array.isArray(submitted?.answer) ? 'multiple_choice' : 'fill', prompt: '原题内容已调整，以下保留已提交答案和判定结果。', options: Array.isArray(submitted?.answer) ? submitted.answer : [], samples: [] } as Question;
   });
 });
 const actionTarget = computed(() => viewMode.value === 'single' && props.toolbarTarget ? '#practice-question-actions' : undefined);
 const localRunning = ref<Record<string, boolean>>({});
 const publicRunBusy = computed(() => Object.values(localRunning.value).some(Boolean));
 const current = computed(() => questions.value[questionIndex.value]);
+const isCodeQuestion = computed(() => current.value && questionType(current.value.kind).execution === 'python');
 const assistantState = computed(() => ({ question_id: current.value?.id, answer: drafts.value[current.value?.id ?? '']?.answer ?? '',
   code: drafts.value[current.value?.id ?? '']?.code ?? '', ...assistantFeedback.value[current.value?.id ?? ''] }));
 const visibleQuestions = computed(() => isAssessment.value && viewMode.value === 'paper' ? questions.value : current.value ? [current.value] : []);
@@ -132,12 +134,17 @@ const learningGoals = computed(() => {
   const passed = questions.value.filter(question => activityProgress.value?.accepted_question_ids?.includes(question.id));
   return [{ title: '完成练习', completed: activityProgress.value?.completed ?? false, progress: { value: passed.length, max: total, label: `已完成 ${passed.length} / ${total} 题` } }];
 });
-function hasAnswer(question: Question) { const draft = drafts.value[question.id]; return Boolean(question.kind === 'python' ? draft?.code.trim() : draft?.answer.trim()); }
+function hasAnswer(question: Question) { const draft = drafts.value[question.id]; return Boolean(draft && questionType(question.kind).complete(draft, question)); }
 function questionResult(id: string) { return isAssessment.value && paper.value?.locked ? paper.value.results.find(result => result.question_id === id) : results.value[id]; }
 function questionBusy(id: string) { const result = results.value[id]; return isAssessment.value && requestBusy.value || requestBusy.value && busyQuestionId.value === id || !isAssessment.value && Boolean(result && pendingSubmissionStates.includes(result.status)); }
-function normalizeAnswer(question: Question): AssessmentAnswer { const draft = drafts.value[question.id] ?? { answer: '', code: '' }; return question.kind === 'python' ? { question_id: question.id, code: draft.code } : { question_id: question.id, answer: question.kind === 'boolean' ? draft.answer ? draft.answer === 'true' : null : draft.answer }; }
+function normalizeAnswer(question: Question): AssessmentAnswer { const draft = drafts.value[question.id] ?? restoreDraft(question, null); return { question_id: question.id, ...submissionAnswer(question, draft) }; }
 function allAnswers() { return questions.value.map(normalizeAnswer); }
-function applyAnswers(answers: AssessmentAnswer[]) { for (const answer of answers) { const draft = drafts.value[answer.question_id]; if (draft) { draft.answer = typeof answer.answer === 'boolean' ? String(answer.answer) : typeof answer.answer === 'string' ? answer.answer : answer.answer && typeof answer.answer === 'object' ? JSON.stringify(answer.answer) : ''; draft.code = answer.code ?? ''; } } }
+function applyAnswers(answers: AssessmentAnswer[]) {
+  for (const answer of answers) {
+    const draft = drafts.value[answer.question_id], question = questions.value.find(item => item.id === answer.question_id);
+    if (draft && question) Object.assign(draft, restoreDraft(question, answer.answer, answer.code ?? ''));
+  }
+}
 function localJson(key: string) { try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; } }
 function persistLocal() {
   if (!ownerActive()) return;
@@ -146,14 +153,14 @@ function persistLocal() {
     else for (const [id, draft] of Object.entries(drafts.value)) localStorage.setItem(questionKey(id), JSON.stringify(draft));
   } catch { draftError.value = '本机草稿保存失败，请保持页面打开并重试。'; }
 }
-function edit(id: string, key: 'answer' | 'code', value: string) {
+function edit(id: string, change: Partial<QuestionDraft>) {
   if (!currentOwner() || drafts.value[id]?.pending || isAssessment.value && (paper.value?.locked || paperSubmissionPending.value || requestBusy.value) || !drafts.value[id]) return;
-  drafts.value[id]![key] = value;
+  Object.assign(drafts.value[id]!, change);
   persistLocal();
   if (isAssessment.value) { draftQueue?.set(allAnswers()); clearTimeout(saveTimer); saveTimer = setTimeout(() => void flushDrafts(), 450); }
 }
-function updateAnswer(id: string, value: string) { edit(id, 'answer', value); }
-function updateCode(id: string, value: string) { edit(id, 'code', value); }
+function updateAnswer(id: string, value: AnswerValue) { edit(id, { answer: value }); }
+function updateCode(id: string, value: string) { edit(id, { code: value }); }
 function trackDraftTask(task: Promise<void>) { draftTasks.add(task); void task.finally(() => draftTasks.delete(task)); return task; }
 async function flushDrafts() { clearTimeout(saveTimer); if (draftQueue) await trackDraftTask(draftQueue.flush()); }
 async function retryDraft() { draftError.value = ''; await flushDrafts(); }
@@ -198,7 +205,7 @@ async function load() {
     if (!currentOwner() || ticket !== generation) return;
     const savedQuestion = Number(sessionStorage.getItem(questionPositionKey())) || 1;
     activity.value = loaded; emit('activityKind', loaded.kind); activityProgress.value = loaded.progress; questionIndex.value = Math.max(0, Math.min((props.initialQuestion ?? savedQuestion) - 1, loaded.questions.length - 1)); viewMode.value = 'single';
-    for (const question of loaded.questions) { const old = localJson(questionKey(question.id)); drafts.value[question.id] = { answer: typeof old?.answer === 'string' ? old.answer : '', code: typeof old?.code === 'string' ? old.code : question.starter_code ?? '', submission_id: old?.submission_id, pending: old?.pending }; }
+    for (const question of loaded.questions) { const old = localJson(questionKey(question.id)); drafts.value[question.id] = { ...restoreDraft(question, old?.answer, typeof old?.code === 'string' ? old.code : question.starter_code ?? ''), submission_id: old?.submission_id, pending: old?.pending }; }
     if (loaded.kind === 'assessment') {
       const saved = await api.get<AssessmentAttempt>(`/activities/${loaded.id}/assessment?classroom_id=${contextClassroomId}`);
       if (!currentOwner() || ticket !== generation) return;
@@ -219,12 +226,12 @@ async function submitQuestion(id: string, mode: 'submit') {
   const question = questions.value.find(item => item.id === id), draft = drafts.value[id];
   if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
   const ticket = generation; requestBusy.value = true; busyQuestionId.value = id; error.value = '';
-  const body = { answer: question.kind === 'boolean' ? draft.answer === 'true' : draft.answer, code: draft.code, mode };
+  const body = { answer: questionType(question.kind).serialize(draft.answer), code: draft.code, mode };
   const pending: NonNullable<Draft['pending']> = draft.pending ?? { ...body, key: randomUUID() };
   try {
     // An older saved request may already have reached the server judge. Resolve
     // its original key first; a missing receipt returns 422 and allows a fresh run.
-    if (question.kind === 'python' && !draft.pending) {
+    if (questionType(question.kind).execution === 'python' && !draft.pending) {
       const controller = new AbortController(); browserSubmission = controller;
       pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal);
       if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;

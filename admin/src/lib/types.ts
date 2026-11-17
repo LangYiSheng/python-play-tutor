@@ -1,3 +1,4 @@
+import type { QuestionKind } from "../../../shared/questions";
 export interface User {
   id: number;
   student_id: string;
@@ -80,7 +81,7 @@ export interface Question {
   starter_code?: string;
   id: string;
   title: string;
-  kind: "single_choice" | "boolean" | "fill" | "python";
+  kind: QuestionKind;
   prompt: string;
   options: string[];
   answer: unknown;

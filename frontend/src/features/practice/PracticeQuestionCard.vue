@@ -1,21 +1,13 @@
 <template>
-  <ProgrammingPaperSummary v-if="paperMode && question.kind === 'python'" :question="question" :index="index" :code="code" :read-only="readOnly" :result="result" :feedback="assistantFeedback" @open="$emit('openSingle')" />
-  <ProgrammingQuestion v-else-if="question.kind === 'python'" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="$emit('submit', $event)" />
+  <component :is="view.paper" v-if="paperMode && view.paper" :question="question" :index="index" :code="code" :read-only="readOnly" :result="result" :feedback="assistantFeedback" @open="$emit('openSingle')" />
+  <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="$emit('submit', $event)" />
   <article v-else class="practice-question-card" :data-question-id="question.id" :aria-labelledby="headingId">
     <header class="practice-question-heading">
       <span class="question-kind">{{ kindName[question.kind] }}</span>
       <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
     </header>
     <section class="problem-description"><p class="question-prompt">{{ question.prompt }}</p><details v-for="(hint, i) in question.hints ?? []" :key="i"><summary>提示 {{ i + 1 }}</summary><p>{{ hint }}</p></details></section>
-    <fieldset v-if="question.kind === 'single_choice' || question.kind === 'boolean'" class="question-options" :disabled="readOnly || busy || Boolean(pendingMode)" :aria-labelledby="headingId">
-      <label v-for="(option, optionIndex) in question.options?.length ? question.options : ['正确', '错误']" :key="optionIndex" class="answer-option">
-        <input :checked="answer === optionValue(option, optionIndex)" :disabled="readOnly || busy || Boolean(pendingMode)" type="radio" :name="`answer-${question.id}`" :value="optionValue(option, optionIndex)" @change="$emit('update:answer', optionValue(option, optionIndex))" />
-        <span>{{ option }}</span>
-      </label>
-    </fieldset>
-    <label v-else-if="question.kind === 'fill'" class="question-fill" :for="`answer-${question.id}`">填写答案
-      <input :id="`answer-${question.id}`" :value="answer" :disabled="readOnly || busy || Boolean(pendingMode)" placeholder="输入你的答案" autocomplete="off" @input="$emit('update:answer', ($event.target as HTMLInputElement).value)" />
-    </label>
+    <component :is="view.input" :question="question" :answer="answer" :disabled="readOnly || busy || Boolean(pendingMode)" :heading-id="headingId" @update:answer="$emit('update:answer', $event)" />
     <div v-if="!readOnly && showSubmit" class="submission-actions">
       <button v-if="showSubmit" class="primary" :disabled="busy || !hasAnswer" @click="$emit('submit', 'submit')">{{ busy ? "等待判定…" : pendingMode === 'submit' ? '重试提交' : "提交答案" }}</button>
     </div>
@@ -36,21 +28,21 @@
 </template>
 <script setup lang="ts">
 import { computed } from "vue";
-import ProgrammingPaperSummary from "./ProgrammingPaperSummary.vue";
-import ProgrammingQuestion from "./ProgrammingQuestion.vue";
+import { questionViews } from "./questions/registry";
+import { questionType, questionKindLabels, type AnswerValue } from "../../../../shared/questions";
 import GameIcon from "../../shared/GameIcon.vue";
 import type { AssistantFeedback } from '../../shared/assistantState';
 import type { Question, Submission, SubmissionStatus } from "../../shared/types";
 import { pendingSubmissionStates, submissionStatusName } from "./practicePresentation";
-const props = withDefaults(defineProps<{ question: Question; index: number; answer: string; code: string; paperMode?: boolean; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
-defineEmits<{ openSingle: []; runningChange: [running: boolean]; "update:answer": [value: string]; "update:code": [value: string]; submit: [mode: "submit"]; assistantFeedback: [feedback: AssistantFeedback] }>();
+const props = withDefaults(defineProps<{ question: Question; index: number; answer: AnswerValue; code: string; paperMode?: boolean; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
+defineEmits<{ openSingle: []; runningChange: [running: boolean]; "update:answer": [value: AnswerValue]; "update:code": [value: string]; submit: [mode: "submit"]; assistantFeedback: [feedback: AssistantFeedback] }>();
 const headingId = computed(() => `practice-question-${props.question.id}`);
-const hasAnswer = computed(() => props.question.kind === "python" ? Boolean(props.code.trim()) : Boolean(props.answer.trim()));
+const view = computed(() => questionViews[props.question.kind]);
+const hasAnswer = computed(() => questionType(props.question.kind).complete(props, props.question));
 const resultDetail = computed(() => {
   const detail = props.result?.feedback.detail?.trim() ?? "";
   return props.result && detail !== submissionStatusName[props.result.status] ? detail : "";
 });
-const kindName = { single_choice: "单选题", boolean: "判断题", fill: "填空题", python: "Python 编程题" };
-function optionValue(option: string, index: number) { return props.question.kind === "boolean" ? index === 0 ? "true" : "false" : option; }
+const kindName = questionKindLabels;
 function publicStatusName(status: SubmissionStatus) { return status === "accepted" ? "通过" : status === "wrong_answer" ? "答案未通过" : submissionStatusName[status]; }
 </script>

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .question_types import question_type
 from .auth import current_user
 from .db import get_db
 from .models import AssessmentAttempt, Classroom, Submission, User, now
@@ -130,14 +131,7 @@ def _normalize(entries, questions, *, complete=False):
         if item.answer is not None and len(json.dumps(item.answer, ensure_ascii=False)) > 20000:
             raise HTTPException(422, "单题答案过长")
         if complete:
-            if question.kind == "python":
-                valid = bool(item.code and item.code.strip())
-            elif question.kind == "boolean":
-                valid = type(item.answer) is bool
-            elif question.kind == "fill":
-                valid = isinstance(item.answer, str) and bool(item.answer.strip())
-            else:
-                valid = item.answer is not None and (not question.options or item.answer in question.options)
+            valid = question_type(question.kind).complete(question, item.answer, item.code)
             if not valid:
                 raise HTTPException(422, "请先完成所有题目再提交试卷")
         answers[item.question_id] = {"answer": item.answer, "code": item.code}

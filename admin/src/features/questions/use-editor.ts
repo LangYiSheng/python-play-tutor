@@ -4,6 +4,7 @@ import { newId } from "@/lib/id";
 import type { Question } from "@/lib/types";
 import { useState, type FormEvent } from "react";
 import { Case } from "./types";
+import { editorPayload, questionEditors, type EditorAnswer } from "./editor-registry";
 export function useQuestionEditor(classroomId: number, onSaved: () => void) {
   const [editing, setEditing] = useState<Question | null>(null),
     [open, setOpen] = useState(false),
@@ -15,7 +16,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     [kind, setKind] = useState<Question["kind"]>("single_choice"),
     [status, setStatus] = useState<Question["status"]>("draft"),
     [options, setOptions] = useState<string[]>(["", ""]),
-    [answer, setAnswer] = useState(""),
+    [answer, setAnswer] = useState<EditorAnswer>(""),
     [chapterIds, setChapterIds] = useState<number[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
     [referenceMaterial, setReferenceMaterial] = useState<number | null>(null),
@@ -44,13 +45,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
       "value" in q.answer
         ? (q.answer as { value: unknown }).value
         : q?.answer;
-    setAnswer(
-      Array.isArray(value)
-        ? value.join("\n")
-        : value == null
-          ? ""
-          : String(value),
-    );
+    setAnswer(questionEditors[q?.kind ?? "single_choice"].restore(value));
     setChapterIds(q?.chapter_ids ?? []);
     setPointIds(q?.knowledge_point_ids ?? []);
     setReferenceMaterial(
@@ -95,30 +90,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
         knowledge_point_ids: pointIds,
         source_type: editing?.source_type ?? "imported",
         status,
-        options: kind === "single_choice" ? options : [],
-        answer:
-          kind === "boolean"
-            ? answer === "true"
-              ? true
-              : answer === "false"
-                ? false
-                : null
-            : kind === "fill"
-              ? answer.split("\n").filter(Boolean)
-              : kind === "python"
-                ? (editing?.answer ?? null)
-                : answer,
-        hints:
-          kind === "python" ? hints.split("\n").filter((x) => x.trim()) : [],
-        starter_code: kind === "python" ? starterCode : "",
-        hidden_cases: kind === "python" ? cases : [],
-        samples:
-          kind === "python"
-            ? samples.map((c) => ({
-                input: c.input,
-                output: c.expected_output,
-              }))
-            : [],
+        ...editorPayload(kind, { answer, options, hints, starterCode, samples, cases, editing }),
         source,
       };
       if (editing)
@@ -156,7 +128,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     starterCode,
     setStarterCode,
     kind,
-    setKind,
+    setKind: (value: Question["kind"]) => { if (value !== kind) { setKind(value); setAnswer(questionEditors[value].restore(null)); } },
     status,
     setStatus,
     options,

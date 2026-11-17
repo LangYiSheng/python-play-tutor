@@ -40,7 +40,7 @@ class TurnState(BaseModel):
     page_no: int | None = Field(default=None, ge=1)
     video_time: float | None = Field(default=None, ge=0, le=86400, allow_inf_nan=False)
     question_id: str | None = Field(default=None, max_length=100)
-    answer: str | bool | None = Field(default=None)
+    answer: str | bool | list[str] | None = Field(default=None)
     code: str | None = Field(default=None, max_length=20000)
     local_run: LocalRun | None = None
     displayed: Literal["local_run", "submission"] | None = None
@@ -49,6 +49,8 @@ class TurnState(BaseModel):
     @model_validator(mode="after")
     def bounded(self):
         if isinstance(self.answer, str) and len(self.answer) > 20000:
+            raise ValueError("答案过长")
+        if isinstance(self.answer, list) and (len(self.answer) > 20 or len(json.dumps(self.answer, ensure_ascii=False)) > 30000):
             raise ValueError("答案过长")
         if len(self.model_dump_json()) > 200000:
             raise ValueError("运行反馈过长")

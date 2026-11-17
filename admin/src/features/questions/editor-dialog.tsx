@@ -13,8 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Course, Material, Question } from "@/lib/types";
-import { Trash2 } from "lucide-react";
-import { Cases } from "./cases-editor";
+import { questionEditors } from "./editor-registry";
 import { kinds, statuses } from "./types";
 import type { useQuestionEditor } from "./use-editor";
 export function QuestionDialog({
@@ -34,18 +33,10 @@ export function QuestionDialog({
     setTitle,
     prompt,
     setPrompt,
-    hints,
-    setHints,
-    starterCode,
-    setStarterCode,
     kind,
     setKind,
     status,
     setStatus,
-    options,
-    setOptions,
-    answer,
-    setAnswer,
     chapterIds,
     setChapterIds,
     pointIds,
@@ -54,15 +45,12 @@ export function QuestionDialog({
     setReferenceMaterial,
     referencePage,
     setReferencePage,
-    cases,
-    setCases,
-    samples,
-    setSamples,
     error,
     busy,
     setDirty,
     save,
   } = editor;
+  const TypeFields = questionEditors[kind].Fields;
   return (
     <Dialog
       open={open}
@@ -142,132 +130,7 @@ export function QuestionDialog({
                 maxLength={30000}
               />
             </div>
-            {kind === "single_choice" ? (
-              <fieldset className="field">
-                <legend>选项与正确答案</legend>
-                {options.map((option, i) => (
-                  <div className="flex gap-2 items-center my-2" key={i}>
-                    <input
-                      type="radio"
-                      name="correct-option"
-                      aria-label={`选项${i + 1}为正确答案`}
-                      checked={answer === option && option !== ""}
-                      onChange={() => {
-                        setAnswer(option);
-                        setDirty(true);
-                      }}
-                    />
-                    <Input
-                      aria-label={`选项${i + 1}`}
-                      value={option}
-                      onChange={(e) => {
-                        setOptions((v) =>
-                          v.map((o, j) => (j === i ? e.target.value : o)),
-                        );
-                        if (answer === option) setAnswer(e.target.value);
-                      }}
-                      required
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`删除选项${i + 1}`}
-                      disabled={options.length <= 2}
-                      onClick={() => {
-                        setOptions((v) => v.filter((_, j) => j !== i));
-                        setDirty(true);
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={options.length >= 20}
-                  onClick={() => {
-                    setOptions((v) => [...v, ""]);
-                    setDirty(true);
-                  }}
-                >
-                  添加选项
-                </Button>
-              </fieldset>
-            ) : kind === "boolean" ? (
-              <div className="field">
-                <Label htmlFor="q-answer">正确答案</Label>
-                <SelectField
-                  id="q-answer"
-                  value={answer}
-                  onValueChange={(value) => {
-                    setAnswer(value);
-                    setDirty(true);
-                  }}
-                >
-                  <option value="">请选择</option>
-                  <option value="true">正确</option>
-                  <option value="false">错误</option>
-                </SelectField>
-              </div>
-            ) : kind === "fill" ? (
-              <div className="field">
-                <Label htmlFor="q-answer">可接受答案（每行一个）</Label>
-                <Textarea
-                  id="q-answer"
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                />
-              </div>
-            ) : (
-              <>
-                <div className="field">
-                  <Label htmlFor="q-starter">
-                    初始 Python 代码（标准输入输出）
-                  </Label>
-                  <Textarea
-                    id="q-starter"
-                    value={starterCode}
-                    maxLength={20000}
-                    onChange={(e) => {
-                      setStarterCode(e.target.value);
-                      setDirty(true);
-                    }}
-                  />
-                </div>
-                <div className="field">
-                  <Label htmlFor="q-hints">
-                    分步提示（每行一条，最多10条）
-                  </Label>
-                  <Textarea
-                    id="q-hints"
-                    value={hints}
-                    onChange={(e) => {
-                      setHints(e.target.value);
-                      setDirty(true);
-                    }}
-                  />
-                </div>
-                <Cases
-                  title="公开样例"
-                  rows={samples}
-                  setRows={(v) => {
-                    setSamples(v);
-                    setDirty(true);
-                  }}
-                />
-                <Cases
-                  title="私有判题用例"
-                  rows={cases}
-                  setRows={(v) => {
-                    setCases(v);
-                    setDirty(true);
-                  }}
-                />
-              </>
-            )}
+            <TypeFields {...editor} />
             <div className="field">
               <Label htmlFor="question-source">参考资料（可选）</Label>
               <SelectField

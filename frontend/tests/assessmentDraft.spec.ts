@@ -29,3 +29,20 @@ describe("assessment draft save ordering", () => {
     expect(queue.revision()).toBe(5);
   });
 });
+
+
+it("snapshots array answers before an in-flight save", async () => {
+  const pending = deferred<AssessmentAttempt>();
+  const calls: unknown[] = [];
+  const queue = createAssessmentDraftQueue({ revision: 0, initial: [], active: () => true,
+    send: async (_revision, answers) => { calls.push(answers[0]?.answer); return pending.promise; },
+    saved: () => undefined, failed: () => undefined });
+  const choices = ['A', 'B'];
+  queue.set([{ question_id: 'q', answer: choices }]);
+  const saving = queue.flush();
+  choices.push('C');
+  expect(calls).toEqual([['A', 'B']]);
+  pending.resolve(saved(1));
+  await saving;
+  expect(queue.hasPending()).toBe(false);
+});
