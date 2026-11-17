@@ -205,8 +205,10 @@ def _call(material: Material, payload: dict[str, Any], images: list[dict[str, An
     user: Any = [{"type": "text", "text": content}, *images] if images else content
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
     # 校准整轮固定视觉模型：同一模型的前缀缓存才可能连续命中。
+    # 输出上限取作者期配置（默认8000）：开思考时推理 token 计入 max_tokens，
+    # 硬编码小值会随机报 finish_reason=length。
     return cast(dict[str, Any], model_client.chat(messages, settings=settings, model=settings["vision_model"],
-                                                 effort="low", max_tokens=2048, require_text=False))
+                                                 effort="low", max_tokens=settings["max_tokens"], require_text=False))
 
 
 def _merge(state: dict[str, Any], reply: dict[str, Any], group: list[PageNarration],
@@ -279,7 +281,8 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
         if index >= len(groups):
             state["complete"] = True
             state["generated_at"] = now().isoformat()
-        row.report = state
+        # 每次写入必须换一个新对象：重复赋同一个 dict，SQLAlchemy 认为没有变化，不会落库。
+        row.report = dict(state)
         row.windows = len(groups)
         db.flush()
         repository.beat(db, material.id, done=index, total=len(groups))
@@ -288,7 +291,7 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
     if index >= len(groups) and not state.get("complete"):
         state["complete"] = True
         state["generated_at"] = now().isoformat()
-    row.report = state
+    row.report = dict(state)
     db.flush()
     return row
 

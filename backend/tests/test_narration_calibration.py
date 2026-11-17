@@ -298,3 +298,21 @@ def test_restart_marks_running_jobs_interrupted(db, classroom):
     assert repository.interrupt_running(db) == 1
     job = repository.job_of(db, material.id)
     assert job.status == "interrupted" and not repository.job_running(job)
+
+def test_partial_progress_survives_a_fresh_read(client, db, classroom, teacher, generated, monkeypatch):
+    """每窗提交必须真的进库：下一片可能是另一个请求/进程，不能只靠内存里的对象。"""
+    monkeypatch.setattr(calibrate, "WINDOW", 1)
+    # 一个时间片跑完全部窗口：一次只跑一窗时，第一窗总能落库，抓不到“后续窗口没提交”。
+    monkeypatch.setattr(calibrate, "SLICE_SECONDS", 60)
+    monkeypatch.setattr("app.narration.calibrate.model_client.chat",
+                        lambda messages, **kwargs: {"raw": {"summary": "摘要", "terms": [], "issues": []},
+                                                    "text": "", "bridge_in": "", "anchors": [], "usage": {},
+                                                    "model": kwargs.get("model")})
+    first = client.post(url(classroom, generated, "/calibrate"), headers=teacher["headers"])
+    assert first.status_code == 200, first.text
+    assert first.json()["windows_done"] == 3 and first.json()["complete"] is True
+    # 每个窗口都必须真的提交：丢掉会话里的对象后，库里的游标应当停在最后一窗。
+    db.expire_all()
+    stored = client.get(url(classroom, generated, "/calibrate?partial=1"), headers=teacher["headers"])
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["windows_done"] == 3 and stored.json()["complete"] is True
