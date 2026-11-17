@@ -26,9 +26,9 @@
           </section>
         </template>
         <section v-else-if="selected === 'interface'" class="town-section settings-group">
-          <div class="setting-row"><label for="settings-subtitle-size" class="setting-copy"><strong>讲解字幕大小</strong><span class="setting-description">仅调整资料讲解的字幕。</span></label><select id="settings-subtitle-size" v-model="preferences.subtitleSize"><option v-for="(size, index) in subtitleSizes" :key="size" :value="size">{{ ['小', '标准', '中', '大', '特大'][index] }}</option></select></div>
+          <div class="setting-row"><label for="settings-subtitle-size" class="setting-copy"><strong>讲解字幕大小</strong><span class="setting-description">仅调整资料讲解的字幕。</span></label><GameSelect id="settings-subtitle-size" v-model="preferences.subtitleSize" aria-label="讲解字幕大小" :options="subtitleSizes.map((size, index) => ({ value: size, label: ['小', '标准', '中', '大', '特大'][index]! }))" /></div>
           <p class="subtitle-preview" :style="{ fontSize: `${preferences.subtitleSize}rem` }">从计算工具出发，一起理解计算思维。</p>
-          <div class="setting-row"><label for="settings-text-scale" class="setting-copy"><strong>文字大小</strong><span class="setting-description">调整学习内容和菜单的文字大小。</span></label><select id="settings-text-scale" v-model="preferences.textScale"><option v-for="scale in textScales" :key="scale" :value="scale">{{ scale * 100 }}%{{ scale === 1 ? ' · 标准' : '' }}</option></select></div>
+          <div class="setting-row"><label for="settings-text-scale" class="setting-copy"><strong>文字大小</strong><span class="setting-description">调整学习内容和菜单的文字大小。</span></label><GameSelect id="settings-text-scale" v-model="preferences.textScale" aria-label="文字大小" :options="textScales.map(scale => ({ value: scale, label: `${scale * 100}%${scale === 1 ? ' · 标准' : ''}` }))" /></div>
           <div class="setting-row"><label for="settings-reduce-motion" class="setting-copy"><strong>减少界面动效</strong><span id="settings-motion-description" class="setting-description">减少过渡动画，对话直接显示全文。</span><span v-if="systemMotionOnly" class="setting-status">设备已启用减少动态效果</span></label><span class="game-switch"><input id="settings-reduce-motion" v-model="preferences.reduceMotion" type="checkbox" role="switch" aria-describedby="settings-motion-description" /><span class="game-switch-track" aria-hidden="true"></span></span></div>
         </section>
         <section v-else-if="selected === 'music'" class="town-section settings-group">
@@ -45,6 +45,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import GameSelect from "../shared/GameSelect.vue";
 import { computed, nextTick, ref } from "vue";
 import { useRouter } from "vue-router";
 import GameIcon from "../shared/GameIcon.vue";
@@ -102,7 +103,7 @@ async function logout() {
 .setting-copy > strong { font-size:.9375rem; font-weight:600; }
 .setting-description { display:block; color:#7c715d; line-height:1.75; font-size:.875rem; font-weight:400; margin:0; }
 .setting-status { color:#34614e; font-size:.875rem; }
-.setting-row select { min-width:140px; }
+.setting-row > :deep(.game-select) { min-width:140px; }
 .volume-control { display:flex; align-items:center; gap:1rem; min-width:220px; }
 .volume-control input { width:160px; }
 .volume-control input:disabled { opacity:.45; cursor:not-allowed; }.volume-control output { width:3.5rem; text-align:right; color:#485841; font-variant-numeric:tabular-nums; }

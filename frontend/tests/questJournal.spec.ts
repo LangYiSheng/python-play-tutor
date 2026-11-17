@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { nextTick } from "vue";
+import GameSelect from "../src/shared/GameSelect.vue";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import QuestJournal from "../src/features/QuestJournal.vue";
@@ -68,7 +70,8 @@ describe("quest journal main and side classification", () => {
       ],
     };
     const wrapper = mount(QuestJournal, { global: { plugins: [pinia] } });
-    await wrapper.get(".journal-kind-select select").setValue("side");
+    wrapper.getComponent(GameSelect).vm.$emit("update:modelValue", "side");
+    await nextTick();
     expect(wrapper.findAll(".journal-entry h3").map((h) => h.text())).toEqual(["支线找书"]);
     expect(wrapper.find(".journal-entry .eyebrow").text()).toContain(
       "支线委托",
@@ -95,13 +98,14 @@ describe("quest journal main and side classification", () => {
     expect(wrapper.find(".journal-cover img").exists()).toBe(false);
     expect(wrapper.get(".journal-cover h3").text()).toBe("委托目录");
     expect(wrapper.get('.journal-filter-bar [aria-label="任务状态"]').findAll("button")).toHaveLength(3);
-    expect(wrapper.get(".journal-filter-bar select").findAll("option")).toHaveLength(3);
+    expect(wrapper.getComponent(GameSelect).props("options")).toHaveLength(3);
     expect(wrapper.get(".quest-directory").classes()).toContain("is-empty");
     expect(wrapper.get(".quest-directory").text()).toBe("没有委托");
     expect(wrapper.get(".journal-empty").text()).toBe("没有委托");
     expect(wrapper.find(".directory-label").exists()).toBe(false);
     expect(wrapper.find(".journal-empty svg").exists()).toBe(false);
-    await wrapper.get(".journal-kind-select select").setValue("side");
+    wrapper.getComponent(GameSelect).vm.$emit("update:modelValue", "side");
+    await nextTick();
     await wrapper.get('.status-tabs button[aria-pressed="true"]').trigger("click");
     expect(wrapper.get(".quest-directory").text()).toBe("没有委托");
     wrapper.unmount();

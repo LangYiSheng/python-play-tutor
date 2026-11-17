@@ -4,18 +4,10 @@
       <h4 id="developer-stage-target" class="game-card-title"><GameIcon name="target" />选择目标</h4>
       <div class="developer-columns">
         <label class="town-field" for="developer-quest">任务
-          <select id="developer-quest" v-model="questId" :disabled="action.busy">
-            <option value="">请选择任务</option>
-            <option v-for="item in overview?.quests" :key="item.id" :value="item.id">{{ item.title }}</option>
-          </select>
+          <GameSelect id="developer-quest" v-model="questId" :disabled="action.busy" aria-label="任务" :options="[{ value: '', label: '请选择任务' }, ...(overview?.quests ?? []).map(item => ({ value: item.id, label: item.title }))]" />
         </label>
         <label class="town-field" for="developer-node">目标阶段
-          <select id="developer-node" v-model="nodeId" :disabled="action.busy || !quest">
-            <option value="">请选择阶段</option>
-            <option v-for="item in quest?.nodes" :key="item.id" :value="item.id">
-              {{ item.title }} · {{ stateLabels[item.status] ?? item.status }}
-            </option>
-          </select>
+          <GameSelect id="developer-node" v-model="nodeId" :disabled="action.busy || !quest" aria-label="目标阶段" :options="[{ value: '', label: '请选择阶段' }, ...(quest?.nodes ?? []).map(item => ({ value: item.id, label: `${item.title} · ${stateLabels[item.status] ?? item.status}` }))]" />
         </label>
       </div>
       <p v-if="!overview?.quests.length" class="developer-help">本班没有已配置任务。可通过内容定位查看课程，不会自动创建章节任务。</p>
@@ -30,17 +22,11 @@
       <div class="developer-columns">
         <label v-for="entry in branchNodes" :key="entry.id" class="town-field">
           {{ entry.title }} · 分支
-          <select v-model="choices[entry.id]" :disabled="action.busy">
-            <option value="">按目标推导</option>
-            <option v-for="choice in entry.choices" :key="choice.id" :value="choice.id">{{ choice.label }}</option>
-          </select>
+          <GameSelect v-model="choices[entry.id]" placeholder="按目标推导" :disabled="action.busy" :aria-label="`${entry.title} · 分支`" :options="[{ value: '', label: '按目标推导' }, ...(entry.choices ?? []).map(choice => ({ value: choice.id, label: choice.label }))]" />
         </label>
         <label v-for="entry in anyNodes" :key="`any-${entry.id}`" class="town-field">
           {{ entry.title }} · ANY 前置
-          <select v-model="anyDependencies[entry.id]" :disabled="action.busy">
-            <option value="">请选择</option>
-            <option v-for="dep in entry.dependencies" :key="dep" :value="dep">{{ titleOf(dep) }}</option>
-          </select>
+          <GameSelect v-model="anyDependencies[entry.id]" :disabled="action.busy" :aria-label="`${entry.title} · ANY 前置`" :options="[{ value: '', label: '请选择' }, ...(entry.dependencies ?? []).map(dep => ({ value: dep, label: titleOf(dep) }))]" />
         </label>
       </div>
       <button class="town-secondary" :disabled="action.busy" @click="previewStage"><GameIcon name="list" />预览阶段调整</button>
@@ -60,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import GameSelect from "../../shared/GameSelect.vue";
 import { computed, reactive, ref, watch } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import ToolFeedback from "./ToolFeedback.vue";

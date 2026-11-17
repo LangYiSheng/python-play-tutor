@@ -27,9 +27,7 @@
         @input="seek"
       />
       <span class="lecture-time">{{ clock }}</span>
-      <select class="lecture-speed" :value="speed" aria-label="讲解语速" @change="setSpeed(($event.target as HTMLSelectElement).value)">
-        <option v-for="value in SPEEDS" :key="value" :value="value">{{ value }}×</option>
-      </select>
+      <GameSelect class="lecture-speed" :model-value="speed" aria-label="讲解语速" :options="SPEEDS.map(value => ({ value, label: `${value}×` }))" @update:model-value="setSpeed" />
     </div>
 
     <audio
@@ -49,6 +47,7 @@
 </template>
 
 <script setup lang="ts">
+import GameSelect from "../../shared/GameSelect.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import { api } from "../../shared/api";
@@ -361,18 +360,5 @@ onBeforeUnmount(() => {
   background: var(--game-paper, #fbf5e9);
 }
 .lecture-time { flex: none; color: var(--game-muted, #7c6b55); font-size: var(--game-caption-size, .8125rem); font-variant-numeric: tabular-nums; }
-.game-workspace .lecture-stage .lecture-bar select.lecture-speed {
-  flex: none;
-  width: 58px;
-  min-width: 58px;
-  height: 26px;
-  min-height: 26px;
-  padding: 0 18px 0 5px;
-  border: 1px solid var(--game-line, #d7c7a9);
-  border-radius: 6px;
-  background: var(--game-paper-raised, #fffaf0);
-  appearance: auto;
-  color: var(--game-ink, #513b28);
-  font-size: var(--game-caption-size, .8125rem);
-}
+.lecture-bar > :deep(.game-select) { flex:none; width:4.8rem; }
 </style>
