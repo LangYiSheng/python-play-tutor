@@ -36,6 +36,7 @@ from . import assistant_settings, content_deletions, judge_management, narration
 from .config import CORS_ORIGINS, dev_tools_enabled
 from .db import SessionLocal
 from .narration import management as synthesis_management
+from .narration import repository as narration_repository
 
 
 @asynccontextmanager
@@ -44,6 +45,8 @@ async def lifespan(app):
 
     initialize_admin()
     assistant.recover_interrupted_calls()
+    # 重启不可能还留着活着的讲解任务（单 API 进程），直接标中断，省掉 5 分钟空等。
+    narration_repository.interrupt_running()
     tasks = [
         asyncio.create_task(practice.judge_worker()),
         asyncio.create_task(materials_jobs.material_worker()),

@@ -70,13 +70,28 @@ class CalibrationIssue(TypedDict):
 
 
 class CalibrationReport(TypedDict):
+    """One calibration run. `complete` 为 false 时只表示进度，不能被应用。"""
+    complete: bool
+    deck_fingerprint: str
+    calibrate_version: str
+    prefix_hash: str
+    model: str
+    effort: str
     windows: int
+    windows_done: int
+    next_index: int
     pages: int
+    pages_seen: int
     summary: str
     terms: list[str]
     issues: list[CalibrationIssue]
+    issues_truncated: bool
+    render_errors: list[int]
+    shrunk_windows: list[int]
     revisions: dict[str, str]
-    generated_at: str
+    window_budget: dict[str, int]
+    usage: dict[str, int]
+    generated_at: str | None
 
 
 class AppliedCalibration(TypedDict):

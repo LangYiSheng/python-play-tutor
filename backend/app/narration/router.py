@@ -85,17 +85,24 @@ def read_quota(classroom_id: int, material_id: int, db: Annotated[Session, Depen
 @router.post("/calibrate")
 def calibrate_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                    user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    """Walk the whole deck with a rolling summary; returns a report, rewrites nothing."""
+    """Walk the deck with a rolling summary for one time slice; returns the report so far.
+
+    Long decks are walked over several requests: the caller repeats while `complete` is false.
+    The cursor lives in the run's report row, so an interrupted run resumes where it stopped.
+    """
     return task_commands.calibrate_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
 
 
 @router.get("/calibrate")
-def read_calibration(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
-                     user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+def read_calibration(classroom_id: int, material_id: int,
+                     db: Annotated[Session, Depends(get_db)],
+                     user: Annotated[User, Depends(require_teacher)],
+                     partial: bool = False) -> dict[str, Any]:
+    """The newest finished report by default; `partial=1` also shows a run still in progress."""
     instance_id = teacher_instance_id(db, user, classroom_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
-    entry = calibrate.latest(db, material.id)
+    entry = calibrate.latest_any(db, material.id) if partial else calibrate.latest_complete(db, material.id)
     if entry is None:
         raise HTTPException(404, "还没有校准报告")
     return {"id": entry.id, "applied_at": entry.applied_at.isoformat() if entry.applied_at else None,
@@ -109,9 +116,11 @@ def apply_calibration(classroom_id: int, material_id: int, db: Annotated[Session
     instance_id = teacher_instance_id(db, user, classroom_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
-    entry = calibrate.latest(db, material.id)
+    entry = calibrate.latest_any(db, material.id)
     if entry is None:
         raise HTTPException(404, "还没有校准报告")
+    if not (entry.report or {}).get("complete", True):
+        raise HTTPException(409, "校准尚未完成，不能应用")
 
     def regenerate(page_no: int) -> None:
         service.generate_page(db, material, page_no, instance_id=instance_id)

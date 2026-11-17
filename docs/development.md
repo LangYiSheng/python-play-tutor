@@ -254,7 +254,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 页图渲染需要宿主机或镜像内安装并可执行 `pdftoppm`（poppler）。程序先转PNG，再由Pillow压成JPEG；不要求某台机器的固定安装路径。缺少依赖或字体时应检查具体材料的渲染结果。
 
-生成参数按实测锁定：关思考（`reasoning_effort=none`）、`max_tokens` 至少8000、`response_format=json_object`；成功判定需同时满足 JSON 可解析、正文非空、`finish_reason` 不为 `length`。开着思考时单页耗时升到15–55秒，且预算不足会返回空正文。批量校准按页窗滚动摘要，参数见 `backend/app/narration/calibrate.py`。改动 `prompts.py` 的正文会自动改变幂等键（提示词指纹参与哈希），不需要手动改版本号也不会复用旧讲解；`PROMPT_VERSION` 只用于追踪。校准每窗最多4页，携带原文/必要页图及完整讲解，回复上限2048 tokens；逐窗续租。整册仍是同步请求，大资料可能超过网关300秒上限，应检查任务状态后再操作，不盲目重复调用。
+生成参数按实测锁定：关思考（`reasoning_effort=none`）、`max_tokens` 至少8000、`response_format=json_object`；成功判定需同时满足 JSON 可解析、正文非空、`finish_reason` 不为 `length`。开着思考时单页耗时升到15–55秒，且预算不足会返回空正文。批量校准按页窗滚动摘要，参数见 `backend/app/narration/calibrate.py`。改动 `prompts.py` 的正文会自动改变幂等键（提示词指纹参与哈希），不需要手动改版本号也不会复用旧讲解；`PROMPT_VERSION` 只用于追踪。校准每窗最多4页，携带原文/必要页图及完整讲解，回复上限2048 tokens；逐窗心跳。单次请求只跑一个时间片（约45秒），游标与合并结果逐窗落库，调用方重复请求直到完成；整册输入未变时直接复用上次完整报告，不再调用模型。视觉模型整轮固定，供应商前缀缓存靠“稳定前缀 + 可变尾部”的固定结构命中，命中数记在报告 `usage`。
 
 服务配置复用加密配置存储：学生助教记录1、讲稿记录2、语音记录3，修订互相独立。空密钥输入保留原值，显式清除后不会回退到环境密钥。密钥与主密钥文件必须配套备份；配置不进入课程包。端口、存储、文档转换和转码参数继续是部署配置，集中在同一 env，不通过普通教师表单改变基础设施。
 

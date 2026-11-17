@@ -73,14 +73,33 @@ export interface CalibrationIssue {
   status: "draft" | "accepted";
 }
 
+export interface CalibrationUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cache_hit_tokens?: number;
+  cache_miss_tokens?: number;
+}
+
 export interface CalibrationReport {
   id: number;
+  // false 表示这一轮还没走完整册：只能看进度，不能应用。旧报告没有这个字段。
+  complete?: boolean;
+  reused?: boolean;
+  resuming?: boolean;
   windows: number;
+  windows_done?: number;
+  next_index?: number;
   pages: number;
+  pages_seen?: number;
   summary: string;
   terms: string[];
   issues: CalibrationIssue[];
-  generated_at?: string;
+  issues_truncated?: boolean;
+  shrunk_windows?: number[];
+  render_errors?: number[];
+  model?: string;
+  usage?: CalibrationUsage;
+  generated_at?: string | null;
   applied_at?: string | null;
   applied_pages?: {
     regenerated: number[];
@@ -190,8 +209,10 @@ export const narrationApi = {
       `${base(classroomId, materialId)}/calibrate`,
       {},
     ),
-  calibration: (classroomId: number, materialId: number) =>
-    api.get<CalibrationReport>(`${base(classroomId, materialId)}/calibrate`),
+  calibration: (classroomId: number, materialId: number, partial = false) =>
+    api.get<CalibrationReport>(
+      `${base(classroomId, materialId)}/calibrate${partial ? "?partial=1" : ""}`,
+    ),
   applyCalibration: (classroomId: number, materialId: number) =>
     api.post<CalibrationReport["applied_pages"]>(
       `${base(classroomId, materialId)}/calibrate/apply`,

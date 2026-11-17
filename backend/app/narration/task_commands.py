@@ -100,7 +100,7 @@ def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User)
     db.commit()
     with repository.task(db, material, "calibrate", user, request={"operation": "calibrate"}):
         try:
-            entry = calibrate.analyse(db, material, instance_id=instance_id)
+            row, reused, resuming = calibrate.run_slice(db, material)
         except model_client.ModelUnavailable as exc:
             repository.release(db, material.id, status="failed", message=str(exc))
             raise HTTPException(409, str(exc)) from exc
@@ -113,9 +113,19 @@ def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User)
         except LookupError as exc:
             repository.release(db, material.id, status="failed", message=str(exc))
             raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            # 缺少渲染工具、页图过大、任务被接管：与生成路径一样映射成可读的错误，不是 500。
+            repository.release(db, material.id, status="failed", message=str(exc))
+            raise HTTPException(422, str(exc)) from exc
         db.commit()
-        repository.release(db, material.id, message="校准完成")
-        return {"id": entry.id, **(entry.report or {})}
+        report = dict(row.report or {})
+        complete = bool(report.get("complete"))
+        repository.release(
+            db,
+            material.id,
+            message="校准完成" if complete else f"校准继续中 {report.get('windows_done', 0)}/{report.get('windows', 0)}",
+        )
+        return {"id": row.id, **report, "reused": reused, "resuming": resuming}
 
 
 def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Session, user: User) -> AudioRecord:

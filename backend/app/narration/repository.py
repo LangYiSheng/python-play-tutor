@@ -16,6 +16,8 @@ from .models import VISIBLE_STATUSES, NarrationJob, NarrationRun, PageNarration
 
 MAX_TEXT = 4000
 MIN_SECONDS, MAX_SECONDS = 30, 300
+# 文本层短到这个长度以下就当作碎片：改成看页图，比把碎片喂给模型更准。
+TEXT_AS_IMAGE_BELOW = 60
 
 
 def text_hash(text: str) -> str:
@@ -236,6 +238,28 @@ def task(db: Session, material: Material, kind: str, user: User,
         raise
     else:
         release(db, material.id)
+
+
+def interrupt_running(db: Session | None = None) -> int:
+    """A restart cannot leave a live narration task: the deployment runs one API process."""
+    from sqlalchemy import update
+
+    from ..db import SessionLocal
+
+    session = db or SessionLocal()
+    try:
+        jobs = list(session.scalars(select(NarrationJob).where(NarrationJob.status == "running")))
+        for job in jobs:
+            job.status = "interrupted"
+            job.finished_at = now()
+            job.message = "服务重启，任务已中断；再次触发会从上次的窗口继续"
+            sync_run(session, job)
+        session.execute(update(NarrationRun).where(NarrationRun.status == "running").values(status="interrupted"))
+        session.commit()
+    finally:
+        if db is None:
+            session.close()
+    return len(jobs)
 
 
 def job_running(job: NarrationJob | NarrationRun) -> bool:

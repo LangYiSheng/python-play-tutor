@@ -5,6 +5,17 @@ import { NarrationReview } from "../src/features/materials/narration/review";
 
 afterEach(() => vi.unstubAllGlobals());
 
+const report = {
+  id: 1,
+  complete: true,
+  windows: 1,
+  windows_done: 1,
+  pages: 2,
+  summary: "整体连贯",
+  terms: ["监督学习"],
+  issues: [],
+};
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -48,7 +59,10 @@ const list = {
   ],
 };
 
-function stub(calls: { url: string; method: string; body?: unknown }[], overrides: Record<string, unknown> = {}) {
+function stub(
+  calls: { url: string; method: string; body?: unknown }[],
+  overrides: Record<string, unknown> = {},
+) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -63,8 +77,9 @@ function stub(calls: { url: string; method: string; body?: unknown }[], override
           pages: [{ page_no: 1, status: "draft", ready: false, seconds: null }],
         });
       if (url.endsWith("/narrations")) return json(overrides.list ?? list);
-      if (url.endsWith("/calibrate"))
-        return json({ id: 1, windows: 1, pages: 2, summary: "整体连贯", terms: ["监督学习"], issues: [] });
+      if (url.includes("/calibrate/apply"))
+        return json({ regenerated: [], failed: [], awaiting_teacher: [] });
+      if (url.includes("/calibrate")) return json(overrides.calibration ?? report);
       return json({ page_no: 1, status: "draft", reused: false, model: "deepseek-flash" });
     }),
   );
@@ -120,4 +135,38 @@ it("generate and calibrate hit the scoped endpoints", async () => {
 
   await user.click(screen.getByRole("button", { name: /全篇校准/ }));
   await waitFor(() => expect(calls.some((call) => call.url.endsWith("/calibrate"))).toBe(true));
+});
+
+it("walks the deck in slices until the report is complete", async () => {
+  const posts: string[] = [];
+  let rounds = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      if (url.endsWith("/quota")) return json({ used_today: 0, daily_limit: 300, available: true });
+      if (url.endsWith("/audio")) return json({ available: true, voice: "Meilin", model: "m", pages: [] });
+      if (url.endsWith("/narrations")) return json(list);
+      if (url.includes("/calibrate/apply")) return json({ regenerated: [], failed: [], awaiting_teacher: [] });
+      if (url.includes("/calibrate")) {
+        if (method !== "POST") return json({ ...report, complete: false, windows: 3, windows_done: 0 });
+        posts.push(url);
+        rounds += 1;
+        return json(
+          rounds === 1
+            ? { ...report, complete: false, windows: 3, windows_done: 1 }
+            : { ...report, windows: 3, windows_done: 3 },
+        );
+      }
+      return json({ page_no: 1, status: "draft", reused: false, model: "x" });
+    }),
+  );
+  const user = userEvent.setup();
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: /全篇校准/ })).toBeTruthy());
+  await user.click(screen.getByRole("button", { name: /全篇校准/ }));
+  await waitFor(() => expect(screen.getByText(/校准报告 · 3 个窗口/)).toBeTruthy());
+  // 服务端一次只跑一个时间片：前端必须循环到 complete，而不是只发一次请求。
+  expect(posts.length).toBe(2);
+  expect(screen.queryByText(/进行中/)).toBeNull();
 });

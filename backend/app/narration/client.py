@@ -18,7 +18,49 @@ class ModelUnavailable(RuntimeError):
 
 
 class ModelFailed(RuntimeError):
-    """The provider answered but the result cannot be used."""
+    """The provider answered but the result cannot be used.
+
+    `hint` 标记可重试的错误类别（目前只有“输入过长”）；`detail` 保留供应商原文，否则老师只看到
+    “返回 400”，无法判断是长度、鉴权还是模型名写错。
+    """
+
+    def __init__(self, message: str, *, hint: str | None = None, detail: str = "") -> None:
+        super().__init__(message)
+        self.hint = hint
+        self.detail = detail
+
+
+# 供应商把多种问题都报成 400；只识别长度这一类，其余不自动重试。
+LENGTH_HINTS = ("context length", "maximum context", "input is too long", "too long",
+                "reduce the length", "length limit", "maximum number of tokens")
+
+
+def _provider_error(response: httpx.Response) -> tuple[str, str | None]:
+    """Return (bounded provider message, hint). Never echo request content or keys."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return "", None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    message = error.get("message") if isinstance(error, dict) else payload.get("message") if isinstance(payload, dict) else None
+    text = str(message or "").strip()[:200]
+    lowered = text.lower()
+    return text, "length" if any(token in lowered for token in LENGTH_HINTS) else None
+
+
+def _usage(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalise provider cache accounting so hit rate can be measured, not guessed."""
+    raw = data.get("usage") or {}
+    details = raw.get("prompt_tokens_details") or {}
+    hit = raw.get("prompt_cache_hit_tokens", details.get("cached_tokens")) or 0
+    miss = raw.get("prompt_cache_miss_tokens")
+    try:
+        hit_value = max(0, int(hit))
+        prompt = max(0, int(raw.get("prompt_tokens") or 0))
+        miss_value = max(0, int(miss)) if miss is not None else max(0, prompt - hit_value)
+    except (TypeError, ValueError):
+        return dict(raw)
+    return {**raw, "cache_hit_tokens": hit_value, "cache_miss_tokens": miss_value}
 
 
 def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: str,
@@ -42,11 +84,13 @@ def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: 
     if response.status_code in {401, 403}:
         raise ModelUnavailable("作者期模型鉴权失败")
     if response.status_code != 200:
-        raise ModelFailed(f"作者期模型返回 {response.status_code}")
+        message, hint = _provider_error(response)
+        raise ModelFailed(f"作者期模型返回 {response.status_code}" + (f"：{message}" if message else ""),
+                          hint=hint, detail=message)
     data = response.json()
     choice = (data.get("choices") or [{}])[0]
-    message = choice.get("message") or {}
-    content = message.get("content") or ""
+    answer = choice.get("message") or {}
+    content = answer.get("content") or ""
     if choice.get("finish_reason") == "length":
         raise ModelFailed("模型输出被截断，请重试或调高上限")
     if not content.strip():
@@ -65,6 +109,6 @@ def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: 
         text=str(parsed.get("text") or "").strip(),
         bridge_in=str(parsed.get("bridge_in") or "")[:300],
         anchors=anchors,
-        usage=data.get("usage") or {},
+        usage=_usage(data),
         model=str(data.get("model") or model),
     )

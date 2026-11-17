@@ -76,6 +76,19 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     };
   }, [classroomId, materialId]);
 
+  useEffect(() => {
+    let active = true;
+    // 展示上一次的（可能未完成的）报告：中断的运行也能看到跑到第几窗。
+    narrationApi
+      .calibration(classroomId, materialId, true)
+      .then((value) => {
+        if (active) setReport(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [classroomId, materialId]);
   async function run(
     label: string,
     action: () => Promise<unknown>,
@@ -127,6 +140,34 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     } catch (e) {
       setError(errorMessage(e));
       setMessage("已生成的页已保存，可直接重试（不会重复计费）");
+    } finally {
+      setBusy("");
+      await load().catch(() => {});
+    }
+  }
+  async function calibrateDeck() {
+    setBusy("calibrate");
+    setError("");
+    setMessage("");
+    try {
+      // 后端一次只走一个时间片；这里循环到 complete，游标在服务端，断了再点就能接着跑。
+      let advanced = -1;
+      for (;;) {
+        const next = await narrationApi.calibrate(classroomId, materialId);
+        setReport(next);
+        if (next.complete !== false) break;
+        const done = next.windows_done ?? 0;
+        if (done <= advanced)
+          throw new Error("校准没有前进，请刷新后重试");
+        advanced = done;
+        setMessage(
+          `正在校准：已检查 ${done}/${next.windows} 个窗口…`,
+        );
+      }
+      setMessage("校准报告已生成");
+    } catch (e) {
+      setError(errorMessage(e));
+      setMessage("已完成的窗口已保存，可再次点击继续");
     } finally {
       setBusy("");
       await load().catch(() => {});
@@ -242,6 +283,7 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     saved,
     dirty,
     run,
+    calibrateDeck,
     generateWholeDeck,
     acceptAllDrafts,
     synthesizeAllAudio,

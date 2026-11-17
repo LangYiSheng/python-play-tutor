@@ -44,6 +44,7 @@ export function NarrationReview({
     saved,
     dirty,
     run,
+    calibrateDeck,
     generateWholeDeck,
     acceptAllDrafts,
     synthesizeAllAudio,
@@ -51,6 +52,14 @@ export function NarrationReview({
     busyNow,
   } = review;
   const media = usePageMedia(classroomId, materialId, pageNo, saved);
+  const usage = report?.usage;
+  const cachedTokens =
+    (usage?.cache_hit_tokens ?? 0) + (usage?.cache_miss_tokens ?? 0);
+  const cachePercent = cachedTokens
+    ? Math.round(((usage?.cache_hit_tokens ?? 0) / cachedTokens) * 100)
+    : null;
+  const shrunk = report?.shrunk_windows ?? [];
+  const renderErrors = report?.render_errors ?? [];
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -144,23 +153,18 @@ export function NarrationReview({
                 disabled={
                   !quota?.available || busyNow || data.coverage.covered === 0
                 }
-                onClick={() =>
-                  void run(
-                    "calibrate",
-                    async () =>
-                      setReport(
-                        await narrationApi.calibrate(classroomId, materialId),
-                      ),
-                    "校准报告已生成",
-                  )
-                }
+                onClick={() => void calibrateDeck()}
               >
                 <ListChecks /> {busy === "calibrate" ? "正在校准…" : "全篇校准"}
               </Button>
               {report && (
                 <Button
                   variant="outline"
-                  disabled={Boolean(busy) || !(report.issues ?? []).length}
+                  disabled={
+                    Boolean(busy) ||
+                    report.complete === false ||
+                    !(report.issues ?? []).length
+                  }
                   onClick={() =>
                     void run(
                       "apply",
@@ -188,11 +192,37 @@ export function NarrationReview({
                 <p className="font-medium">
                   校准报告 · {report.windows} 个窗口 · {report.pages} 页
                 </p>
+                {report.complete === false && (
+                  <p className="hint" role="status">
+                    进行中 {report.windows_done ?? 0}/{report.windows} 个窗口，再点「全篇校准」从断点继续。
+                  </p>
+                )}
+                {report.reused && (
+                  <p className="hint">整册输入未变，直接复用了上一次的报告。</p>
+                )}
+                {cachePercent !== null && (
+                  <p className="hint">
+                    模型缓存命中 {cachePercent}%（{usage?.cache_hit_tokens ?? 0} / {cachedTokens} tokens）
+                  </p>
+                )}
                 <p className="whitespace-pre-wrap">
                   {report.summary || "（无摘要）"}
                 </p>
                 {(report.terms ?? []).length > 0 && (
                   <p className="hint">术语：{report.terms.join("、")}</p>
+                )}
+                {shrunk.length > 0 && (
+                  <p className="hint" role="note">
+                    第 {shrunk.join("、")} 窗因输入过长按缩减预算完成，覆盖可能不完整。
+                  </p>
+                )}
+                {renderErrors.length > 0 && (
+                  <p className="hint" role="note">
+                    {renderErrors.length} 页无法渲染页图，已改用文本校对。
+                  </p>
+                )}
+                {report.issues_truncated && (
+                  <p className="hint" role="note">问题过多，只保留前 120 条。</p>
                 )}
                 {(report.issues ?? []).length === 0 ? (
                   <p className="hint">没有发现问题。</p>
