@@ -11,6 +11,7 @@
 .arrival-panel .text-button { align-self: flex-end; color: #edd39d; min-height: 44px; background: none; border: 0; text-decoration: underline; text-underline-offset: 4px; }
 .arrival-panel .muted, .arrival-panel > a { font-size: .85rem; line-height: 1.7; color: #bbc6b4; }
 .arrival-panel .error { color: #ffc3b2; }
+.arrival-panel .arrival-intro { margin: 0; }
 .arrival-panel > a { margin-top: auto; padding-top: 20px; }
 .arrival-blackout { position: fixed; inset: 0; background: #060c0a; z-index: 100; animation: arrival-dark .45s both; }
 @keyframes arrival-dark { from {opacity:0} to {opacity:1} }

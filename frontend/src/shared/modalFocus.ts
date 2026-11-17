@@ -75,6 +75,8 @@ export function useModalFocus(
     if (!state() || !panel.value || event.isComposing || event.defaultPrevented)
       return;
     if (event.key === "Escape") {
+      // An expanded select owns the first Escape; the workspace owns the next.
+      if (event.target instanceof Element && event.target.closest('[role="combobox"][aria-expanded="true"]')) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!event.repeat) close();

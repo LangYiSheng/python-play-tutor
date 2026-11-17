@@ -4,11 +4,7 @@
       <h4 id="developer-chapter-title" class="game-card-title"><GameIcon name="book" />章节</h4>
       <div class="developer-field-action">
         <label class="town-field" for="developer-chapter">选择章节
-          <select id="developer-chapter" v-model="chapterId" :disabled="action.busy">
-            <option v-for="item in overview?.chapters" :key="item.id" :value="item.id">
-              {{ item.title }} · {{ chapterState(item) }}
-            </option>
-          </select>
+          <GameSelect id="developer-chapter" v-model="chapterId" :disabled="action.busy" aria-label="选择章节" :options="(overview?.chapters ?? []).map(item => ({ value: item.id, label: `${item.title} · ${chapterState(item)}` }))" />
         </label>
         <button class="town-secondary" :disabled="action.busy || !chapter || chapter.status !== 'published'" @click="locateChapter">
           <GameIcon name="compass" />定位本章
@@ -21,10 +17,7 @@
       <section class="developer-section" aria-labelledby="developer-material-title">
         <h4 id="developer-material-title" class="game-card-title"><GameIcon name="description" />资料定位</h4>
         <label class="town-field" for="developer-material">选择资料
-          <select id="developer-material" v-model="materialId" :disabled="action.busy">
-            <option value="">请选择资料</option>
-            <option v-for="item in materials" :key="item.id" :value="String(item.id)">{{ item.title }}</option>
-          </select>
+          <GameSelect id="developer-material" v-model="materialId" :disabled="action.busy" aria-label="选择资料" :options="[{ value: '', label: '请选择资料' }, ...materials.map(item => ({ value: String(item.id), label: item.title }))]" />
         </label>
         <label v-if="material?.kind === 'video'" class="town-field developer-position" for="developer-video-time">视频时间（秒）
           <input id="developer-video-time" v-model.number="videoTime" type="number" min="0" max="86400" :disabled="action.busy">
@@ -42,12 +35,7 @@
       <section class="developer-section" aria-labelledby="developer-activity-title">
         <h4 id="developer-activity-title" class="game-card-title"><GameIcon name="practice" />活动定位</h4>
         <label class="town-field" for="developer-activity">选择活动
-          <select id="developer-activity" v-model="activityId" :disabled="action.busy">
-            <option value="">请选择活动</option>
-            <option v-for="item in activities" :key="item.id" :value="item.id">
-              {{ item.title }}{{ item.published ? '' : ' · 未发布' }}
-            </option>
-          </select>
+          <GameSelect id="developer-activity" v-model="activityId" :disabled="action.busy" aria-label="选择活动" :options="[{ value: '', label: '请选择活动' }, ...activities.map(item => ({ value: item.id, label: `${item.title}${item.published ? '' : ' · 未发布'}` }))]" />
         </label>
         <label v-if="activity && ['practice', 'assessment'].includes(activity.kind)" class="town-field developer-position" for="developer-question">题号
           <input id="developer-question" v-model.number="questionNo" type="number" min="1" :max="activity.questions" :disabled="action.busy">
@@ -69,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import GameSelect from "../../shared/GameSelect.vue";
 import { computed, reactive, ref, watch } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import ToolFeedback from "./ToolFeedback.vue";

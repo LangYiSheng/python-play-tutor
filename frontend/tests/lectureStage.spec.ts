@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
+import GameSelect from "../src/shared/GameSelect.vue";
 import LectureStage from "../src/features/learning/LectureStage.vue";
 import { createPinia, setActivePinia } from "pinia";
 import { api } from "../src/shared/api";
@@ -94,4 +95,12 @@ it("ignores a material response arriving after a switch or unmount", async () =>
   w.unmount();
   wrappers.splice(wrappers.indexOf(w), 1);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:current");
+});
+
+it("applies the shared speed selector to narration audio", async () => {
+  const w = player();
+  await flushPromises();
+  w.getComponent(GameSelect).vm.$emit("update:modelValue", "1.4");
+  await flushPromises();
+  expect((w.get("audio").element as HTMLAudioElement).playbackRate).toBe(1.4);
 });

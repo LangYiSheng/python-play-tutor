@@ -35,6 +35,8 @@ def test_bootstrap_rejects_existing_student_and_invalid_config(db, student, monk
 def test_self_password_and_session_revocation(client, db, student, teacher, role):
     account = student if role == "student" else teacher
     password = role + "-password-123"
+    missing = client.post("/api/auth/password", headers=account["headers"], json={"new_password": "new-password-456"})
+    assert missing.status_code == 400
     bad = client.post("/api/auth/password", headers=account["headers"], json={"current_password": "wrong", "new_password": "new-password-456"})
     assert bad.status_code == 400
     result = client.post("/api/auth/password", headers=account["headers"], json={"current_password": password, "new_password": "new-password-456"})
@@ -53,8 +55,10 @@ def test_provision_reset_force_change_and_remove(client, db, teacher, classroom)
     headers = {"Authorization": "Bearer " + login["access_token"]}
     assert login["user"]["must_change_password"]
     assert client.get("/api/classrooms", headers=headers).status_code == 403
-    result = client.post("/api/auth/password", headers=headers, json={"current_password": "00012", "new_password": "private-password-123"})
+    result = client.post("/api/auth/password", headers=headers, json={"new_password": "private-password-123"})
     assert result.status_code == 200
+    assert not result.json()["user"]["must_change_password"]
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
     headers = {"Authorization": "Bearer " + result.json()["access_token"]}
     assert client.get("/api/classrooms", headers=headers).status_code == 200
     reset = {"student_ids": ["00012"], "action": "reset-password"}
@@ -63,9 +67,23 @@ def test_provision_reset_force_change_and_remove(client, db, teacher, classroom)
     assert client.post("/api/auth/login", json={"student_id": "00012", "password": "private-password-123"}).status_code == 401
     login = client.post("/api/auth/login", json={"student_id": "00012", "password": "00012"}).json()
     assert login["user"]["must_change_password"]
+    reset_headers = {"Authorization": "Bearer " + login["access_token"]}
+    changed = client.post("/api/auth/password", headers=reset_headers, json={"new_password": "another-private-password"})
+    assert changed.status_code == 200
     assert client.post(base + "/batch", headers=teacher["headers"], json={**reset, "action": "remove"}).status_code == 200
     assert db.get(User, login["user"]["id"])
     assert not db.get(Membership, (login["user"]["id"], classroom["id"]))
+
+
+def test_initial_password_setup_requires_session_and_valid_new_password(client, db, student):
+    user = db.get(User, student["id"])
+    user.must_change_password = True
+    db.commit()
+    assert client.post("/api/auth/password", json={"new_password": "private-password"}).status_code == 401
+    for password in ["short", student["student_id"], "student-password-123"]:
+        result = client.post("/api/auth/password", headers=student["headers"], json={"new_password": password})
+        assert result.status_code == 422
+    assert client.get("/api/classrooms", headers=student["headers"]).status_code == 403
 
 
 def test_account_management_permissions_and_atomicity(client, db, teacher, student, classroom):

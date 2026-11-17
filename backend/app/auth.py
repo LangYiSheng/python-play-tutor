@@ -138,7 +138,7 @@ def login(body: LoginInput, db: Annotated[Session, Depends(get_db)]):
 
 class PasswordInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    current_password: str = Field(min_length=1, max_length=200)
+    current_password: str | None = Field(default=None, min_length=1, max_length=200)
     new_password: str = Field(min_length=6, max_length=200)
 
 
@@ -147,7 +147,9 @@ def change_password(body: PasswordInput, db: Annotated[Session, Depends(get_db)]
     if db.get(TownPreviewStudent, user.id):
         raise HTTPException(403, "体验账号通过教师工作台进入")
     user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
-    if not verify_password(body.current_password, user.password_hash):
+    if body.current_password is None and not user.must_change_password:
+        raise HTTPException(400, "请输入当前密码")
+    if body.current_password is not None and not verify_password(body.current_password, user.password_hash):
         raise HTTPException(400, "当前密码不正确")
     if body.new_password == user.student_id or verify_password(body.new_password, user.password_hash):
         raise HTTPException(422, "新密码不能与学号或当前密码相同")
