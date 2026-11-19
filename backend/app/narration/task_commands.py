@@ -130,10 +130,14 @@ def run_digest(db: Session, material: Material, request: dict[str, Any]) -> None
     repository.beat(db, material.id, done=0, total=total)
     db.commit()
     written: list[int] = []
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0, "cache_miss_tokens": 0}
     for index, group in enumerate(groups, start=1):
         repository.ensure_lease(db, material.id)
         try:
-            written.extend(digest.run_window(db, material, group, settings, effort))
+            pages, spent = digest.run_window(db, material, group, settings, effort)
+            written.extend(pages)
+            for key in usage:
+                usage[key] += spent.get(key, 0)
         except (model_client.ModelFailed, ValueError) as exc:
             repository.release(db, material.id, status="failed", message=str(exc), extra={
                 "done": index - 1, "total": total,
@@ -142,7 +146,7 @@ def run_digest(db: Session, material: Material, request: dict[str, Any]) -> None
         repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页")
         db.commit()
     repository.release(db, material.id, message=f"已整理 {len(written)} 页",
-                       extra={"done": total, "total": total})
+                       extra={"done": total, "total": total, "usage": usage})
 
 
 def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:

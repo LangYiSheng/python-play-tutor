@@ -40,7 +40,7 @@ TEMPLATE = """整理规则：
 4. 每页另给三个字段：
    - title：这一页的主题标题，6 到 20 字，不要写「第N页」；
    - topic：一句话说明这一页讲什么，20 到 40 字；
-   - tags：2 到 6 个知识标签，每个 2 到 8 字的名词短语；不要「其他」「概述」这类空标签，不要重复 title。
+   - tags：2 到 6 个知识标签，每个 2 到 8 字的名词短语；只给本页讲的概念、方法、算法或数据结构，不给版面类（封面、目录、章节过渡）、机构或人名、空泛词（概述、其他），也不要重复 title。
 5. 页序、页数必须与输入完全一致，不得增页、缺页或改页码。
 
 输出 JSON：{"pages": [{"page_no": 1, "title": "...", "topic": "...", "tags": ["..."], "text": "..."}]}
@@ -168,8 +168,8 @@ def parse(reply: ChatReply, expected: list[int]) -> list[dict[str, Any]]:
 
 
 def run_window(db: Session, material: Material, page_nos: list[int],
-               settings: AuthoringSettings, effort: str) -> list[int]:
-    """整理一窗并落库；返回写入的页码。"""
+               settings: AuthoringSettings, effort: str) -> tuple[list[int], dict[str, int]]:
+    """整理一窗并落库；返回写入的页码与本窗用量。"""
     content, states, images = _payload(material, page_nos, db)
     reply = _call(material, content, images, settings, effort)
     pages = parse(reply, page_nos)
@@ -180,4 +180,7 @@ def run_window(db: Session, material: Material, page_nos: list[int],
             model=str(reply.get("model") or ""), prompt_version=DIGEST_VERSION,
             input_hash=input_hash(material, page["page_no"], settings, effort))
     db.commit()
-    return [page["page_no"] for page in pages]
+    usage = reply.get("usage") or {}
+    return [page["page_no"] for page in pages], {
+        key: int(usage.get(key) or 0)
+        for key in ("prompt_tokens", "completion_tokens", "cache_hit_tokens", "cache_miss_tokens")}
