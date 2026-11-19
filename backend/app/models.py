@@ -379,6 +379,14 @@ class Submission(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class PracticeSession(Base):
+    __tablename__ = "practice_sessions"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), primary_key=True)
+    activity_id: Mapped[str] = mapped_column(ForeignKey("activities.id"), primary_key=True, index=True)
+    items: Mapped[list] = mapped_column(JSON)
+
+
 class AssessmentAttempt(Base):
     __tablename__ = "assessment_attempts"
     __table_args__ = (UniqueConstraint("user_id", "classroom_id", "activity_id"),)

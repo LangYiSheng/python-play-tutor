@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.course_content.access import authorize_activity, authorize_classroom, chapter_available, chapter_completion_requirements
 from app.course_scope import belongs_to_course, course_clause
-from app.models import ActivityProgress, Chapter, NodeState, PlayerQuest, QuestDefinition
+from app.models import ActivityProgress, Chapter, NodeState, PlayerQuest, PracticeSession, QuestDefinition
 from app.teaching.quests.access import quest_visible
 from app.teaching.quests.graph import node_statuses
 
@@ -50,10 +50,11 @@ def _matches(db, user, classroom_id, story, condition):
     if key == "activity_started":
         activity_id = story.content["bindings"][value]["activity_id"]
         try:
-            authorize_activity(db, user, classroom_id, activity_id)
+            activity = authorize_activity(db, user, classroom_id, activity_id)
         except HTTPException as exc:
             raise UnavailableCondition from exc
-        return bool(db.get(ActivityProgress, (user.id, classroom_id, activity_id)))
+        model = PracticeSession if activity.kind == "practice" and activity.content.get("practice_rules") else ActivityProgress
+        return bool(db.get(model, (user.id, classroom_id, activity_id)))
     if key == "assessment_score":
         from app.assessments import assessment_payload
 

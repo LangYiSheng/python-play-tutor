@@ -25,7 +25,7 @@ import { useState } from "react";
 import { ActivityDialog } from "./editor-dialog";
 import { kindName } from "./types";
 import { useActivityEditor } from "./use-editor";
-export function Activities({ classroomId }: { classroomId: number }) {
+export function Activities({ classroomId, userId }: { classroomId: number; userId: number }) {
   const course = useResource<Course>(scoped("/teacher/courses", classroomId)),
     materials = useResource<Material[]>(
       scoped("/teacher/materials", classroomId),
@@ -48,6 +48,7 @@ export function Activities({ classroomId }: { classroomId: number }) {
   const candidates = (questions.data ?? []).filter(
     (q) => q.chapter_ids.includes(chapter) && q.status === "ready",
   );
+  const practiceOwner = editor.editing ? editor.editing.owner_id : userId;
   const activities = (course.data?.activities ?? []).filter(
     (activity) =>
       activity.title.toLowerCase().includes(query.trim().toLowerCase()) &&
@@ -143,12 +144,15 @@ export function Activities({ classroomId }: { classroomId: number }) {
                     <Badge variant="outline">{kindName[a.kind]}</Badge>
                   </TableCell>
                   <TableCell>
-                    {a.kind === "lesson" || a.kind === "reading" ? `${a.resources.length} 份资料 · ${a.resources.filter(row => row.required).length} 份必读` : `${a.question_ids.length} 道题`}
-
+                    {a.kind === "lesson" || a.kind === "reading"
+                      ? `${a.resources.length} 份资料 · ${a.resources.filter(row => row.required).length} 份必读`
+                      : a.practice_rules
+                        ? `${a.practice_rules.goals.length} 个知识点目标${a.published === false ? " · 草稿" : ""}`
+                        : `${a.question_ids.length} 道题`}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      {a.kind === "practice" || a.kind === "assessment" ? (
+                      {(a.kind === "practice" && !a.practice_rules) || a.kind === "assessment" ? (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -189,7 +193,11 @@ export function Activities({ classroomId }: { classroomId: number }) {
         course={course}
         materials={materials}
         questions={questions}
-        candidates={candidates}
+        candidates={editor.goalPractice
+          ? candidates.filter(q =>
+              (q.owner_id === null || q.owner_id === practiceOwner) &&
+              (q.kind !== "python" || q.samples.length > 0))
+          : candidates}
       />
     </>
   );

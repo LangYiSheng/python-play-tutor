@@ -127,6 +127,7 @@ export interface Question {
   samples: { input: string; output: string }[];
 }
 export interface Activity {
+  knowledge_points?: { id: number; title: string }[];
   role: CharacterIdentity | null;
   id: string;
   chapter_id: number;
@@ -157,7 +158,23 @@ export interface ResourceProgress {
   visited_pages: number[]; required_page_ids: number[]; read_count: number; read_total: number;
   watched_seconds: number; required_seconds: number; completed_segments: number[];
 }
+export type QuestionOutlineState = "unanswered" | "answered" | "accepted" | "wrong" | "pending";
+export interface PracticeGoalProgress {
+  knowledge_point_id: number;
+  total: number;
+  by_kind: Partial<Record<QuestionKind, number>>;
+  accepted: number;
+  accepted_by_kind: Partial<Record<QuestionKind, number>>;
+}
+export interface PracticeItem {
+  question_id: string;
+  knowledge_point_id: number;
+  status: 'unanswered' | 'wrong' | 'accepted';
+  retry_remaining: number;
+  appended: boolean;
+}
 export interface ActivityProgress {
+  practice?: { retry_interval: number; goals: PracticeGoalProgress[]; items: PracticeItem[] };
   resources?: ResourceProgress[];
   material_id?: number | null;
   fraction?: number;

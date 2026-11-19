@@ -42,6 +42,32 @@ def _bounded(value, depth=0, budget=None):
             raise PackageError("配置不能包含非有限数字")
 
 
+def validate_practice(row, converted, maps):
+    from app.practice_rules import PracticeRules, allocate_initial, practice_question_available
+
+    if row["kind"] != "practice" or row["question_ids"]:
+        raise PackageError("知识点规则只能配置在无固定选题的练习中")
+    content = row["content"]
+    rules = PracticeRules.model_validate(content["practice_rules"]).model_dump()
+    points = {g["knowledge_point_id"] for g in rules["goals"]}
+    if set(content.get("knowledge_point_ids", [])) != points:
+        raise PackageError("练习知识点与目标不一致")
+    titles = {maps["knowledge_point"][key]: point["title"] for key, point in converted["knowledge_point"].items()
+              if point["chapter_id"] == row["chapter_id"]}
+    if not points.issubset(titles):
+        raise PackageError("练习目标必须来自活动所属章节")
+    if type(content.get("published", True)) is not bool:
+        raise PackageError("练习发布状态无效")
+    if content.get("published", True):
+        pool = {point: {} for point in points}
+        for question in converted["question"].values():
+            available = practice_question_available(question["kind"], question["status"], bool(question["samples"]))
+            if available and row["chapter_id"] in question["chapter_ids"]:
+                for point in points.intersection(question["knowledge_point_ids"]):
+                    pool[point][question["id"]] = question["kind"]
+        allocate_initial(rules, pool, shuffle=False, point_titles=titles)
+
+
 def validate_bundle(bundle, root):
     """Validate portable references and full graphs before any database/storage writes."""
     from types import SimpleNamespace
@@ -154,6 +180,8 @@ def validate_bundle(bundle, root):
         for row in data["activity"]:
             if row["kind"] not in {"lesson", "reading", "practice", "assessment"} or type(row["assistant_allowed"]) is not bool:
                 raise PackageError("学习活动类型或助教开关无效")
+            if "practice_rules" in row["content"]:
+                validate_practice(converted["activity"][row["id"]], converted, maps)
             if "question_ids" in row["content"]:
                 raise PackageError("活动题集只能声明于结构化question_ids关联")
             if row["npc_key"] is not None and row["npc_key"] not in indexed["npc"]:

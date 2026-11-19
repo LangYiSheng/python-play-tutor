@@ -58,7 +58,18 @@ export interface Activity {
   assistant_allowed: boolean;
   knowledge_point_ids: number[];
   question_ids: string[];
+  practice_rules?: PracticeRules | null;
+  published?: boolean;
   owner_id: number | null;
+}
+export interface PracticeGoal {
+  knowledge_point_id: number;
+  total: number;
+  by_kind: Partial<Record<QuestionKind, number>>;
+}
+export interface PracticeRules {
+  retry_interval: number;
+  goals: PracticeGoal[];
 }
 export interface Course {
   chapters: Chapter[];

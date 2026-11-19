@@ -9,7 +9,8 @@ from app.course_instances import CONTENT_MODELS, MODEL_NAMES, content_mapping
 from app.course_packages.contracts import CONFIG_FILES
 from app.integration_models import AssistantSession
 from app.materials.storage import get_storage
-from app.models import ActivityProgress, AssessmentAttempt, LearningRecord, Material, PlayerQuest, StorySession, Submission
+from app.practice_rules import practice_question_available
+from app.models import ActivityProgress, AssessmentAttempt, LearningRecord, Material, PlayerQuest, PracticeSession, StorySession, Submission
 
 
 def has_learning_history(db, classroom_id):
@@ -24,6 +25,7 @@ def has_learning_history(db, classroom_id):
             LearningRecord,
             Submission,
             AssessmentAttempt,
+            PracticeSession,
             AssistantSession,
             WorldFlag,
             PlayerPosition,
@@ -132,6 +134,7 @@ def preview_impact(db, instance, bundle):
             ):
                 blockers.append("待移除定义仍被历史保留内容引用，请先使用级联删除预览处理，再重新导入")
         attempts = list(db.scalars(select(AssessmentAttempt).where(AssessmentAttempt.classroom_id == instance.classroom_id)))
+        practices = list(db.scalars(select(PracticeSession).where(PracticeSession.classroom_id == instance.classroom_id)))
         submissions = list(db.scalars(select(Submission).where(Submission.classroom_id == instance.classroom_id)))
         active_stories = list(
             db.scalars(select(StorySession).where(StorySession.classroom_id == instance.classroom_id, StorySession.status.in_(["active", "waiting"])))
@@ -158,11 +161,23 @@ def preview_impact(db, instance, bundle):
             if current["question"][stable]["kind"] != incoming["question"][stable]["kind"]:
                 count = sum(row.question_id == key for row in submissions) + sum(key in row.question_ids for row in attempts)
                 protect("question", stable, count, "已有正式题目证据，改变题型需要新的题目ID")
+            new_question = incoming["question"][stable]
+            available = practice_question_available(new_question["kind"], new_question["status"], bool(new_question["samples"]))
+            available_points = {maps["knowledge_point"].get(point) for point in new_question["knowledge_point_ids"]}
+            assigned = sum(
+                any(item["question_id"] == key and (
+                    item["kind"] != new_question["kind"] or not available or item["knowledge_point_id"] not in available_points
+                ) for item in session.items)
+                for session in practices
+            )
+            protect("question", stable, assigned, "题目已进入学生个人题单，须保留可用状态、已分配的知识点和题型；编程题须保留公开样例")
         for stable in diff["activity"]["updated"]:
             old, new = current["activity"][stable], incoming["activity"][stable]
             key = maps["activity"][stable]
-            if old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
+            changed_rules = old["content"].get("practice_rules") != new["content"].get("practice_rules")
+            if changed_rules or old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
                 count = sum(row.activity_id == key for row in attempts) + sum(row.activity_id == key for row in submissions)
+                count += sum(row.activity_id == key for row in practices)
                 count += len(
                     list(
                         db.scalars(
@@ -179,7 +194,7 @@ def preview_impact(db, instance, bundle):
                         )
                     )
                 )
-                protect("activity", stable, count, "活动已有学习或测验证据，改变活动类型或测验题集需要新的活动ID")
+                protect("activity", stable, count, "活动已有学习或测验证据，改变活动类型、练习目标或测验题集需要新的活动ID")
         changed_activities = {maps["activity"][stable] for stable in diff["activity"]["updated"]}
         changed_assets = set(diff["assets"]["updated"] + diff["assets"]["removed"])
         changed_materials = set(diff["material"]["updated"]) | {

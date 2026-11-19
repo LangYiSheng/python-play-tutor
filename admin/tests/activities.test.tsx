@@ -6,6 +6,56 @@ import { Activities } from "../src/features/activities/activities-page";
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => vi.unstubAllGlobals());
 
+it("creates a chapter-scoped practice draft and preserves goals after a rejected publication", async () => {
+  const writes: Record<string, unknown>[] = [];
+  const course = {
+    chapters: [{ id: 1, title: "第一章" }, { id: 2, title: "第二章" }],
+    knowledge_points: [{ id: 11, title: "变量", chapter_id: 1 }, { id: 22, title: "循环", chapter_id: 2 }],
+    npcs: [], activities: [{ id: "exam", title: "章节测验", chapter_id: 1, kind: "assessment", question_ids: [] }],
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (init.method === "POST") {
+      const body = JSON.parse(init.body as string);
+      writes.push(body);
+      return body.published
+        ? new Response(JSON.stringify({ detail: "变量缺少可用编程题" }), { status: 422 })
+        : json({});
+    }
+    if (url.includes("/teacher/questions")) return json([{
+      id: "private-cases", title: "仅私有用例", kind: "python", owner_id: 9,
+      status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [],
+    }]);
+    return json(url.includes("/teacher/courses") ? course : []);
+  }));
+  const user = userEvent.setup();
+  render(<Activities classroomId={7} userId={9} />);
+  const create = await screen.findByRole("button", { name: "新增活动" });
+  await waitFor(() => expect(create).toBeEnabled());
+  await user.click(create);
+  await user.type(screen.getByRole("textbox", { name: "活动名称" }), "变量练习");
+  await user.click(screen.getByRole("combobox", { name: "类型" }));
+  await user.click(await screen.findByRole("option", { name: "练习" }));
+  expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "变量" }));
+  await user.clear(screen.getByRole("spinbutton", { name: /答对总数/ }));
+  await user.type(screen.getByRole("spinbutton", { name: /答对总数/ }), "3");
+  await user.type(screen.getByRole("spinbutton", { name: /编程题至少/ }), "1");
+  expect(screen.getByText("按此目标至少需要 3 道不同题目，当前还缺 3 道。")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "保存" }));
+  expect(await screen.findByText("变量缺少可用编程题")).toBeVisible();
+  await user.click(screen.getByRole("combobox", { name: "发布状态" }));
+  await user.click(await screen.findByRole("option", { name: "草稿" }));
+  await user.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toMatchObject({
+    kind: "practice", chapter_id: 1, published: false, knowledge_point_ids: [11],
+    practice_rules: { retry_interval: 1, goals: [{ knowledge_point_id: 11, total: 3, by_kind: { python: 1 } }] },
+  });
+  await user.click(await screen.findByRole("button", { name: "选题章节测验" }));
+  expect(await screen.findByRole("checkbox", { name: "仅私有用例" })).toBeEnabled();
+});
+
 it("previews cascading impact, requires two confirmations, and refreshes after deletion", async () => {
   let removed = false;
   const calls: unknown[] = [];
@@ -16,7 +66,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
     return json(url.includes("/teacher/courses") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} />);
+  render(<Activities classroomId={7} userId={9} />);
   await user.click(await screen.findByRole("button", { name: "删除综合复习" }));
   expect(await within(screen.getByRole("dialog")).findByText("一起删除（1）")).toBeVisible();
   await user.click(screen.getByRole("button", {name: "取消"}));
@@ -54,7 +104,7 @@ it("selects knowledge points by chapter and preserves the other chapter's select
     return json(url.includes("/teacher/courses") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} />);
+  render(<Activities classroomId={7} userId={9} />);
   await user.click(await screen.findByRole("button", { name: "编辑综合复习" }));
   expect(screen.getByRole("checkbox", { name: "变量" })).toBeChecked();
   expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();

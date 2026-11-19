@@ -376,7 +376,7 @@ function Workbench() {
               ) : page === "questions" ? (
                 <Questions classroomId={classroom.id} />
               ) : page === "activities" ? (
-                <Activities classroomId={classroom.id} />
+                <Activities classroomId={classroom.id} userId={user.id} />
               ) : page === "settings" ? (
                 <CourseSettings classroomId={classroom.id} isAdmin={user.role === 'admin'} />
               ) : page === "synthesis" ? (

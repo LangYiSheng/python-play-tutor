@@ -126,6 +126,26 @@ def plan_deletion(db, user, instance, targets):
                     if set(refs(source)) & removed:
                         changed |= add(kind, key, "引用了本次删除的内容，整项移除以保留其他流程结构")
 
+    if retiring["question"]:
+        from .models import PracticeSession
+        from .practice_rules import allocate_initial, candidate_pool
+
+        sessions = db.scalars(select(PracticeSession).where(PracticeSession.classroom_id == instance.classroom_id))
+        for session in sessions:
+            if session.activity_id not in retiring["activity"] and any(item["question_id"] in retiring["question"] for item in session.items):
+                blockers.append({"message": "题目已进入保留练习的学生个人题单", "kind": "activity", "id": session.activity_id})
+        for activity in rows["activity"].values():
+            rules = activity.content.get("practice_rules")
+            if not rules or activity.id in retiring["activity"] or activity.content.get("published") is False:
+                continue
+            pool = candidate_pool(db, activity)
+            for choices in pool.values():
+                for key in retiring["question"]:
+                    choices.pop(key, None)
+            try:
+                allocate_initial(rules, pool, shuffle=False)
+            except ValueError as exc:
+                blockers.append({"message": f"删除会导致练习「{activity.title}」无法抽题：{exc}", "kind": "activity", "id": activity.id})
     removed = deleted_refs()
     # Conditions on retained world objects cannot be made true by deleting a prerequisite.
     from .course_exchange_models import CoursePackageState

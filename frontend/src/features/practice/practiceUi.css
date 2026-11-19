@@ -364,6 +364,7 @@
   flex-shrink: 0;
 }
 
+.game-workspace .practice-item-info { margin: 0; padding: 0.4rem 1rem; font-size: 0.9em; }
 .game-workspace .practice-navigation {
   display: flex;
   align-items: center;

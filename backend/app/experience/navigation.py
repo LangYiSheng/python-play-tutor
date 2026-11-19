@@ -3,6 +3,7 @@
 from fastapi import HTTPException, Request
 from sqlalchemy import delete, select
 
+from app.content_relations import activity_questions
 from app.course_content.access import authorize_activity, authorize_material, chapter_available
 from app.course_scope import course_clause
 from app.experience.access import guard
@@ -19,11 +20,22 @@ from app.models import (
     NodeState,
     PlayerPosition,
     PlayerQuest,
+    PracticeSession,
     QuestDefinition,
     WorldFlag,
 )
 from app.teaching.quests.graph import node_statuses
 from app.world_config import load_world_config, validate_point
+
+
+def _question_count(db, user, classroom_id, activity):
+    rules = activity.content.get("practice_rules")
+    if not rules:
+        return len(activity_questions(db, activity))
+    session = db.get(PracticeSession, (user.id, classroom_id, activity.id))
+    if session:
+        return len(session.items)
+    return sum(max(goal["total"], sum(goal["by_kind"].values())) for goal in rules["goals"])
 
 
 def switch_chapter(body: ChapterInput, request: Request, db: Db, user: Actor):
@@ -69,8 +81,6 @@ def overview(classroom_id: int, request: Request, db: Db, user: Actor):
         }
         for row in db.scalars(select(Material).where(course_clause(db, Material, classroom_id)))
     ]
-    from app.content_relations import activity_questions
-
     activities = [
         {
             "id": row.id,
@@ -78,7 +88,7 @@ def overview(classroom_id: int, request: Request, db: Db, user: Actor):
             "title": row.title,
             "kind": row.kind,
             "published": row.content.get("published") is not False,
-            "questions": len(activity_questions(db, row)),
+            "questions": _question_count(db, user, classroom_id, row),
         }
         for row in db.scalars(select(Activity).where(course_clause(db, Activity, classroom_id)))
     ]
@@ -121,10 +131,8 @@ def open_content(body: OpenInput, request: Request, db: Db, user: Actor):
             raise HTTPException(422, "页码超出资料范围")
         return {"workspace": {"kind": "material", "material_id": material.id, "page_no": body.page_no, "video_time": body.video_time}}
     activity = authorize_activity(db, user, body.classroom_id, body.target)
-    from app.content_relations import activity_questions
-
     kind = "lesson" if activity.kind in {"lesson", "reading"} else "practice"
-    if kind == "practice" and body.question_no > len(activity_questions(db, activity)):
+    if kind == "practice" and body.question_no > _question_count(db, user, body.classroom_id, activity):
         raise HTTPException(422, "题号超出活动范围")
     return {
         "workspace": {

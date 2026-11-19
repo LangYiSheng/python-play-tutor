@@ -106,6 +106,56 @@ def test_current_question_only_and_client_run_is_not_evidence(client, db, studen
         assistant.build_context(db, user, session, activity, body)
 
 
+def test_practice_assistant_sees_only_personal_goals_and_assigned_questions(client, db, student, classroom):
+    from app.content_relations import set_question_knowledge_points
+    from app.models import Activity, KnowledgePoint, QuestionSecret
+
+    activity = db.get(Activity, "ch1-practice")
+    point = KnowledgePoint(chapter_id=activity.chapter_id, title="整数运算")
+    db.add(point)
+    db.flush()
+    pool = {"personal-one", "personal-two", "personal-three"}
+    for key in pool:
+        question = make_question(db, chapter_ids=[activity.chapter_id], id=key, title=key, prompt=key,
+                                 kind="fill", options=[], samples=[], source={})
+        set_question_knowledge_points(db, question.id, [point.id])
+        db.add(QuestionSecret(question_id=key, answer="private-answer", hidden_cases=[]))
+    activity.content = {**activity.content, "knowledge_point_ids": [point.id],
+                        "practice_rules": {"retry_interval": 1, "goals": [
+                            {"knowledge_point_id": point.id, "total": 1, "by_kind": {"fill": 1}}]}}
+    db.commit()
+
+    cid = classroom["id"]
+    opened = client.get(f"/api/activities/{activity.id}?classroom_id={cid}", headers=student["headers"])
+    assert opened.status_code == 200, opened.text
+    [assigned] = opened.json()["questions"]
+    submitted = client.post("/api/submissions", headers=student["headers"], json={
+        "classroom_id": cid, "activity_id": activity.id, "question_id": assigned["id"],
+        "mode": "submit", "idempotency_key": "personal-help", "answer": "wrong"})
+    assert submitted.status_code == 201, submitted.text
+
+    sid = create_session(client, student, classroom, activity.id).json()["id"]
+    user = db.get(User, student["id"])
+    session, activity = assistant.authorized_session(db, user, sid)
+    def ask(key):
+        return assistant.build_context(db, user, session, activity,
+                                       MessageInput(message="怎样继续？", state={"question_id": key}))
+    data = ask(assigned["id"])
+    snapshot = data["snapshot"]
+    assert snapshot["活动进度"] == "已通过 0 / 2 题"
+    assert snapshot["当前知识点"] == "整数运算" and "填空" in snapshot["知识点目标"]
+    assert snapshot["待订正题数"] == 1 and "1 道其他题" in snapshot["当前题订正"]
+    tools = {tool.name: tool for tool in build_tools(data, {})}
+    directory = tools["list_activity_questions"].invoke({})
+    assert directory["total"] == 2 and directory["items"][1]["appended"]
+    assert "error" in tools["read_activity_question"].invoke({"question_no": 3})
+    [unassigned] = pool - {q["id"] for q in data["activity"]["questions"]}
+    assert unassigned not in json.dumps(data, ensure_ascii=False)
+    assert "private-answer" not in json.dumps(data)
+    with pytest.raises(Exception, match="当前活动"):
+        ask(unassigned)
+
+
 def test_real_graph_persists_tool_chain_idempotency_and_role_snapshot(client, db, student, classroom, monkeypatch):
     import langchain_openai
     model = Model(use_tools=True)

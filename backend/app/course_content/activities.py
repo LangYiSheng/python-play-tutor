@@ -9,7 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.content_relations import activity_questions, question_chapter_ids, set_activity_questions
-from app.models import Activity, AssessmentAttempt, Npc, Question, User
+from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
+from app.practice_rules import PracticeRules, allocate_initial, candidate_pool
 from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_instance_id
 
 
@@ -23,6 +24,8 @@ class ActivityInput(BaseModel):
     npc_key: str | None = None
     assistant_allowed: bool = True
     knowledge_point_ids: list[int] = Field(default_factory=list, max_length=65)
+    practice_rules: PracticeRules | None = None
+    published: bool = True
 
     @field_validator("knowledge_point_ids", mode="before")
     @classmethod
@@ -45,13 +48,17 @@ def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: 
         raise HTTPException(422, "NPC不存在")
     content = {"published": True, "knowledge_point_ids": body.knowledge_point_ids}
     item = Activity(
-        **body.model_dump(exclude={"id", "knowledge_point_ids", "resources"}),
+        **body.model_dump(exclude={"id", "knowledge_point_ids", "resources", "practice_rules", "published"}),
         id=runtime_id,
         stable_id=body.id,
         course_instance_id=instance_id,
         owner_id=user.id,
         content=content,
     )
+    if body.practice_rules is not None:
+        configure_practice(db, item, user, body.practice_rules.model_dump(), body.published, body.knowledge_point_ids or None)
+    elif not body.published:
+        raise HTTPException(422, "只有知识点练习可以保存为草稿")
     db.add(item)
     db.flush()
     from app.course_content.resources import set_resources
@@ -70,6 +77,8 @@ class ActivityUpdate(BaseModel):
     assistant_allowed: bool | None = None
     resources: list[dict] | None = Field(default=None, max_length=64)
     knowledge_point_ids: list[int] | None = Field(default=None, max_length=65)
+    practice_rules: PracticeRules | None = None
+    published: bool | None = None
 
     @field_validator("knowledge_point_ids", mode="before")
     @classmethod
@@ -77,6 +86,26 @@ class ActivityUpdate(BaseModel):
         from app.curriculum import validate_id_list
 
         return validate_id_list(value)
+
+
+def configure_practice(db, item, user, rules, published, requested_points=None):
+    from app.curriculum import validate_activity_points
+
+    if item.kind != "practice" or rules is None or type(published) is not bool:
+        raise HTTPException(422, "知识点练习需要有效的目标与发布状态")
+    point_ids = [goal["knowledge_point_id"] for goal in rules["goals"]]
+    if requested_points is not None and set(requested_points) != set(point_ids):
+        raise HTTPException(422, "练习知识点必须与目标一致")
+    validate_activity_points(db, user, item.chapter_id, point_ids, item.course_instance_id)
+    points = list(db.scalars(select(KnowledgePoint).where(KnowledgePoint.id.in_(point_ids))))
+    if any(point.chapter_id != item.chapter_id for point in points):
+        raise HTTPException(422, "练习目标必须来自活动所属章节")
+    if published:
+        try:
+            allocate_initial(rules, candidate_pool(db, item, rules=rules), shuffle=False, point_titles={p.id: p.title for p in points})
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+    item.content = {**item.content, "knowledge_point_ids": point_ids, "practice_rules": rules, "published": published}
 
 
 def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: User, classroom_id: int | None = None):
@@ -92,6 +121,21 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     resources = changes.pop("resources", None)
     content = dict(item.content)
     new_points = changes.pop("knowledge_point_ids", None)
+    rules = changes.pop("practice_rules", content.get("practice_rules"))
+    if body.practice_rules is not None:
+        rules = body.practice_rules.model_dump()
+    published = changes.pop("published", content.get("published", True))
+    if rules is not None or {"practice_rules", "published"} & body.model_fields_set:
+        if content.get("practice_rules") != rules:
+            from app.models import PracticeSession
+
+            if any(db.scalar(select(model.activity_id).where(model.activity_id == item.id).limit(1)) is not None
+                   for model in (PracticeSession, Submission, ActivityProgress)):
+                raise HTTPException(409, "练习已有个人题单或学习记录，修改目标请新建练习")
+        configure_practice(db, item, user, rules, published, new_points)
+        if not content.get("practice_rules"):
+            set_activity_questions(db, item, [])
+        content, new_points = dict(item.content), None
     if new_points is not None:
         from app.curriculum import validate_activity_points
 
@@ -144,6 +188,8 @@ def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db
     from app.curriculum import editable
 
     activity = editable(db.scalar(select(Activity).where(Activity.id == activity_id).with_for_update()), user, instance_id)
+    if activity.content.get("practice_rules") is not None:
+        raise HTTPException(422, "知识点练习按目标抽题，不能设置固定题单")
     if activity.kind not in {"practice", "assessment"}:
         raise HTTPException(422, "只有练习与测验活动可以选题")
     if activity.kind == "assessment" and len(body.question_ids) > 100:

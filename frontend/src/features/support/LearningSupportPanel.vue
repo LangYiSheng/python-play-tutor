@@ -2,7 +2,7 @@
   <aside v-bind="attrs" v-show="!sidebarCollapsed" :hidden="sidebarCollapsed || attributeEnabled(attrs.hidden)" :inert="sidebarCollapsed || attributeEnabled(attrs.inert)" class="learning-support" aria-label="学习目标与助教">
     <GamePanelHeader class="support-heading" tabs>
     <div class="support-tabs" :style="{ '--support-tab-count': tabs.length }" role="tablist" aria-label="学习支持" @keydown="moveTab">
-      <button :id="`${panelId}-goals-tab`" ref="goalsTab" role="tab" :aria-selected="tab === 'goals'" :tabindex="tab === 'goals' ? 0 : -1" :aria-controls="`${panelId}-goals`" @click="tab = 'goals'"><GameIcon name="target" /><span class="game-panel-header-tab-label">{{ questionOutline?.length ? "题目列表" : "学习目标" }}</span></button>
+      <button :id="`${panelId}-goals-tab`" ref="goalsTab" role="tab" :aria-selected="tab === 'goals'" :tabindex="tab === 'goals' ? 0 : -1" :aria-controls="`${panelId}-goals`" @click="tab = 'goals'"><GameIcon name="target" /><span class="game-panel-header-tab-label">{{ goalsLabel ?? (questionOutline?.length ? "题目列表" : "学习目标") }}</span></button>
       <button v-if="hasOutline" :id="`${panelId}-outline-tab`" ref="outlineTab" role="tab" :aria-selected="tab === 'outline'" :tabindex="tab === 'outline' ? 0 : -1" :aria-controls="`${panelId}-outline`" @click="tab = 'outline'"><GameIcon name="list" /><span class="game-panel-header-tab-label">快速跳转</span></button>
       <button v-if="questionOutline?.length" :id="`${panelId}-questions-tab`" ref="questionsTab" role="tab" :aria-selected="tab === 'questions'" :tabindex="tab === 'questions' ? 0 : -1" :aria-controls="`${panelId}-questions`" @click="tab = 'questions'"><GameIcon name="list" /><span class="game-panel-header-tab-label">快速跳转</span></button>
       <button :id="`${panelId}-assistant-tab`" ref="assistantTab" role="tab" :aria-selected="tab === 'assistant'" :tabindex="tab === 'assistant' ? 0 : -1" :aria-controls="`${panelId}-assistant`" @click="tab = 'assistant'"><GameIcon name="message" /><span class="game-panel-header-tab-label" :title="roleName">{{ roleName }}</span></button>
@@ -87,7 +87,7 @@
 <script setup lang="ts">
 import { questionKindLabels, type QuestionKind } from "../../../../shared/questions";
 import { useCharacterImage } from "../../shared/characterImage";
-import type { Npc } from "../../shared/types";
+import type { Npc, QuestionOutlineState } from "../../shared/types";
 import type { AssistantState } from "../../shared/assistantState";
 import { Comment, Fragment, Text, computed, isVNode, nextTick, ref, useAttrs, useSlots, watch, type VNodeChild } from "vue";
 import AssistantPanel from "../assistant/AssistantPanel.vue";
@@ -114,6 +114,7 @@ function containsContent(nodes: VNodeChild[]): boolean {
 function hasQuestionActions() { return containsContent(slots["question-actions"]?.({}) ?? []); }
 
 const props = defineProps<{
+  goalsLabel?: string;
   activityId?: string;
   materialId?: number;
   allowed: boolean;
@@ -130,7 +131,7 @@ const props = defineProps<{
   }[];
   outline?: { pageNo: number; title: string; important?: boolean; highlightLabel?: string; timeSeconds?: number }[];
   timeOutline?: { timeSeconds: number; title: string }[];
-  questionOutline?: { id: string; index?: number; title: string; kind?: QuestionKind; state?: "unanswered" | "answered" | "accepted" | "wrong" | "pending"; current?: boolean }[];
+  questionOutline?: { id: string; index?: number; title: string; kind?: QuestionKind; state?: QuestionOutlineState; current?: boolean }[];
   currentQuestionId?: string;
   pageNo?: number;
   videoTime?: number;

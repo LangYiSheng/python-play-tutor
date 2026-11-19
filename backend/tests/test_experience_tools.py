@@ -120,6 +120,30 @@ def test_content_jump_does_not_change_completion(dev_client, db, classroom, stud
     assert dev_client.post(BASE + "/open", json={**body, "question_no": 999}, headers=student["headers"]).status_code == 422
 
 
+def test_goal_practice_locator_tracks_personal_queue_without_drawing(dev_client, db, classroom, student):
+    from app.models import Activity, PracticeSession
+
+    activity = db.get(Activity, "ch1-practice")
+    activity.content = {**activity.content, "practice_rules": {"retry_interval": 1, "goals": [
+        {"knowledge_point_id": 11, "total": 1, "by_kind": {"python": 2}},
+        {"knowledge_point_id": 12, "total": 2, "by_kind": {}},
+    ]}}
+    db.commit()
+    scope = {"classroom_id": classroom["id"]}
+    request = {**scope, "kind": "activity", "target": activity.id}
+    headers = student["headers"]
+    assert dev_client.post(BASE + "/open", json={**request, "question_no": 4}, headers=headers).status_code == 200
+    assert dev_client.post(BASE + "/open", json={**request, "question_no": 5}, headers=headers).status_code == 422
+    assert db.get(PracticeSession, (student["id"], classroom["id"], activity.id)) is None
+
+    db.add(PracticeSession(**scope, user_id=student["id"], activity_id=activity.id,
+                           items=[{"question_id": str(i)} for i in range(5)]))
+    db.commit()
+    listed = dev_client.get(BASE, params=scope, headers=headers).json()["activities"]
+    assert next(row["questions"] for row in listed if row["id"] == activity.id) == 5
+    assert dev_client.post(BASE + "/open", json={**request, "question_no": 5}, headers=headers).status_code == 200
+
+
 def test_definition_change_invalidates_checkpoint_even_without_revision(dev_client, db, classroom, student):
     saved = dev_client.post(BASE + "/checkpoints", json={"classroom_id": classroom["id"], "name": "修改前"}, headers=student["headers"])
     assert saved.status_code == 200

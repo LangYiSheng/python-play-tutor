@@ -26,6 +26,47 @@ function paper(overrides: Partial<AssessmentAttempt> = {}): AssessmentAttempt { 
 function result(id: string, status: Submission["status"]): Submission { return { id: `submission-${id}`, activity_id: "test", question_id: id, mode: "submit", status, feedback: { detail: status === "accepted" ? "回答正确" : "请重新思考" }, created_at: "2026-11-08T00:00:00Z" }; }
 afterEach(async () => { await flushPromises(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });
 describe("assessment and practice presentation", () => {
+  it("keeps a wrong question visible while appending and unlocking its retry", async () => {
+    const { pinia, session } = setup("practice");
+    const activity = await session.activity("test");
+    const [first, extra] = activity.questions;
+    const goal = { knowledge_point_id: 7, total: 1, by_kind: { boolean: 1 }, accepted: 0, accepted_by_kind: {} };
+    const item = { question_id: first!.id, knowledge_point_id: 7, appended: false, retry_remaining: 0, status: "unanswered" as const };
+    const progress = { page_no: null, visited_pages: [], completed: false, accepted_question_ids: [] as string[],
+      practice: { retry_interval: 1, goals: [goal], items: [item] } };
+    const initial = { ...activity, knowledge_points: [{ id: 7, title: "条件判断" }], questions: [first!], progress };
+    vi.mocked(session.activity).mockResolvedValueOnce(initial).mockResolvedValueOnce({
+      ...initial, questions: [first!, extra!], progress: { ...progress, practice: { ...progress.practice,
+        items: [{ ...item, status: "wrong", retry_remaining: 1 }, { ...item, appended: true, question_id: extra!.id }] } },
+    }).mockResolvedValueOnce({
+      ...initial, questions: [first!, extra!], progress: { ...progress, accepted_question_ids: [extra!.id], practice: {
+        ...progress.practice, goals: [{ ...goal, accepted: 1, accepted_by_kind: { boolean: 1 } }],
+        items: [{ ...item, status: "wrong" }, { ...item, appended: true, question_id: extra!.id, status: "accepted" }] } },
+    });
+    vi.spyOn(api, "post").mockResolvedValueOnce(result(first!.id, "wrong_answer")).mockResolvedValueOnce(result(extra!.id, "accepted"));
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    try {
+      await flushPromises();
+      const card = () => wrapper.getComponent({ name: "PracticeQuestionCard" });
+      const submit = async () => {
+        card().vm.$emit("update:answer", "true");
+        await wrapper.vm.$nextTick();
+        card().vm.$emit("submit", "submit");
+        await flushPromises();
+      };
+      await submit();
+      expect(wrapper.text()).toContain("已通过 0 / 2 题");
+      expect(wrapper.text()).toContain("再作答 1 道其他题可订正");
+      expect(card().props("showSubmit")).toBe(false);
+      await wrapper.get('[aria-label="下一题"]').trigger("click");
+      expect(wrapper.get(".practice-item-info").text()).toContain("追加题");
+      await submit();
+      expect(wrapper.text()).toContain("已通过 1 / 2 题");
+      await wrapper.get('[aria-label="上一题"]').trigger("click");
+      expect(wrapper.get(".practice-item-info").text()).toContain("可以订正");
+      expect(card().props("showSubmit")).toBe(true);
+    } finally { wrapper.unmount(); }
+  });
   it("opens the selected programming summary in single mode without losing its draft", async () => {
     const { pinia, session } = setup();
     const activity = await session.activity("test");
