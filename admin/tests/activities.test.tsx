@@ -10,7 +10,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   const writes: Record<string, unknown>[] = [];
   const course = {
     chapters: [{ id: 1, title: "第一章" }, { id: 2, title: "第二章" }],
-    knowledge_points: [{ id: 11, title: "变量", chapter_id: 1 }, { id: 22, title: "循环", chapter_id: 2 }],
+    knowledge_points: [{ id: 11, title: "变量", chapter_id: 1 }, { id: 12, title: "表达式", chapter_id: 1 }, { id: 22, title: "循环", chapter_id: 2 }],
     npcs: [], activities: [{ id: "exam", title: "章节测验", chapter_id: 1, kind: "assessment", question_ids: [] }],
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
@@ -40,6 +40,13 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   await user.clear(screen.getByRole("spinbutton", { name: /答对总数/ }));
   await user.type(screen.getByRole("spinbutton", { name: /答对总数/ }), "3");
   await user.type(screen.getByRole("spinbutton", { name: /编程题至少/ }), "1");
+  await user.click(screen.getByRole("checkbox", { name: "表达式" }));
+  expect(screen.getAllByRole("spinbutton", { name: /答对总数/ })).toHaveLength(1);
+  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(1);
+  await user.click(screen.getByRole("button", { name: "变量" }));
+  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(3);
+  expect(screen.getByRole("checkbox", { name: "表达式" })).toBeChecked();
+  await user.click(screen.getByRole("checkbox", { name: "表达式" }));
   expect(screen.getByText("按此目标至少需要 3 道不同题目，当前还缺 3 道。")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "保存" }));
   expect(await screen.findByText("变量缺少可用编程题")).toBeVisible();
