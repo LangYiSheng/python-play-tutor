@@ -39,6 +39,7 @@ class Classroom(Base):
     name: Mapped[str] = mapped_column(String(100))
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     join_code: Mapped[str] = mapped_column(String(24), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
 
 
 class TownPreviewStudent(Base):

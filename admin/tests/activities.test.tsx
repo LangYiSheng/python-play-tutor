@@ -28,7 +28,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
     return json(url.includes("/teacher/courses") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} userId={9} />);
+  render(<Activities classroomId={7} teacherId={9} />);
   const create = await screen.findByRole("button", { name: "新增活动" });
   await waitFor(() => expect(create).toBeEnabled());
   await user.click(create);
@@ -73,7 +73,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
     return json(url.includes("/teacher/courses") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} userId={9} />);
+  render(<Activities classroomId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "删除综合复习" }));
   expect(await within(screen.getByRole("dialog")).findByText("一起删除（1）")).toBeVisible();
   await user.click(screen.getByRole("button", {name: "取消"}));
@@ -111,7 +111,7 @@ it("selects knowledge points by chapter and preserves the other chapter's select
     return json(url.includes("/teacher/courses") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} userId={9} />);
+  render(<Activities classroomId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "编辑综合复习" }));
   expect(screen.getByRole("checkbox", { name: "变量" })).toBeChecked();
   expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();

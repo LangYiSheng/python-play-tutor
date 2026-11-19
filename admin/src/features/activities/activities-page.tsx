@@ -25,7 +25,7 @@ import { useState } from "react";
 import { ActivityDialog } from "./editor-dialog";
 import { kindName } from "./types";
 import { useActivityEditor } from "./use-editor";
-export function Activities({ classroomId, userId }: { classroomId: number; userId: number }) {
+export function Activities({ classroomId, teacherId }: { classroomId: number; teacherId: number }) {
   const course = useResource<Course>(scoped("/teacher/courses", classroomId)),
     materials = useResource<Material[]>(
       scoped("/teacher/materials", classroomId),
@@ -48,7 +48,7 @@ export function Activities({ classroomId, userId }: { classroomId: number; userI
   const candidates = (questions.data ?? []).filter(
     (q) => q.chapter_ids.includes(chapter) && q.status === "ready",
   );
-  const practiceOwner = editor.editing ? editor.editing.owner_id : userId;
+  const practiceOwner = editor.editing ? editor.editing.owner_id : teacherId;
   const activities = (course.data?.activities ?? []).filter(
     (activity) =>
       activity.title.toLowerCase().includes(query.trim().toLowerCase()) &&

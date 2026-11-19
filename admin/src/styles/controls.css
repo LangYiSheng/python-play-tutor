@@ -30,6 +30,16 @@
   border-bottom: 1px solid var(--border);
   gap: 8px;
 }
+[data-slot="select-content"].select-fit-options {
+  width: max-content;
+  min-width: min(var(--anchor-width), var(--available-width));
+  max-width: min(38rem, var(--available-width), calc(100vw - 1rem));
+}
+.select-fit-options [data-slot="select-item-text"] {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .search {
   position: relative;
   max-width: 360px;

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.content_relations import activity_questions, question_chapter_ids, set_activity_questions
 from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
 from app.practice_rules import PracticeRules, allocate_initial, candidate_pool, without_legacy_retry_interval
-from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_instance_id
+from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
 
 
 class ActivityInput(BaseModel):
@@ -36,7 +36,7 @@ class ActivityInput(BaseModel):
 
 
 def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
 
     runtime_id = scoped_key(instance_id, "activity", body.id)
     if db.get(Activity, runtime_id, execution_options={"include_deleted": True}):
@@ -52,7 +52,7 @@ def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: 
         id=runtime_id,
         stable_id=body.id,
         course_instance_id=instance_id,
-        owner_id=user.id,
+        owner_id=classroom.teacher_id,
         content=content,
     )
     if body.practice_rules is not None:

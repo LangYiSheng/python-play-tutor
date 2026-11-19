@@ -21,6 +21,27 @@ def independent_classes(client, teacher, db):
     return classes
 
 
+def test_rename_course_scopes_edits_and_checks_revision(client, teacher, admin_account, independent_classes):
+    first, second = (f"/api/teacher/classrooms/{key}/course" for key in independent_classes)
+    headers = teacher["headers"]
+    before = client.get(first, headers=headers).json()
+    sibling = client.get(second, headers=headers).json()
+    payload = {"name": "  新课程名  ", "expected_revision": before["revision"]}
+    saved = client.patch(first, headers=headers, json=payload)
+    assert saved.status_code == 200
+    assert saved.json() == {**before, "name": "新课程名", "revision": before["revision"] + 1}
+    assert client.patch(first, headers=headers, json=payload).json() == saved.json()
+    assert client.patch(first, headers=headers, json={**payload, "name": "冲突"}).status_code == 409
+    assert client.patch(first, headers=headers, json={**payload, "name": "  "}).status_code == 422
+    assert client.get(second, headers=headers).json() == sibling
+    admin_class = client.post("/api/classrooms", headers=admin_account["headers"], json={"name": "管理员班级"}).json()
+    other = f"/api/teacher/classrooms/{admin_class['id']}/course"
+    assert client.patch(other, headers=headers, json=payload).status_code == 403
+    assert client.patch(other, headers=admin_account["headers"], json=payload).status_code == 404
+    response = client.patch(first, headers=admin_account["headers"], json={"name": "管理员修改", "expected_revision": saved.json()["revision"]})
+    assert response.status_code == 200 and response.json()["name"] == "管理员修改"
+
+
 def test_same_teacher_classrooms_have_independent_editable_bank(client, teacher, independent_classes):
     first, second = independent_classes
     def bank(cid):

@@ -93,7 +93,8 @@ def test_account_management_permissions_and_atomicity(client, db, teacher, stude
     db.commit()
     base = f"/api/teacher/classrooms/{classroom['id']}/students"
     body = {"students": [{"student_id": "00013", "name": "不应创建"}, {"student_id": "00099", "name": "已有"}]}
-    assert client.post(base, headers=teacher["headers"], json=body).status_code == 422
+    mismatch = client.post(base, headers=teacher["headers"], json=body)
+    assert mismatch.status_code == 422 and outsider.name not in mismatch.text
     assert not db.scalar(select(User).where(User.student_id == "00013"))
     assert client.post(base, headers=student["headers"], json=body).status_code == 403
     login = client.post("/api/auth/login", json={"student_id": "00098", "password": "private-password-123"}).json()
@@ -107,6 +108,11 @@ def test_account_management_permissions_and_atomicity(client, db, teacher, stude
     )
     assert db.get(User, student["id"]).password_hash == original
     assert db.scalar(select(AuthSession).where(AuthSession.user_id == student["id"]))
+    original = outsider.password_hash
+    body["students"][1]["name"] = outsider.name
+    assert client.post(base, headers=teacher["headers"], json=body).json() == {"created": 1, "bound": 1, "existing": 0}
+    assert outsider.password_hash == original and not outsider.must_change_password
+    assert db.get(Membership, (outsider.id, classroom["id"]))
 
 
 def test_import_preview_and_invalid_rows(client, teacher, classroom):

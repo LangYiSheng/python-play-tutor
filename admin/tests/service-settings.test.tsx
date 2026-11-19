@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { beforeEach, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { CourseSettings } from '../src/pages/course-settings';
+import { GlobalSettings } from '../src/features/management/settings';
 import { ServiceSettings } from '../src/components/service-settings';
 import { api } from '../src/lib/api';
 
@@ -13,14 +14,14 @@ beforeEach(() => {
   vi.mocked(api.get).mockImplementation(async path => path.includes('/course/settings') ? { revision: 1, assistant: { enabled: true }, roles: [] } : config);
 });
 it('retains service drafts across icon tabs and hides global configuration from teachers', async () => {
-  const w = render(<CourseSettings classroomId={1} isAdmin />);
-  await screen.findByText('请求预算');
+  const w = render(<GlobalSettings />);
+  await screen.findByRole('button', { name: '测试已保存连接' });
   const tab = screen.getByRole('tab', { name: '讲稿生成' });
   expect(tab.querySelector('svg')).not.toBeNull();
   fireEvent.click(tab);
   const input = await screen.findByLabelText('页面图像模型');
   fireEvent.change(input, { target: { value: 'unsaved-vision' } });
-  fireEvent.click(screen.getByRole('tab', { name: '本班答疑' }));
+  fireEvent.click(screen.getByRole('tab', { name: '学生助教' }));
   fireEvent.click(tab);
   expect(screen.getByLabelText('页面图像模型')).toHaveValue('unsaved-vision');
   expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
@@ -46,9 +47,9 @@ it('preserves keys after a conflict and clears transient key text only after sav
 
 it('uses one identical page-header action group and saves only the active tab', async () => {
   vi.mocked(api.put).mockResolvedValue({ ...config, revision: 2 });
-  const { container } = render(<CourseSettings classroomId={1} isAdmin />);
-  await screen.findByText('请求预算');
-  for (const name of ['本班答疑', '学生助教', '讲稿生成', '语音合成']) {
+  const { container } = render(<GlobalSettings />);
+  await screen.findByRole('button', { name: '测试已保存连接' });
+  for (const name of ['学生助教', '讲稿生成', '语音合成']) {
     fireEvent.click(screen.getByRole('tab', { name }));
     const save = screen.getByRole('button', { name: '保存设置' });
     expect(save.closest('.page-heading')).not.toBeNull();
@@ -56,7 +57,7 @@ it('uses one identical page-header action group and saves only the active tab', 
     expect(container.querySelector('.page-heading svg')).not.toBeNull();
   }
   fireEvent.click(screen.getByRole('tab', { name: '讲稿生成' }));
-  fireEvent.change(within(screen.getByRole('tabpanel')).getByLabelText('模型名称'), { target: { value: 'draft-writer' } });
+  fireEvent.change(within(screen.getByRole('tabpanel', { name: '讲稿生成' })).getByLabelText('模型名称'), { target: { value: 'draft-writer' } });
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
   await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.put).mock.calls[0][0]).toBe('/teacher/services/authoring');

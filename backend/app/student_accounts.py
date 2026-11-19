@@ -14,7 +14,7 @@ from .account_ids import normalize_student_id
 from .auth import hash_password, require_teacher
 from app.classrooms.access import own_classroom
 from .db import get_db
-from .models import AuthSession, Membership, User
+from .models import AuthSession, Membership, TownPreviewStudent, User
 
 router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/students", tags=["student accounts"])
 MAX_ROWS = 500
@@ -47,15 +47,20 @@ class CreateInput(BaseModel):
 def inspect_students(db, classroom_id, students):
     seen, errors, result = set(), [], []
     existing = {u.student_id: u for u in db.scalars(select(User).where(User.student_id.in_([s.student_id for s in students])))}
+    previews = set(db.scalars(select(TownPreviewStudent.student_user_id).where(
+        TownPreviewStudent.student_user_id.in_([u.id for u in existing.values()]))))
     members = set(db.scalars(select(Membership.user_id).where(Membership.classroom_id == classroom_id)))
     for index, student in enumerate(students, 2):
         old = existing.get(student.student_id)
         if student.student_id in seen:
             errors.append(f"第{index}行：学号重复")
-        elif old and (old.role != "student" or old.id not in members):
-            errors.append(f"第{index}行：学号已存在且不是本班学生，请由学生使用加入码加入")
+        elif old and (old.role != "student" or old.id in previews):
+            errors.append(f"第{index}行：该学号不能作为正式学生加入班级")
+        elif old and old.id not in members and old.name != student.name:
+            errors.append(f"第{index}行：学号与姓名不匹配，请核对名册")
         else:
-            result.append({**student.model_dump(), "action": "existing" if old else "create"})
+            action = ("existing" if old.id in members else "bind") if old else "create"
+            result.append({**student.model_dump(), "name": old.name if old else student.name, "action": action})
         seen.add(student.student_id)
     if errors:
         raise HTTPException(422, "；".join(errors[:20]))
@@ -71,12 +76,17 @@ def roster(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Ann
 
 @router.post("", status_code=201)
 def create_students(classroom_id: int, body: CreateInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    own_classroom(db, user, classroom_id)
+    own_classroom(db, user, classroom_id, exclusive=True)
     rows = inspect_students(db, classroom_id, body.students)
-    created = 0
+    created = bound = 0
     try:
         for row in rows:
             if row["action"] == "existing":
+                continue
+            if row["action"] == "bind":
+                student_id = db.scalar(select(User.id).where(User.student_id == row["student_id"]))
+                db.add(Membership(user_id=student_id, classroom_id=classroom_id))
+                bound += 1
                 continue
             student = User(student_id=row["student_id"], name=row["name"], role="student",
                            password_hash=hash_password(row["student_id"]), must_change_password=True)
@@ -88,7 +98,7 @@ def create_students(classroom_id: int, body: CreateInput, db: Annotated[Session,
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "学号或班级关系已变化，请重新预览；本次未创建任何账号")
-    return {"created": created, "existing": len(rows) - created}
+    return {"created": created, "bound": bound, "existing": len(rows) - created - bound}
 
 
 def parse_table(filename, data):
@@ -166,17 +176,21 @@ class BatchInput(BaseModel):
         return sorted({normalize_student_id(v) for v in values})
 
 
+def reset_account_password(db, account, password):
+    account.password_hash = hash_password(password)
+    account.must_change_password = True
+    db.execute(delete(AuthSession).where(AuthSession.user_id == account.id))
+
+
 @router.post("/batch")
 def batch_students(classroom_id: int, body: BatchInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    own_classroom(db, user, classroom_id)
+    own_classroom(db, user, classroom_id, exclusive=True)
     rows = list(db.scalars(select(User).where(User.student_id.in_(body.student_ids)).order_by(User.id).with_for_update()))
     if len(rows) != len(body.student_ids) or any(u.role != "student" or not db.get(Membership, (u.id, classroom_id)) for u in rows):
         raise HTTPException(403, "只能操作当前班级的学生；本次未做任何修改")
     for student in rows:
         if body.action == "reset-password":
-            student.password_hash = hash_password(student.student_id)
-            student.must_change_password = True
-            db.execute(delete(AuthSession).where(AuthSession.user_id == student.id))
+            reset_account_password(db, student, student.student_id)
         else:
             db.delete(db.get(Membership, (student.id, classroom_id)))
     db.commit()

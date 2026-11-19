@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import require_teacher
+from .auth import require_admin
 from .db import get_db
 from .integration_models import AssistantModelSettings
 from .models import User
@@ -97,14 +97,8 @@ def model_kwargs(config, output_tokens):
     return result
 
 
-def require_admin(user):
-    if user.role != "admin":
-        raise HTTPException(403, "只有管理员可以管理全站模型连接")
-
-
 @router.get("")
-def read_model(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    require_admin(user)
+def read_model(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_admin)]):
     row = db.get(AssistantModelSettings, 1)
     config = configuration(db, include_key=False)
     config.pop("api_key")
@@ -115,8 +109,7 @@ def read_model(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
 
 
 @router.put("")
-def save_model(body: ModelInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    require_admin(user)
+def save_model(body: ModelInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_admin)]):
     # The admin row also serializes the first insert, when there is no settings row yet.
     db.scalar(select(User).where(User.role == "admin").order_by(User.id).limit(1).with_for_update())
     row = db.get(AssistantModelSettings, 1, with_for_update=True)
@@ -134,9 +127,8 @@ def save_model(body: ModelInput, db: Annotated[Session, Depends(get_db)], user: 
 
 
 @router.post("/test")
-async def test_model(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+async def test_model(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_admin)]):
     from langchain_openai import ChatOpenAI
-    require_admin(user)
     config = configuration(db)
     if not config["api_key"]:
         raise HTTPException(503, "请先保存模型密钥")

@@ -10,6 +10,7 @@ export interface Classroom {
   id: number;
   name: string;
   teacher_id: number;
+  teacher_name?: string;
   join_code?: string;
 }
 export interface Student {
@@ -21,7 +22,7 @@ export interface Student {
 export interface StudentPreview {
   student_id: string;
   name: string;
-  action: "create" | "existing";
+  action: "create" | "existing" | "bind";
 }
 export interface AuthResult {
   access_token: string;

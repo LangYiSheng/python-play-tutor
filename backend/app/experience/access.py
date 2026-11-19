@@ -24,6 +24,8 @@ def guard(db, user, classroom_id, request, *, mutate=False):
             raise HTTPException(403, "只能操作本人当前班级的教师体验存档")
     elif not dev_tools_enabled() or not db.get(Membership, (user.id, classroom_id)):
         raise HTTPException(403, "开发工具仅对开发环境中已加入的班级开放")
+    from app.course_content.access import authorize_classroom
+    authorize_classroom(db, user, classroom_id)
     instance_id(db, classroom_id)
     if mutate:
         if db.scalar(

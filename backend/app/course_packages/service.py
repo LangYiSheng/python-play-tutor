@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth import as_utc
+from app.classrooms.access import own_classroom
 from app.course_exchange_models import CourseImportPreview
 from app.course_instances import classroom_course
 from app.course_packages.apply import import_bundle
@@ -29,16 +30,7 @@ from app.course_packages.reader import load_bundle
 from app.course_packages.writer import write_package
 from app.course_scope import lock_course
 from app.integration_models import AssistantCall
-from app.models import Classroom, User, now
-
-
-def require_teacher(db, user, classroom_id):
-    classroom = db.get(Classroom, classroom_id)
-    if not classroom:
-        raise HTTPException(404, "班级不存在")
-    if user.role != "admin" and classroom.teacher_id != user.id:
-        raise HTTPException(403, "只能管理自己的班级课程")
-    return classroom
+from app.models import User, now
 
 
 def _replace_staged(source, destination):
@@ -58,7 +50,7 @@ def export_course(classroom_id: int, db: Session, user: User):
     with exchange_guard(exchange_root()):
         # Exclusive gate ensures one consistent export while blocking both edits and learner writes.
         lock_course(db, classroom_id, exclusive=True)
-        require_teacher(db, user, classroom_id)
+        own_classroom(db, user, classroom_id)
         instance = classroom_course(db, classroom_id)
         if instance is None:
             raise HTTPException(409, "班级尚未导入课程")
@@ -111,16 +103,19 @@ def _save_preview(db, user, classroom_id, bundle, directory, digest):
     }
 
 
-def available_packages(classroom_id: int, db: Session, user: User):
+def available_packages(classroom_id: int | None, db: Session, user: User):
     from app.course_packages.catalog import mounted_catalog
 
-    require_teacher(db, user, classroom_id)
+    if classroom_id is not None:
+        own_classroom(db, user, classroom_id)
     root = exchange_root()
     try:
         mounted, unavailable = mounted_catalog(root, LIMITS)
         items = [
             {
-                **{key: item[key] for key in ("key", "name", "package_id", "package_version", "source", "directory", "created_at", "chapter_count", "question_count", "can_delete")},
+                **{key: item[key] for key in ("key", "name", "package_id", "package_version", "source", "directory", "created_at", "chapter_count", "question_count")},
+                "can_delete": user.role == "admin" and item["can_delete"],
+                "protected": not item["can_delete"],
             }
             for item in mounted
         ]
@@ -134,7 +129,7 @@ def preview_available_course(classroom_id: int, body: AvailablePackageInput, db:
         from app.course_packages.catalog import copy_directory, mounted_catalog
 
         lock_course(db, classroom_id, exclusive=True)
-        require_teacher(db, user, classroom_id)
+        own_classroom(db, user, classroom_id)
         exchange = exchange_root()
         try:
             with tempfile.TemporaryDirectory(prefix="course-catalog-", dir=exchange) as temporary:
@@ -161,7 +156,7 @@ def preview_available_course(classroom_id: int, body: AvailablePackageInput, db:
 def apply_course(classroom_id: int, preview_id: str, body: ApplyInput, db: Session, user: User):
     with exchange_guard(exchange_root()):
         lock_course(db, classroom_id, exclusive=True)
-        classroom = require_teacher(db, user, classroom_id)
+        classroom = own_classroom(db, user, classroom_id)
         preview = db.scalar(select(CourseImportPreview).where(CourseImportPreview.id == preview_id).with_for_update())
         if not preview or preview.classroom_id != classroom_id or preview.teacher_id != user.id:
             raise HTTPException(404, "导入预览不存在")

@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .assistant_settings import cipher, require_admin
-from .auth import require_teacher
+from .assistant_settings import cipher
+from .auth import require_admin
 from .db import get_db
 from .integration_models import AssistantModelSettings
 from .models import User
@@ -88,8 +88,7 @@ def configuration(service: Service, db: Session | None = None, *, include_key=Tr
 
 @router.get("/{service}")
 def read_service(service: Service, db: Annotated[Session, Depends(get_db)],
-                 user: Annotated[User, Depends(require_teacher)]):
-    require_admin(user)
+                 user: Annotated[User, Depends(require_admin)]):
     row = db.get(AssistantModelSettings, IDS[service])
     value = configuration(service, db, include_key=False)
     value.pop("api_key", None)
@@ -99,7 +98,6 @@ def read_service(service: Service, db: Annotated[Session, Depends(get_db)],
 
 
 def save(service, body, db, user):
-    require_admin(user)
     db.scalar(select(User).where(User.role == "admin").order_by(User.id).limit(1).with_for_update())
     row = db.get(AssistantModelSettings, IDS[service], with_for_update=True)
     if body.expected_revision != (row.revision if row else 0):
@@ -117,11 +115,11 @@ def save(service, body, db, user):
 
 @router.put("/authoring")
 def save_authoring(body: AuthoringInput, db: Annotated[Session, Depends(get_db)],
-                   user: Annotated[User, Depends(require_teacher)]):
+                   user: Annotated[User, Depends(require_admin)]):
     return save("authoring", body, db, user)
 
 
 @router.put("/speech")
 def save_speech(body: SpeechInput, db: Annotated[Session, Depends(get_db)],
-                user: Annotated[User, Depends(require_teacher)]):
+                user: Annotated[User, Depends(require_admin)]):
     return save("speech", body, db, user)

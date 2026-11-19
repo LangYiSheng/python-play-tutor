@@ -112,7 +112,7 @@ def test_teacher_evidence_private_and_class_scoped(client, db, teacher, student,
     assert historical["cases"][1]["result"] is None
 
 
-def test_search_filter_paging_and_old_diagnostic(client, db, teacher, student, classroom, submission):
+def test_search_filter_paging_and_old_diagnostic(client, db, teacher, student, classroom, submission, admin_account):
     db.add(Submission(user_id=student["id"], classroom_id=classroom["id"], activity_id="ch1-practice",
                       question_id="ch1-abstraction", idempotency_key="old-concept-empty-code", code="", status="accepted"))
     db.commit()
@@ -128,6 +128,12 @@ def test_search_filter_paging_and_old_diagnostic(client, db, teacher, student, c
     data = client.get(f"/api/teacher/judge/submissions/{submission}?classroom_id={classroom['id']}", headers=teacher["headers"]).json()
     assert data["diagnostic"] is None and all(case["result"] is None for case in data["cases"])
     assert management.queue_counts(db, classroom["id"]) == {"prepared": 1}
+    site_path = f"/api/teacher/judge/submissions/{submission}"
+    assert client.get(site_path, headers=teacher["headers"]).status_code == 403
+    detail = client.get(site_path, headers=admin_account["headers"]).json()
+    assert detail["classroom_id"] == classroom["id"] and detail["classroom_name"] == classroom["name"]
+    overview = client.get("/api/admin/overview", params={"classroom_id": classroom["id"]}, headers=admin_account["headers"])
+    assert overview.json()["items"][0]["judge_counts"] == {"prepared": 1}
 
 
 def test_admin_pause_resume_preserves_queue_and_results(client, db, teacher, student, classroom, submission):

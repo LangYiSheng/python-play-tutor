@@ -8,7 +8,6 @@ import {
   ListChecks,
   Layers3,
   ChevronDown,
-  Plus,
   LogOut,
   KeyRound,
   PanelLeftClose,
@@ -57,7 +56,16 @@ const Judge = lazy(() => import("@/pages/judge").then(module => ({ default: modu
 const Authoring = lazy(() =>
   import("@/features/authoring/authoring-page").then((module) => ({ default: module.Authoring })),
 );
-const nav = [
+import { ClassroomManagement, Accounts, GlobalOverview, GlobalSettings } from "@/features/management/pages";
+
+const globalNav = [
+  { key: "classes", title: "班级管理", icon: GraduationCap, adminOnly: false },
+  { key: "overview", title: "全局概览", icon: Layers3, adminOnly: true },
+  { key: "teachers", title: "教师管理", icon: Users, adminOnly: true },
+  { key: "accounts", title: "学生管理", icon: Users, adminOnly: true },
+  { key: "system", title: "全站设置", icon: Settings, adminOnly: true },
+] as const;
+const classNav = [
   { key: "classroom", title: "班级概况", icon: GraduationCap },
   { key: "students", title: "学生账号", icon: Users },
   { key: "teaching", title: "教学管理", icon: GraduationCap },
@@ -67,14 +75,19 @@ const nav = [
   { key: "activities", title: "学习活动", icon: BookOpen },
   { key: "authoring", title: "教学流程", icon: Layers3 },
   { key: "packages", title: "课程包", icon: Package },
-  { key: "settings", title: "智能体设置", icon: Settings },
+  { key: "settings", title: "本班答疑设置", icon: Settings },
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
+const nav = [...globalNav, ...classNav];
 type Page = (typeof nav)[number]["key"];
+const classroomScreens = {
+  packages: Packages, students: Students, teaching: Teaching, curriculum: Curriculum, materials: Materials,
+  questions: Questions, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
+};
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
-  return nav.some((n) => n.key === part) ? (part as Page) : "classroom";
+  return nav.some((n) => n.key === part) ? (part as Page) : "classes";
 }
 export default function App() {
   return (
@@ -97,6 +110,7 @@ function Workbench() {
     [busy, setBusy] = useState(false),
     [openingTown, setOpeningTown] = useState(false),
     [sidebar, setSidebar] = useState(true);
+  const [classListRevision, setClassListRevision] = useState(0);
   const canLeave = useCanLeave();
   useEffect(() => {
     let active = true;
@@ -127,6 +141,9 @@ function Workbench() {
       setUser(null);
       setClasses([]);
       setClassroomId(null);
+      setPasswordOpen(false);
+      setNewClass(false);
+      setClassName("");
       setError("登录已失效，请重新登录。");
     };
     window.addEventListener("session-expired", expire);
@@ -150,7 +167,7 @@ function Workbench() {
         if (!controller.signal.aborted) setError(errorMessage(e));
       });
     return () => controller.abort();
-  }, [user?.id, user?.must_change_password]);
+  }, [user?.id, user?.must_change_password, classListRevision]);
   useEffect(() => {
     const pop = () => {
       if (canLeave()) setPage(currentPage());
@@ -213,6 +230,9 @@ function Workbench() {
       setUser(null);
       setClasses([]);
       setClassroomId(null);
+      setPasswordOpen(false);
+      setNewClass(false);
+      setClassName("");
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -244,7 +264,52 @@ function Workbench() {
         />
       </>
     );
+  if (user.must_change_password) {
+    return <PasswordDialog open required onClose={() => {}} onUser={setUser} />;
+  }
   const classroom = classes.find((c) => c.id === classroomId);
+  const isAdmin = user.role === "admin";
+  const globalPage = globalNav.find(item => item.key === page);
+  const classPage = !globalPage;
+  const allowed = !globalPage?.adminOnly || isAdmin;
+  function openClass(id: number) {
+    if (!user || !canLeave()) return;
+    setClassroomId(id);
+    sessionStorage.setItem(`classroom:${user.id}`, String(id));
+    if (!classes.some(row => row.id === id)) setClassListRevision(value => value + 1);
+    history.pushState({}, "", "/teacher/classroom");
+    setPage("classroom");
+  }
+  function link({ key, title, icon: Icon }: (typeof nav)[number]) {
+    return <a key={key} href={`/teacher/${key}`} aria-current={page === key ? "page" : undefined}
+      onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} />{title}</a>;
+  }
+  function renderPage(currentUser: User) {
+    if (!allowed) return <ErrorNotice message="此页面仅管理员可访问。" />;
+    switch (page) {
+      case "classes":
+        return <ClassroomManagement isAdmin={isAdmin} userId={currentUser.id} onOpen={openClass}
+          onCreate={() => setNewClass(true)} onChanged={() => setClassListRevision(value => value + 1)} />;
+      case "teachers":
+      case "accounts":
+        return <Accounts role={page === "teachers" ? "teacher" : "student"} />;
+      case "overview":
+        return <GlobalOverview onOpen={openClass} />;
+      case "system":
+        return <GlobalSettings />;
+    }
+    if (!classroom) return <div className="surface">
+      <Empty title="尚未进入班级" />
+      <div className="flex justify-center pb-8"><Button onClick={() => navigate("classes")}>班级管理</Button></div>
+    </div>;
+    if (page === "classroom") return <ClassOverview classroom={classroom}
+      onRenamed={name => setClasses(rows => rows.map(row => row.id === classroom.id ? { ...row, name } : row))}
+      onContent={() => navigate("curriculum")} onImport={() => navigate("packages")} />;
+    if (page === "judge") return <Judge classroomId={classroom.id} canManage={false} />;
+    if (page === "activities") return <Activities classroomId={classroom.id} teacherId={classroom.teacher_id} />;
+    const Screen = classroomScreens[page];
+    return <Screen classroomId={classroom.id} />;
+  }
   return (
     <div className={`workbench ${sidebar ? "" : "sidebar-collapsed"}`}>
       <aside className="sidebar">
@@ -253,7 +318,7 @@ function Workbench() {
           className="brand"
           onClick={(e) => {
             e.preventDefault();
-            navigate("classroom");
+            navigate("classes");
           }}
         >
           <span className="brand-mark">
@@ -263,49 +328,22 @@ function Workbench() {
             Pythontopia<small>教学工作台</small>
           </span>
         </a>
-        <div className="class-picker">
-          <Label htmlFor="active-class">当前班级</Label>
-          <SelectField
-            id="active-class"
-            disabled={busy || classes.length === 0}
-            value={classroomId ?? ""}
-            onValueChange={(value) => changeClass(Number(value))}
-          >
-            <option value="" disabled>
-              选择班级
-            </option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+        <div className="sidebar-scroll">
+          <nav aria-label="工作台导航">
+            {globalNav.filter(item => !item.adminOnly || isAdmin).map(link)}
+          </nav>
+          {classPage && classroom && <nav aria-label="班级导航">
+            {classNav.map(item => (
+              <div key={item.key}>
+                {item.key === "classroom" && <p className="nav-label">班级教学</p>}
+                {item.key === "curriculum" && <p className="nav-label">课程内容</p>}
+                {item.key === "activities" && <p className="nav-label">课程编排</p>}
+                {item.key === "settings" && <p className="nav-label">任务与设置</p>}
+                {link(item)}
+              </div>
             ))}
-          </SelectField>
-          <Button variant="ghost" size="sm" onClick={() => setNewClass(true)}>
-            <Plus size={15} />
-            创建班级
-          </Button>
+          </nav>}
         </div>
-        <nav aria-label="教师导航">
-          {nav.map(({ key, title, icon: Icon }) => (
-            <div key={key}>
-              {key === "classroom" && <p className="nav-label">班级教学</p>}
-              {key === "curriculum" && <p className="nav-label">课程内容</p>}
-              {key === "activities" && <p className="nav-label">课程编排与交换</p>}
-              {key === "settings" && <p className="nav-label">服务与设置</p>}
-              <a
-                href={`/teacher/${key}`}
-                aria-current={page === key ? "page" : undefined}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(key);
-                }}
-              >
-                <Icon size={18} />
-                {title}
-              </a>
-            </div>
-          ))}
-        </nav>
         <div className="sidebar-bottom">
           <DropdownMenu>
             <DropdownMenuTrigger render={<button className="account" />}>
@@ -339,13 +377,29 @@ function Workbench() {
           >
             {sidebar ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
-          <span className="text-muted-foreground">
-            {classroom?.name ?? "教学工作台"}
-          </span>
+          <span className="text-muted-foreground">教学工作台</span>
           <span className="text-border">/</span>
           <span>{nav.find((n) => n.key === page)?.title}</span>
-          <Button
-            className="ml-auto shrink-0"
+          {classPage && <div className="class-picker">
+            <label className="class-picker-label" htmlFor="active-class">当前班级</label>
+            <SelectField fitOptions
+              id="active-class"
+              disabled={busy || classes.length === 0}
+              value={classroomId ?? ""}
+              onValueChange={(value) => changeClass(Number(value))}
+            >
+              <option value="" disabled>
+                选择班级
+              </option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {isAdmin ? `${c.teacher_name || (c.teacher_id === user.id ? user.name : "未知教师")} | ${c.name}` : c.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>}
+          {classPage && <Button
+            className="shrink-0"
             variant="outline"
             size="sm"
             disabled={!classroom || openingTown || user.must_change_password}
@@ -353,65 +407,19 @@ function Workbench() {
           >
             {openingTown ? "正在进入小镇…" : "进入小镇"}
             <ArrowUpRight />
-          </Button>
+          </Button>}
         </header>
         <main className="main-content">
           <ErrorNotice message={error} />
-          {classroom ? (
-            <div key={`${user.id}:${classroom.id}:${page}`}>
-              {page === "classroom" ? (
-                <ClassOverview
-                  classroom={classroom}
-                  onContent={() => navigate("curriculum")}
-                  onImport={() => navigate("packages")}
-                />
-              ) : page === "students" ? (
-                <Students classroomId={classroom.id} />
-              ) : page === "teaching" ? (
-                <Teaching classroomId={classroom.id} />
-              ) : page === "curriculum" ? (
-                <Curriculum classroomId={classroom.id} />
-              ) : page === "materials" ? (
-                <Materials classroomId={classroom.id} />
-              ) : page === "questions" ? (
-                <Questions classroomId={classroom.id} />
-              ) : page === "activities" ? (
-                <Activities classroomId={classroom.id} userId={user.id} />
-              ) : page === "settings" ? (
-                <CourseSettings classroomId={classroom.id} isAdmin={user.role === 'admin'} />
-              ) : page === "synthesis" ? (
-                <Suspense fallback={<Loading />}><Synthesis classroomId={classroom.id} /></Suspense>
-              ) : page === "judge" ? (
-                <Suspense fallback={<Loading />}><Judge classroomId={classroom.id} canManage={user.role === "admin"} /></Suspense>
-              ) : page === "authoring" ? (
-                <Suspense fallback={<Loading />}>
-                  <Authoring classroomId={classroom.id} />
-                </Suspense>
-              ) : (
-                <Packages classroomId={classroom.id} />
-              )}
-            </div>
-          ) : (
-            <div className="surface">
-              <Empty
-                title="创建你的第一个班级"
-                description="班级拥有独立课程，可以分别维护资料和教学流程。"
-              />
-              <div className="flex justify-center pb-8">
-                <Button onClick={() => setNewClass(true)}>
-                  <Plus />
-                  创建班级
-                </Button>
-              </div>
-            </div>
-          )}
+          <Suspense key={`${user.id}:${classPage ? classroomId : "global"}:${page}`} fallback={<Loading />}>
+            {renderPage(user)}
+          </Suspense>
         </main>
       </div>
       <PasswordDialog
-        open={passwordOpen || user.must_change_password}
+        open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
         onUser={setUser}
-        required={user.must_change_password}
       />
       <Dialog
         open={newClass}
@@ -423,7 +431,7 @@ function Workbench() {
           <DialogHeader>
             <DialogTitle>创建班级</DialogTitle>
             <DialogDescription>
-              为班级导入课程包，或从空课程开始编辑。
+              填写班级名称，选择如何开始本班课程。
             </DialogDescription>
           </DialogHeader>
           <form
@@ -456,6 +464,11 @@ function Workbench() {
                 <option value="empty">创建空课程</option>
                 <option value="later">稍后配置课程</option>
               </SelectField>
+              <p className="hint" aria-live="polite">
+                {courseStart === "empty" ? "同时创建一门空白课程，建班后即可自己添加章节和教学内容。"
+                  : courseStart === "later" ? "只创建班级，可以先添加学生。准备好后，在班级概况中导入课程包或创建空课程。"
+                  : "建班后打开课程包列表，由你选择并确认导入本班要使用的课程。"}
+              </p>
             </div>
             <DialogFooter>
               <Button

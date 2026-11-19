@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Pause, Play, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ interface Service {
   events: { at: string; message: string }[];
 }
 interface Submission {
+  classroom_name?: string;
   id: string; student_name: string; student_id: string | null; question_title: string; activity_title: string;
   status: string; created_at: string; updated_at: string; passed_count: number | null; total_count: number | null;
 }
@@ -66,12 +68,14 @@ function Status({ value }: { value: string }) {
   return <span className={`judge-status ${value === "accepted" ? "judge-pass" : ["prepared", "dispatching"].includes(value) ? "" : "judge-fail"}`}>{statuses[value] ?? value}</span>;
 }
 
-export function Judge({ classroomId, canManage }: { classroomId: number; canManage: boolean }) {
+type JudgeProps = { actionsTarget?: HTMLDivElement | null; classroomId?: number; canManage: boolean };
+
+export function Judge(props: JudgeProps) {
   // A different class unmounts the entire page, including open private evidence.
-  return <JudgePage key={classroomId} classroomId={classroomId} canManage={canManage} />;
+  return <JudgePage key={props.classroomId ?? "global"} {...props} canManage={props.canManage && props.classroomId === undefined} />;
 }
 
-function JudgePage({ classroomId, canManage }: { classroomId: number; canManage: boolean }) {
+function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   const [draftDates, setDraftDates] = useState<JudgeDates>(() => recentJudgeDates(7));
   const [dateQuery, setDateQuery] = useState(() => judgeDateQuery(recentJudgeDates(7)));
   const [preset, setPreset] = useState<number | "all" | "custom">(7), [dateError, setDateError] = useState("");
@@ -81,8 +85,9 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const action = useRef<AbortController | null>(null);
   useEffect(() => () => action.current?.abort(), []);
-  const service = useJudgePolling<Service>(`/teacher/judge/service?classroom_id=${classroomId}${dateQuery}`);
-  const submissions = useJudgePolling<{ items: Submission[]; total: number }>(`/teacher/judge/submissions?classroom_id=${classroomId}&q=${encodeURIComponent(query)}&status=${status}&page=${page}&size=${size}${dateQuery}`);
+  const scope = classroomId === undefined ? "" : `classroom_id=${classroomId}&`;
+  const service = useJudgePolling<Service>(`/teacher/judge/service?${scope}${dateQuery.slice(1)}`);
+  const submissions = useJudgePolling<{ items: Submission[]; total: number }>(`/teacher/judge/submissions?${scope}q=${encodeURIComponent(query)}&status=${status}&page=${page}&size=${size}${dateQuery}`);
   const state = service.data;
   function applyDates(next: JudgeDates | null, choice: typeof preset) {
     try {
@@ -106,10 +111,11 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
     } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   }
+  const refreshButton = <Button variant="outline" onClick={() => { service.reload(); submissions.reload(); }}><RefreshCw />刷新</Button>;
   return <>
-    <PageHeader title="评测管理" description="查看服务状态与本班 Python 提交，定位学生遇到的评测问题。">
-      <Button variant="outline" onClick={() => { service.reload(); submissions.reload(); }}><RefreshCw />刷新</Button>
-    </PageHeader>
+    {classroomId === undefined
+      ? actionsTarget && createPortal(refreshButton, actionsTarget)
+      : <PageHeader title="评测管理" description="查看服务状态与本班 Python 提交，定位学生遇到的评测问题。">{refreshButton}</PageHeader>}
     <section className="surface mb-4 judge-date-filter" aria-label="评测日期筛选">
       <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">统计日期</span>
         {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
@@ -143,7 +149,7 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
       {state ? <div className="judge-metrics">
         {[['等待评测', state.counts.prepared ?? 0], ['正在评测', state.counts.dispatching ?? 0], ['结果待核查', state.counts.submission_unknown ?? 0], ['服务异常', state.counts.infrastructure_error ?? 0]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
       </div> : null}
-      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground"><span>本班 · 所选日期</span>
+      <div className="flex flex-wrap items-start justify-between gap-3 text-xs text-muted-foreground"><span>{classroomId === undefined ? "全站" : "本班"} · 所选日期</span>
       {state ? <details><summary className="cursor-pointer">运行详情</summary>
         <p className="mt-2">检测：{timestamp(state.checked_at)}{state.health.latency_ms != null ? ` · ${state.health.latency_ms} ms` : ""} · 心跳{state.worker_alive ? "正常" : "异常"}</p>
         <p className="mt-2">每 10 秒刷新</p>
@@ -155,7 +161,7 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
         <ol className="judge-events">{[...state.events].reverse().map((e, i) => <li key={`${e.at}-${i}`}><time>{timestamp(e.at)}</time><span>{e.message}</span></li>)}</ol>
       </details> : null}
     </section>
-    <section className="surface judge-submissions" aria-label="本班提交记录">
+    <section className="surface judge-submissions" aria-label={classroomId === undefined ? "全站提交记录" : "本班提交记录"}>
       <h2 className="font-semibold">提交记录</h2>
       <form className="my-4 flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
         <Input className="max-w-sm" aria-label="搜索提交" placeholder="学生姓名、学号、题目或提交编号" value={search} maxLength={100} onChange={e => setSearch(e.target.value)} />
@@ -167,7 +173,7 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
       {!submissions.data ? submissions.error ? null : <Loading /> : submissions.data.items.length ? <>
         <Table aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
           <TableBody>{submissions.data.items.map(row => <TableRow key={row.id}>
-            <TableCell><span className="font-medium">{row.student_name}</span><p className="text-xs text-muted-foreground">{row.student_id ?? "无学号"}</p></TableCell>
+            <TableCell><span className="font-medium">{row.student_name}</span><p className="text-xs text-muted-foreground">{row.student_id ?? "无学号"}{classroomId === undefined && row.classroom_name && ` · ${row.classroom_name}`}</p></TableCell>
             <TableCell className="max-w-xs whitespace-normal"><span>{row.question_title}</span><p className="text-xs text-muted-foreground">{row.activity_title}</p></TableCell>
             <TableCell><Status value={row.status} />{row.total_count != null ? <p className="text-xs text-muted-foreground">{row.passed_count} / {row.total_count} 通过</p> : null}</TableCell>
             <TableCell>{timestamp(row.created_at)}</TableCell>
@@ -188,8 +194,8 @@ function JudgePage({ classroomId, canManage }: { classroomId: number; canManage:
   </>;
 }
 
-function SubmissionDialog({ classroomId, id, onClose }: { classroomId: number; id: string; onClose: () => void }) {
-  const detail = useResource<Detail>(`/teacher/judge/submissions/${encodeURIComponent(id)}?classroom_id=${classroomId}`);
+function SubmissionDialog({ classroomId, id, onClose }: { classroomId?: number; id: string; onClose: () => void }) {
+  const detail = useResource<Detail>(`/teacher/judge/submissions/${encodeURIComponent(id)}${classroomId === undefined ? "" : `?classroom_id=${classroomId}`}`);
   const data = detail.data;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="judge-detail sm:max-w-4xl">
     <DialogHeader><DialogTitle>提交详情</DialogTitle><DialogDescription>仅本班教师与管理员可见。用例来自提交时快照，题目名称为当前名称；隐藏用例与诊断不可转发给学生。</DialogDescription></DialogHeader>

@@ -79,7 +79,7 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
     assert any("练习目标" in message for message in preview_impact(db, instance, changed)["blockers"])
 
 
-def test_hidden_only_python_reserved_for_assessments(client, classroom, teacher, student, db, tmp_path):
+def test_hidden_only_python_reserved_for_assessments(client, classroom, teacher, admin_account, student, db, tmp_path):
     from app.course_packages.manifest import PackageError
     from app.course_packages.validation import validate_bundle
     from app.practice_rules import candidate_pool
@@ -103,9 +103,10 @@ def test_hidden_only_python_reserved_for_assessments(client, classroom, teacher,
     body = {"id": "browser-adaptive", "chapter_id": 179, "title": "浏览器练习", "kind": "practice", "practice_rules": rules}
     assert client.post(activity_url + scope, headers=headers, json=body).status_code == 422
     assert client.put(edit_question, headers=headers, json={"samples": [case]}).status_code == 200
-    created = client.post(activity_url + scope, headers=headers, json=body)
+    created = client.post(activity_url + scope, headers=admin_account["headers"], json=body)
     assert created.status_code == 201, created.text
     activity_id = created.json()["id"]
+    assert db.get(Activity, activity_id).owner_id == teacher["id"]
     assert client.put(edit_question, headers=headers, json={"samples": []}).status_code == 409
 
     instance = db.get(CourseInstance, db.get(Activity, activity_id).course_instance_id)

@@ -30,6 +30,28 @@ def get_course(classroom_id: int, db: Annotated[Session, Depends(get_db)], user:
     return instance_payload(instance)
 
 
+class CourseNameInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=200)
+    expected_revision: int = Field(ge=1)
+
+
+@router.patch("")
+def rename_course(classroom_id: int, body: CourseNameInput, db: Annotated[Session, Depends(get_db)],
+                  user: Annotated[User, Depends(require_teacher)]):
+    own_classroom(db, user, classroom_id, exclusive=True)
+    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
+    if instance is None:
+        raise HTTPException(404, "本班尚未创建课程")
+    if instance.name != body.name:
+        if instance.revision != body.expected_revision:
+            raise HTTPException(409, "课程已更新，请刷新后重新修改名称")
+        instance.name = body.name
+        instance.revision += 1
+        db.commit()
+    return instance_payload(instance)
+
+
 @router.get("/ids")
 def course_ids(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
     from .course_instances import content_mapping

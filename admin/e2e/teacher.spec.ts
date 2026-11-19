@@ -8,7 +8,7 @@ async function login(page: Page) {
   await page.getByLabel("学号", { exact: true }).fill(credentials.student_id);
   await page.getByLabel("密码", { exact: true }).fill(credentials.password);
   await page.getByRole("button", { name: "进入工作台" }).click();
-  await expect(page.getByLabel("当前班级")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "班级管理" })).toBeVisible();
 }
 async function navigate(page: Page, name: string) {
   await page.getByRole("link", { name, exact: true }).click();
@@ -36,7 +36,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await page.getByRole("button", { name: "添加学生", exact: true }).click();
   await page.getByLabel("学号", { exact: true }).fill(`00${stamp}`);
   await page.getByLabel("姓名", { exact: true }).fill("验收学生甲");
-  await page.getByRole("button", { name: "创建学生", exact: true }).click();
+  await page.getByRole("button", { name: "确认添加", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: `00${stamp}`, exact: true }),
   ).toBeVisible();
@@ -225,8 +225,8 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await expect(
     page.getByRole("button", { name: "保存课程", exact: true }),
   ).toBeDisabled();
-  // 课程默认角色已从课程编辑器的角色页拆到“智能体设置”：发布后在设置里再指定。
-  await navigate(page, "智能体设置");
+  // 课程默认角色已从课程编辑器的角色页拆到“本班答疑设置”：发布后在设置里再指定。
+  await navigate(page, "本班答疑设置");
   await chooseOption(page, page.getByLabel("课程默认答疑角色", { exact: true }), "新的教学角色");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("设置已保存");
@@ -243,6 +243,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   if (!exchangeRoot) throw new Error("REBORN_COURSE_EXCHANGE_ROOT must point to the isolated browser test exchange directory.");
   expect(exported.directory).toMatch(/^export-\d+-.+-\d{8}-\d{6}-[a-f\d]{8}$/);
   const sharedCopy = resolve(exchangeRoot, `browser-roundtrip-${exported.directory}`);
+  await navigate(page, "班级管理");
   await page
     .getByRole("button", { name: "创建班级", exact: true })
     .first()
@@ -270,6 +271,8 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await expect(
     page.getByText("课程包已导入，班级课程已更新。", { exact: true }),
   ).toBeVisible();
+  await navigate(page, "班级管理");
+  await page.getByRole("row").filter({ hasText: `导入验收 ${stamp}` }).getByRole("button", { name: "进入班级" }).click();
   await navigate(page, "课程结构");
   await expect(
     page.getByRole("cell", { name: "验收第一章", exact: true }),
