@@ -56,6 +56,14 @@ def generate_range(classroom_id: int, material_id: int, body: GenerateInput,
     return {"job": jobs.state(material_id, job)}
 
 
+@router.post("/digest", status_code=202)
+def digest_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+                user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+    """Queue the whole-deck digest;整理稿写入 page_contents，可以关页面。"""
+    job = task_commands.digest_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    return {"job": jobs.state(material_id, job)}
+
+
 @router.get("/job")
 def read_job(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
              user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:

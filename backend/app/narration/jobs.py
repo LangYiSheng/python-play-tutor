@@ -76,6 +76,8 @@ def run(db: Session, material_id: int) -> bool:
             raise LookupError("资料已删除")
         if operation == "calibrate":
             task_commands.run_calibration(db, material)
+        elif operation == "digest":
+            task_commands.run_digest(db, material, request)
         elif operation == "generate_range":
             task_commands.run_generate_range(db, material, request)
         elif operation == "audio_batch":

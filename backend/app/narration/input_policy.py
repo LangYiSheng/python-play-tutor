@@ -15,18 +15,23 @@ from typing import Literal
 
 from ..models import Material
 
-Purpose = Literal["generation", "calibration"]
+Purpose = Literal["generation", "calibration", "digest"]
 
 # 文本层短于这个长度视为碎片：读页图比读碎文本准确。
 TEXT_AS_IMAGE_BELOW = 60
+# 整理原文是后续校准、讲解稿与 RAG 的唯一来源：中段页（60–199 字）漏图会永久缺块。
+DIGEST_TEXT_ONLY_THRESHOLD = 600
 # PDF 生成侧的旧阈值，保留到 60–199 档的阈值实验给出结论。
 PDF_TEXT_ONLY_THRESHOLD = 200
 
 IMAGE_POLICY: dict[str, dict[str, int]] = {
-    "presentation": {"generation": TEXT_AS_IMAGE_BELOW, "calibration": TEXT_AS_IMAGE_BELOW},
-    "pdf": {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW},
+    "presentation": {"generation": TEXT_AS_IMAGE_BELOW, "calibration": TEXT_AS_IMAGE_BELOW,
+                     "digest": DIGEST_TEXT_ONLY_THRESHOLD},
+    "pdf": {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW,
+            "digest": DIGEST_TEXT_ONLY_THRESHOLD},
 }
-DEFAULT_LIMIT = {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW}
+DEFAULT_LIMIT = {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW,
+                 "digest": DIGEST_TEXT_ONLY_THRESHOLD}
 
 
 def prefers_image(material: Material, page_text: str, *, purpose: Purpose) -> bool:
@@ -38,4 +43,5 @@ def policy_fingerprint() -> str:
     """发图策略参与整册指纹：改阈值后不能复用旧报告，也不能跨策略续跑。"""
     rules = ";".join(f"{kind}:{purpose}:{limit}" for kind, entries in sorted(IMAGE_POLICY.items())
                      for purpose, limit in sorted(entries.items()))
-    return f"image-policy ({rules}; other:{DEFAULT_LIMIT['generation']}/{DEFAULT_LIMIT['calibration']})"
+    defaults = "/".join(str(DEFAULT_LIMIT[purpose]) for purpose in sorted(DEFAULT_LIMIT))
+    return f"image-policy ({rules}; other:{defaults})"

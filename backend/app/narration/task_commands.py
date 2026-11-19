@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Material, User
 from ..teacher_scope import require_scope, teacher_instance_id
-from . import audio, calibrate, config, repository, service, tts
+from . import audio, calibrate, config, digest, repository, service, tts
 from . import client as model_client
 from .access import require_narratable, teacher_material
 from .contracts import AudioRecord, GeneratedPage
@@ -99,6 +99,50 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any])
         extra={"done": len(results), "total": len(results), "failed": failed,
                "retry_pages": [item["page_no"] for item in failed]},
     )
+
+
+def digest_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
+    """Queue the whole-deck digest; the worker rewrites page_contents window by window."""
+    instance_id = teacher_instance_id(db, user, classroom_id)
+    material = require_scope(db.get(Material, material_id), instance_id)
+    require_narratable(material)
+    repository.sync_staleness(db, material)
+    repository.sync_content_staleness(db, material)
+    db.commit()
+    if not repository.page_map(material):
+        raise HTTPException(409, "资料还没有可整理的页面")
+    reason = config.unavailable_reason(db)
+    if reason:
+        # 未配置就当场告知，不留一个必定失败的后台任务。
+        raise HTTPException(409, reason)
+    return repository.enqueue(db, material, "digest", user, request={"operation": "digest"})
+
+
+def run_digest(db: Session, material: Material, request: dict[str, Any]) -> None:
+    """Worker side: 整理还没整理或原文已变的页；每窗落库，失败保留已完成部分。"""
+    settings = config.settings(db)
+    effort = settings["effort"] or "none"
+    groups = digest.pending_windows(db, material, settings, effort)
+    total = len(groups)
+    if total == 0:
+        repository.release(db, material.id, message="原文已是整理稿，无需重跑", extra={"done": 0, "total": 0})
+        return
+    repository.beat(db, material.id, done=0, total=total)
+    db.commit()
+    written: list[int] = []
+    for index, group in enumerate(groups, start=1):
+        repository.ensure_lease(db, material.id)
+        try:
+            written.extend(digest.run_window(db, material, group, settings, effort))
+        except (model_client.ModelFailed, ValueError) as exc:
+            repository.release(db, material.id, status="failed", message=str(exc), extra={
+                "done": index - 1, "total": total,
+                "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group]})
+            return
+        repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页")
+        db.commit()
+    repository.release(db, material.id, message=f"已整理 {len(written)} 页",
+                       extra={"done": total, "total": total})
 
 
 def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:

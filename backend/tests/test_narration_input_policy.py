@@ -2,10 +2,12 @@
 
 规则只有一个来源 `narration/input_policy.py`，生成与校准都调它。当前表格：
 
-| 资料类型 | 生成 | 校准 |
-| --- | --- | --- |
-| 演示文稿 `presentation` | 文本层 < 60 字发图 | 文本层 < 60 字发图 |
-| PDF / 其他 | 文本层 < 200 字发图 | 文本层 < 60 字发图 |
+| 资料类型 | 生成 | 校准 | 整理原文 |
+| --- | --- | --- | --- |
+| 演示文稿 `presentation` | 文本层 < 60 字发图 | 文本层 < 60 字发图 | 文本层 < 600 字发图 |
+| PDF / 其他 | 文本层 < 200 字发图 | 文本层 < 60 字发图 | 文本层 < 600 字发图 |
+
+整理原文是后续校准、讲解稿与 RAG 的唯一来源，中段页（60–199 字）漏图会永久缺块，所以阈值最宽。
 
 校准两侧一致：碎片页不发图会让讲对了的页被判 mismatch（第 1 讲第 4 页），发图后 3/3 条
 mismatch 经页图核实成立（第 27/33/47 页）。生成侧演示文稿不再无条件发图：≥60 字只发文本
@@ -19,7 +21,8 @@ import pytest
 from types import SimpleNamespace
 
 from app.narration import calibrate, repository, service
-from app.narration.input_policy import IMAGE_POLICY, PDF_TEXT_ONLY_THRESHOLD, TEXT_AS_IMAGE_BELOW, prefers_image
+from app.narration.input_policy import (DIGEST_TEXT_ONLY_THRESHOLD, IMAGE_POLICY, PDF_TEXT_ONLY_THRESHOLD,
+                                        TEXT_AS_IMAGE_BELOW, prefers_image)
 from test_narration import material_fixture
 
 PRESENTATION = "presentation"
@@ -39,6 +42,8 @@ def policy_table():
 GENERATION_POLICY = {PRESENTATION: TEXT_AS_IMAGE_BELOW, PDF: PDF_TEXT_ONLY_THRESHOLD}
 # 校准：两种资料都按 60 字。
 CALIBRATION_POLICY = {PRESENTATION: TEXT_AS_IMAGE_BELOW, PDF: TEXT_AS_IMAGE_BELOW}
+# 整理原文：两种资料都按 600 字，宁多发图也不让整理稿缺块。
+DIGEST_POLICY = {PRESENTATION: DIGEST_TEXT_ONLY_THRESHOLD, PDF: DIGEST_TEXT_ONLY_THRESHOLD}
 
 LENGTHS = sorted({0, 1, 59, 60, 61, PDF_TEXT_ONLY_THRESHOLD - 1, PDF_TEXT_ONLY_THRESHOLD,
                   PDF_TEXT_ONLY_THRESHOLD + 1})
@@ -46,10 +51,12 @@ LENGTHS = sorted({0, 1, 59, 60, 61, PDF_TEXT_ONLY_THRESHOLD - 1, PDF_TEXT_ONLY_T
 
 def test_policy_table_is_the_single_source_of_truth():
     assert policy_table() == {
-        PRESENTATION: {"generation": TEXT_AS_IMAGE_BELOW, "calibration": TEXT_AS_IMAGE_BELOW},
-        PDF: {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW},
+        PRESENTATION: {"generation": TEXT_AS_IMAGE_BELOW, "calibration": TEXT_AS_IMAGE_BELOW,
+                       "digest": DIGEST_TEXT_ONLY_THRESHOLD},
+        PDF: {"generation": PDF_TEXT_ONLY_THRESHOLD, "calibration": TEXT_AS_IMAGE_BELOW,
+              "digest": DIGEST_TEXT_ONLY_THRESHOLD},
     }
-    assert TEXT_AS_IMAGE_BELOW == 60 and PDF_TEXT_ONLY_THRESHOLD == 200
+    assert TEXT_AS_IMAGE_BELOW == 60 and PDF_TEXT_ONLY_THRESHOLD == 200 and DIGEST_TEXT_ONLY_THRESHOLD == 600
 
 
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])
@@ -62,6 +69,13 @@ def test_generation_image_policy(kind, chars):
 @pytest.mark.parametrize("chars", LENGTHS)
 def test_calibration_image_policy(kind, chars):
     assert calibrate.image_input(material_of(kind), "字" * chars) is (chars < CALIBRATION_POLICY[kind])
+
+
+@pytest.mark.parametrize("kind", [PRESENTATION, PDF])
+@pytest.mark.parametrize("chars", [0, 59, 60, 199, 200, 599, 600, 900])
+def test_digest_image_policy(kind, chars):
+    """整理原文宁多发图：600 字以下都带页图，避免整理稿永久缺块。"""
+    assert prefers_image(material_of(kind), "字" * chars, purpose="digest") is (chars < DIGEST_POLICY[kind])
 
 
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])

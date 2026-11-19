@@ -87,6 +87,7 @@ Paused policy denies new content/progress/assistant requests immediately and pre
 - PUT /teacher/classrooms/{classroom_id}/materials/{id}/narrations/{page_no} {text,bridge_in?,anchors?,target_seconds?} 写入或改写讲解正文，结果为 draft；页文本已变时旧 accepted 记录在读取时被判 stale。DELETE 删除该页讲解。
 - POST /teacher/classrooms/{classroom_id}/materials/{id}/narrations/{page_no}/accept；POST .../reject。只有 accepted 能进入学生端并合成音频。课程包保留各讲稿状态，草稿和过期内容不会因导入变成可见。未保存修改不得接受（后台层面阻断，服务端以提交正文为准）。
 - POST /teacher/classrooms/{classroom_id}/materials/{id}/narrations/{page_no}/generate 按单页生成（同步返回结果），POST .../narrations/generate {first_page,last_page,mode?} 批量逐页生成，**只入队并返回 202 `{job}`**，由后台 worker 执行；`mode=serial`（默认独立）会把已生成页的讲解作为上下文，过渡句才有依据，且上下文参与幂等键。未配置作者期模型时批量入口当场 409，不会留一个必定失败的任务。
+- POST .../narrations/digest **只入队并返回 202 `{job}`**：整理原文（4 页一窗），结果写 `page_contents`（title/topic/tags/整理稿），原始解析文本保持不动。未配置作者期模型或资料没有页面时当场 409；按页幂等，原文未变的页不重复调用模型，已整理的页再次触发只处理变化的页；页号与输入不一致的窗口失败并记入 `failed`，不写半截。缺页图按该页失败处理，页级 `image_state` 记录本页整理时是否带图。
 - GET .../narrations/job -> {id,material_id,running,queued,kind,status,done,total,message,failed:[{page_no,error}],started_at}：前端轮询用；`running=false` 且 `queued=false` 表示这一轮已结束（`status` 为 done|failed|interrupted）。
 - 生成／校准／音频端点共用一份资料锁：已有任务在跑时返回 409「这份资料正在处理中」；心跳超过 5 分钟的旧任务视为过期，允许接管。批量生成、全篇校准与音频批量都在后台 worker 线程里执行，请求只负责入队，关闭页面不会中止任务。
 - POST .../narrations/accept-batch {first_page?,last_page?} 一次接受范围内全部可审草稿，返回 {accepted:[页码],count,skipped:[{page_no,reason}]}；空文本、非 draft 页跳过。
