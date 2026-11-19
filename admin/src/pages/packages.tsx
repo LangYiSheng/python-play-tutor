@@ -16,8 +16,7 @@ import {
 import { PageHeader, ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { errorMessage, request, token } from "@/lib/api";
-import type { Classroom } from "@/lib/types";
-import { useCanLeave, useDraft } from "@/lib/drafts";
+import { useDraft } from "@/lib/drafts";
 import { type TransferBytes } from "@/lib/package-transfer";
 import { formatTimestamp } from "@/lib/time";
 import { useResource } from "@/lib/use-resource";
@@ -145,24 +144,7 @@ function OperationProgress({ operation }: { operation: Operation | null }) {
   );
 }
 
-export function PackageCatalog({ classes, initialClassId }: { classes: Classroom[]; initialClassId: number | null }) {
-  const [chosen, setChosen] = useState<number | null>(initialClassId);
-  const canLeave = useCanLeave();
-  const selected = classes.find(row => row.id === chosen);
-  return <>
-    <div className="field max-w-md mb-4">
-      <Label htmlFor="package-class">导入或导出的班级</Label>
-      <SelectField id="package-class" value={selected?.id ?? ""} disabled={!classes.length}
-        placeholder={classes.length ? "选择班级" : "暂无可用班级"}
-        onValueChange={id => { if (canLeave()) setChosen(Number(id)); }}>
-        {classes.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}
-      </SelectField>
-    </div>
-    <Packages key={selected?.id ?? "catalog"} classroomId={selected?.id ?? null} />
-  </>;
-}
-
-export function Packages({ classroomId }: { classroomId: number | null }) {
+export function Packages({ classroomId }: { classroomId: number }) {
   const base = `/teacher/classrooms/${classroomId}/course`;
   const available = useResource<AvailablePackages>("/teacher/course/packages");
   const [deleting, setDeleting] = useState<AvailablePackages["items"][number] | null>(null);
@@ -290,11 +272,11 @@ export function Packages({ classroomId }: { classroomId: number | null }) {
       </Dialog>
       <PageHeader
         title="课程包"
-        description="导出包全站共享，教师可导入，管理员可删除共享导出包；默认课程包受保护。"
+        description="将共享课程包导入当前班级，或将本班课程导出供其他班级使用。管理员可删除共享导出包。"
       >
         <Button
           variant="outline"
-          disabled={busy || !classroomId}
+          disabled={busy}
           onClick={() => void exportPackage()}
         >
           <Download />
@@ -344,7 +326,7 @@ export function Packages({ classroomId }: { classroomId: number | null }) {
                 <TableCell className="tabular-nums">{item.chapter_count ?? "—"}</TableCell>
                 <TableCell className="tabular-nums">{item.question_count ?? "—"}</TableCell>
                 <TableCell className="min-w-48 max-w-80 whitespace-normal break-all text-muted-foreground">{item.directory}</TableCell>
-                <TableCell className="text-right"><Button variant="outline" size="sm" disabled={!classroomId || busy || available.loading}
+                <TableCell className="text-right"><Button variant="outline" size="sm" disabled={busy || available.loading}
                   aria-label={`预览 ${item.directory}`} onClick={() => void inspectAvailable(item.key)}>预览导入</Button>
                   {item.can_delete ? <Button className="ml-2" variant="ghost" size="sm" disabled={busy || available.loading}
                     aria-label={`删除 ${item.directory}`} onClick={() => { setDeleting(item); setError(null); }}><Trash2 />删除</Button> : item.protected ? <span className="ml-2 text-xs text-muted-foreground">受保护</span> : null}

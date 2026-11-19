@@ -44,7 +44,7 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
     finally { setBusy(false); }
   }
   return <>
-    <PageHeader title="本班答疑设置">
+    <PageHeader title="本班答疑设置" description="选择本班的默认助教，设置答疑开关和提问额度。">
       <div ref={setActionsTarget} />
       <SettingsActions actionsTarget={actionsTarget} active dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
         if (saved && window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved.assistant); setError(''); setMessage(''); }

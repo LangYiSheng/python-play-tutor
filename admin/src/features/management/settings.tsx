@@ -13,7 +13,7 @@ export function GlobalSettings() {
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
   const actions = (key: string) => ({ active: section === "agent" && service === key, actionsTarget });
   return <>
-    <PageHeader title="全站设置"><div ref={setActionsTarget} /></PageHeader>
+    <PageHeader title="全站设置" description="配置教学使用的模型与语音服务，查看全站资料合成和评测任务。"><div ref={setActionsTarget} /></PageHeader>
     <Tabs value={section} onValueChange={value => setSection(String(value))}>
       <TabsList aria-label="全站设置">
         <TabsTrigger value="agent"><Bot />智能体设置</TabsTrigger>
@@ -29,8 +29,8 @@ export function GlobalSettings() {
           <TabsContent value="speech" keepMounted hidden={service !== "speech"}><ServiceSettings service="speech" {...actions("speech")} /></TabsContent>
         </Tabs>
       </TabsContent>
-      <TabsContent value="synthesis">{section === "synthesis" && <Suspense fallback={<Loading />}><Synthesis /></Suspense>}</TabsContent>
-      <TabsContent value="judge">{section === "judge" && <Suspense fallback={<Loading />}><Judge canManage /></Suspense>}</TabsContent>
+      <TabsContent value="synthesis">{section === "synthesis" && <Suspense fallback={<Loading />}><Synthesis actionsTarget={actionsTarget} /></Suspense>}</TabsContent>
+      <TabsContent value="judge">{section === "judge" && <Suspense fallback={<Loading />}><Judge canManage actionsTarget={actionsTarget} /></Suspense>}</TabsContent>
     </Tabs>
   </>;
 }

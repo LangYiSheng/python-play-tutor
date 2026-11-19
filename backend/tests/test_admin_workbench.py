@@ -28,10 +28,15 @@ def test_global_accounts_and_teacher_provisioning(client, db, admin_account, tea
     listed = client.get("/api/admin/accounts?role=student", headers=admin_headers).json()
     assert peek not in {u["id"] for u in listed["items"]}
     assert client.post(f"/api/admin/accounts/{peek}/reset-password", headers=admin_headers, json={}).status_code == 404
+    other = client.post("/api/classrooms", headers=teacher["headers"], json={"name": "另一班"}).json()
+    params = {"role": "student", "q": student["student_id"], "classroom_id": other["id"], "size": 1}
+    assert client.get("/api/admin/accounts", params=params, headers=admin_headers).json() == {"items": [], "total": 0}
     target = db.get(Classroom, classroom["id"])
     target.status = "archived"
     db.commit()
-    listed = client.get("/api/admin/accounts?role=student&q=" + student["student_id"], headers=admin_headers).json()
+    params["classroom_id"] = target.id
+    listed = client.get("/api/admin/accounts", params=params, headers=admin_headers).json()
+    assert listed["total"] == 1
     assert listed["items"][0]["classrooms"] == [{"id": target.id, "name": target.name, "status": "archived"}]
 
 

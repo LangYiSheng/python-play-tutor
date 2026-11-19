@@ -39,10 +39,7 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     await teacher.getByRole("button", { name: "保存密码" }).click();
     await expect(teacher.getByRole("heading", { name: "班级管理" })).toBeVisible();
     await expect(teacher.getByRole("link", { name: "教师管理" })).toHaveCount(0);
-    await teacher.getByRole("link", { name: "课程包" }).click();
-    await expect(teacher.getByRole("table", { name: "可用课程包" })).toBeVisible();
-    await expect(teacher.getByRole("button", { name: "导出课程包" })).toBeDisabled();
-    await teacher.getByRole("link", { name: "班级管理" }).click();
+    await expect(teacher.getByRole("link", { name: "课程包" })).toHaveCount(0);
     await teacher.getByRole("button", { name: "创建班级" }).click();
     await teacher.getByLabel("班级名称").fill(className);
     await teacher.getByLabel("课程来源").click();
@@ -52,6 +49,9 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     for (const group of ["班级教学", "课程内容", "课程编排", "任务与设置"]) {
       await expect(nav.getByText(group, { exact: true })).toBeVisible();
     }
+    await nav.getByRole("link", { name: "课程包" }).click();
+    await expect(teacher.getByRole("table", { name: "可用课程包" })).toBeVisible();
+    await expect(teacher.getByRole("button", { name: "导出课程包" })).toBeEnabled();
     await page.getByRole("link", { name: "全局概览" }).click();
     const row = page.getByRole("row").filter({ hasText: className });
     await expect(row).toContainText("验收教师");

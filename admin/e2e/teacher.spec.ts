@@ -256,7 +256,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByLabel("导入或导出的班级"),
+    page.getByLabel("当前班级"),
   ).toContainText(`导入验收 ${stamp}`);
   await cp(resolve(exchangeRoot, exported.directory), sharedCopy, { recursive: true, force: false, errorOnExist: true });
   try {

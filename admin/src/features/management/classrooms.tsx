@@ -33,8 +33,8 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
   const rows = list.data?.filter(row => row.status === status && (mine !== "mine" || row.teacher_id === userId)
     && (row.name + " " + row.teacher_name).toLowerCase().includes(query.trim().toLowerCase()));
   return <>
-    <PageHeader title="班级管理"><Button onClick={onCreate}><Plus />创建班级</Button></PageHeader>
-    <div className="toolbar">
+    <PageHeader title="班级管理" description={isAdmin ? "按任课教师或状态查找班级，进入教学工作区或调整班级归属。" : "创建和管理自己的班级，进入班级后可维护课程、学生和教学进度。"}><Button onClick={onCreate}><Plus />创建班级</Button></PageHeader>
+    <div className="mb-4 flex flex-wrap items-center gap-2">
       <TableSearch label="搜索班级或任课教师" value={query} onValueChange={setQuery} />
       <SelectField aria-label="班级状态" value={status} onValueChange={v => setStatus(v as ManagedClass["status"])}>
         {Object.entries(states).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -45,7 +45,7 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
     </div>
     {notice && <p role="status" className="success-notice">{notice}</p>}<ErrorNotice message={list.error} />
     {list.loading && <Loading />}
-    {rows && <div className="surface overflow-hidden"><Table><TableHeader><TableRow>
+    {rows && <div className="overflow-hidden rounded-lg border bg-background"><Table><TableHeader><TableRow>
       <TableHead>班级</TableHead><TableHead>任课教师</TableHead><TableHead>学生数</TableHead><TableHead className="text-right">操作</TableHead>
     </TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={row.id}>
       <TableCell className="font-medium">{row.name}</TableCell><TableCell>{row.teacher_name}</TableCell><TableCell>{row.student_count}</TableCell>

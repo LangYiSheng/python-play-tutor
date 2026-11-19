@@ -25,13 +25,13 @@ export function GlobalOverview({ onOpen }: { onOpen: (id: number) => void }) {
   const rows = overview.data?.items.filter(row => (teacher === "all" || String(row.teacher_id) === teacher)
     && row.classroom_name.toLowerCase().includes(query.trim().toLowerCase()));
   return <>
-    <PageHeader title="全局概览"><Button variant="outline" onClick={overview.reload}><RefreshCw />刷新</Button></PageHeader>
-    <div className="toolbar"><TableSearch label="搜索班级" value={query} onValueChange={setQuery} />
+    <PageHeader title="全局概览" description="查看各班的任务完成情况、资料合成进度和代码评测结果。"><Button variant="outline" onClick={overview.reload}><RefreshCw />刷新</Button></PageHeader>
+    <div className="mb-4 flex flex-wrap items-center gap-2"><TableSearch label="搜索班级" value={query} onValueChange={setQuery} />
       <SelectField aria-label="筛选任课教师" value={teacher} onValueChange={setTeacher}>
         <option value="all">全部任课教师</option>{Array.from(teachers, ([id, name]) => <option key={id} value={id}>{name}</option>)}
       </SelectField>
     </div><ErrorNotice message={overview.error} />{overview.loading && <Loading />}
-    {rows && <div className="surface overflow-hidden"><Table><TableHeader><TableRow>
+    {rows && <div className="overflow-hidden rounded-lg border bg-background"><Table><TableHeader><TableRow>
       <TableHead>班级 / 任课教师</TableHead><TableHead>学生数</TableHead><TableHead>学习任务（完成 / 总数）</TableHead>
       <TableHead>资料合成</TableHead><TableHead>代码评测</TableHead><TableHead className="text-right">操作</TableHead>
     </TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={row.classroom_id}>

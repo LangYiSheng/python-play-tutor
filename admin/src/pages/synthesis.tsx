@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from 'react';
 import { FilePenLine, Headphones, RefreshCw, RotateCcw } from 'lucide-react';
 import { PageHeader, ErrorNotice, Loading, Empty, Pager } from '@/components/common';
@@ -25,7 +26,7 @@ const statuses: Record<string, string> = { running: '处理中', done: '已完�
 const kinds: Record<string, string> = { generate: '讲稿生成', calibrate: '讲稿校准', audio: '语音合成' };
 const tones: Record<string, string> = { running: 'text-blue-700', done: 'text-emerald-700', failed: 'text-red-700', interrupted: 'text-amber-700' };
 
-export function Synthesis({ classroomId }: { classroomId?: number }) {
+export function Synthesis({ actionsTarget, classroomId }: { actionsTarget?: HTMLDivElement | null; classroomId?: number }) {
   const [query, setQuery] = useState(''), [status, setStatus] = useState('all');
   const [view, setView] = useState('running');
   const [page, setPage] = useState(1), [size, setSize] = useState(25), [refresh, setRefresh] = useState(0);
@@ -60,10 +61,11 @@ export function Synthesis({ classroomId }: { classroomId?: number }) {
     } catch (e) { if (alive.current) setActionError(errorMessage(e)); }
     finally { if (alive.current) { setBusy(false); setRefresh(n => n + 1); } }
   }
+  const refreshButton = <Button variant="outline" onClick={() => setRefresh(n => n + 1)}><RefreshCw />刷新</Button>;
   return <>
-    {classroomId === undefined ? <div className="my-4 flex justify-end"><Button variant="outline" onClick={() => setRefresh(n => n + 1)}><RefreshCw />刷新</Button></div> : <PageHeader title="资料合成管理" description="跟踪本班讲稿生成、校准与配音任务，查看每次执行的结果和失败原因。">
-      <Button variant="outline" onClick={() => setRefresh(n => n + 1)}><RefreshCw />刷新</Button>
-    </PageHeader>}
+    {classroomId === undefined
+      ? actionsTarget && createPortal(refreshButton, actionsTarget)
+      : <PageHeader title="资料合成管理" description="跟踪本班讲稿生成、校准与配音任务，查看每次执行的结果和失败原因。">{refreshButton}</PageHeader>}
     <Tabs value={view} onValueChange={v => { setView(v as string); setStatus('all'); setPage(1); }} className="mb-4">
       <TabsList><TabsTrigger value="running"><Activity />正在执行{data ? `（${data.counts.running}）` : ''}</TabsTrigger><TabsTrigger value="history"><History />历史记录</TabsTrigger></TabsList>
     </Tabs>

@@ -38,7 +38,7 @@ it("keeps classes with learning records available for archiving while limiting f
 
 it("lets administrators reset an unbound student's password without creating or deleting an account", async () => {
   const student = { id: 5, name: "小林", student_id: "0005", role: "student", classrooms: [], must_change_password: false };
-  const fetch = vi.fn(async (_url: string, init: RequestInit) => Response.json(init.method === "POST" ? { ok: true } : { items: [student], total: 1 }));
+  const fetch = vi.fn(async (url: string, init: RequestInit) => Response.json(url.endsWith("/classrooms/management") ? [row] : init.method === "POST" ? { ok: true } : { items: [student], total: 1 }));
   vi.stubGlobal("fetch", fetch);
   const user = userEvent.setup();
   render(<Accounts role="student" />);

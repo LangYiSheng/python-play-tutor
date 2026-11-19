@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { KeyRound, Plus } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader, Pager, TableSearch } from "@/components/common";
+import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -24,17 +25,29 @@ function AccountPage({ role }: { role: "teacher" | "student" }) {
   const [page, setPage] = useState(1), [size, setSize] = useState(25);
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [notice, setNotice] = useState("");
+  const [selectedClass, setSelectedClass] = useState("all");
+  const classes = useResource<{ id: number; name: string; teacher_name: string; status: string }[]>(
+    teacher ? null : "/teacher/classrooms/management",
+  );
   const params = new URLSearchParams({ role, q: query.trim(), page: String(page), size: String(size) });
+  if (selectedClass !== "all") params.set("classroom_id", selectedClass);
   const accounts = useResource<AccountList>(`/admin/accounts?${params}`);
   return <>
-    <PageHeader title={teacher ? "教师管理" : "学生管理"}>
+    <PageHeader title={teacher ? "教师管理" : "学生管理"} description={teacher ? "创建教师账号，查看任课班级或重置登录密码。" : "按姓名或学号查找学生，查看所属班级或重置登录密码。"}>
       {teacher && <Button onClick={() => setEditing("new")}><Plus />创建教师</Button>}
     </PageHeader>
-    <div className="toolbar"><TableSearch label="搜索姓名或学号" value={query} onValueChange={value => { setQuery(value); setPage(1); }} /></div>
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <TableSearch label="搜索姓名或学号" value={query} onValueChange={value => { setQuery(value); setPage(1); }} />
+      {!teacher && <SelectField fitOptions aria-label="筛选班级" value={selectedClass} onValueChange={value => { setSelectedClass(value); setPage(1); }}>
+        <option value="all">全部班级</option>
+        {classes.data?.map(c => <option key={c.id} value={c.id}>{`${c.teacher_name} | ${c.name}${c.status === "archived" ? "（已归档）" : ""}`}</option>)}
+      </SelectField>}
+    </div>
+    <ErrorNotice message={classes.error} />
     <ErrorNotice message={accounts.error} />
     {notice && <p role="status" className="success-notice">{notice}</p>}
     {accounts.loading && <Loading />}
-    {accounts.data && <div className="surface overflow-hidden">
+    {accounts.data && <div className="overflow-hidden rounded-lg border bg-background">
       <Table><TableHeader><TableRow>
         <TableHead>姓名 / 学号</TableHead><TableHead>{teacher ? "负责班级" : "所在班级"}</TableHead>
         <TableHead>账号状态</TableHead><TableHead className="text-right">操作</TableHead>

@@ -32,10 +32,16 @@ class ResetInput(BaseModel):
 
 @router.get("/accounts")
 def list_accounts(role: Literal["teacher", "student"], db: Database, q: str = Query(default="", max_length=100),
-                  page: int = Query(default=1, ge=1), size: int = Query(default=25, ge=1, le=100)):
+                  classroom_id: int | None = Query(default=None, ge=1), page: int = Query(default=1, ge=1), size: int = Query(default=25, ge=1, le=100)):
     staff = role == "teacher"
     query = select(User).where(User.role.in_(("admin", "teacher")) if staff else
         (User.role == "student") & User.id.not_in(select(TownPreviewStudent.student_user_id)))
+    if classroom_id is not None:
+        visible_class = select(Classroom.id).where(Classroom.id == classroom_id, Classroom.status != "deleted")
+        if staff:
+            query = query.where(User.id.in_(select(Classroom.teacher_id).where(Classroom.id.in_(visible_class))))
+        else:
+            query = query.where(User.id.in_(select(Membership.user_id).where(Membership.classroom_id.in_(visible_class))))
     if q.strip():
         query = query.where(or_(User.student_id.contains(q.strip(), autoescape=True),
                                 User.name.contains(q.strip(), autoescape=True)))

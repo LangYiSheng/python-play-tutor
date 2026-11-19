@@ -21,9 +21,9 @@ it("cancelling draft discard prevents class creation and keeps the current class
   const user = userEvent.setup();
   render(<App />);
   await screen.findByLabelText("未保存资料");
-  await user.click(screen.getByRole("button", { name: "创建班级" }));
-  await user.type(screen.getByLabelText("班级名称"), "新班级");
-  await user.click(screen.getAllByRole("button", { name: "创建班级" }).at(-1)!);
+  expect(screen.queryByRole("button", { name: "创建班级" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: "班级管理" }));
+  expect(window.confirm).toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
   expect(screen.getByLabelText("当前班级")).toHaveTextContent("原班级");
   expect(screen.getByLabelText("未保存资料")).toHaveValue("保留草稿");
@@ -59,9 +59,10 @@ it("opens the administrator workspace before any class exists", async () => {
     ? { id: 1, name: "管理员", role: "admin" } : [])));
   render(<App />);
   await screen.findByRole("heading", { name: "班级管理" });
-  for (const name of ["课程包", "全局概览", "教师管理", "学生管理", "全站设置"]) {
+  for (const name of ["全局概览", "教师管理", "学生管理", "全站设置"]) {
     expect(screen.getByRole("link", { name })).toBeVisible();
   }
+  expect(screen.queryByRole("link", { name: "课程包" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("当前班级")).not.toBeInTheDocument();
 });
 it("rejects an admin deep link for teachers without loading site-wide data", async () => {

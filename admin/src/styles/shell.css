@@ -11,8 +11,8 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  min-width: 0;
+  overflow: hidden;
   padding: 26px 16px 12px;
 }
 .brand {
@@ -23,7 +23,17 @@
   font-weight: 650;
   letter-spacing: -0.4px;
 }
-.sidebar > nav:first-of-type { margin-top: 20px; }
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  margin-top: 20px;
+}
+.sidebar .brand, .sidebar-bottom {
+  flex-shrink: 0;
+}
 .brand small {
   display: block;
   font-size: 11px;
@@ -42,11 +52,17 @@
   border-radius: 10px;
 }
 .class-picker {
-  margin: 30px 0 22px;
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  margin-left: auto;
 }
-.class-picker label,
+.class-picker-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
 .nav-label {
   color: var(--muted-foreground);
   font-size: 11px;
@@ -54,7 +70,8 @@
   letter-spacing: 0.06em;
 }
 .class-picker [data-slot="select-trigger"] {
-  width: 100%;
+  min-width: 0;
+  max-width: 28rem;
   background: #fff;
 }
 .sidebar nav a {
@@ -76,11 +93,10 @@
   font-weight: 600;
 }
 .nav-label {
-  margin: 25px 12px 10px;
+  margin: 18px 12px 6px;
 }
 .sidebar-bottom {
-  margin-top: auto;
-  padding-top: 24px;
+  padding-top: 12px;
 }
 .account {
   display: flex;
@@ -140,6 +156,19 @@
   padding: 0;
 }
 @media (max-width: 900px) {
+  .topbar:has(.class-picker) {
+    height: auto;
+    min-height: 65px;
+    flex-wrap: wrap;
+    padding-block: 8px;
+  }
+  .class-picker {
+    max-width: 100%;
+  }
+  .class-picker-label {
+    position: absolute;
+    clip-path: inset(50%);
+  }
   .workbench {
     grid-template-columns: 210px minmax(0, 1fr);
   }

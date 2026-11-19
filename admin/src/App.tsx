@@ -8,7 +8,6 @@ import {
   ListChecks,
   Layers3,
   ChevronDown,
-  Plus,
   LogOut,
   KeyRound,
   PanelLeftClose,
@@ -50,7 +49,7 @@ import { Materials } from "@/features/materials/materials-page";
 import { Questions } from "@/features/questions/questions-page";
 import { Activities } from "@/features/activities/activities-page";
 import { CourseSettings } from "@/pages/course-settings";
-import { PackageCatalog } from "@/pages/packages";
+import { Packages } from "@/pages/packages";
 import { Teaching } from "@/pages/teaching";
 const Synthesis = lazy(() => import("@/pages/synthesis").then(module => ({ default: module.Synthesis })));
 const Judge = lazy(() => import("@/pages/judge").then(module => ({ default: module.Judge })));
@@ -61,7 +60,6 @@ import { ClassroomManagement, Accounts, GlobalOverview, GlobalSettings } from "@
 
 const globalNav = [
   { key: "classes", title: "班级管理", icon: GraduationCap, adminOnly: false },
-  { key: "packages", title: "课程包", icon: Package, adminOnly: false },
   { key: "overview", title: "全局概览", icon: Layers3, adminOnly: true },
   { key: "teachers", title: "教师管理", icon: Users, adminOnly: true },
   { key: "accounts", title: "学生管理", icon: Users, adminOnly: true },
@@ -76,6 +74,7 @@ const classNav = [
   { key: "questions", title: "题库", icon: ListChecks },
   { key: "activities", title: "学习活动", icon: BookOpen },
   { key: "authoring", title: "教学流程", icon: Layers3 },
+  { key: "packages", title: "课程包", icon: Package },
   { key: "settings", title: "本班答疑设置", icon: Settings },
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
@@ -83,7 +82,7 @@ const classNav = [
 const nav = [...globalNav, ...classNav];
 type Page = (typeof nav)[number]["key"];
 const classroomScreens = {
-  students: Students, teaching: Teaching, curriculum: Curriculum, materials: Materials,
+  packages: Packages, students: Students, teaching: Teaching, curriculum: Curriculum, materials: Materials,
   questions: Questions, activities: Activities, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
 };
 function currentPage(): Page {
@@ -291,8 +290,6 @@ function Workbench() {
       case "classes":
         return <ClassroomManagement isAdmin={isAdmin} userId={currentUser.id} onOpen={openClass}
           onCreate={() => setNewClass(true)} onChanged={() => setClassListRevision(value => value + 1)} />;
-      case "packages":
-        return <PackageCatalog classes={classes} initialClassId={classroomId} />;
       case "teachers":
       case "accounts":
         return <Accounts role={page === "teachers" ? "teacher" : "student"} />;
@@ -306,6 +303,7 @@ function Workbench() {
       <div className="flex justify-center pb-8"><Button onClick={() => navigate("classes")}>班级管理</Button></div>
     </div>;
     if (page === "classroom") return <ClassOverview classroom={classroom}
+      onRenamed={name => setClasses(rows => rows.map(row => row.id === classroom.id ? { ...row, name } : row))}
       onContent={() => navigate("curriculum")} onImport={() => navigate("packages")} />;
     if (page === "judge") return <Judge classroomId={classroom.id} canManage={false} />;
     const Screen = classroomScreens[page];
@@ -329,42 +327,22 @@ function Workbench() {
             Pythontopia<small>教学工作台</small>
           </span>
         </a>
-        <nav aria-label="工作台导航">
-          {globalNav.filter(item => !item.adminOnly || isAdmin).map(link)}
-        </nav>
-        {classPage && <div className="class-picker">
-          <Label htmlFor="active-class">当前班级</Label>
-          <SelectField
-            id="active-class"
-            disabled={busy || classes.length === 0}
-            value={classroomId ?? ""}
-            onValueChange={(value) => changeClass(Number(value))}
-          >
-            <option value="" disabled>
-              选择班级
-            </option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+        <div className="sidebar-scroll">
+          <nav aria-label="工作台导航">
+            {globalNav.filter(item => !item.adminOnly || isAdmin).map(link)}
+          </nav>
+          {classPage && classroom && <nav aria-label="班级导航">
+            {classNav.map(item => (
+              <div key={item.key}>
+                {item.key === "classroom" && <p className="nav-label">班级教学</p>}
+                {item.key === "curriculum" && <p className="nav-label">课程内容</p>}
+                {item.key === "activities" && <p className="nav-label">课程编排</p>}
+                {item.key === "settings" && <p className="nav-label">任务与设置</p>}
+                {link(item)}
+              </div>
             ))}
-          </SelectField>
-          <Button variant="ghost" size="sm" onClick={() => setNewClass(true)}>
-            <Plus size={15} />
-            创建班级
-          </Button>
-        </div>}
-        {classPage && classroom && <nav aria-label="班级导航">
-          {classNav.map(item => (
-            <div key={item.key}>
-              {item.key === "classroom" && <p className="nav-label">班级教学</p>}
-              {item.key === "curriculum" && <p className="nav-label">课程内容</p>}
-              {item.key === "activities" && <p className="nav-label">课程编排</p>}
-              {item.key === "settings" && <p className="nav-label">任务与设置</p>}
-              {link(item)}
-            </div>
-          ))}
-        </nav>}
+          </nav>}
+        </div>
         <div className="sidebar-bottom">
           <DropdownMenu>
             <DropdownMenuTrigger render={<button className="account" />}>
@@ -398,13 +376,29 @@ function Workbench() {
           >
             {sidebar ? <PanelLeftClose /> : <PanelLeftOpen />}
           </Button>
-          <span className="text-muted-foreground">
-            {classPage && classroom ? [classroom.name, classroom.teacher_name].filter(Boolean).join(" · ") : "教学工作台"}
-          </span>
+          <span className="text-muted-foreground">教学工作台</span>
           <span className="text-border">/</span>
           <span>{nav.find((n) => n.key === page)?.title}</span>
+          {classPage && <div className="class-picker">
+            <label className="class-picker-label" htmlFor="active-class">当前班级</label>
+            <SelectField fitOptions
+              id="active-class"
+              disabled={busy || classes.length === 0}
+              value={classroomId ?? ""}
+              onValueChange={(value) => changeClass(Number(value))}
+            >
+              <option value="" disabled>
+                选择班级
+              </option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {isAdmin ? `${c.teacher_name || (c.teacher_id === user.id ? user.name : "未知教师")} | ${c.name}` : c.name}
+                </option>
+              ))}
+            </SelectField>
+          </div>}
           {classPage && <Button
-            className="ml-auto shrink-0"
+            className="shrink-0"
             variant="outline"
             size="sm"
             disabled={!classroom || openingTown || user.must_change_password}
@@ -436,7 +430,7 @@ function Workbench() {
           <DialogHeader>
             <DialogTitle>创建班级</DialogTitle>
             <DialogDescription>
-              为班级导入课程包，或从空课程开始编辑。
+              填写班级名称，选择如何开始本班课程。
             </DialogDescription>
           </DialogHeader>
           <form
@@ -469,6 +463,11 @@ function Workbench() {
                 <option value="empty">创建空课程</option>
                 <option value="later">稍后配置课程</option>
               </SelectField>
+              <p className="hint" aria-live="polite">
+                {courseStart === "empty" ? "同时创建一门空白课程，建班后即可自己添加章节和教学内容。"
+                  : courseStart === "later" ? "只创建班级，可以先添加学生。准备好后，在班级概况中导入课程包或创建空课程。"
+                  : "建班后打开课程包列表，由你选择并确认导入本班要使用的课程。"}
+              </p>
             </div>
             <DialogFooter>
               <Button
