@@ -372,7 +372,12 @@
 }
 .game-workspace .practice-retry-notice p { margin: .2rem 0 0; }
 .game-workspace .practice-retry-notice button { display: inline-flex; align-items: center; gap: .35rem; }
-.game-workspace .practice-retry-ready { color: var(--learn-forest); font-weight: 600; }
+.game-workspace .practice-retry-ready {
+  margin-block: 1rem .75rem;
+  line-height: 1.65;
+  color: var(--learn-forest);
+  font-weight: 600;
+}
 .game-workspace .practice-navigation {
   display: flex;
   align-items: center;

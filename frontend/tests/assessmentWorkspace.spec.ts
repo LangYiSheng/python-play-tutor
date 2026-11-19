@@ -74,7 +74,8 @@ describe("assessment and practice presentation", () => {
   it("groups the personal outline by assigned point and navigates using the original question numbers", async () => {
     const { pinia, session } = setup("practice");
     const activity = await session.activity("test");
-    const questions = [...activity.questions, { ...activity.questions[0]!, id: "q3", title: "追加判断" }];
+    const questions = [...activity.questions, { ...activity.questions[0]!, id: "q3", title: "追加判断" },
+      { id: "q4", title: "编程", kind: "python" as const, prompt: "读取输入", samples: [], starter_code: "name = input()" }];
     const points = [{ id: 7, title: "条件判断" }, { id: 8, title: "循环" }];
     vi.mocked(session.activity).mockResolvedValue({ ...activity, questions, knowledge_points: points,
       progress: { page_no: null, visited_pages: [], completed: false, accepted_question_ids: ["q2"],
@@ -90,10 +91,11 @@ describe("assessment and practice presentation", () => {
       const groups = wrapper.findAll(".practice-skill");
       expect(groups.map(group => group.get("h3").text())).toEqual(["条件判断", "循环"]);
       expect(groups.map(group => group.get("progress").element.value)).toEqual([0, 1]);
-      expect(wrapper.get(".practice-goal-summary progress").element.getAttribute("max")).toBe("3");
+      expect(wrapper.get(".practice-goal-summary progress").element.getAttribute("max")).toBe("4");
       expect(wrapper.find(".practice-skills details").exists()).toBe(false);
-      expect(groups.map(group => group.findAll(".question-list-title").map(row => row.text()))).toEqual([["1. q1", "3. 追加判断"], ["2. q2"]]);
-      expect(wrapper.findAll(".support-goals .question-list-title")).toHaveLength(3);
+      expect(groups.map(group => group.findAll(".question-list-title").map(row => row.text()))).toEqual([["1. q1", "3. 追加判断", "4. 编程"], ["2. q2"]]);
+      expect(groups[0]!.findAll("button")[2]!.get(".question-status-icon").attributes("data-state")).toBe("unanswered");
+      expect(wrapper.findAll(".support-goals .question-list-title")).toHaveLength(4);
       await groups[0]!.findAll("button")[1]!.trigger("click");
       expect(wrapper.get(".support-goals button[aria-current='step'] .question-list-title").text()).toBe("3. 追加判断");
       expect(wrapper.get(".question-point").text()).toContain("条件判断");

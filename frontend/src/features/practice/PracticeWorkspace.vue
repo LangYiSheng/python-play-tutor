@@ -185,6 +185,7 @@ function outlineState(question: Question): QuestionOutlineState {
     return [...pendingSubmissionStates, 'infrastructure_error', 'submission_unknown'].includes(result.status) ? 'pending' : 'wrong';
   }
   if (!isAssessment.value && activityProgress.value?.accepted_question_ids?.includes(question.id)) return 'accepted';
+  if (assigned && question.kind === 'python' && drafts.value[question.id]?.code === question.starter_code) return 'unanswered';
   return hasAnswer(question) ? 'answered' : 'unanswered';
 }
 const markedCount = computed(() => paper.value?.results.filter(result => ['accepted', 'wrong_answer', 'compile_error', 'runtime_error', 'time_limit', 'memory_limit'].includes(result.status)).length ?? 0);
