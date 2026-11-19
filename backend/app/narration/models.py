@@ -16,6 +16,10 @@ from ..models import now
 STATUSES = frozenset({"draft", "accepted", "rejected", "unavailable", "stale"})
 # Course packages preserve all statuses; student visibility remains approval-only.
 VISIBLE_STATUSES = frozenset({"accepted"})
+# 整理稿（page_contents）：与讲解稿的审校状态分开，stale 表示原文已变。
+CONTENT_STATUSES = frozenset({"draft", "accepted", "stale"})
+CONTENT_SOURCES = frozenset({"parsed", "ai", "teacher"})
+IMAGE_STATES = frozenset({"sent", "policy", "skipped", "render_failed"})
 
 
 class PageNarration(Base):
@@ -52,6 +56,46 @@ class PageNarration(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class PageContent(Base):
+    """组织后的每页原文（RAG chunk）与其结构化字段；原始解析文本仍在 `Material.content`。"""
+
+    __tablename__ = "page_contents"
+    __table_args__ = (UniqueConstraint("material_id", "page_no", name="uq_page_contents_material_page"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id", ondelete="CASCADE"), index=True)
+    page_no: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(120), default="")
+    topic: Mapped[str] = mapped_column(String(240), default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    text: Mapped[str] = mapped_column(Text, default="")
+    # 原文指纹：只算 raw 文本，重传同一份课件不算 stale。
+    raw_text_hash: Mapped[str] = mapped_column(String(64), default="")
+    source: Mapped[str] = mapped_column(String(16), default="parsed")  # parsed|ai|teacher
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft|accepted|stale
+    # 本页组织时到底带没带页图：sent|policy|skipped|render_failed。
+    image_state: Mapped[str] = mapped_column(String(16), default="policy")
+    model: Mapped[str] = mapped_column(String(80), default="")
+    prompt_version: Mapped[str] = mapped_column(String(24), default="")
+    input_hash: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class MaterialTagDict(Base):
+    """课程级 tag 字典：别名指向标准名，跨资料共享，避免同一门课里标签分裂。"""
+
+    __tablename__ = "material_tag_dicts"
+    __table_args__ = (UniqueConstraint("course_instance_id", "alias", name="uq_material_tag_dicts_course_alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    course_instance_id: Mapped[int] = mapped_column(ForeignKey("course_instances.id", ondelete="CASCADE"), index=True)
+    alias: Mapped[str] = mapped_column(String(80))
+    canonical: Mapped[str] = mapped_column(String(80))
+    source_material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class NarrationQuestion(Base):

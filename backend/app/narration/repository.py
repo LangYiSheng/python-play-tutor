@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 
 from ..models import Material, User, now
-from .models import VISIBLE_STATUSES, NarrationJob, NarrationRun, PageNarration
+from .models import (CONTENT_SOURCES, CONTENT_STATUSES, IMAGE_STATES, VISIBLE_STATUSES, MaterialTagDict,
+                     NarrationJob, NarrationRun, PageContent, PageNarration)
 
 MAX_TEXT = 4000
 MIN_SECONDS, MAX_SECONDS = 30, 300
@@ -398,3 +399,135 @@ def retry_fingerprint(db: Session, material: Material) -> str:
     return text_hash(json.dumps({"source": material.content, "file": material.storage_key,
                                 "narrations": [revision(item) for item in rows(db, material.id)]},
                                ensure_ascii=False, sort_keys=True))
+
+# ---------------------------------------------------------------------------
+# 整理稿（page_contents）与课程级 tag 字典
+# ---------------------------------------------------------------------------
+
+MAX_CONTENT_TEXT = 20000
+MAX_TITLE, MAX_TOPIC = 120, 240
+MAX_TAGS = 8
+
+
+def raw_hash(text: str) -> str:
+    """只对 raw 文本做指纹：同一份课件重传不会让整理稿失效。"""
+    return text_hash(text)
+
+
+def content_rows(db: Session, material_id: int) -> list[PageContent]:
+    return list(db.scalars(select(PageContent).where(PageContent.material_id == material_id)
+                           .order_by(PageContent.page_no)))
+
+
+def content_map(db: Session, material_id: int) -> dict[int, PageContent]:
+    return {row.page_no: row for row in content_rows(db, material_id)}
+
+
+def content_row(db: Session, material_id: int, page_no: int) -> PageContent | None:
+    return db.scalar(select(PageContent).where(PageContent.material_id == material_id,
+                                               PageContent.page_no == page_no))
+
+
+def clean_tags(values: list[Any]) -> list[str]:
+    """标签去重、去空、限长；顺序保留第一次出现的位置。"""
+    seen: list[str] = []
+    for value in values:
+        tag = str(value).strip()
+        if tag and tag not in seen:
+            seen.append(tag[:80])
+    return seen[:MAX_TAGS]
+
+
+def upsert_content(db: Session, material: Material, page_no: int, *, title: str, topic: str,
+                   tags: list[Any], text: str, source: str = "ai", image_state: str = "policy",
+                   status: str = "draft", model: str = "", prompt_version: str = "",
+                   input_hash: str = "") -> PageContent:
+    """Worker/teacher writes one page of digested text; raw stays in `Material.content`."""
+    pages = page_map(material)
+    if page_no not in pages:
+        raise LookupError("本页不存在或页码超出范围")
+    if source not in CONTENT_SOURCES:
+        raise ValueError("未知的整理稿来源")
+    if status not in CONTENT_STATUSES:
+        raise ValueError("未知的整理稿状态")
+    if image_state not in IMAGE_STATES:
+        raise ValueError("未知的页图状态")
+    body = (text or "").strip()
+    if not body:
+        raise ValueError("整理稿不能为空")
+    if len(body) > MAX_CONTENT_TEXT:
+        raise ValueError(f"整理稿不能超过 {MAX_CONTENT_TEXT} 字")
+    row = content_row(db, material.id, page_no)
+    if row is None:
+        row = PageContent(material_id=material.id, page_no=page_no)
+        db.add(row)
+    row.title = (title or "").strip()[:MAX_TITLE]
+    row.topic = (topic or "").strip()[:MAX_TOPIC]
+    row.tags = clean_tags(tags)
+    row.text = body
+    row.raw_text_hash = raw_hash(pages[page_no].get("text") or "")
+    row.source = source
+    # 教师手改的稿子保持原来的审校结论；模型产出一律回到草稿。
+    row.status = status if source == "teacher" else "draft"
+    row.image_state = image_state
+    row.model = model[:80]
+    row.prompt_version = prompt_version[:24]
+    row.input_hash = input_hash[:64]
+    row.updated_at = now()
+    db.flush()
+    return row
+
+
+def sync_content_staleness(db: Session, material: Material) -> bool:
+    """原文变了就作废整理稿：它按旧原文组织，不能继续被当作教材。"""
+    pages = page_map(material)
+    changed = False
+    for row in content_rows(db, material.id):
+        page = pages.get(row.page_no)
+        if page is None or raw_hash(str(page.get("text") or "")) != row.raw_text_hash:
+            if row.status in {"draft", "accepted"}:
+                row.status = "stale"
+                changed = True
+    if changed:
+        db.flush()
+    return changed
+
+
+def tag_map(db: Session, instance_id: int) -> dict[str, str]:
+    """解析成最终标准名：字典里可能先写 c→a、后又写 a→b，链式跟随到不动点。"""
+    pairs = {row.alias: row.canonical for row in db.scalars(
+        select(MaterialTagDict).where(MaterialTagDict.course_instance_id == instance_id))}
+    resolved: dict[str, str] = {}
+    for alias in pairs:
+        current, hops = alias, 0
+        while current in pairs and hops < 8:
+            if pairs[current] == current:
+                break
+            current = pairs[current]
+            hops += 1
+        resolved[alias] = current
+    return resolved
+
+
+def record_tag_map(db: Session, instance_id: int, mapping: dict[str, Any], *,
+                   material_id: int | None = None) -> int:
+    """写入课程级字典；同一别名重复归并时以最新一次为准。"""
+    existing = {row.alias: row for row in db.scalars(
+        select(MaterialTagDict).where(MaterialTagDict.course_instance_id == instance_id))}
+    written = 0
+    for alias, canonical in mapping.items():
+        alias, canonical = str(alias).strip()[:80], str(canonical).strip()[:80]
+        if not alias or not canonical:
+            continue
+        row = existing.get(alias)
+        if row is None:
+            row = MaterialTagDict(course_instance_id=instance_id, alias=alias, canonical=canonical,
+                                  source_material_id=material_id)
+            db.add(row)
+            existing[alias] = row
+        else:
+            row.canonical = canonical
+            row.source_material_id = material_id or row.source_material_id
+        written += 1
+    db.flush()
+    return written
