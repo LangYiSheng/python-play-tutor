@@ -108,12 +108,12 @@ export function Students({ classroomId }: { classroomId: number }) {
         modal === "import"
           ? preview.map(({ student_id, name }) => ({ student_id, name }))
           : [{ student_id: id, name }];
-      const result = await api.post<{ created: number; existing: number }>(
+      const result = await api.post<{ created: number; existing: number; bound: number }>(
         base,
         { students },
       );
       setMessage(
-        `已创建 ${result.created} 名学生，跳过 ${result.existing} 名已有学生。`,
+        `已创建 ${result.created} 名学生，加入 ${result.bound} 名已有学生，${result.existing} 名已在本班。`,
       );
       setModal(null);
       setId("");
@@ -375,7 +375,7 @@ export function Students({ classroomId }: { classroomId: number }) {
             </DialogTitle>
             <DialogDescription>
               {modal === "create" || modal === "import"
-                ? "初始密码为学号，首次登录后学生必须修改。"
+                ? "已有账号按学号、姓名加入本班，沿用原密码。新账号以学号为初始密码，首次登录须修改。"
                 : modal === "remove"
                   ? `将${targets.length === 1 ? `学号 ${targets[0]} 的学生` : ` ${targets.length} 名学生`}移出当前班级，账号及学习记录保留。`
                   : `将${targets.length === 1 ? `学号 ${targets[0]} 的学生` : ` ${targets.length} 名学生`}的密码重置为其学号，现有登录会话将失效。`}
@@ -429,14 +429,14 @@ export function Students({ classroomId }: { classroomId: number }) {
                       <p>
                         将新建{" "}
                         {preview.filter((s) => s.action === "create").length}{" "}
-                        人，跳过{" "}
+                        人，加入已有账号 {preview.filter((s) => s.action === "bind").length} 人，已在本班{" "}
                         {preview.filter((s) => s.action === "existing").length}{" "}
                         人。
                       </p>
                       {preview.map((s) => (
                         <p key={s.student_id}>
                           {s.student_id} · {s.name} ·{" "}
-                          {s.action === "create" ? "新建" : "已存在"}
+                          {s.action === "create" ? "新建" : s.action === "bind" ? "加入本班" : "已在本班"}
                         </p>
                       ))}
                     </div>
@@ -460,7 +460,7 @@ export function Students({ classroomId }: { classroomId: number }) {
                     ? "处理中…"
                     : modal === "import"
                       ? "确认导入"
-                      : "创建学生"}
+                      : "确认添加"}
                 </Button>
               </DialogFooter>
             </form>

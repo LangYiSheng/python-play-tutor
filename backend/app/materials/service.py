@@ -20,7 +20,7 @@ from app.materials.contracts import MaterialUpdate
 from app.materials.storage import get_storage, storage_root
 from app.materials.uploads import KINDS, MAX_UPLOAD, UploadValidationError, validate_upload
 from app.models import Material, User
-from app.teacher_scope import commit_content, new_stable_id, require_scope, teacher_instance_id
+from app.teacher_scope import commit_content, new_stable_id, require_scope, teacher_course_scope, teacher_instance_id
 
 
 async def upload_material(
@@ -32,7 +32,7 @@ async def upload_material(
     chapter_ids: str | None = None,
     classroom_id: int | None = None,
 ):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     name = file.filename or ""
     if not name or "/" in name or "\\" in name or ":" in name or len(name) > 200 or not title.strip() or len(title) > 200:
         raise HTTPException(422, "文件名或标题无效")
@@ -79,7 +79,7 @@ async def upload_material(
         key = f"materials/{uuid4().hex}{suffix}"
         await asyncio.to_thread(get_storage().put, key, path)
     if not material:
-        material = Material(title=title.strip(), kind=KINDS[suffix], owner_id=user.id, course_instance_id=instance_id, stable_id=new_stable_id())
+        material = Material(title=title.strip(), kind=KINDS[suffix], owner_id=classroom.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
         db.add(material)
         db.flush()
     if selected_chapters is not None:

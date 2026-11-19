@@ -10,6 +10,7 @@ export interface Classroom {
   id: number;
   name: string;
   teacher_id: number;
+  teacher_name?: string;
   join_code?: string;
 }
 export interface Student {
@@ -21,7 +22,7 @@ export interface Student {
 export interface StudentPreview {
   student_id: string;
   name: string;
-  action: "create" | "existing";
+  action: "create" | "existing" | "bind";
 }
 export interface AuthResult {
   access_token: string;
@@ -58,7 +59,17 @@ export interface Activity {
   assistant_allowed: boolean;
   knowledge_point_ids: number[];
   question_ids: string[];
+  practice_rules?: PracticeRules | null;
+  published?: boolean;
   owner_id: number | null;
+}
+export interface PracticeGoal {
+  knowledge_point_id: number;
+  total: number;
+  by_kind: Partial<Record<QuestionKind, number>>;
+}
+export interface PracticeRules {
+  goals: PracticeGoal[];
 }
 export interface Course {
   chapters: Chapter[];

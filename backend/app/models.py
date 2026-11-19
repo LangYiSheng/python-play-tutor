@@ -39,6 +39,7 @@ class Classroom(Base):
     name: Mapped[str] = mapped_column(String(100))
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     join_code: Mapped[str] = mapped_column(String(24), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
 
 
 class TownPreviewStudent(Base):
@@ -377,6 +378,14 @@ class Submission(Base):
     feedback: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class PracticeSession(Base):
+    __tablename__ = "practice_sessions"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), primary_key=True)
+    activity_id: Mapped[str] = mapped_column(ForeignKey("activities.id"), primary_key=True, index=True)
+    items: Mapped[list] = mapped_column(JSON)
 
 
 class AssessmentAttempt(Base):

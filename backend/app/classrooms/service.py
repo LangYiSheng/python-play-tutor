@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_password, issue, preview_classroom, token_hash
 from app.classrooms.access import classroom_payload, own_classroom
 from app.classrooms.contracts import ClassroomInput, JoinInput
+from app.course_scope import lock_course
 from app.models import Classroom, Membership, TownPreviewStudent, User
 from app.teacher_scope import teacher_instance_id
 
@@ -21,8 +22,11 @@ def list_classrooms(db: Session, user: User):
         return [classroom_payload(classroom, user, db.get(User, classroom.teacher_id).name)]
     memberships = select(Membership.classroom_id).where(Membership.user_id == user.id)
     query = select(Classroom, User.name).join(User, User.id == Classroom.teacher_id)
-    if user.role != "admin":
-        query = query.where((Classroom.teacher_id == user.id) | Classroom.id.in_(memberships))
+    query = query.where(Classroom.status == "active")
+    if user.role == "teacher":
+        query = query.where(Classroom.teacher_id == user.id)
+    elif user.role != "admin":
+        query = query.where(Classroom.id.in_(memberships))
     return [classroom_payload(item, user, name) for item, name in db.execute(query)]
 
 
@@ -59,10 +63,14 @@ def open_town_session(classroom_id: int, db: Session, user: User, credentials: H
 
 
 def join_classroom(body: JoinInput, db: Session, user: User):
-    if db.get(TownPreviewStudent, user.id):
-        raise HTTPException(403, "体验学生只能进入教师选择的班级")
+    if user.role != "student" or db.get(TownPreviewStudent, user.id):
+        raise HTTPException(403, "只有正式学生可以通过加入码加入班级")
     classroom = db.scalar(select(Classroom).where(Classroom.join_code == body.join_code.strip()))
     if not classroom:
+        raise HTTPException(404, "加入码无效")
+    lock_course(db, classroom.id, exclusive=True)
+    db.refresh(classroom)
+    if classroom.status != "active":
         raise HTTPException(404, "加入码无效")
     if not db.get(Membership, (user.id, classroom.id)):
         db.add(Membership(user_id=user.id, classroom_id=classroom.id))

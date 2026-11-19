@@ -139,6 +139,9 @@ def import_bundle(db, classroom, instance, bundle, root):
             converted = deepcopy(fields) if model is Npc else remap_references(fields, maps)
             if model is QuestDefinition:
                 converted["definition"]["id"] = row.id
+            if model is Activity and "practice_rules" in converted["content"]:
+                from app.practice_rules import PracticeRules
+                converted["content"]["practice_rules"] = PracticeRules.model_validate(converted["content"]["practice_rules"]).model_dump()
             if model in {KnowledgePoint, CourseExample} and "id" in converted["content"]:
                 converted["content"]["id"] = row.id
             for field, value in converted.items():

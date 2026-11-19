@@ -1,9 +1,8 @@
 """Server-verified reading, practice and assessment completion evidence."""
 
 from fastapi import HTTPException
-from sqlalchemy import select
 
-from app.models import ActivityProgress, Classroom, LearningRecord, Submission
+from app.models import ActivityProgress, LearningRecord, Submission
 
 
 def validate_learning_evidence(db, user, classroom_id, node, evidence):
@@ -28,32 +27,16 @@ def validate_learning_evidence(db, user, classroom_id, node, evidence):
             raise HTTPException(422, "缺少当前活动的真实阅读记录")
     elif kind in {"COMPLETE_PRACTICE", "PASS_ASSESSMENT"}:
         from app.course_content.access import authorize_activity
-        from app.course_content.learning import learning_questions
+        from app.course_content.presentation import progress_payload
 
         activity = authorize_activity(db, user, classroom_id, node["activity_id"])
-        classroom = db.get(Classroom, classroom_id)
-        questions = learning_questions(db, activity, classroom.teacher_id) if activity.kind != "assessment" else []
-        if not questions and activity.kind != "assessment":
-            raise HTTPException(422, "题组为空")
-        accepted = {
-            s.question_id
-            for s in db.scalars(
-                select(Submission).where(
-                    Submission.user_id == user.id,
-                    Submission.classroom_id == classroom_id,
-                    Submission.activity_id == node["activity_id"],
-                    Submission.mode == "submit",
-                    Submission.status.in_(["accepted", "AC", "ac"]),
-                )
-            ).all()
-        }
-        if activity.kind == "assessment":
-            from app.assessments import assessment_payload
-
-            if not assessment_payload(db, user, classroom_id, activity)["completed"]:
-                raise HTTPException(422, "请先提交试卷并等待全部题目判定完成")
-        elif any(q.id not in accepted for q in questions):
-            raise HTTPException(422, "请先通过此活动的全部正式练习")
+        expected = "assessment" if kind == "PASS_ASSESSMENT" else "practice"
+        if activity.kind != expected:
+            raise HTTPException(422, "任务目标与活动类型不符")
+        progress = progress_payload(db, user, classroom_id, activity)
+        if not progress["completed"]:
+            detail = "请先提交试卷并等待全部题目判定完成" if activity.kind == "assessment" else "请先通过此活动的全部正式练习"
+            raise HTTPException(422, detail)
         if evidence.get("submission_id"):
             submission = db.get(Submission, evidence["submission_id"])
             if (

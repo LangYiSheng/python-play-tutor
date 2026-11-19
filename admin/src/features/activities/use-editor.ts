@@ -1,7 +1,7 @@
 import { api, errorMessage, scoped } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
 import { newId } from "@/lib/id";
-import type { Activity, ActivityResource, Course } from "@/lib/types";
+import type { Activity, ActivityResource, Course, PracticeRules } from "@/lib/types";
 import { useState, type FormEvent } from "react";
 export function useActivityEditor(
   classroomId: number,
@@ -17,6 +17,9 @@ export function useActivityEditor(
     [kind, setKind] = useState<Activity["kind"]>("lesson"),
     [resources, setResources] = useState<ActivityResource[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
+    [rules, setRules] = useState<PracticeRules>({ goals: [] }),
+    [convertPractice, setConvertPractice] = useState(false),
+    [published, setPublished] = useState(true),
     [npc, setNpc] = useState(""),
     [assistant, setAssistant] = useState(true),
     [selected, setSelected] = useState<string[]>([]),
@@ -24,6 +27,7 @@ export function useActivityEditor(
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
   useDraft(dirty);
+  const goalPractice = kind === "practice" && (!editing || !!editing.practice_rules || convertPractice);
   function edit(a: Activity | null, pick = false) {
     if (dirty && !window.confirm("放弃当前活动的未保存修改？")) return;
     setEditing(a);
@@ -33,6 +37,9 @@ export function useActivityEditor(
     setKind(a?.kind ?? "lesson");
     setResources(structuredClone(a?.resources ?? []));
     setPointIds(a?.knowledge_point_ids ?? []);
+    setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
+    setConvertPractice(false);
+    setPublished(a?.published ?? true);
     setNpc(a?.npc_key ?? "");
     setAssistant(a?.assistant_allowed ?? true);
     setSelected(a?.question_ids ?? []);
@@ -43,6 +50,18 @@ export function useActivityEditor(
   }
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (goalPractice && !questionMode) {
+      if (!rules.goals.length) {
+        setError("请至少选择一个本章知识点。");
+        return;
+      }
+      const emptyGoal = rules.goals.find(goal => !goal.total && !Object.values(goal.by_kind).some(count => count > 0));
+      if (emptyGoal) {
+        const point = course?.knowledge_points.find(item => item.id === emptyGoal.knowledge_point_id);
+        setError(`请为“${point?.title ?? "知识点"}”填写答对总数或题型数量。`);
+        return;
+      }
+    }
     setBusy(true);
     setError("");
     try {
@@ -60,7 +79,8 @@ export function useActivityEditor(
           npc_key: npc || null,
           assistant_allowed: kind === "assessment" ? false : assistant,
           resources,
-          knowledge_point_ids: pointIds,
+          knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
+          ...(goalPractice && { practice_rules: rules, published }),
         };
         if (editing)
           await api.put(
@@ -113,6 +133,13 @@ export function useActivityEditor(
     setResources,
     pointIds,
     setPointIds,
+    goalPractice,
+    convertPractice,
+    setConvertPractice,
+    rules,
+    setRules,
+    published,
+    setPublished,
     npc,
     setNpc,
     assistant,

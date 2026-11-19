@@ -227,8 +227,7 @@
 }
 
 .game-workspace .practice-content > .error,
-.game-workspace .practice-content > .learning-empty,
-.game-workspace .practice-content > .practice-complete {
+.game-workspace .practice-content > .learning-empty {
   margin: 12px;
 }
 
@@ -316,9 +315,12 @@
   color: #8b4835;
 }
 
-.game-workspace .practice-complete {
-  margin-top: 1rem;
-  align-self: flex-end;
+.game-workspace .practice-goal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .45rem .75rem;
 }
 
 .game-workspace .assessment-actions {
@@ -364,6 +366,7 @@
   flex-shrink: 0;
 }
 
+.game-workspace .practice-passed { color: var(--learn-forest); font-size: .875rem; margin-inline-start: .35rem; }
 .game-workspace .practice-navigation {
   display: flex;
   align-items: center;

@@ -27,10 +27,10 @@ def authorize_classroom(db: Session, user: User, classroom_id: int):
     from app.course_scope import lock_course
 
     lock_course(db, classroom_id)
-    classroom = db.get(Classroom, classroom_id)
-    if not classroom:
+    classroom = db.get(Classroom, classroom_id, populate_existing=True)
+    if not classroom or classroom.status != "active":
         raise HTTPException(404, "班级不存在")
-    if user.role == "admin" or classroom.teacher_id == user.id or db.get(Membership, (user.id, classroom_id)):
+    if user.role == "admin" or classroom.teacher_id == user.id or (user.role == "student" and db.get(Membership, (user.id, classroom_id))):
         return classroom
     preview = db.get(TownPreviewStudent, user.id)
     if preview and preview.classroom_id == classroom_id:

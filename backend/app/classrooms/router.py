@@ -7,7 +7,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.auth import bearer, current_user, require_teacher
-from app.classrooms.contracts import ClassroomInput, JoinInput
+from app.classrooms import lifecycle
+from app.classrooms.contracts import ClassroomInput, JoinInput, TransferInput
 from app.classrooms.service import create_classroom as _create_classroom
 from app.classrooms.service import join_classroom as _join_classroom
 from app.classrooms.service import list_classrooms as _list_classrooms
@@ -17,6 +18,43 @@ from app.db import get_db
 from app.models import User
 
 router = APIRouter(tags=["classrooms"])
+Database = Annotated[Session, Depends(get_db)]
+Teacher = Annotated[User, Depends(require_teacher)]
+
+
+@router.get("/teacher/classrooms/management")
+def manage_classrooms(db: Database, user: Teacher, deleted: bool = False):
+    return lifecycle.management_list(db, user, deleted)
+
+
+@router.patch("/teacher/classrooms/{classroom_id}")
+def rename_classroom(classroom_id: int, body: ClassroomInput, db: Database, user: Teacher):
+    return lifecycle.rename(db, user, classroom_id, body.name)
+
+
+@router.post("/teacher/classrooms/{classroom_id}/archive")
+def archive_classroom(classroom_id: int, db: Database, user: Teacher):
+    return lifecycle.archive(db, user, classroom_id)
+
+
+@router.delete("/teacher/classrooms/{classroom_id}")
+def delete_classroom(classroom_id: int, db: Database, user: Teacher):
+    return lifecycle.delete_classroom(db, user, classroom_id)
+
+
+@router.post("/teacher/classrooms/{classroom_id}/transfer")
+def transfer_classroom(classroom_id: int, body: TransferInput, db: Database, user: Teacher):
+    return lifecycle.transfer(db, user, classroom_id, body.teacher_id)
+
+
+@router.get("/teacher/classrooms/{classroom_id}/history")
+def classroom_history(classroom_id: int, db: Database, user: Teacher):
+    return lifecycle.history_summary(db, user, classroom_id)
+
+
+@router.get("/teacher/classrooms/{classroom_id}/history/{student_id}")
+def classroom_student_history(classroom_id: int, student_id: int, db: Database, user: Teacher):
+    return lifecycle.history_detail(db, user, classroom_id, student_id)
 
 
 @router.get("/classrooms")

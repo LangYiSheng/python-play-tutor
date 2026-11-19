@@ -17,7 +17,7 @@ it("keeps leading-zero IDs when creating students in the selected class", async 
     vi.fn(async (url: string, init: RequestInit) => {
       if (init.method === "POST") {
         calls.push({ url, body: JSON.parse(init.body as string) });
-        return json({ created: 1, existing: 0 });
+        return json({ created: 1, bound: 0, existing: 0 });
       }
       return json([]);
     }),
@@ -27,7 +27,7 @@ it("keeps leading-zero IDs when creating students in the selected class", async 
   await user.click(screen.getByRole("button", { name: "添加学生" }));
   await user.type(screen.getByLabelText("学号"), "001234");
   await user.type(screen.getByLabelText("姓名"), "测试学生");
-  await user.click(screen.getByRole("button", { name: "创建学生" }));
+  await user.click(screen.getByRole("button", { name: "确认添加" }));
   await screen.findByRole("status");
   expect(calls).toEqual([
     {

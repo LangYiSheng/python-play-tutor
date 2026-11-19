@@ -15,6 +15,7 @@ import { KnowledgePointPicker } from "@/features/curriculum/knowledge-point-pick
 import type { Activity, Course, Material, Question } from "@/lib/types";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { ResourceEditor } from "./resource-editor";
+import { PracticeGoalsEditor } from "./practice-goals-editor";
 import type { useActivityEditor } from "./use-editor";
 export function ActivityDialog({
   editor,
@@ -182,6 +183,7 @@ export function ActivityDialog({
                       onValueChange={(value) => {
                         setChapter(Number(value));
                         setResources([]);
+                        editor.setRules({ ...editor.rules, goals: [] });
                         setDirty(true);
                       }}
                     >
@@ -232,7 +234,30 @@ export function ActivityDialog({
                     ))}
                   </SelectField>
                 </div>
-                <KnowledgePointPicker
+                {editing?.kind === "practice" && !editing.practice_rules && (
+                  <label className="mb-4 flex items-center gap-2">
+                    <input type="checkbox" checked={editor.convertPractice}
+                      onChange={event => editor.setConvertPractice(event.target.checked)} />
+                    将固定题单转换为知识点练习
+                  </label>
+                )}
+                {editor.goalPractice ? (
+                  <>
+                    <PracticeGoalsEditor rules={editor.rules}
+                      points={(course.data?.knowledge_points ?? []).filter(point => point.chapter_id === chapter)}
+                      candidates={questions.data ? candidates : null}
+                      onChange={value => { editor.setRules(value); setDirty(true); }} />
+                    <div className="field">
+                      <Label htmlFor="practice-status">发布状态</Label>
+                      <SelectField id="practice-status" value={editor.published ? "published" : "draft"}
+                        onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
+                        <option value="published">已发布</option>
+                        <option value="draft">草稿</option>
+                      </SelectField>
+                      <p className="hint">发布时会按整场练习检查题量，多个知识点共享的题目只分配一次。</p>
+                    </div>
+                  </>
+                ) : <KnowledgePointPicker
                   key={id}
                   chapters={course.data?.chapters ?? []}
                   points={course.data?.knowledge_points ?? []}
@@ -242,7 +267,7 @@ export function ActivityDialog({
                     setPointIds(ids);
                     setDirty(true);
                   }}
-                />
+                />}
                 {kind === "lesson" || kind === "reading" ? (
                   <ResourceEditor classroomId={editor.classroomId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
                     onChange={(value) => { setResources(value); setDirty(true); }} />

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content_relations import activity_questions
+from app.practice_rules import without_legacy_retry_interval
 from app.models import Activity, Chapter, KnowledgePoint, Npc, User
 from app.teacher_scope import teacher_instance_id
 
@@ -47,6 +48,8 @@ def teacher_courses(db: Session, user: User, classroom_id: int | None = None):
                 "resources": [resource_payload(row) for row in a.resources],
                 "owner_id": a.owner_id,
                 "knowledge_point_ids": a.content.get("knowledge_point_ids", []),
+                "practice_rules": without_legacy_retry_interval(a.content.get("practice_rules")),
+                "published": a.content.get("published", True),
                 "question_ids": [q.id for q in activity_questions(db, a)],
             }
             for a in db.scalars(

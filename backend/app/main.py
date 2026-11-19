@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 import app.materials.jobs as materials_jobs
 from app import (
+    admin_workbench,
     assessments,
     assistant,
     auth,
@@ -72,7 +73,8 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
-        if request.url.path == "/api/teacher/assistant/model" or request.url.path.startswith("/api/teacher/services/"):
+        if (request.url.path == "/api/teacher/assistant/model" or request.url.path.startswith("/api/teacher/services/")
+                or request.url.path.startswith("/api/admin/")):
             # Pydantic otherwise echoes the entire rejected input, including API keys.
             return JSONResponse(status_code=422, content={"detail": [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]})
         return await request_validation_exception_handler(request, exc)
@@ -81,10 +83,11 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type", "Range"],
     )
     for module in (
+        admin_workbench,
         auth,
         courses,
         classrooms,
@@ -108,6 +111,8 @@ def create_app() -> FastAPI:
     # Narration authoring is additive and isolated; see app/narration.
     app.include_router(narration.router, prefix="/api")
     app.include_router(synthesis_management.router, prefix="/api")
+    app.include_router(synthesis_management.global_router, prefix="/api")
+    app.include_router(course_exchange.shared_router, prefix="/api")
     app.include_router(narration.student_router, prefix="/api")
     app.include_router(dev_tools.preview_router, prefix="/api")
     from app.experience.router import router as experience_router

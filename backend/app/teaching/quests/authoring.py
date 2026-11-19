@@ -39,9 +39,9 @@ def validate_quest(body: DefinitionInput, db: Session, user: User, classroom_id:
 
 
 def create_quest(body: DefinitionInput, db: Session, user: User, classroom_id: int | None = None):
-    from app.teacher_scope import commit_content, scoped_key, teacher_instance_id
+    from app.teacher_scope import commit_content, scoped_key, teacher_course_scope
 
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     try:
         definition = validate_definition(body.definition, db)
     except (ValueError, KeyError, TypeError) as exc:
@@ -60,7 +60,7 @@ def create_quest(body: DefinitionInput, db: Session, user: User, classroom_id: i
             id=key,
             chapter_id=definition["chapter_id"],
             title=definition["title"],
-            owner_id=user.id,
+            owner_id=classroom.teacher_id,
             course_instance_id=instance_id,
             stable_id=stable_id,
             definition=definition,

@@ -5,23 +5,22 @@ from uuid import uuid4, uuid5, NAMESPACE_URL
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
-from .models import Classroom, CourseInstance
-from .course_scope import lock_course
+from .models import CourseInstance
+from .classrooms.access import own_classroom
 
 
-def teacher_instance_id(db, user, classroom_id, *, exclusive=False):
+def teacher_course_scope(db, user, classroom_id, *, exclusive=False):
     if classroom_id is None:
         raise HTTPException(422, "请明确选择班级课程")
-    lock_course(db, classroom_id, exclusive=exclusive)
-    classroom = db.get(Classroom, classroom_id)
-    if classroom is None:
-        raise HTTPException(404, "班级不存在")
-    if user.role != "admin" and classroom.teacher_id != user.id:
-        raise HTTPException(403, "只能管理自己的班级")
+    classroom = own_classroom(db, user, classroom_id, exclusive=exclusive)
     instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
     if instance is None:
         raise HTTPException(409, "本班尚未导入课程")
-    return instance.id
+    return classroom, instance.id
+
+
+def teacher_instance_id(db, user, classroom_id, *, exclusive=False):
+    return teacher_course_scope(db, user, classroom_id, exclusive=exclusive)[1]
 
 
 def require_scope(item, instance_id):

@@ -52,15 +52,17 @@ Invoke-RestMethod http://127.0.0.1:15174/api/health
 
 所有角色使用同一学号登录入口。学生在“设置 → 账户”改密，教师/管理员在左下角账号菜单的“修改密码”改密；需要当前密码，新密码至少6位。修改后其他登录失效，当前窗口获得新会话。首次管理员不使用学生的学号初始密码规则。
 
-教师在“学生账号”按学号与姓名创建学生，或上传UTF-8 CSV / `.xlsx`批量预览后确认。表格仅一张工作表，首行为“学号、姓名”，最多500人/2MB；Excel学号必须用文本单元格，拒绝公式。初始密码为本人学号，首次登录必须修改。重复导入本班已有学生跳过，不覆盖姓名/密码；其他已有账号先使用班级加入码加入。可选择学生批量重置密码为各自学号（撤销全部旧会话、强制再次改密）或移出当前班级（保留账号、其他班级、历史记录）。
+教师在“学生账号”按学号与姓名创建学生，或上传UTF-8 CSV / `.xlsx`批量预览后确认。表格仅一张工作表，首行为“学号、姓名”，最多500人/2MB；Excel学号必须用文本单元格，拒绝公式。初始密码为本人学号，首次登录必须修改。重复导入本班已有学生跳过，不覆盖姓名/密码；已有正式学生按学号与姓名绑定本班并保留原密码。可选择学生批量重置密码为各自学号（撤销全部旧会话、强制再次改密）或移出当前班级（保留账号、其他班级、历史记录）。
 
-系统不提供默认公开账号。先在当前终端安全注入仅用于创建账号的 `REBORN_TEACHER_PASSWORD` 环境变量，至少12字符；不要将密码写进命令、文档或 Git。再创建自己的教师账号：
+管理员可在后台“教师管理”中创建教师账号，设置临时密码并由教师首次登录后修改。也可使用以下命令创建教师。先在当前终端安全注入仅用于创建账号的 `REBORN_TEACHER_PASSWORD` 环境变量，至少12字符；不要将密码写进命令、文档或 Git。再创建自己的教师账号：
 
 ```powershell
 docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml exec -e REBORN_TEACHER_PASSWORD api python -m app.cli provision-user --student-id 900001 --name 教师 --role teacher --password-env REBORN_TEACHER_PASSWORD
 ```
 
 命令不会覆盖已有同学号账号。该命令用于后续教师或管理员增补（管理员用 `--role admin`）；首次管理员优先使用上述启动变量。本机 API 可直接执行同一命令。用后清除临时密码环境变量。学生仍可自行注册，教师创建班级、管理学生并安排章节开放。
+
+后台权限端到端用例 `admin/e2e/staff-workbench.spec.ts` 使用隔离环境的 `E2E_ADMIN_STUDENT_ID` 和 `E2E_ADMIN_PASSWORD`，会创建专用教师、学生和班级以验证正式删除后的数据保留。
 
 ### 更新与停止
 
@@ -140,7 +142,7 @@ npm run dev -- --host 127.0.0.1 --port 15174
 
 在课程包页导出后，完整复制 `data/course/export-…/` 文件夹到目标服务器实际挂载的 `data/course/` 下，保留manifest、课程定义、私有答案和assets媒体的相对路径。支持改文件夹名；不要只复制manifest，也不需要复制数据库、账号、学生进度、环境文件或包外导出凭据。目标服务器应使用支持当前v3及origin字段的代码。
 
-后台刷新课程包列表，选择目标班级，预览差异后确认导入。所有教师及管理员共用同一列表，均可导入与删除origin=exported的包；导入后各班课程独立。默认包origin缺省或为supplied，始终受保护。origin是开发人员管理服务器目录时使用的来源声明，不是签名或本机所有权凭据。
+后台刷新课程包列表，选择目标班级，预览差异后确认导入。所有教师及管理员共用同一列表，均可导入，仅管理员可删除origin=exported的包；导入后各班课程独立。默认包origin缺省或为supplied，始终受保护。origin是开发人员管理服务器目录时使用的来源声明，不是签名或本机所有权凭据。
 
 ### v3 课程导入班级
 
@@ -219,7 +221,7 @@ REBORN_AI_API_KEY=
 docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml up -d --no-deps api
 ```
 
-以上环境配置仅在尚未保存后台全站模型设置时生效。管理员可在“智能体设置 → 学生助教 API”填写 API 地址、模型和密钥，保存后无需重启；教师只能维护本班开关、默认角色及不高于全站上限的预算。保存不调用模型，点击“测试已保存连接”才发一次短请求。缺 Key 时显示不可用。
+以上环境配置仅在尚未保存后台全站模型设置时生效。管理员可在“全站设置 → 智能体设置 → 学生助教 API”填写 API 地址、模型和密钥，保存后无需重启；教师只能维护本班开关、默认角色及不高于全站上限的预算。保存不调用模型，点击“测试已保存连接”才发一次短请求。缺 Key 时显示不可用。
 
 默认每次提问最多6次助教模型调用、12次工具调用、120秒，回复最多2048 tokens，累计请求预算262144 tokens；最多另加一次摘要调用，计入实际额度。每日仍为用户12请求/120000 tokens、班级100请求/1200000 tokens；实际可用请求预算还受每日剩余额度限制。默认应用上下文上限32768、压缩触发24576，须根据供应商模型容量调整；未知模型使用保守估算。显式设置的 `REBORN_AI_REQUEST_TOKEN_RESERVATION`、`REBORN_AI_TIMEOUT_SECONDS` 仍可收紧运行上限，不再默认固定为12000/45。重启不自动重发。
 
@@ -250,7 +252,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 ### 资料讲解与语音合成
 
-讲解生成使用一套独立的作者期模型配置，与助教预算分开：`REBORN_AUTHORING_AI_API_KEY`、`REBORN_AUTHORING_AI_BASE_URL`、`REBORN_AUTHORING_AI_MODEL`、`REBORN_AUTHORING_AI_VISION_MODEL`，以及可选 `REBORN_AUTHORING_AI_EFFORT`、`REBORN_AUTHORING_AI_MAX_TOKENS`、`REBORN_AUTHORING_AI_TIMEOUT_SECONDS`、`REBORN_AUTHORING_AI_DAILY_PAGES`。接口为 OpenAI 兼容的 chat completions；上述变量统一放在 `deploy/.env`（模板 `deploy/.env.example`）。管理员也可在“智能体设置 → 讲稿生成 / 语音合成”分别填写连接、模型/音色与额度。每项服务未保存时读取环境初始化值；保存后以数据库配置为准，新请求生效，无需重启。未配置时审校界面显示真实不可用，不伪造讲解。
+讲解生成使用一套独立的作者期模型配置，与助教预算分开：`REBORN_AUTHORING_AI_API_KEY`、`REBORN_AUTHORING_AI_BASE_URL`、`REBORN_AUTHORING_AI_MODEL`、`REBORN_AUTHORING_AI_VISION_MODEL`，以及可选 `REBORN_AUTHORING_AI_EFFORT`、`REBORN_AUTHORING_AI_MAX_TOKENS`、`REBORN_AUTHORING_AI_TIMEOUT_SECONDS`、`REBORN_AUTHORING_AI_DAILY_PAGES`。接口为 OpenAI 兼容的 chat completions；上述变量统一放在 `deploy/.env`（模板 `deploy/.env.example`）。管理员也可在“全站设置 → 智能体设置 → 讲稿生成 / 语音合成”分别填写连接、模型/音色与额度。每项服务未保存时读取环境初始化值；保存后以数据库配置为准，新请求生效，无需重启。未配置时审校界面显示真实不可用，不伪造讲解。
 
 页图渲染需要宿主机或镜像内安装并可执行 `pdftoppm`（poppler）。程序先转PNG，再由Pillow压成JPEG；不要求某台机器的固定安装路径。缺少依赖或字体时应检查具体材料的渲染结果。
 
@@ -462,7 +464,7 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 ### 语音配置示例与任务排查
 
-管理员在智能体设置的语音合成标签切换协议或填入示例，核对后保存。DeepSeek官方示例为基础地址 `https://api.deepseek.com`、音色 `stella` 或 `tide`、WAV/PCM，无模型字段和合成调速；依据[官方语音指南](https://api-docs.deepseek.com/zh-cn/guides/tts/)。接口路径由服务端统一拼接；已填写完整 `/v1/tools/tts`、`/v1/audio/speech` 或 `/v1` 的地址不会再次重复拼接。自定义服务地址及API Key不会因切换协议被自动覆盖，明确填入示例只更新非密钥字段；没有后台自动探测或付费测试。
+管理员在全站设置的智能体设置的语音合成标签切换协议或填入示例，核对后保存。DeepSeek官方示例为基础地址 `https://api.deepseek.com`、音色 `stella` 或 `tide`、WAV/PCM，无模型字段和合成调速；依据[官方语音指南](https://api-docs.deepseek.com/zh-cn/guides/tts/)。接口路径由服务端统一拼接；已填写完整 `/v1/tools/tts`、`/v1/audio/speech` 或 `/v1` 的地址不会再次重复拼接。自定义服务地址及API Key不会因切换协议被自动覆盖，明确填入示例只更新非密钥字段；没有后台自动探测或付费测试。
 
 资料合成管理分正在执行与历史记录，按每次执行排查进度与失败页；仅最新且参数完整的明确失败可确认重试，旧次或中断结果先核查。b72c49e018a3新增narration_runs并回填narration_jobs中实际保留的非idle记录，之后每次执行、重试独立留存。升级前备份数据库并确认没有正在执行的任务；不自动派发、重置或伪造历史，继续复用现有请求及逐页提交机制。
 

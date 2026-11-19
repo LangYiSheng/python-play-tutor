@@ -45,7 +45,11 @@ def progress_payload(db, user, classroom_id, activity):
             "score": paper["score"],
             "max_score": paper["max_score"],
         }
-    if activity.kind in {"practice", "assessment"}:
+    if activity.kind == "practice" and activity.content.get("practice_rules"):
+        from app.practice_sessions import practice_progress
+
+        return practice_progress(db, user, classroom_id, activity)
+    if activity.kind == "practice":
         classroom = db.get(Classroom, classroom_id)
         questions = learning_questions(db, activity, classroom.teacher_id)
         accepted = {

@@ -27,7 +27,9 @@ it('evaluates before saving, preserves the receipt across network retries and re
   vi.mocked(evaluateBrowserSubmission).mockImplementation(() => new Promise(done => {resolve=done;}));
   const post = vi.spyOn(api, 'post').mockRejectedValueOnce(new Error('offline')).mockResolvedValue({id:'receipt',question_id:'python',activity_id:'practice',mode:'submit',status:'accepted',feedback:{source:'browser_practice',passed_count:1,total_count:1}});
   const card = wrapper.findComponent({name:'ProgrammingQuestion'});
-  card.vm.$emit('submit','submit'); await flushPromises();
+  const runSample = vi.fn();
+  card.vm.$emit('submit','submit', runSample); await flushPromises();
+  expect(evaluateBrowserSubmission).toHaveBeenCalledWith('print(input())', expect.any(Array), expect.any(AbortSignal), runSample);
   expect(post).not.toHaveBeenCalled(); expect(card.props('busy')).toBe(true);
   resolve(cases); await flushPromises();
   expect(post.mock.calls[0]?.[1]).toMatchObject({code:'print(input())',browser_cases:cases});

@@ -19,6 +19,7 @@ from .judge_management import probe_service, save_health
 from .go_judge import GoJudgeAdapter
 from .models import Classroom, QuestionSecret, Submission, User, now
 from .browser_practice import BrowserCase, stage_browser_submission
+from .practice_sessions import lock_learner, record_attempt, require_attempt
 from .question_types import grade_answer, question_type
 
 router = APIRouter(tags=["practice"])
@@ -86,6 +87,9 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
     query = select(Submission).where(
         Submission.user_id == user.id, Submission.classroom_id == body.classroom_id, Submission.idempotency_key == body.idempotency_key
     )
+    personal = activity.kind == "practice" and activity.content.get("practice_rules")
+    if personal:
+        lock_learner(db, user.id)
     existing = db.scalar(query)
     if existing:
         if (existing.activity_id, existing.question_id, existing.mode, existing.answer, existing.code) != (
@@ -97,11 +101,16 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
         ):
             raise HTTPException(409, "幂等键已用于不同提交")
         return public_submission(existing)
-    classroom = db.get(Classroom, body.classroom_id)
-    question = next((item for item in learning_questions(db, activity, classroom.teacher_id) if item.id == body.question_id), None)
-    if not question:
-        raise HTTPException(404, "题目不属于当前活动")
-    db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    if personal:
+        session, question = require_attempt(db, user, body.classroom_id, activity, body.question_id)
+        if not question_type(question.kind).complete(question, body.answer, body.code):
+            raise HTTPException(422, "请先完成本题再正式提交")
+    else:
+        classroom = db.get(Classroom, body.classroom_id)
+        question = next((item for item in learning_questions(db, activity, classroom.teacher_id) if item.id == body.question_id), None)
+        if not question:
+            raise HTTPException(404, "题目不属于当前活动")
+        db.execute(select(User.id).where(User.id == user.id).with_for_update())
     if activity.kind == "assessment":
         raise HTTPException(409, "测验需要完成所有题目后统一提交试卷")
     try:
@@ -112,6 +121,8 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
             if body.browser_cases is not None:
                 raise HTTPException(422, "非编程题不接受浏览器评测结果")
             row = stage_submission(db, user, body.classroom_id, activity, question, body.answer, body.code, body.idempotency_key, body.mode)
+        if personal:
+            record_attempt(db, session, activity, row)
         db.commit()
     except IntegrityError:
         db.rollback()

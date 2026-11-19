@@ -3,6 +3,7 @@
     <section class="coding-pane coding-problem" aria-label="题目内容">
       <GamePanelHeader class="coding-pane-title" title="题目描述" icon="description" />
       <div class="coding-pane-body">
+        <div v-if="$slots.metadata"><span class="question-kind">编程题</span> <slot name="metadata" /></div>
         <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
         <p class="question-prompt">{{ question.prompt }}</p>
         <section v-for="(sample, i) in question.samples" :key="i" class="coding-example">
@@ -35,7 +36,7 @@
             <div class="coding-result-summary">
               <h4 class="coding-outcome" :data-tone="outcomeTone" role="status">{{ outcomeTitle }}</h4>
               <span v-if="resultSource === 'submission' && submissionCounts" class="coding-pass-count">{{ submissionCounts.passed }} / {{ submissionCounts.total }} 个测试用例通过</span>
-              <span v-if="resultSource === 'local' && runDuration !== undefined" class="coding-run-time">用时 {{ runDuration }} ms</span>
+              <span v-if="resultDuration !== undefined" class="coding-run-time">{{ resultSource === 'submission' ? '提交用时' : '用时' }} {{ resultDuration }} ms</span>
               <button v-if="resultSource === 'local' && selectedResult?.status === 'wrong_answer'" class="coding-diff-toggle" :aria-pressed="diffEnabled" @click="diffEnabled = !diffEnabled">Diff {{ diffEnabled ? '开' : '关' }}</button>
             </div>
             <p v-if="resultSource === 'submission' && resultDetail">{{ resultDetail }}</p>
@@ -73,7 +74,7 @@
         <button v-if="judging" class="judging-action" disabled><GameIcon name="spinner" class="is-spinning" />正在判题…</button>
         <template v-else>
           <button :disabled="!hasAnswer || Boolean(pendingMode)" @click="runSamples()"><GameIcon name="play" />运行公开样例</button>
-          <button v-if="showSubmit" class="primary" :disabled="!hasAnswer" @click="$emit('submit', 'submit')"><GameIcon name="publish" />{{ pendingMode ? '重试提交' : '提交代码' }}</button>
+          <button v-if="showSubmit" class="primary" :disabled="!hasAnswer" @click="submitCode"><GameIcon name="publish" />{{ pendingMode ? '重试提交' : '提交代码' }}</button>
         </template>
       </div>
     </Teleport>
@@ -81,10 +82,11 @@
 </template>
 <script setup lang="ts">
 import type { AnswerValue } from "../../../../shared/questions";
-import { computed, defineAsyncComponent, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { computed, defineAsyncComponent, nextTick, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import { randomUUID } from '../../shared/uuid';
+import type { RunPythonSample } from './browserSubmission';
 import type { AssistantFeedback, AssistantLocalRun } from '../../shared/assistantState';
 import { createPythonRunner, sameOutput } from "./pythonRunner";
 import { outputDiff, visibleDiffText } from "./outputDiff";
@@ -92,7 +94,7 @@ import type { Question, Submission, SubmissionStatus } from "../../shared/types"
 import { pendingSubmissionStates, submissionStatusName } from "./practicePresentation";
 const CodeEditor = defineAsyncComponent(() => import("./CodeEditor.vue"));
 const props = withDefaults(defineProps<{ question: Question; index: number; answer: AnswerValue; code: string; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
-const emit = defineEmits<{ runningChange: [running: boolean]; "update:answer": [value: string]; "update:code": [value: string]; submit: [mode: "submit"]; assistantFeedback: [feedback: AssistantFeedback] }>();
+const emit = defineEmits<{ runningChange: [running: boolean]; "update:answer": [value: string]; "update:code": [value: string]; submit: [mode: "submit", runSample?: RunPythonSample]; assistantFeedback: [feedback: AssistantFeedback] }>();
 const workbench = ref<HTMLElement>();
 const problemWidth = ref(47), editorHeight = ref(57);
 const dragAxis = ref<'width' | 'height' | null>(null);
@@ -138,7 +140,26 @@ const displayedResults = computed<CaseResult[]>(() => resultSource.value === 'lo
 const selectedResult = computed(() => displayedResults.value[activeCase.value]);
 const publicDiagnostic = computed(() => ['runtime_error', 'compile_error'].includes(props.result?.status ?? '')
   ? (props.result?.feedback.samples ?? []).map(sample => [sample.stderr, sample.compile_output].filter(Boolean).join('\n')).find(Boolean) : undefined);
-const diffEnabled = ref(true), runDuration = ref<number>();
+const diffEnabled = ref(true);
+const submissionTime = ref<{ id: string; ms: number }>();
+const resultDuration = computed(() => {
+  if (resultSource.value === 'local') return latestRun.value?.duration_ms;
+  if (submissionTime.value?.id === props.result?.id) return submissionTime.value?.ms;
+});
+let submitClick: { started: number; previousId?: string } | undefined;
+function submitCode() {
+  submitClick = { started: performance.now(), previousId: props.result?.id };
+  submissionTime.value = undefined;
+  emit('submit', 'submit', getPythonRunner().run);
+}
+watch([judging, () => props.result], () => {
+  if (!submitClick || judging.value) return;
+  const receipt = props.result;
+  if (receipt && receipt.id !== submitClick.previousId) {
+    submissionTime.value = { id: receipt.id, ms: Math.round(performance.now() - submitClick.started) };
+  }
+  submitClick = undefined;
+}, { flush: 'post' });
 const showDiff = computed(() => diffEnabled.value && selectedResult.value?.status === 'wrong_answer');
 const comparedOutput = computed(() => outputDiff(selectedResult.value?.stdout ?? '', selectedSample.value?.output ?? ''));
 const submissionCounts = computed(() => {
@@ -175,36 +196,41 @@ watch(() => [props.result, props.busy], () => { resultSource.value = 'submission
 let controller: AbortController | undefined;
 let runVersion = 0;
 let pythonRunner: ReturnType<typeof createPythonRunner> | undefined;
-onMounted(() => { if (!props.readOnly && props.question.samples.length) pythonRunner = createPythonRunner(props.question.samples.length); });
+function getPythonRunner() { return pythonRunner ??= createPythonRunner(props.question.samples.length); }
+onMounted(() => { if (!props.readOnly && props.question.samples.length) getPythonRunner(); });
 watch(() => props.question.id, () => {
   runVersion++; running.value=false; emit('runningChange', false);
   controller?.abort(); pythonRunner?.dispose(); pythonRunner = undefined;
-  localResults.value=[]; runError.value=''; runStopped.value=false; runDuration.value=undefined;
+  localResults.value=[]; runError.value=''; runStopped.value=false; latestRun.value=undefined;
+  submitClick = undefined; submissionTime.value = undefined;
   activeCase.value=0; diffEnabled.value=true; resultSource.value=props.result ? 'submission' : 'local';
   tab.value=props.result ? 'results' : 'cases';
-  if (!props.readOnly && props.question.samples.length) pythonRunner=createPythonRunner(props.question.samples.length);
+  if (!props.readOnly && props.question.samples.length) getPythonRunner();
 });
 async function runSamples() {
   if (running.value || props.busy || props.readOnly) return;
+  const started = performance.now();
   resultSource.value='local'; runStopped.value=false; activeCase.value=0; tab.value='results'; running.value=true; emit('runningChange', true); runError.value=''; localResults.value=[];
   const currentController = new AbortController(), version = ++runVersion;
   controller = currentController;
-  const source = props.code, started = performance.now();
-  runDuration.value = undefined;
+  const source = props.code;
+  latestRun.value = undefined;
   try {
     if (!props.question.samples.length) throw Error('此题尚未配置公开样例');
     for (const [i, sample] of props.question.samples.entries()) {
       activeCase.value = i;
-      pythonRunner ??= createPythonRunner(props.question.samples.length);
-      const result = await pythonRunner.run(source, sample.input, currentController.signal);
+      const result = await getPythonRunner().run(source, sample.input, currentController.signal);
       if (version !== runVersion) return;
       localResults.value.push({stdout:result.stdout,error:result.stderr,status:result.stderr ? 'runtime_error' : sameOutput(result.stdout,sample.output) ? 'accepted' : 'wrong_answer'});
     }
   } catch(e) { if (version === runVersion) { runStopped.value=currentController.signal.aborted; runError.value=e instanceof Error ? e.message : '运行失败'; } }
-  finally { if (version === runVersion) { runDuration.value=Math.round(performance.now()-started); running.value=false; emit('runningChange', false); if (!runError.value) activeCase.value=Math.max(0,localResults.value.findIndex(item=>item.status !== 'accepted'));
+  finally { if (version === runVersion) { running.value=false; emit('runningChange', false); if (!runError.value) activeCase.value=Math.max(0,localResults.value.findIndex(item=>item.status !== 'accepted'));
+    await nextTick();
+    if (version !== runVersion) return;
+    const duration = Math.round(performance.now() - started);
     const cap = Math.min(16000, Math.floor(60000 / Math.max(1, localResults.value.length)));
     const bounded = (value: string) => value.length > cap ? value.slice(0, cap - 20) + '\n（输出过长，已省略）' : value;
-    latestRun.value = { question_id: props.question.id, run_id: randomUUID(), code: source, completed_at: new Date().toISOString(), duration_ms: runDuration.value,
+    latestRun.value = { question_id: props.question.id, run_id: randomUUID(), code: source, completed_at: new Date().toISOString(), duration_ms: duration,
       cases: localResults.value.map(item => ({ ...item, stdout: bounded(item.stdout), error: bounded(item.error) })), error: runError.value.slice(0, 2000), stopped: runStopped.value };
   } }
 }

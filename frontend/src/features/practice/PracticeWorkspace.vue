@@ -21,17 +21,37 @@
           </button>
         </Teleport>
       </GamePanelHeader>
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="error" role="alert">{{ error }}
+        <button v-if="practiceRefreshFailed" :disabled="requestBusy" @click="refreshPractice(generation)">刷新题单</button>
+      </p>
       <p v-if="draftError" class="error" role="alert">{{ draftError }} <button v-if="draftConflict" @click="load">重新载入试卷</button><button v-else-if="!paper?.locked" @click="retryDraft">重试保存</button></p>
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
-        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="submitQuestion(question.id, $event)" />
+        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample) => submitQuestion(question.id, mode, runSample)">
+          <template v-if="currentItem?.status === 'accepted'" #metadata>
+            <span class="practice-passed">已通过</span>
+          </template>
+        </PracticeQuestionCard>
       </div>
       <p v-else-if="!loading && activity" class="learning-empty">此活动尚未绑定公开题目，请联系教师。</p>
 
-      <button v-if="storySessionId && !isAssessment && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
     </section>
-    <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
+    <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
+      <template v-if="!isAssessment" #goals>
+        <section class="practice-goal-summary" aria-label="活动进度">
+          <div class="practice-goal-heading">
+            <strong>{{ activity.title }}</strong>
+            <button v-if="storySessionId && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
+          </div>
+          <div class="support-goal-progress">
+            <span>活动进度 · 已通过 {{ passedCount }} / {{ questions.length }} 题</span>
+            <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
+          </div>
+        </section>
+      </template>
+      <template v-if="personalPractice" #question-list>
+        <PracticeQuestionGroups :goals="personalPractice.goals" :names="pointNames" :questions="questionOutline" @select-question="selectQuestion" />
+      </template>
       <template #question-actions>
         <div v-if="isAssessment && (paper?.locked || allAnswered)" class="assessment-actions">
           <template v-if="paper?.locked">
@@ -58,15 +78,16 @@ import type { AssistantFeedback } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { api, ApiError, notify } from "../../shared/api";
 import { useSession } from "../../shared/session";
-import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, Submission } from "../../shared/types";
+import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, QuestionOutlineState, Submission } from "../../shared/types";
 import { pendingSubmissionStates } from "./practicePresentation";
 import { createAssessmentDraftQueue } from "./assessmentDraft";
-import { evaluateBrowserSubmission, type BrowserCase } from './browserSubmission';
+import { evaluateBrowserSubmission, type BrowserCase, type RunPythonSample } from './browserSubmission';
 import { useWorkspaceSidebar } from "../../shared/workspaceSidebar";
 import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import LearningSupportPanel from "../support/LearningSupportPanel.vue";
 import LearningSplitLayout from "../support/LearningSplitLayout.vue";
+import PracticeQuestionGroups from "./PracticeQuestionGroups.vue";
 import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
@@ -108,6 +129,17 @@ const actionTarget = computed(() => viewMode.value === 'single' && props.toolbar
 const localRunning = ref<Record<string, boolean>>({});
 const publicRunBusy = computed(() => Object.values(localRunning.value).some(Boolean));
 const current = computed(() => questions.value[questionIndex.value]);
+const practiceRefreshFailed = ref(false);
+const personalPractice = computed(() => activityProgress.value?.practice);
+const passedCount = computed(() => activityProgress.value?.accepted_question_ids?.length ?? 0);
+const practiceItems = computed(() => new Map(personalPractice.value?.items.map(item => [item.question_id, item])));
+const pointNames = computed(() => new Map(activity.value?.knowledge_points?.map(point => [point.id, point.title])));
+const currentItem = computed(() => practiceItems.value.get(current.value?.id ?? ''));
+function submissionBlocked(id: string) {
+  if (practiceRefreshFailed.value) return true;
+  if (drafts.value[id]?.pending) return false;
+  return practiceItems.value.get(id)?.status === 'accepted';
+}
 const isCodeQuestion = computed(() => current.value && questionType(current.value.kind).execution === 'python');
 const assistantState = computed(() => ({ question_id: current.value?.id, answer: drafts.value[current.value?.id ?? '']?.answer ?? '',
   code: drafts.value[current.value?.id ?? '']?.code ?? '', ...assistantFeedback.value[current.value?.id ?? ''] }));
@@ -115,16 +147,30 @@ const visibleQuestions = computed(() => isAssessment.value && viewMode.value ===
 const role = computed(() => activity.value?.role);
 const roleName = computed(() => role.value?.name ?? '练习助教'), rolePortrait = computed(() => role.value?.portrait);
 const containerKey = computed(() => `draft:${contextUserId}:${contextClassroomId}:assessment-${props.activityId}`);
-const questionKey = (id: string) => `draft:${contextUserId}:${contextClassroomId}:${id}`;
+const questionKey = (id: string) => activityProgress.value?.practice
+  ? `draft:${contextUserId}:${contextClassroomId}:practice:${props.activityId}:${id}`
+  : `draft:${contextUserId}:${contextClassroomId}:${id}`;
 const questionPositionKey = () => `read:${contextUserId}:${contextClassroomId}:question:${props.activityId}`;
 watch(questionIndex, value => { if (currentOwner() && !loading.value) sessionStorage.setItem(questionPositionKey(), String(value + 1)); });
 const answeredCount = computed(() => questions.value.filter(question => hasAnswer(question)).length);
 const allAnswered = computed(() => questions.value.length > 0 && answeredCount.value === questions.value.length);
 const questionOutline = computed(() => questions.value.map((question, index) => {
-  const result = questionResult(question.id);
-  return { id: question.id, index: index + 1, title: question.title, kind: question.kind, current: index === questionIndex.value,
-    state: result && (isAssessment.value ? paper.value?.locked : result.mode === 'submit') ? result.status === 'accepted' ? 'accepted' as const : [...pendingSubmissionStates, 'infrastructure_error', 'submission_unknown'].includes(result.status) ? 'pending' as const : 'wrong' as const : !isAssessment.value && activityProgress.value?.accepted_question_ids?.includes(question.id) ? 'accepted' as const : hasAnswer(question) ? 'answered' as const : 'unanswered' as const };
+  return { id: question.id, index: index + 1, title: question.title, kind: question.kind,
+    pointId: practiceItems.value.get(question.id)?.knowledge_point_id,
+    current: index === questionIndex.value, state: outlineState(question) };
 }));
+function outlineState(question: Question): QuestionOutlineState {
+  const assigned = practiceItems.value.get(question.id);
+  if (assigned?.status === 'accepted' || assigned?.status === 'wrong') return assigned.status;
+  const result = questionResult(question.id);
+  if (result && (isAssessment.value ? paper.value?.locked : result.mode === 'submit')) {
+    if (result.status === 'accepted') return 'accepted';
+    return [...pendingSubmissionStates, 'infrastructure_error', 'submission_unknown'].includes(result.status) ? 'pending' : 'wrong';
+  }
+  if (!isAssessment.value && activityProgress.value?.accepted_question_ids?.includes(question.id)) return 'accepted';
+  if (assigned && question.kind === 'python' && drafts.value[question.id]?.code === question.starter_code) return 'unanswered';
+  return hasAnswer(question) ? 'answered' : 'unanswered';
+}
 const markedCount = computed(() => paper.value?.results.filter(result => ['accepted', 'wrong_answer', 'compile_error', 'runtime_error', 'time_limit', 'memory_limit'].includes(result.status)).length ?? 0);
 const learningGoals = computed(() => {
   const total = questions.value.length;
@@ -194,9 +240,42 @@ function configureDraftQueue(saved: AssessmentAttempt, ticket: number, activityI
     failed: cause => { if (currentOwner() && ticket === generation) { draftError.value = cause instanceof Error ? cause.message : '试卷草稿保存失败，请重试。'; draftConflict.value = cause instanceof ApiError && cause.status === 409; } } });
   draftQueue.set(allAnswers());
 }
+function restoreQuestion(question: Question) {
+  const old = localJson(questionKey(question.id));
+  drafts.value[question.id] = {
+    ...restoreDraft(question, old?.answer, old?.code ?? question.starter_code ?? ''),
+    submission_id: old?.submission_id, pending: old?.pending,
+  };
+}
+let refreshSequence = 0;
+async function refreshPractice(ticket: number) {
+  const sequence = ++refreshSequence;
+  let updated: Activity;
+  try {
+    updated = await session.activity(props.activityId);
+  } catch (cause) {
+    if (currentOwner() && ticket === generation && sequence === refreshSequence) {
+      practiceRefreshFailed.value = true;
+      error.value = cause instanceof Error ? `题单刷新失败：${cause.message}` : '题单刷新失败';
+    }
+    return;
+  }
+  if (!currentOwner() || ticket !== generation || sequence !== refreshSequence) return;
+  if (practiceRefreshFailed.value) error.value = '';
+  practiceRefreshFailed.value = false;
+  activityProgress.value = updated.progress;
+  for (const question of updated.questions) {
+    if (!drafts.value[question.id]) restoreQuestion(question);
+  }
+  activity.value = updated;
+  if (updated.progress?.completed && !props.storySessionId) await advanceTask();
+  return updated.progress;
+}
 async function load() {
   browserSubmission?.abort(); requestBusy.value = false; busyQuestionId.value = '';
   const ticket = ++generation;
+  practiceRefreshFailed.value = false;
+  activity.value = undefined; activityProgress.value = undefined;
   clearTimeout(saveTimer); clearTimeout(paperPoll); for (const timer of polls.values()) clearTimeout(timer); polls.clear();
   if (draftQueue) trackDraftTask(draftQueue.flush());
   draftQueue = undefined; pendingPaper = undefined; paperSubmissionPending.value = false; paper.value = undefined; loading.value = true; error.value = ''; draftError.value = ''; draftConflict.value = false; results.value = {}; drafts.value = {};
@@ -205,7 +284,7 @@ async function load() {
     if (!currentOwner() || ticket !== generation) return;
     const savedQuestion = Number(sessionStorage.getItem(questionPositionKey())) || 1;
     activity.value = loaded; emit('activityKind', loaded.kind); activityProgress.value = loaded.progress; questionIndex.value = Math.max(0, Math.min((props.initialQuestion ?? savedQuestion) - 1, loaded.questions.length - 1)); viewMode.value = 'single';
-    for (const question of loaded.questions) { const old = localJson(questionKey(question.id)); drafts.value[question.id] = { ...restoreDraft(question, old?.answer, typeof old?.code === 'string' ? old.code : question.starter_code ?? ''), submission_id: old?.submission_id, pending: old?.pending }; }
+    for (const question of loaded.questions) { restoreQuestion(question); }
     if (loaded.kind === 'assessment') {
       const saved = await api.get<AssessmentAttempt>(`/activities/${loaded.id}/assessment?classroom_id=${contextClassroomId}`);
       if (!currentOwner() || ticket !== generation) return;
@@ -218,13 +297,18 @@ async function load() {
         configureDraftQueue(saved, ticket, loaded.id);
         if (pendingPaper) error.value = '上次交卷结果尚未确认，请重试交卷。';
       }
-    } else for (const [id, draft] of Object.entries(drafts.value)) if (draft.submission_id) void pollQuestion(id, draft.submission_id, ticket);
+    } else {
+      for (const [id, draft] of Object.entries(drafts.value)) {
+        if (draft.submission_id) void pollQuestion(id, draft.submission_id, ticket, true);
+      }
+      if (loaded.progress?.practice && loaded.progress.completed && !props.storySessionId) await advanceTask();
+    }
   } catch (cause) { if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '题目加载失败'; }
   finally { if (currentOwner() && ticket === generation) { loading.value = false; if (activity.value) sessionStorage.setItem(questionPositionKey(), String(questionIndex.value + 1)); } }
 }
-async function submitQuestion(id: string, mode: 'submit') {
+async function submitQuestion(id: string, mode: 'submit', runSample?: RunPythonSample) {
   const question = questions.value.find(item => item.id === id), draft = drafts.value[id];
-  if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
+  if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || submissionBlocked(id) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
   const ticket = generation; requestBusy.value = true; busyQuestionId.value = id; error.value = '';
   const body = { answer: questionType(question.kind).serialize(draft.answer), code: draft.code, mode };
   const pending: NonNullable<Draft['pending']> = draft.pending ?? { ...body, key: randomUUID() };
@@ -233,7 +317,7 @@ async function submitQuestion(id: string, mode: 'submit') {
     // its original key first; a missing receipt returns 422 and allows a fresh run.
     if (questionType(question.kind).execution === 'python' && !draft.pending) {
       const controller = new AbortController(); browserSubmission = controller;
-      pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal);
+      pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal, runSample);
       if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;
     }
     draft.pending = pending; persistLocal();
@@ -241,21 +325,36 @@ async function submitQuestion(id: string, mode: 'submit') {
     if (!currentOwner() || ticket !== generation) return;
     results.value[id] = received; draft.submission_id = received.id; draft.pending = undefined; persistLocal();
     await handleQuestionResult(id, received, ticket);
-  } catch (cause) { if (currentOwner() && ticket === generation) { error.value = cause instanceof Error ? cause.message : '提交失败，请重试。'; if (cause instanceof ApiError && cause.status === 422) { draft.pending = undefined; persistLocal(); } } }
+  } catch (cause) { if (currentOwner() && ticket === generation) { error.value = cause instanceof Error ? cause.message : '提交失败，请重试。'; if (cause instanceof ApiError && (cause.status === 422 || cause.status === 409)) { draft.pending = undefined; persistLocal(); if (activityProgress.value?.practice) await refreshPractice(ticket); } } }
   finally { if (currentOwner() && ticket === generation) { requestBusy.value = false; busyQuestionId.value = ''; } }
 }
 async function handleQuestionResult(id: string, result: Submission, ticket: number) {
   if (!currentOwner() || ticket !== generation) return;
   if (pendingSubmissionStates.includes(result.status)) { polls.set(id, setTimeout(() => void pollQuestion(id, result.id, ticket), 1500)); return; }
-  if (!isAssessment.value && result.mode === 'submit' && result.status === 'accepted') {
+  if (isAssessment.value || result.mode !== 'submit') return;
+  if (activityProgress.value?.practice) {
+    await refreshPractice(ticket);
+  } else if (result.status === 'accepted') {
     const progress = await api.get<ActivityProgress>(`/activities/${props.activityId}/progress?classroom_id=${contextClassroomId}`);
     if (!currentOwner() || ticket !== generation) return;
     activityProgress.value = progress;
     if (!props.storySessionId && progress.completed) await advanceTask(result.id);
   }
 }
-async function pollQuestion(id: string, submissionId: string, ticket: number) { try { const received = await api.get<Submission>(`/submissions/${submissionId}?classroom_id=${contextClassroomId}`); if (!currentOwner() || ticket !== generation || received.question_id !== id) return; results.value[id] = received; await handleQuestionResult(id, received, ticket); } catch (cause) { if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '结果读取失败'; } }
-async function advanceTask(submissionId: string) {
+async function pollQuestion(id: string, submissionId: string, ticket: number, restoring = false) {
+  try {
+    const received = await api.get<Submission>(`/submissions/${submissionId}?classroom_id=${contextClassroomId}`);
+    if (!currentOwner() || ticket !== generation || received.question_id !== id || received.activity_id !== props.activityId) return;
+    if (drafts.value[id]?.submission_id !== submissionId) return;
+    results.value[id] = received;
+    if (!(restoring && activityProgress.value?.practice && !pendingSubmissionStates.includes(received.status))) {
+      await handleQuestionResult(id, received, ticket);
+    }
+  } catch (cause) {
+    if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '结果读取失败';
+  }
+}
+async function advanceTask(submissionId?: string) {
   if (!activity.value || !currentOwner()) return;
   let advanced = false;
   for (const quest of session.world?.quests ?? []) for (const node of quest.nodes) {

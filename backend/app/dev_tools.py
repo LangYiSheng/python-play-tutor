@@ -21,6 +21,7 @@ from .models import (
     NodeState,
     PlayerPosition,
     PlayerQuest,
+    PracticeSession,
     StorySession,
     Submission,
     TownPreviewStudent,
@@ -94,6 +95,8 @@ def reset_classroom_progress(body: ResetProgressInput, user: User, db: Session, 
             if not membership:
                 raise HTTPException(403, "只能重新开始已加入班级的学习")
 
+        from .course_content.access import authorize_classroom
+        authorize_classroom(db, actor, body.classroom_id)
         user_id, classroom_id = actor.id, body.classroom_id
         # Lock existing results while checking: a worker must not dispatch or finish a deleted row.
         statuses = db.execute(
@@ -124,6 +127,7 @@ def reset_classroom_progress(body: ResetProgressInput, user: User, db: Session, 
             (ActivityProgress, (ActivityProgress.user_id == user_id, ActivityProgress.classroom_id == classroom_id)),
             (LearningRecord, (LearningRecord.user_id == user_id, LearningRecord.classroom_id == classroom_id)),
             (SubmissionPayload, (SubmissionPayload.submission_id.in_(submission_ids),)),
+            (PracticeSession, (PracticeSession.user_id == user_id, PracticeSession.classroom_id == classroom_id)),
             (AssessmentAttempt, (AssessmentAttempt.user_id == user_id, AssessmentAttempt.classroom_id == classroom_id)),
             (Submission, (Submission.user_id == user_id, Submission.classroom_id == classroom_id)),
             (WorldFlag, (WorldFlag.user_id == user_id, WorldFlag.classroom_id == classroom_id)),

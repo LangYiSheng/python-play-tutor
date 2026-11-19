@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from . import integration_models  # noqa: F401 — register assistant evidence references
 from .db import Base
 from .models import (
-    Activity, ActivityQuestion, AssessmentAttempt, Chapter, Question,
+    Activity, ActivityQuestion, AssessmentAttempt, Chapter, PracticeSession, Question,
     QuestionChapter, QuestionKnowledgePoint, QuestionSecret, QuestDefinition,
     StoryDefinition, StorySession,
 )
@@ -68,6 +68,8 @@ def cleanup_content(db, *, apply=False, course_id=43):
     })
     for attempt in db.scalars(select(AssessmentAttempt)):
         question_refs.update(attempt.question_ids)
+    for session in db.scalars(select(PracticeSession)):
+        question_refs.update(item["question_id"] for item in session.items)
     for relation in db.scalars(select(ActivityQuestion)):
         if relation.activity_id not in deletable_activities:
             question_refs.add(relation.question_id)

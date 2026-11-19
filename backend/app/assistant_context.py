@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
-from .models import Classroom, Material, Submission
+from .models import Classroom, KnowledgePoint, Material, Submission
 from .course_assistant import activity_npc, default_npc, decorate_context
 
 TEMPLATE_VERSION = 1
@@ -118,7 +118,18 @@ def build_context(db, user, session, activity, body):
     from app.course_content.presentation import public_question, progress_payload
     state = body.turn_state()
     practice = bool(activity and activity.kind == "practice")
-    questions = learning_questions(db, activity, db.get(Classroom, session.classroom_id).teacher_id) if practice else []
+    questions = []
+    point_names = {}
+    if practice and activity.content.get("practice_rules"):
+        from .practice_sessions import assigned_questions
+
+        questions = assigned_questions(db, user, session.classroom_id, activity)
+        goal_ids = [goal["knowledge_point_id"] for goal in activity.content["practice_rules"]["goals"]]
+        point_names = dict(db.execute(select(KnowledgePoint.id, KnowledgePoint.title).where(
+            KnowledgePoint.course_instance_id == activity.course_instance_id, KnowledgePoint.id.in_(goal_ids)
+        )).all())
+    elif practice:
+        questions = learning_questions(db, activity, db.get(Classroom, session.classroom_id).teacher_id)
     current = next((q for q in questions if q.id == state.question_id), None)
     if practice and current is None:
         raise HTTPException(422, "请提供当前活动中的题目")
@@ -180,6 +191,7 @@ def build_context(db, user, session, activity, body):
         "activity": {"id": activity.id if activity else None, "title": activity.title if activity else material.title,
                      "kind": activity.kind if activity else "reading", "questions": [public_question(q) for q in questions]},
         "current_question": public_question(current) if current else None,
+        "point_names": point_names,
         "question_no": next((i + 1 for i, q in enumerate(questions) if q.id == state.question_id), None),
         "progress": progress, "state": state.model_dump(), "submission": submission, "local_run": local,
         "video_time": state.video_time, "student_code": state.code,
@@ -212,6 +224,16 @@ def snapshot(context):
     progress = context["progress"]
     if question:
         result["活动进度"] = f"已通过 {len(progress.get('accepted_question_ids', []))} / {len(context['activity']['questions'])} 题"
+        if practice := progress.get("practice"):
+            item = next(row for row in practice["items"] if row["question_id"] == question["id"])
+            result["完成条件"] = "达到各知识点的目标，并答对个人题单中的全部题目（含追加题和错题）。"
+            result["补题与重试规则"] = "同一题仅首次答错可追加一题，答错后可以立即订正。"
+            result["当前知识点"] = context["point_names"].get(item["knowledge_point_id"], "知识点")
+            result["当前题来源"] = "答错后追加" if item["appended"] else "初始题单"
+            if item["status"] == "wrong":
+                result["当前题订正"] = "可以立即订正"
+            result["待订正题数"] = sum(row["status"] == "wrong" for row in practice["items"])
+            result["知识点目标"] = describe_practice_goals(practice["goals"], context["point_names"])
     elif "read_total" in progress:
         result["阅读进度"] = f"已参与阅读 {progress.get('read_count', 0)} / {progress['read_total']} 页"
     local, submission = context["local_run"], context["submission"]
@@ -225,6 +247,19 @@ def snapshot(context):
         result["正在查看的结果"] = state["displayed"] or ("submission" if submission else "local_run" if local else "尚无结果")
         result["选中公开用例"] = state["selected_case"] + 1
     return result
+
+
+def describe_practice_goals(goals, names):
+    kinds = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程"}
+    lines = []
+    for goal in goals:
+        details = [f"已通过 {goal['accepted']} 题"]
+        if goal["total"]:
+            details.append(f"总数至少 {goal['total']} 题")
+        details.extend(f"{kinds[kind]}已通过 {goal['accepted_by_kind'].get(kind, 0)} 题，至少需 {count} 题"
+                       for kind, count in goal["by_kind"].items())
+        lines.append(f"{names.get(goal['knowledge_point_id'], '知识点')}（{'；'.join(details)}）")
+    return "、".join(lines)
 
 
 def state_text(current, previous=None):
@@ -294,7 +329,14 @@ def build_tools(context, references):
             return {"error": "目录分页参数无效"}
         questions = context["activity"]["questions"]
         accepted = context["progress"].get("accepted_question_ids", [])
-        return {"items": [{"question_no": i + 1, "title": q["title"], "accepted": q["id"] in accepted}
+        assigned = {item["question_id"]: item for item in context["progress"].get("practice", {}).get("items", [])}
+        def item_details(question_id):
+            if question_id not in assigned:
+                return {}
+            item = assigned[question_id]
+            return {"knowledge_point": context["point_names"].get(item["knowledge_point_id"]),
+                    "status": item["status"], "appended": item["appended"]}
+        return {"items": [{"question_no": i + 1, "title": q["title"], "accepted": q["id"] in accepted, **item_details(q["id"])}
                           for i, q in enumerate(questions) if offset <= i < offset + limit], "total": len(questions)}
 
     @tool

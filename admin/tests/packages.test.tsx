@@ -97,5 +97,5 @@ it("only offers deletion for exported packages, confirms and handles failure bef
   await screen.findByText('导出的课程包已删除，班级课程和学生记录不受影响。');
   expect(screen.queryByRole('button',{name:'删除 export-31-demo'})).not.toBeInTheDocument();
   expect(screen.getByText('default')).toBeInTheDocument();
-  expect(deletes).toEqual(['/api/teacher/classrooms/31/course/packages/owned','/api/teacher/classrooms/31/course/packages/owned']);
+  expect(deletes).toEqual(['/api/teacher/course/packages/owned','/api/teacher/course/packages/owned']);
 });

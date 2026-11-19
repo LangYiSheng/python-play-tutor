@@ -19,7 +19,7 @@ from app.models import (
     Submission,
     User,
 )
-from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_instance_id
+from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
 
 
 def validate_question_links(db, user, body, instance_id=None):
@@ -88,6 +88,46 @@ def teacher_question_payload(db, question, user):
     }
 
 
+def validate_practice_question_edit(db, question, body):
+    """Check assigned work and the prospective bank before mutating a question."""
+    from app.models import PracticeSession
+    from app.practice_rules import allocate_initial, candidate_pool, practice_question_available
+
+    if question.kind is None:
+        return
+    old_points = set(question_knowledge_point_ids(db, question.id))
+    available = practice_question_available(body.kind, body.status, bool(body.samples))
+    if not old_points or (body.kind == question.kind and available and old_points.issubset(body.knowledge_point_ids)):
+        return
+    sessions = db.scalars(
+        select(PracticeSession).join(Activity, Activity.id == PracticeSession.activity_id)
+        .where(Activity.course_instance_id == question.course_instance_id)
+    )
+    for session in sessions:
+        for item in session.items:
+            if item["question_id"] == question.id and (
+                item["kind"] != body.kind or not available or item["knowledge_point_id"] not in body.knowledge_point_ids
+            ):
+                raise HTTPException(409, "题目已进入学生个人题单，须保留可用状态、已分配的知识点和题型；编程题须保留公开样例")
+
+    activities = db.scalars(select(Activity).where(Activity.course_instance_id == question.course_instance_id, Activity.kind == "practice"))
+    for activity in activities:
+        rules = activity.content.get("practice_rules")
+        if not rules or activity.content.get("published") is False or not old_points.intersection(activity.content["knowledge_point_ids"]):
+            continue
+        pool = candidate_pool(db, activity)
+        eligible = available and activity.chapter_id in body.chapter_ids and question.owner_id in {None, activity.owner_id}
+        for point, choices in pool.items():
+            if eligible and point in body.knowledge_point_ids:
+                choices[question.id] = body.kind
+            else:
+                choices.pop(question.id, None)
+        try:
+            allocate_initial(rules, pool, shuffle=False)
+        except ValueError as exc:
+            raise HTTPException(409, f"修改会导致已发布练习「{activity.title}」无法抽题：{exc}") from exc
+
+
 def _save_question(db, user, question, body):
     validate_question_links(db, user, body, question.course_instance_id)
     if (
@@ -115,6 +155,7 @@ def _save_question(db, user, question, body):
         raise HTTPException(409, "题目仍被活动引用，请先从活动移除再改为草稿或停用")
     if any(activity.chapter_id not in body.chapter_ids for activity in bound):
         raise HTTPException(409, "题目仍被活动引用，不能移除所用章节")
+    validate_practice_question_edit(db, question, body)
     for key, value in body.model_dump(exclude={"id", "answer", "hidden_cases", "chapter_ids", "knowledge_point_ids"}).items():
         setattr(question, key, value)
     db.add(question)
@@ -139,11 +180,11 @@ def save_question(db, user, question, body):
 
 
 def create_question(body: QuestionInput, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     runtime_id = scoped_key(instance_id, "question", body.id)
     if db.get(Question, runtime_id, execution_options={"include_deleted": True}):
         raise HTTPException(409, "题目ID已存在")
-    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=user.id), body)
+    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=classroom.teacher_id), body)
 
 
 def list_questions(db: Session, user: User, classroom_id: int | None = None):

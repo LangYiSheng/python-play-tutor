@@ -9,6 +9,7 @@ import { captureExperience, restoreExperienceCaches } from '../src/shared/devToo
 let wrapper: VueWrapper | undefined;
 const overview = {chapters:[{id:179,title:'第一章',available:true,status:'published'}],materials:[],activities:[{id:'practice',chapter_id:179,title:'练习',kind:'practice',published:true,questions:3}],quests:[{id:'arrival',title:'初来小镇',chapter_id:179,nodes:[{id:'welcome',title:'欢迎',status:'ready'}]}],checkpoints:[]};
 beforeEach(() => {
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([new DOMRect(20, 20, 140, 34)] as unknown as DOMRectList);
   setActivePinia(createPinia());
   const session = useSession();
   session.user = {id:7,name:'学生',student_id:'7',role:'student',dev_tools_enabled:true};
@@ -25,11 +26,19 @@ async function tool(tab = "content") {
   return wrapper;
 }
 
+async function choose(w: VueWrapper, selector: string, label: string) {
+  const trigger = w.get(selector);
+  await trigger.trigger('click');
+  const options = w.get(`[id="${trigger.attributes('aria-controls')}"]`).findAll('[role="option"]');
+  expect(options.map(option => option.text())).toContain(label);
+  await options.find(option => option.text() === label)!.trigger('click');
+}
+
 it('opens an authorized activity at the requested question without marking progress', async () => {
   const post = vi.spyOn(api,'post').mockResolvedValue({workspace:{kind:'practice',activity_id:'practice',question_no:2}});
   const session = useSession(), navigate = vi.spyOn(session,'navigate');
   const w = await tool();
-  await w.get('#developer-activity').setValue('practice');
+  await choose(w, '#developer-activity', '练习');
   await w.get('#developer-question').setValue('2');
   await w.findAll('button').find(b=>b.text()==='打开活动')!.trigger('click');
   await flushPromises();
@@ -41,8 +50,8 @@ it('requires a stage preview and passes its concurrency token to the state-chang
   vi.spyOn(api,'post').mockResolvedValue({expected:'token',completed:[],target:'欢迎'});
   const session = useSession(), restart = vi.spyOn(session,'restartCurrentClassroom').mockResolvedValue(true);
   const w = await tool('stage');
-  await w.get('#developer-quest').setValue('arrival');
-  await w.get('#developer-node').setValue('welcome');
+  await choose(w, '#developer-quest', '初来小镇');
+  await choose(w, '#developer-node', '欢迎 · 可开始');
   await w.findAll('button').find(b=>b.text()==='预览阶段调整')!.trigger('click');
   await flushPromises();
   expect(restart).not.toHaveBeenCalled();
@@ -55,7 +64,7 @@ it('ignores a late content response after switching account', async () => {
   vi.spyOn(api,'post').mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
   const session = useSession(), navigate = vi.spyOn(session,'navigate');
   const w = await tool();
-  await w.get('#developer-activity').setValue('practice');
+  await choose(w, '#developer-activity', '练习');
   await w.findAll('button').find(b=>b.text()==='打开活动')!.trigger('click');
   session.user = {...session.user!,id:8};
   await flushPromises();
@@ -106,8 +115,8 @@ it('does not present a stale stage confirmation after leaving its tab', async ()
   let finish!: (value: unknown) => void;
   vi.spyOn(api, 'post').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   const w = await tool('stage');
-  await w.get('#developer-quest').setValue('arrival');
-  await w.get('#developer-node').setValue('welcome');
+  await choose(w, '#developer-quest', '初来小镇');
+  await choose(w, '#developer-node', '欢迎 · 可开始');
   await w.findAll('button').find(button => button.text() === '预览阶段调整')!.trigger('click');
   await flushPromises();
   await w.get('#developer-tab-content').trigger('click');

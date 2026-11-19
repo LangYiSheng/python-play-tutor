@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Bot, GraduationCap, FileAudio, Volume2 } from "lucide-react";
 import { ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { SettingsActions } from "@/components/settings-actions";
@@ -8,9 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
-import { AssistantModelSettings } from '@/components/assistant-model-settings';
-import { ServiceSettings } from '@/components/service-settings';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 type AssistantSettings = { enabled?: boolean; default_npc_id?: string | null; limits?: Record<string, number> };
 type Settings = { revision: number; assistant: AssistantSettings; roles: { id: string; name: string }[]; system_limits?: Record<string, number> };
@@ -20,8 +16,7 @@ const budgets = [
   ["timeout_seconds", "请求超时（秒）", 120, 1],
 ] as const;
 
-export function CourseSettings({ classroomId, isAdmin = false }: { classroomId: number; isAdmin?: boolean }) {
-  const [tab, setTab] = useState('course');
+export function CourseSettings({ classroomId }: { classroomId: number }) {
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
   const [saved, setSaved] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<AssistantSettings>({});
@@ -49,21 +44,15 @@ export function CourseSettings({ classroomId, isAdmin = false }: { classroomId: 
     finally { setBusy(false); }
   }
   return <>
-    <PageHeader title="智能体设置" description="统一管理本班答疑，以及全站助教、讲稿和配音服务。">
+    <PageHeader title="本班答疑设置" description="选择本班的默认助教，设置答疑开关和提问额度。">
       <div ref={setActionsTarget} />
-      <SettingsActions actionsTarget={actionsTarget} active={tab === 'course'} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
+      <SettingsActions actionsTarget={actionsTarget} active dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
         if (saved && window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved.assistant); setError(''); setMessage(''); }
       }} />
     </PageHeader>
-    <Tabs value={tab} onValueChange={value => setTab(String(value))}>
-      <TabsList><TabsTrigger value="course"><GraduationCap />本班答疑</TabsTrigger>
-        {isAdmin && <><TabsTrigger value="student"><Bot />学生助教</TabsTrigger><TabsTrigger value="authoring"><FileAudio />讲稿生成</TabsTrigger><TabsTrigger value="speech"><Volume2 />语音合成</TabsTrigger></>}
-      </TabsList>
-      <TabsContent value="course" keepMounted hidden={tab !== 'course'}>
     <ErrorNotice message={error} />
     {message && !dirty && <p role="status" className="hint">{message}</p>}
     {!saved ? (!error && <Loading />) : <fieldset disabled={busy} aria-busy={busy} className="surface space-y-6 p-6">
-      <h2 className="font-semibold">本班答疑</h2>
       <p className="hint">适用范围：当前班级。设置默认角色、答疑开关与请求预算。保存设置不会调用模型。</p>
       <Label className="gap-2"><Checkbox checked={draft.enabled ?? true} onCheckedChange={enabled => setDraft({ ...draft, enabled })} />开放本班课程 AI 答疑</Label>
       <div className="field max-w-lg">
@@ -87,12 +76,5 @@ export function CourseSettings({ classroomId, isAdmin = false }: { classroomId: 
         </div>
       </section>
     </fieldset>}
-      </TabsContent>
-      {isAdmin && <>
-        <TabsContent value="student" keepMounted hidden={tab !== 'student'}><AssistantModelSettings actionsTarget={actionsTarget} active={tab === 'student'} onSaved={limits => setSaved(current => current ? { ...current, system_limits: limits } : current)} /></TabsContent>
-        <TabsContent value="authoring" keepMounted hidden={tab !== 'authoring'}><ServiceSettings service="authoring" actionsTarget={actionsTarget} active={tab === 'authoring'} /></TabsContent>
-        <TabsContent value="speech" keepMounted hidden={tab !== 'speech'}><ServiceSettings service="speech" actionsTarget={actionsTarget} active={tab === 'speech'} /></TabsContent>
-      </>}
-    </Tabs>
   </>;
 }

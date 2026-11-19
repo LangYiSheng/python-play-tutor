@@ -4,8 +4,8 @@ import { chooseOption, go, json, setup } from "./helpers";
 test("课程默认角色、活动覆盖与修订冲突草稿", async ({ page, request }, info) => {
   const scope = await setup(page, request, "课程设置验收");
   const path = `/api/teacher/classrooms/${scope.cid}/course/settings`;
-  await go(page, "智能体设置");
-  await expect(page.getByRole("heading", { name: "智能体设置", exact: true })).toBeVisible();
+  await go(page, "本班答疑设置");
+  await expect(page.getByRole("heading", { name: "本班答疑设置", exact: true })).toBeVisible();
   await chooseOption(page, page.getByLabel("课程默认答疑角色", { exact: true }), "回归向导");
   await page.getByLabel("每次请求最多模型调用").fill("2");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();

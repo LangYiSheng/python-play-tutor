@@ -6,7 +6,7 @@ import { runPython } from "../src/features/practice/pythonRunner";
 
 vi.mock("../src/features/practice/pythonRunner", () => ({
   runPython: vi.fn().mockResolvedValue({ stdout: "hello\n", stderr: "" }),
-  createPythonRunner: () => ({ run: (...args: Parameters<typeof runPython>) => runPython(...args), dispose: vi.fn() }),
+  createPythonRunner: () => ({ run: runPython, dispose: vi.fn() }),
   sameOutput: (actual: string, expected: string) => actual.trimEnd() === expected,
 }));
 
@@ -27,7 +27,7 @@ it("public runs never emit a formal submission, while explicit submit does", asy
   expect(state.local_run.question_id).toBe('q');
   expect(state.local_run.cases[0]?.stdout).toBe('hello\n');
   await wrapper.findAll("button").find(b=>b.text()==="提交代码")!.trigger("click");
-  expect(wrapper.emitted("submit")).toEqual([["submit"]]);
+  expect(wrapper.emitted("submit")).toEqual([["submit", runPython]]);
   wrapper.unmount();
 });
 
@@ -103,6 +103,41 @@ it('shows execution errors with the failed input and separates formal results', 
   expect(wrapper.find('.coding-outcome').text()).toBe('解答错误');
   expect(wrapper.find('.coding-tests').text()).not.toContain('IndentationError');
   wrapper.unmount();
+});
+it('shows only the current result’s click-to-result time when alternating run and submit', async () => {
+  const wrapper = codingCard();
+  let now = 100;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+  vi.mocked(runPython).mockReset().mockImplementation(async () => {
+    now += 12;
+    return {stdout:'one',stderr:''};
+  });
+  const result = {id:'receipt',activity_id:'a',question_id:'pending-cases',mode:'submit' as const,status:'wrong_answer' as const,created_at:'',feedback:{}};
+  const click = (name: string) => wrapper.findAll('button').find(button => button.text() === name)!.trigger('click');
+  try {
+    await click('运行公开样例');
+    await flushPromises();
+    const timings = () => wrapper.findAll('.coding-run-time').map(item => item.text());
+    expect(timings()).toEqual(['用时 24 ms']);
+    await click('提交代码');
+    await wrapper.setProps({busy:true});
+    now += 40;
+    await wrapper.setProps({result});
+    expect(wrapper.find('.coding-outcome').exists()).toBe(false);
+    now += 35;
+    await wrapper.setProps({busy:false});
+    expect(timings()).toEqual(['提交用时 75 ms']);
+    await click('运行公开样例');
+    await flushPromises();
+    expect(timings()).toEqual(['用时 24 ms']);
+    await click('提交代码');
+    await wrapper.setProps({busy:true});
+    await wrapper.setProps({busy:false});
+    expect(timings()).toEqual([]);
+  } finally {
+    clock.mockRestore();
+    wrapper.unmount();
+  }
 });
 it('aborts a run when the user stops it and on unmount', async () => {
   let signal: AbortSignal | undefined;

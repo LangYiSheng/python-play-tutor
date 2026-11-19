@@ -85,7 +85,14 @@ def get_activity(
                 "source": {"kc_code": point.content.get("kc_code"), "page_ids": point.content.get("page_refs", [])},
             }
         )
-    questions = learning_questions(db, activity, classroom.teacher_id)
+    from .practice_sessions import assigned_questions, open_session
+
+    personal = activity.kind == "practice" and activity.content.get("practice_rules") and user.role == "student"
+    if personal:
+        open_session(db, user, classroom_id, activity)
+        questions = assigned_questions(db, user, classroom_id, activity)
+    else:
+        questions = learning_questions(db, activity, classroom.teacher_id)
     if activity.kind == "assessment" and user.role == "student":
         from .models import AssessmentAttempt
         attempt = db.scalar(select(AssessmentAttempt).where(AssessmentAttempt.user_id == user.id,
@@ -94,7 +101,7 @@ def get_activity(
             historical = {q.id: q for q in db.scalars(select(Question).where(Question.id.in_(attempt.question_ids),
                 Question.course_instance_id == activity.course_instance_id).execution_options(include_deleted=True))}
             questions = [historical[key] for key in attempt.question_ids if key in historical]
-    return {
+    payload = {
         "id": activity.id,
         "chapter_id": activity.chapter_id,
         "title": activity.title,
@@ -112,6 +119,9 @@ def get_activity(
             for q in questions
         ],
     }
+    if personal:
+        db.commit()
+    return payload
 
 
 
