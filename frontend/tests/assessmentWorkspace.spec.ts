@@ -58,7 +58,7 @@ describe("assessment and practice presentation", () => {
       expect(wrapper.text()).toContain("已通过 0 / 2 题");
       expect(wrapper.get(".practice-retry-notice").text()).toContain("请先提交 1 道其他题的答案");
       expect(wrapper.get(".practice-goal-summary > strong").text()).toBe(activity.title);
-      expect(wrapper.get(".practice-skills").attributes("open")).toBeUndefined();
+      expect(wrapper.get('nav[aria-label="条件判断题目列表"]').findAll(".question-list-title").map(row => row.text())).toEqual(["1. q1", "2. q2"]);
       expect(wrapper.find(".support-goal-marker").exists()).toBe(false);
       expect(wrapper.get(".question-point").text()).toContain("考查知识点：条件判断");
       expect(card().props("showSubmit")).toBe(false);
@@ -69,6 +69,35 @@ describe("assessment and practice presentation", () => {
       await wrapper.get('[aria-label="上一题"]').trigger("click");
       expect(wrapper.get(".practice-retry-ready").text()).toContain("可以订正");
       expect(card().props("showSubmit")).toBe(true);
+    } finally { wrapper.unmount(); }
+  });
+  it("groups the personal outline by assigned point and navigates using the original question numbers", async () => {
+    const { pinia, session } = setup("practice");
+    const activity = await session.activity("test");
+    const questions = [...activity.questions, { ...activity.questions[0]!, id: "q3", title: "追加判断" }];
+    const points = [{ id: 7, title: "条件判断" }, { id: 8, title: "循环" }];
+    vi.mocked(session.activity).mockResolvedValue({ ...activity, questions, knowledge_points: points,
+      progress: { page_no: null, visited_pages: [], completed: false, accepted_question_ids: ["q2"],
+        practice: { retry_interval: 1,
+          goals: points.map(point => ({ knowledge_point_id: point.id, total: 1, by_kind: {}, accepted_by_kind: {}, accepted: Number(point.id === 8) })),
+          items: questions.map((question, i) => ({ question_id: question.id, knowledge_point_id: i === 1 ? 8 : 7,
+            status: i === 1 ? "accepted" : i === 0 ? "wrong" : "unanswered", retry_remaining: 0, appended: i === 2 })),
+        } },
+    });
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    try {
+      await flushPromises();
+      const groups = wrapper.findAll(".practice-skill");
+      expect(groups.map(group => group.get("h3").text())).toEqual(["条件判断", "循环"]);
+      expect(groups.map(group => group.get("progress").element.value)).toEqual([0, 1]);
+      expect(wrapper.get(".practice-goal-summary progress").element.getAttribute("max")).toBe("3");
+      expect(wrapper.find(".practice-skills details").exists()).toBe(false);
+      expect(groups.map(group => group.findAll(".question-list-title").map(row => row.text()))).toEqual([["1. q1", "3. 追加判断"], ["2. q2"]]);
+      expect(wrapper.findAll(".support-goals .question-list-title")).toHaveLength(3);
+      await groups[0]!.findAll("button")[1]!.trigger("click");
+      expect(wrapper.get(".support-goals button[aria-current='step'] .question-list-title").text()).toBe("3. 追加判断");
+      expect(wrapper.get(".question-point").text()).toContain("条件判断");
+      expect(wrapper.get(".practice-question-heading").text()).toContain("追加判断");
     } finally { wrapper.unmount(); }
   });
   it("opens the selected programming summary in single mode without losing its draft", async () => {

@@ -21,7 +21,7 @@
             <p v-if="goal.detail">{{ goal.detail }}</p>
             <div v-if="goal.progress" class="support-goal-progress">
               <span>{{ goal.progress.label }}</span>
-              <progress :value="goal.progress.value" :max="Math.max(1, goal.progress.max)" :aria-label="goal.progress.label" />
+              <progress class="support-progress-bar" :value="goal.progress.value" :max="Math.max(1, goal.progress.max)" :aria-label="goal.progress.label" />
             </div>
             <span v-if="goal.completed" class="support-goal-state">已完成</span>
             <button v-if="goal.pageNo" class="support-goal-page" @click="$emit('selectPage', goal.pageNo)"><GameIcon v-if="goal.completed" name="check" />阅读第{{ goal.pageNo }}页 <GameIcon name="arrowRight" /></button>
@@ -44,13 +44,9 @@
       </nav>
       </slot>
       <div v-if="hasQuestionActions()" class="support-question-actions"><slot name="question-actions" /></div>
-      <nav v-if="questionOutline?.length" aria-label="题目列表" class="support-detailed-questions">
-        <button v-for="(question, index) in questionOutline" :key="question.id" :aria-current="question.current || currentQuestionId === question.id ? 'step' : undefined" @click="$emit('selectQuestion', question.id)">
-          <span class="question-status-icon" :data-state="question.state ?? 'unanswered'" :aria-label="questionStateLabel[question.state ?? 'unanswered']"><GameIcon :name="question.state === 'accepted' ? 'check' : question.state === 'wrong' ? 'circleX' : question.state === 'pending' ? 'clock' : question.state === 'answered' ? 'practice' : 'circle'" /></span>
-          <span class="question-list-title" :title="question.title">{{ question.index ?? index + 1 }}. {{ question.title }}</span>
-          <span class="question-list-kind">{{ questionKindLabel[question.kind ?? 'unknown'] }}</span>
-        </button>
-      </nav>
+      <slot name="question-list">
+        <QuestionOutlineList v-if="questionOutline" :questions="questionOutline" :current-question-id="currentQuestionId" @select-question="$emit('selectQuestion', $event)" />
+      </slot>
       <slot name="goals-footer" />
     </section>
     <section v-if="hasOutline" :id="`${panelId}-outline`" class="support-outline" role="tabpanel" :aria-labelledby="`${panelId}-outline-tab`" tabindex="0" :hidden="tab !== 'outline'" :inert="tab !== 'outline'">
@@ -85,9 +81,10 @@
   </aside>
 </template>
 <script setup lang="ts">
-import { questionKindLabels, type QuestionKind } from "../../../../shared/questions";
+import { questionKindLabel, questionStateLabel, type QuestionOutlineItem } from "./questionOutline";
+import QuestionOutlineList from "./QuestionOutlineList.vue";
 import { useCharacterImage } from "../../shared/characterImage";
-import type { Npc, QuestionOutlineState } from "../../shared/types";
+import type { Npc } from "../../shared/types";
 import type { AssistantState } from "../../shared/assistantState";
 import { Comment, Fragment, Text, computed, isVNode, nextTick, ref, useAttrs, useSlots, watch, type VNodeChild } from "vue";
 import AssistantPanel from "../assistant/AssistantPanel.vue";
@@ -131,7 +128,7 @@ const props = defineProps<{
   }[];
   outline?: { pageNo: number; title: string; important?: boolean; highlightLabel?: string; timeSeconds?: number }[];
   timeOutline?: { timeSeconds: number; title: string }[];
-  questionOutline?: { id: string; index?: number; title: string; kind?: QuestionKind; state?: QuestionOutlineState; current?: boolean }[];
+  questionOutline?: QuestionOutlineItem[];
   currentQuestionId?: string;
   pageNo?: number;
   videoTime?: number;
@@ -142,8 +139,6 @@ defineEmits<{ cite: [materialId: number, page: number]; selectPage: [page: numbe
 const { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
 const tab = ref<"goals" | "outline" | "questions" | "assistant">("goals"),
   goalsTab = ref<HTMLButtonElement>(), outlineTab = ref<HTMLButtonElement>(), questionsTab = ref<HTMLButtonElement>(), assistantTab = ref<HTMLButtonElement>();
-const questionStateLabel = { unanswered: "未作答", answered: "已作答", accepted: "正确", wrong: "错误", pending: "判定中" };
-const questionKindLabel = { ...questionKindLabels, unknown: "题目" };
 const questionGroups = computed(() => {
   const items = (props.questionOutline ?? []).map((question, index) => ({ ...question, index: question.index ?? index + 1 }));
   return [...new Set(items.map(question => question.kind ?? 'unknown' as const))].map(kind => ({ kind, items: items.filter(question => (question.kind ?? 'unknown') === kind) }));

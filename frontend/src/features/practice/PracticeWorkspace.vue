@@ -50,8 +50,16 @@
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
       <template v-if="personalPractice" #goals>
-        <PracticeGoalSummary :title="activity.title" :goals="personalPractice.goals" :names="pointNames"
-          :passed="activityProgress?.accepted_question_ids?.length ?? 0" :total="questions.length" />
+        <section class="practice-goal-summary" aria-label="活动进度">
+          <strong>{{ activity.title }}</strong>
+          <div class="support-goal-progress">
+            <span>活动进度 · 已通过 {{ passedCount }} / {{ questions.length }} 题</span>
+            <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
+          </div>
+        </section>
+      </template>
+      <template v-if="personalPractice" #question-list>
+        <PracticeQuestionGroups :goals="personalPractice.goals" :names="pointNames" :questions="questionOutline" @select-question="selectQuestion" />
       </template>
       <template #question-actions>
         <div v-if="isAssessment && (paper?.locked || allAnswered)" class="assessment-actions">
@@ -88,7 +96,7 @@ import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import LearningSupportPanel from "../support/LearningSupportPanel.vue";
 import LearningSplitLayout from "../support/LearningSplitLayout.vue";
-import PracticeGoalSummary from "./PracticeGoalSummary.vue";
+import PracticeQuestionGroups from "./PracticeQuestionGroups.vue";
 import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
@@ -132,6 +140,7 @@ const publicRunBusy = computed(() => Object.values(localRunning.value).some(Bool
 const current = computed(() => questions.value[questionIndex.value]);
 const practiceRefreshFailed = ref(false);
 const personalPractice = computed(() => activityProgress.value?.practice);
+const passedCount = computed(() => activityProgress.value?.accepted_question_ids?.length ?? 0);
 const practiceItems = computed(() => new Map(personalPractice.value?.items.map(item => [item.question_id, item])));
 const pointNames = computed(() => new Map(activity.value?.knowledge_points?.map(point => [point.id, point.title])));
 const currentItem = computed(() => practiceItems.value.get(current.value?.id ?? ''));
@@ -164,6 +173,7 @@ const answeredCount = computed(() => questions.value.filter(question => hasAnswe
 const allAnswered = computed(() => questions.value.length > 0 && answeredCount.value === questions.value.length);
 const questionOutline = computed(() => questions.value.map((question, index) => {
   return { id: question.id, index: index + 1, title: question.title, kind: question.kind,
+    pointId: practiceItems.value.get(question.id)?.knowledge_point_id,
     current: index === questionIndex.value, state: outlineState(question) };
 }));
 function outlineState(question: Question): QuestionOutlineState {
