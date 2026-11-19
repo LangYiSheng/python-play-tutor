@@ -50,7 +50,8 @@ def generate(client, classroom, material, page_no, headers, **body):
 
 
 def test_generate_writes_a_draft_and_reuses_identical_input(client, db, classroom, teacher, calls):
-    material = doc_material(db, classroom, "第一页正文" * 30)
+    # 锚点必须真的出现在本页文本里；这里让页面包含锚点用词，验证的是落地校验而不是过滤。
+    material = doc_material(db, classroom, "变量与赋值。" * 40)
     db.commit()
     first = generate(client, classroom, material, 1, teacher["headers"])
     assert first.status_code == 200, first.text

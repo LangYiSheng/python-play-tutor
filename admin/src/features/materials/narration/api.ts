@@ -9,7 +9,6 @@ export type NarrationStatus =
 
 export interface Narration {
   text: string;
-  bridge_in: string;
   target_seconds: number;
   status: NarrationStatus;
   source: string;

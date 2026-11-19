@@ -409,6 +409,27 @@ MAX_TITLE, MAX_TOPIC = 120, 240
 MAX_TAGS = 8
 
 
+def anchor_key(text: str) -> str:
+    """比对锚点前的归一化：去空白、统一小写。"""
+    return "".join(str(text or "").split()).lower()
+
+
+def grounded_anchors(reference: str, anchors: list[Any]) -> tuple[list[str], list[str]]:
+    """只保留真的出现在本页文本里的锚点；原文为空时无从判断，原样保留。"""
+    key = anchor_key(reference)
+    kept: list[str] = []
+    dropped: list[str] = []
+    for anchor in anchors:
+        value = str(anchor).strip()[:200]
+        if not value:
+            continue
+        if not key or anchor_key(value) in key:
+            kept.append(value)
+        else:
+            dropped.append(value)
+    return kept[:6], dropped
+
+
 def raw_hash(text: str) -> str:
     """只对 raw 文本做指纹：同一份课件重传不会让整理稿失效。"""
     return text_hash(text)

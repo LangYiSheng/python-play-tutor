@@ -96,7 +96,7 @@ Paused policy denies new content/progress/assistant requests immediately and pre
 - GET /teacher/classrooms/{classroom_id}/materials/{id}/narrations/{page_no}/page-image -> image/jpeg，返回审校用页图（与生成时送模型的页图同一份、同一尺寸）；文本资料或没有可读来源时404。页面图像不返回给学生，学生端仍只看课件本身。
 - POST /teacher/classrooms/{classroom_id}/materials/{id}/narrations/{page_no}/audio 合成单页语音：仅 accepted 可合成（draft/未就绪409），无TTS引擎409且不伪造音频，引擎失败502。GET .../narrations/audio 返回逐页就绪状态与音色/模型；GET .../{page_no}/audio/file 为教师试听流（audio/mpeg）。
 - GET /materials/{id}/narrations/{page_no}/page-image?classroom_id -> image/jpeg：学生播放讲解用的大页面，鉴权与讲解列表一致；没有可读来源时404。
-- GET /materials/{id}/narrations?classroom_id 学生只读到 accepted 且未 stale 的页，字段仅 page_no/text/bridge_in/target_seconds/audio/audio_seconds。GET /materials/{id}/narrations/{page_no}/audio?classroom_id 为 audio/mpeg 流，未接受或无录音404。
+- GET /materials/{id}/narrations?classroom_id 学生只读到 accepted 且未 stale 的页，字段仅 page_no/text/target_seconds/audio/audio_seconds。GET /materials/{id}/narrations/{page_no}/audio?classroom_id 为 audio/mpeg 流，未接受或无录音404。
 - 逐页提问复用 `/assistant/sessions` 与现有消息/SSE接口，state.page_no 指定当前页；独立讲解 `/ask` 已移除（404），历史问答表保留。授权、课程开关、全站模型配置、额度、幂等和会话修订均沿用学习助教。工具可读取当前资料的有效已审校讲解，长内容分段读取，草稿不外泄。
 
 讲解、审校、音频与提问均不改变成绩、解锁、任务进度或阅读完成；翻页、播放与浏览不产生模型调用。课程包携带讲稿状态及有效配音，详见内容规范的交换契约。

@@ -304,7 +304,7 @@ def read_narrations(material_id: int, classroom_id: int, db: Annotated[Session, 
     db.commit()
     return {
         "material_id": material.id,
-        "pages": [{"page_no": item.page_no, "text": item.text, "bridge_in": item.bridge_in,
+        "pages": [{"page_no": item.page_no, "text": item.text,
                    "target_seconds": item.target_seconds,
                    "audio": audio.current_audio(db, material, item.page_no) is not None,
                    "audio_seconds": item.audio_seconds} for item in repository.visible(db, material)],

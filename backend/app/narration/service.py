@@ -154,11 +154,17 @@ def generate_page(db: Session, material: Material, page_no: int, *, instance_id:
     if repository.source_hash(material, page_no) != page_hash or repository.revision(existing) != original_revision:
         raise ValueError("页面或讲解已被修改，本次生成未覆盖新内容，请刷新后重试")
 
+    digest_row = repository.content_row(db, material.id, page_no)
+    reference = (digest_row.text if digest_row is not None else "") or page_text
+    anchors, dropped_anchors = repository.grounded_anchors(reference, result["anchors"])
+    if dropped_anchors:
+        log.info("narration page %s: dropped anchors not found on page: %s", page_no, dropped_anchors)
+
     item = existing or PageNarration(material_id=material.id, page_no=page_no)
     if existing is None:
         db.add(item)
     item.text = repository.trim_text(result["text"])
-    item.bridge_in = result["bridge_in"]
+    # 口播稿只用 text；bridge_in 概念已取消，旧列保留但不再写入。\n    item.bridge_in = ""
     item.target_seconds = seconds
     # A regenerated page is a new draft: the old approval no longer applies to the new wording.
     item.status = "draft"
@@ -168,7 +174,7 @@ def generate_page(db: Session, material: Material, page_no: int, *, instance_id:
     item.prompt_version = prompts.PROMPT_VERSION
     item.model = result["model"]
     item.image_used = bool(image)
-    item.anchors = result["anchors"]
+    item.anchors = anchors
     item.edited_by_teacher = False
     item.reviewed_by = None
     item.reviewed_at = None
