@@ -143,6 +143,18 @@ def test_calibration_truncates_text_to_the_window_budget(db, classroom):
     assert len(page["source_text"]) == calibrate.page_limits(1200, 1)[1]
 
 
+def test_long_digest_page_is_sent_whole(db, classroom):
+    """纯图页整理稿可到 2800 字：默认预算下必须整页发送，否则模型会误报「被截断」。"""
+    material = material_fixture(db, classroom, ["长" * 3000], kind=PDF)
+    db.commit()
+    repository.upsert_content(db, material, 1, title="主题", topic="", tags=["标签"], text="整" * 2800)
+    db.commit()
+    payload, _ = _window(material, db)
+    page = payload["pages"][0]
+    assert page["digest_truncated"] is False
+    assert len(page["digest"]) == 2800
+
+
 def test_calibration_records_fragment_pages_that_lost_their_image(db, classroom, monkeypatch):
     """图上限被压缩时必须明说哪几页没带图，不能静默丢证据。"""
     monkeypatch.setattr(calibrate.render, "render_page", lambda material, page_no: b"\xff\xd8jpeg")

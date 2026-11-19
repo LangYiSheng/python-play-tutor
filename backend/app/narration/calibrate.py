@@ -35,14 +35,15 @@ FIX_LIMIT = 40
 # fixes 的机械校验：模型只能做「识别层面」的修正，不能借机重写。
 FIX_MATCH_MIN = 0.6
 FIX_LENGTH_RANGE = (0.7, 1.3)
-WINDOW_TEXT_BUDGET = 9000
-SHRUNK_TEXT_BUDGET = 4500
-DIGEST_MAX, SOURCE_MAX = 4000, 2000
+WINDOW_TEXT_BUDGET = 16000
+SHRUNK_TEXT_BUDGET = 8000
+# 整理稿单页最长 2.8k 字（纯图页），4000 会把长页切断，模型会误报「原文被截断」。
+DIGEST_MAX, SOURCE_MAX = 6000, 2000
 # 图上限 = 窗页数：宁多发图，也不静默丢证据。
 IMAGE_LIMIT = WINDOW
 SHRUNK_IMAGE_LIMIT = 2
 SLICE_SECONDS = 45
-CALIBRATE_VERSION = "cal-v3"
+CALIBRATE_VERSION = "cal-v4"
 TAG_LIMIT = 400
 
 SYSTEM = (
@@ -54,6 +55,8 @@ TEMPLATE = """检查三件事：
 1. 整理稿是否忠实于原文：错字、断行断词、顺序串行、重复序号、漏掉的整段、乱码。只有确实有错才改。
 2. 原文本身是否可疑（公式错位、符号被识别成文字、表格串行）：报 issue，不要靠猜改写。
 3. 前后页是否矛盾：同一概念前后说法冲突、明显重复、术语不一致。
+   注意 pages[].digest_truncated / source_truncated：为 true 表示这一页只给了开头，只能判断已给出的部分，
+   不得以「被截断」「缺少某节」为理由报 issue——这是发送方的预算，不是页面的问题。
 
 fixes 只给「整理稿里有错」的页，text 必须是修正后的完整整理稿，不是差异片段；
 不改写、不扩写、不新增知识点，长度与原文相当（±30%）；拿不准就只报 issue。
@@ -87,8 +90,8 @@ def windows(items: list[PageContent]) -> list[list[PageContent]]:
 
 
 def page_limits(budget: int, count: int) -> tuple[int, int]:
-    per_page = max(600, budget // max(1, count))
-    digest = min(DIGEST_MAX, int(per_page * 0.7))
+    per_page = max(2000, budget // max(1, count))
+    digest = min(DIGEST_MAX, int(per_page * 0.75))
     return digest, min(SOURCE_MAX, max(200, per_page - digest))
 
 
