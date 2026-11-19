@@ -29,20 +29,18 @@ def test_image_only_replacement_invalidates_review(client,db,classroom,teacher,s
     response=client.get(f'/api/materials/{material.id}/narrations?classroom_id={classroom["id"]}',headers=student['headers'])
     assert response.json()['pages'] == []
 
-def test_old_report_preserves_approved_teacher_edit(client,db,classroom,teacher,model_stub):
-    material=doc_material(db,classroom,'page text')
+def test_apply_of_an_old_report_touches_nothing(client, db, classroom, teacher):
+    """旧报告没有 fixes/tag_map：应用必须是无操作，而不是回头重写讲解稿。"""
+    material = doc_material(db, classroom, "原文中的独特证据")
     db.commit()
-    client.put(url(classroom,material,'/1'),json={'text':'initial draft'},headers=teacher['headers'])
-    db.add(NarrationCalibration(material_id=material.id,report={'issues':[{'page_no':1,'status':'draft'}]}))
+    repository.upsert_content(db, material, 1, title="主题", topic="", tags=["标签"], text="整理稿")
+    db.add(NarrationCalibration(material_id=material.id, report={"issues": [{"page_no": 1, "status": "draft"}]}))
     db.commit()
-    client.put(url(classroom,material,'/1'),json={'text':'teacher corrected and approved'},headers=teacher['headers'])
-    client.post(url(classroom,material,'/1/accept'),headers=teacher['headers'])
-    response=client.post(url(classroom,material,'/calibrate/apply'),headers=teacher['headers'])
-    assert response.status_code==200,response.text
-    item=repository.row(db,material.id,1)
-    assert item.text=='teacher corrected and approved' and item.status=='accepted'
-    assert model_stub == []
-    assert response.json()['awaiting_teacher'] == [1]
+
+    response = client.post(url(classroom, material, "/calibrate/apply"), headers=teacher["headers"])
+    assert response.status_code == 200, response.text
+    assert response.json() == {"applied_fixes": [], "rejected_fixes": [], "tags": 0}
+    assert repository.content_row(db, material.id, 1).text == "整理稿"
 
 @pytest.mark.parametrize("suffix,body", [("/1/generate", None), ("/generate", {"first_page": 1, "last_page": 1})])
 def test_unconfigured_generation_releases_lock(client,db,classroom,teacher,monkeypatch,suffix,body):
@@ -74,27 +72,26 @@ def test_generation_cannot_overwrite_edit_made_during_model_call(client, db, cla
     assert not repository.job_running(repository.job_of(db, material.id))
 
 
-def test_report_uses_source_and_preserves_a_later_draft_edit(client, db, classroom, teacher, run_jobs, monkeypatch):
+def test_window_payload_carries_the_raw_text(client, db, classroom, teacher, run_jobs, monkeypatch):
+    """校准要能对照原文：请求里必须带上 raw，而不只是整理稿。"""
     import json
-    material = doc_material(db, classroom, "原文中的独特证据")
-    repository.upsert(db, material, 1, text="待检查稿")
+    material = doc_material(db, classroom, "原文中的独特证据" + "字" * 700)
+    db.commit()
+    repository.upsert_content(db, material, 1, title="主题", topic="", tags=["标签"], text="整理" * 40)
     db.commit()
     calls = []
+
     def model(messages, **kwargs):
         payload = json.loads(messages[1]["content"].rsplit("\n\n", 1)[1])
-        assert "原文中的独特证据" in payload["pages"][0]["source_text"]
         calls.append(payload)
-        return {"raw": {"issues": [{"page_no": 1, "kind": "mismatch", "detail": "与原文不符"}]}}
-    monkeypatch.setattr("app.narration.client.chat", model)
+        return {"raw": {"fixes": [], "issues": []}, "text": "", "bridge_in": "", "anchors": [],
+                "usage": {}, "model": kwargs.get("model")}
+
+    monkeypatch.setattr("app.narration.calibrate.model_client.chat", model)
     assert client.post(url(classroom, material, "/calibrate"), headers=teacher["headers"]).status_code == 202
     run_jobs()
-    repository.upsert(db, material, 1, text="老师已经修好了，尚未接受")
-    db.commit()
-    result = client.post(url(classroom, material, "/calibrate/apply"), headers=teacher["headers"])
-    assert result.status_code == 200, result.text
-    assert result.json()["regenerated"] == [] and result.json()["awaiting_teacher"] == [1]
-    assert len(calls) == 1
-
+    assert calls[0]["pages"][0]["source_text"].startswith("原文中的独特证据")
+    assert calls[0]["pages"][0]["digest"].startswith("整理")
 
 def test_old_worker_cannot_release_replacement_lease(db, classroom):
     from datetime import timedelta

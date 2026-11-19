@@ -95,6 +95,8 @@ class CalibrationReport(TypedDict):
 
 
 class AppliedCalibration(TypedDict):
-    regenerated: list[int]
-    failed: list[dict[str, Any]]
-    awaiting_teacher: list[int]
+    """应用校准报告的结果：改了哪些整理稿、哪些建议被拒绝、写了多少标签映射。"""
+
+    applied_fixes: list[int]
+    rejected_fixes: list[dict[str, Any]]
+    tags: int

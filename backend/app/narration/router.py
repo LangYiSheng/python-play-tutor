@@ -110,7 +110,7 @@ def read_calibration(classroom_id: int, material_id: int,
 @router.post("/calibrate/apply")
 def apply_calibration(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                       user: Annotated[User, Depends(require_teacher)]) -> AppliedCalibration:
-    """Re-generate only the flagged drafts; approved pages stay as the teacher left them."""
+    """Apply the report: corrected digest text and the course-level tag dictionary."""
     instance_id = teacher_instance_id(db, user, classroom_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
@@ -120,12 +120,8 @@ def apply_calibration(classroom_id: int, material_id: int, db: Annotated[Session
     if not (entry.report or {}).get("complete", True):
         raise HTTPException(409, "校准尚未完成，不能应用")
 
-    def regenerate(page_no: int) -> None:
-        service.generate_page(db, material, page_no, instance_id=instance_id)
-        db.commit()
-
     with repository.task(db, material, "calibrate", user):
-        applied = calibrate.apply_report(db, material, entry, regenerate=regenerate)
+        applied = calibrate.apply_report(db, material, entry)
         db.commit()
         return applied
 

@@ -124,7 +124,7 @@ def test_drain_runs_every_queued_material(client, db, classroom, teacher, monkey
     second = doc_material(db, classroom, "二" * 300)
     db.commit()
     for material in (first, second):
-        repository.upsert(db, material, 1, text="讲解" * 20)
+        repository.upsert_content(db, material, 1, title="主题", topic="", tags=["标签"], text="整理" * 20)
         repository.enqueue(db, material, "calibrate", None, request={"operation": "calibrate"})
     assert jobs.drain(db) == 2
     assert jobs.queued(db) == []

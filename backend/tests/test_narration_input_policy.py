@@ -2,10 +2,10 @@
 
 规则只有一个来源 `narration/input_policy.py`，生成与校准都调它。当前表格：
 
-| 资料类型 | 生成 | 校准 | 整理原文 |
+| 资料类型 | 生成 | 校准（校对整理稿） | 整理原文 |
 | --- | --- | --- | --- |
-| 演示文稿 `presentation` | 文本层 < 60 字发图 | 文本层 < 60 字发图 | 文本层 < 600 字发图 |
-| PDF / 其他 | 文本层 < 200 字发图 | 文本层 < 60 字发图 | 文本层 < 600 字发图 |
+| 演示文稿 `presentation` | 文本层 < 60 字发图 | 文本层 < 600 字发图 | 文本层 < 600 字发图 |
+| PDF / 其他 | 文本层 < 200 字发图 | 文本层 < 600 字发图 | 文本层 < 600 字发图 |
 
 整理原文是后续校准、讲解稿与 RAG 的唯一来源，中段页（60–199 字）漏图会永久缺块，所以阈值最宽。
 
@@ -40,13 +40,11 @@ def policy_table():
 
 # 生成：演示文稿按 60 字；PDF 仍是 200 字。
 GENERATION_POLICY = {PRESENTATION: TEXT_AS_IMAGE_BELOW, PDF: PDF_TEXT_ONLY_THRESHOLD}
-# 校准：两种资料都按 60 字。
-CALIBRATION_POLICY = {PRESENTATION: TEXT_AS_IMAGE_BELOW, PDF: TEXT_AS_IMAGE_BELOW}
+# 校准（校对整理稿）：和整理阶段同口径，600 字以下发图。
+CALIBRATION_POLICY = {PRESENTATION: DIGEST_TEXT_ONLY_THRESHOLD, PDF: DIGEST_TEXT_ONLY_THRESHOLD}
 # 整理原文：两种资料都按 600 字，宁多发图也不让整理稿缺块。
 DIGEST_POLICY = {PRESENTATION: DIGEST_TEXT_ONLY_THRESHOLD, PDF: DIGEST_TEXT_ONLY_THRESHOLD}
 
-LENGTHS = sorted({0, 1, 59, 60, 61, PDF_TEXT_ONLY_THRESHOLD - 1, PDF_TEXT_ONLY_THRESHOLD,
-                  PDF_TEXT_ONLY_THRESHOLD + 1})
 
 
 def test_policy_table_is_the_single_source_of_truth():
@@ -60,13 +58,13 @@ def test_policy_table_is_the_single_source_of_truth():
 
 
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])
-@pytest.mark.parametrize("chars", LENGTHS)
+@pytest.mark.parametrize("chars", [0, 1, 59, 60, 61, 199, 200, 201])
 def test_generation_image_policy(kind, chars):
     assert service.with_image(material_of(kind), "字" * chars) is (chars < GENERATION_POLICY[kind])
 
 
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])
-@pytest.mark.parametrize("chars", LENGTHS)
+@pytest.mark.parametrize("chars", [0, 59, 60, 199, 200, 599, 600, 900])
 def test_calibration_image_policy(kind, chars):
     assert calibrate.image_input(material_of(kind), "字" * chars) is (chars < CALIBRATION_POLICY[kind])
 
@@ -97,64 +95,65 @@ def _narrated(db, classroom, texts, kind):
     material = material_fixture(db, classroom, texts, kind=kind)
     db.commit()
     for page_no in range(1, len(texts) + 1):
-        repository.upsert(db, material, page_no, text="讲解" * 20)
+        repository.upsert_content(db, material, page_no, title=f"主题{page_no}", topic="",
+                                  tags=["标签"], text="整理" * 20)
     db.commit()
     return material
 
 
 def _window(material, db, *, budget=calibrate.WINDOW_TEXT_BUDGET, image_limit=calibrate.IMAGE_LIMIT):
     items = calibrate.participating(db, material)
-    payload, images, evidence, _ = calibrate._window_payload(
-        material, items, {"summary": "", "terms": []}, budget=budget, image_limit=image_limit)
-    return payload, images, evidence
+    payload, images, _ = calibrate._window_payload(
+        db, material, items, {"summary": "", "terms": []}, budget=budget, image_limit=image_limit)
+    return payload, images
 
 
 def test_calibration_drops_the_text_it_replaces_with_an_image(db, classroom, monkeypatch):
-    """发图时不再附那段碎文本，但这一页仍算有依据（可以判 mismatch）。"""
+    """发图时不再附那段碎文本，但这一页仍算有依据。"""
     monkeypatch.setattr(calibrate.render, "render_page", lambda material, page_no: b"\xff\xd8jpeg")
     material = _narrated(db, classroom, ["短" * 30], kind=PRESENTATION)
-    payload, images, evidence = _window(material, db)
+    payload, images = _window(material, db)
     page = payload["pages"][0]
     assert page["source_text"] == "" and page["source_truncated"] is False
     assert len([item for item in images if item.get("type") == "image_url"]) == 1
-    assert evidence == {1}
 
 
 def test_calibration_keeps_the_text_when_it_is_long_enough(db, classroom):
-    material = _narrated(db, classroom, ["长" * 300], kind=PRESENTATION)
-    payload, images, evidence = _window(material, db)
+    material = _narrated(db, classroom, ["长" * 700], kind=PRESENTATION)
+    payload, images = _window(material, db)
     page = payload["pages"][0]
-    assert images == [] and page["source_text"] == "长" * 300 and page["source_truncated"] is False
-    assert evidence == {1}
+    assert images == [] and page["source_text"] == "长" * 700 and page["source_truncated"] is False
 
 
 def test_calibration_pdf_with_fragmented_text_uses_the_image(db, classroom, monkeypatch):
-    """校准的 PDF 也按 60 字发图：碎片文本不足以核对讲解。"""
+    """校对整理稿需要看图：碎片页和中等长度页都发图。"""
     monkeypatch.setattr(calibrate.render, "render_page", lambda material, page_no: b"\xff\xd8jpeg")
     material = _narrated(db, classroom, ["碎" * 6, "文" * 300], kind=PDF)
-    payload, images, _ = _window(material, db)
-    assert [page["source_text"] for page in payload["pages"]] == ["", "文" * 300]
-    assert len([item for item in images if item.get("type") == "image_url"]) == 1
+    payload, images = _window(material, db)
+    assert [page["source_text"] for page in payload["pages"]] == ["", ""]
+    assert len([item for item in images if item.get("type") == "image_url"]) == 2
 
 
 def test_calibration_truncates_text_to_the_window_budget(db, classroom):
     """不发图的页按单窗预算截断；截断标记进入请求，模型据此不判未给出的内容。"""
     material = _narrated(db, classroom, ["文" * 3000], kind=PDF)
-    payload, images, _ = _window(material, db, budget=1200)
+    payload, images = _window(material, db, budget=1200)
     page = payload["pages"][0]
     assert images == [] and page["source_truncated"] is True
     assert len(page["source_text"]) == calibrate.page_limits(1200, 1)[1]
 
 
-def test_calibration_stops_attaching_images_at_the_window_image_limit(db, classroom, monkeypatch):
-    """图片上限按窗口计：超出预算的页退回文本，而不是超量发送。"""
+def test_calibration_records_fragment_pages_that_lost_their_image(db, classroom, monkeypatch):
+    """图上限被压缩时必须明说哪几页没带图，不能静默丢证据。"""
     monkeypatch.setattr(calibrate.render, "render_page", lambda material, page_no: b"\xff\xd8jpeg")
     material = _narrated(db, classroom, ["短" * 10] * 4, kind=PRESENTATION)
-    payload, images, _ = _window(material, db, image_limit=2)
+    state: dict = {}
+    items = calibrate.participating(db, material)
+    payload, images, _ = calibrate._window_payload(db, material, items, state, budget=calibrate.WINDOW_TEXT_BUDGET,
+                                                  image_limit=2)
     attached = len([item for item in images if item.get("type") == "image_url"])
-    assert attached == 2
-    # 未获得图片额度的页保留文本，避免既没图也没字。
-    assert [bool(page["source_text"]) for page in payload["pages"]] == [False, False, True, True]
+    assert attached == 2 and state["lost_images"] == [3, 4]
+    assert [page["page_no"] for page in payload["pages"]] == [1, 2, 3, 4]
 
 
 def test_image_policy_changes_the_deck_fingerprint(db, classroom, monkeypatch):

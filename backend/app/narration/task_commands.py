@@ -158,7 +158,7 @@ def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User)
     db.commit()
     # 没有草稿就没必要排队：老师在点击时直接看到原因，而不是一个必定失败的后台任务。
     if not calibrate.participating(db, material):
-        raise HTTPException(404, "没有可校准的讲解")
+        raise HTTPException(404, "没有可校准的整理稿，请先梳理文本")
     return repository.enqueue(db, material, "calibrate", user, request={"operation": "calibrate"})
 
 
