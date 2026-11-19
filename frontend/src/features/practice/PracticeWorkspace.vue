@@ -25,16 +25,34 @@
         <button v-if="practiceRefreshFailed" :disabled="requestBusy" @click="refreshPractice(generation)">刷新题单</button>
       </p>
       <p v-if="draftError" class="error" role="alert">{{ draftError }} <button v-if="draftConflict" @click="load">重新载入试卷</button><button v-else-if="!paper?.locked" @click="retryDraft">重试保存</button></p>
-      <p v-if="currentPracticeLabel" class="practice-item-info" role="status">{{ currentPracticeLabel }}</p>
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
-        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="submitQuestion(question.id, $event)" />
+        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="submitQuestion(question.id, $event)">
+          <template v-if="currentItem" #metadata>
+            <span class="question-point">考查知识点：{{ pointNames.get(currentItem.knowledge_point_id) }}
+              <span v-if="currentItem.appended"> · 追加题</span><span v-if="currentItem.status === 'accepted'"> · 已通过</span>
+            </span>
+          </template>
+          <template v-if="currentItem?.status === 'wrong'" #correction>
+            <div v-if="currentItem.retry_remaining" class="practice-retry-notice">
+              <div role="status"><strong>本题暂时不能订正</strong>
+                <p>请先提交 {{ currentItem.retry_remaining }} 道其他题的答案，答对或答错都算，再回来订正本题。</p>
+              </div>
+              <button v-if="nextAvailable" class="primary" :disabled="requestBusy" @click="selectQuestion(nextAvailable.id)">去做第 {{ questions.indexOf(nextAvailable) + 1 }} 题 <GameIcon name="arrowRight" /></button>
+            </div>
+            <p v-else class="practice-retry-ready" role="status">现在可以订正，修改答案后重新提交。</p>
+          </template>
+        </PracticeQuestionCard>
       </div>
       <p v-else-if="!loading && activity" class="learning-empty">此活动尚未绑定公开题目，请联系教师。</p>
 
       <button v-if="storySessionId && !isAssessment && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
+      <template v-if="personalPractice" #goals>
+        <PracticeGoalSummary :title="activity.title" :goals="personalPractice.goals" :names="pointNames"
+          :passed="activityProgress?.accepted_question_ids?.length ?? 0" :total="questions.length" />
+      </template>
       <template #question-actions>
         <div v-if="isAssessment && (paper?.locked || allAnswered)" class="assessment-actions">
           <template v-if="paper?.locked">
@@ -55,7 +73,7 @@
   </LearningSplitLayout>
 </template>
 <script setup lang="ts">
-import { questionKindLabels, questionType, type QuestionKind, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
+import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
 import { randomUUID } from "../../shared/uuid";
 import type { AssistantFeedback } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -70,6 +88,7 @@ import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import LearningSupportPanel from "../support/LearningSupportPanel.vue";
 import LearningSplitLayout from "../support/LearningSplitLayout.vue";
+import PracticeGoalSummary from "./PracticeGoalSummary.vue";
 import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
@@ -115,15 +134,13 @@ const practiceRefreshFailed = ref(false);
 const personalPractice = computed(() => activityProgress.value?.practice);
 const practiceItems = computed(() => new Map(personalPractice.value?.items.map(item => [item.question_id, item])));
 const pointNames = computed(() => new Map(activity.value?.knowledge_points?.map(point => [point.id, point.title])));
-const currentPracticeLabel = computed(() => {
-  const item = practiceItems.value.get(current.value?.id ?? '');
-  if (!item) return '';
-  const labels = [pointNames.value.get(item.knowledge_point_id) ?? '知识点练习'];
-  if (item.appended) labels.push('追加题');
-  if (item.status === 'accepted') labels.push('已通过');
-  if (item.status === 'wrong') labels.push(item.retry_remaining > 0
-    ? `再作答 ${item.retry_remaining} 道其他题可订正` : '可以订正');
-  return labels.join(' · ');
+const currentItem = computed(() => practiceItems.value.get(current.value?.id ?? ''));
+const nextAvailable = computed(() => {
+  const ordered = [...questions.value.slice(questionIndex.value + 1), ...questions.value.slice(0, questionIndex.value)];
+  return ordered.find(question => {
+    const item = practiceItems.value.get(question.id);
+    return item && item.status !== 'accepted' && !item.retry_remaining && !submissionBlocked(question.id);
+  });
 });
 function submissionBlocked(id: string) {
   if (practiceRefreshFailed.value) return true;
@@ -167,20 +184,6 @@ const learningGoals = computed(() => {
     progress: { value: paper.value?.locked ? markedCount.value : answeredCount.value, max: total,
       label: paper.value?.locked ? `已判定 ${markedCount.value} / ${total} 题` : `已作答 ${answeredCount.value} / ${total} 题` } }];
   const passed = questions.value.filter(question => activityProgress.value?.accepted_question_ids?.includes(question.id));
-  if (personalPractice.value) {
-    const goals = personalPractice.value.goals.map(goal => {
-      const minimums = Object.entries(goal.by_kind) as [QuestionKind, number][];
-      const target = Math.max(goal.total, minimums.reduce((sum, [, count]) => sum + count, 0));
-      return {
-        title: pointNames.value.get(goal.knowledge_point_id) ?? '知识点目标',
-        completed: goal.accepted >= target && minimums.every(([kind, n]) => (goal.accepted_by_kind[kind] ?? 0) >= n),
-        detail: minimums.map(([kind, n]) => `${questionKindLabels[kind]} ${goal.accepted_by_kind[kind] ?? 0}/${n}`).join(' · '),
-        progress: { value: Math.min(goal.accepted, target), max: target, label: `目标答对 ${Math.min(goal.accepted, target)} / ${target} 题` },
-      };
-    });
-    return [{ title: '个人题单', completed: activityProgress.value?.completed, progress:
-      { value: passed.length, max: total, label: `已通过 ${passed.length} / ${total} 题` } }, ...goals];
-  }
   return [{ title: '完成练习', completed: activityProgress.value?.completed ?? false, progress: { value: passed.length, max: total, label: `已完成 ${passed.length} / ${total} 题` } }];
 });
 function hasAnswer(question: Question) { const draft = drafts.value[question.id]; return Boolean(draft && questionType(question.kind).complete(draft, question)); }

@@ -56,14 +56,18 @@ describe("assessment and practice presentation", () => {
       };
       await submit();
       expect(wrapper.text()).toContain("已通过 0 / 2 题");
-      expect(wrapper.text()).toContain("再作答 1 道其他题可订正");
+      expect(wrapper.get(".practice-retry-notice").text()).toContain("请先提交 1 道其他题的答案");
+      expect(wrapper.get(".practice-goal-summary > strong").text()).toBe(activity.title);
+      expect(wrapper.get(".practice-skills").attributes("open")).toBeUndefined();
+      expect(wrapper.find(".support-goal-marker").exists()).toBe(false);
+      expect(wrapper.get(".question-point").text()).toContain("考查知识点：条件判断");
       expect(card().props("showSubmit")).toBe(false);
-      await wrapper.get('[aria-label="下一题"]').trigger("click");
-      expect(wrapper.get(".practice-item-info").text()).toContain("追加题");
+      await wrapper.get(".practice-retry-notice button").trigger("click");
+      expect(wrapper.get(".question-point").text()).toContain("追加题");
       await submit();
       expect(wrapper.text()).toContain("已通过 1 / 2 题");
       await wrapper.get('[aria-label="上一题"]').trigger("click");
-      expect(wrapper.get(".practice-item-info").text()).toContain("可以订正");
+      expect(wrapper.get(".practice-retry-ready").text()).toContain("可以订正");
       expect(card().props("showSubmit")).toBe(true);
     } finally { wrapper.unmount(); }
   });

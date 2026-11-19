@@ -364,7 +364,15 @@
   flex-shrink: 0;
 }
 
-.game-workspace .practice-item-info { margin: 0; padding: 0.4rem 1rem; font-size: 0.9em; }
+.game-workspace .question-point { color: var(--learn-muted); font-size: .875rem; margin-inline-start: .35rem; }
+.game-workspace .practice-retry-notice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .6rem 1rem; margin-block: .7rem; padding: .75rem 1rem;
+  border: 1px solid #c69a5d; border-radius: var(--game-radius); color: #583c1b; background: #fff1d8;
+}
+.game-workspace .practice-retry-notice p { margin: .2rem 0 0; }
+.game-workspace .practice-retry-notice button { display: inline-flex; align-items: center; gap: .35rem; }
+.game-workspace .practice-retry-ready { color: var(--learn-forest); font-weight: 600; }
 .game-workspace .practice-navigation {
   display: flex;
   align-items: center;

@@ -3,7 +3,9 @@
     <section class="coding-pane coding-problem" aria-label="题目内容">
       <GamePanelHeader class="coding-pane-title" title="题目描述" icon="description" />
       <div class="coding-pane-body">
+        <div v-if="$slots.metadata"><span class="question-kind">编程题</span> <slot name="metadata" /></div>
         <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
+        <slot name="correction" />
         <p class="question-prompt">{{ question.prompt }}</p>
         <section v-for="(sample, i) in question.samples" :key="i" class="coding-example">
           <h4>示例 {{ i + 1 }}</h4><label>输入</label><pre>{{ sample.input || '（空输入）' }}</pre><label>输出</label><pre>{{ sample.output || '（无输出）' }}</pre>

@@ -1,9 +1,12 @@
 <template>
   <component :is="view.paper" v-if="paperMode && view.paper" :question="question" :index="index" :code="code" :read-only="readOnly" :result="result" :feedback="assistantFeedback" @open="$emit('openSingle')" />
-  <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="$emit('submit', $event)" />
+  <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="$emit('submit', $event)">
+    <template v-if="$slots.metadata" #metadata><slot name="metadata" /></template>
+    <template v-if="$slots.correction" #correction><slot name="correction" /></template>
+  </component>
   <article v-else class="practice-question-card" :data-question-id="question.id" :aria-labelledby="headingId">
     <header class="practice-question-heading">
-      <span class="question-kind">{{ kindName[question.kind] }}</span>
+      <span class="question-kind">{{ kindName[question.kind] }}</span> <slot name="metadata" />
       <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
     </header>
     <section class="problem-description"><p class="question-prompt">{{ question.prompt }}</p><details v-for="(hint, i) in question.hints ?? []" :key="i"><summary>提示 {{ i + 1 }}</summary><p>{{ hint }}</p></details></section>
@@ -24,6 +27,7 @@
         <template v-if="sample.compile_output"><h5>编译反馈</h5><pre tabindex="0">{{ sample.compile_output }}</pre></template>
       </section>
     </div>
+    <slot name="correction" />
   </article>
 </template>
 <script setup lang="ts">
