@@ -1,4 +1,4 @@
-"""A learner's assigned queue, cooldowns, and completion all use the same receipts."""
+"""A learner's assigned queue, corrections, and completion all use the same receipts."""
 import os
 from pathlib import Path
 import sqlite3
@@ -12,15 +12,14 @@ from sqlalchemy import select
 from app.content_relations import set_question_knowledge_points
 from app.course_content.evidence import validate_learning_evidence
 from app.models import Activity, KnowledgePoint, PracticeSession, QuestionSecret, User
-from app.practice_sessions import _remaining
 from conftest import make_question
 
 
-def create_practice(db, *, count=3, target=1, interval=1):
+def create_practice(db, *, count=3, target=1):
     point = KnowledgePoint(title="专用练习知识点", chapter_id=179, content={})
     db.add(point)
     db.flush()
-    rules = {"retry_interval": interval, "goals": [{"knowledge_point_id": point.id, "by_kind": {"fill": target}, "total": target}]}
+    rules = {"retry_interval": 99, "goals": [{"knowledge_point_id": point.id, "by_kind": {"fill": target}, "total": target}]}
     activity = Activity(id="kc-practice", kind="practice", chapter_id=179, title="练习",
                         content={"practice_rules": rules, "knowledge_point_ids": [point.id], "published": True})
     db.add(activity)
@@ -65,13 +64,15 @@ def test_assigned_only_retry_once_and_complete_every_added_question(client, db, 
     assert receipt.status_code == 201, receipt.text
     assert submit(a, "错", "wrong-a").json() == receipt.json()
     assert submit(a, "对", "wrong-a").status_code == 409
-    assert submit(a, "对", "too-early").status_code == 409
     after_first = open_activity()
     a_item, b_item = after_first["progress"]["practice"]["items"]
     b = b_item["question_id"]
-    assert (a_item["retry_remaining"], b_item["appended"]) == (1, True)
-    assert submit(b, "错", "wrong-b").status_code == 201
+    assert a_item["status"] == "wrong" and b_item["appended"]
     assert submit(a, "错", "repeat-a").status_code == 201
+    assert len(open_activity()["questions"]) == 2
+    assert submit(a, "对", "right-a").status_code == 201
+    assert not open_activity()["progress"]["completed"]
+    assert submit(b, "错", "wrong-b").status_code == 201
     after_repeat = open_activity()["progress"]
     assert len(after_repeat["practice"]["items"]) == 3
     c = after_repeat["practice"]["items"][2]["question_id"]
@@ -79,26 +80,16 @@ def test_assigned_only_retry_once_and_complete_every_added_question(client, db, 
     assert submit(c, "对", "repeat-c").status_code == 409
 
     partial = open_activity()["progress"]
-    assert partial["practice"]["goals"][0]["accepted"] == 1 and not partial["completed"]
+    assert partial["practice"]["goals"][0]["accepted"] == 2 and not partial["completed"]
     user = db.get(User, student["id"])
     node = {"type": "COMPLETE_PRACTICE", "activity_id": activity.id}
     with pytest.raises(HTTPException):
         validate_learning_evidence(db, user, cid, node, {})
     assert submit(b, "对", "right-b").status_code == 201
-    assert submit(a, "对", "right-a").status_code == 201
     final = open_activity()["progress"]
     assert final["completed"] and set(final["accepted_question_ids"]) == {a, b, c}
     validate_learning_evidence(db, user, cid, node, {})
 
-
-def test_distinct_questions_and_deadlock_relief():
-    items = [{"question_id": "A", "status": "wrong", "last_attempt": 1},
-             {"question_id": "B", "status": "wrong", "last_attempt": 5},
-             {"question_id": "C", "status": "unanswered", "last_attempt": 0}]
-    assert _remaining(items, 2) == {"A": 1, "B": 2}
-    items.pop()
-    assert _remaining(items, 2) == {"A": 0, "B": 2}
-    assert _remaining(items[:1], 2) == {"A": 0}
 
 def test_practice_session_migration_round_trip(tmp_path):
     path = tmp_path / "isolated-practice.db"

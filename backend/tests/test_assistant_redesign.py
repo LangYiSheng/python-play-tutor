@@ -144,7 +144,7 @@ def test_practice_assistant_sees_only_personal_goals_and_assigned_questions(clie
     snapshot = data["snapshot"]
     assert snapshot["活动进度"] == "已通过 0 / 2 题"
     assert snapshot["当前知识点"] == "整数运算" and "填空" in snapshot["知识点目标"]
-    assert snapshot["待订正题数"] == 1 and "1 道其他题" in snapshot["当前题订正"]
+    assert snapshot["待订正题数"] == 1 and snapshot["当前题订正"] == "可以立即订正"
     tools = {tool.name: tool for tool in build_tools(data, {})}
     directory = tools["list_activity_questions"].invoke({})
     assert directory["total"] == 2 and directory["items"][1]["appended"]

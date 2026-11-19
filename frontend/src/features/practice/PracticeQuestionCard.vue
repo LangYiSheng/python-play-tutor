@@ -1,8 +1,7 @@
 <template>
   <component :is="view.paper" v-if="paperMode && view.paper" :question="question" :index="index" :code="code" :read-only="readOnly" :result="result" :feedback="assistantFeedback" @open="$emit('openSingle')" />
-  <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="$emit('submit', $event)">
+  <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="(mode: 'submit', runSample?: RunPythonSample) => $emit('submit', mode, runSample)">
     <template v-if="$slots.metadata" #metadata><slot name="metadata" /></template>
-    <template v-if="$slots.correction" #correction><slot name="correction" /></template>
   </component>
   <article v-else class="practice-question-card" :data-question-id="question.id" :aria-labelledby="headingId">
     <header class="practice-question-heading">
@@ -27,7 +26,6 @@
         <template v-if="sample.compile_output"><h5>编译反馈</h5><pre tabindex="0">{{ sample.compile_output }}</pre></template>
       </section>
     </div>
-    <slot name="correction" />
   </article>
 </template>
 <script setup lang="ts">
@@ -35,11 +33,12 @@ import { computed } from "vue";
 import { questionViews } from "./questions/registry";
 import { questionType, questionKindLabels, type AnswerValue } from "../../../../shared/questions";
 import GameIcon from "../../shared/GameIcon.vue";
+import type { RunPythonSample } from './browserSubmission';
 import type { AssistantFeedback } from '../../shared/assistantState';
 import type { Question, Submission, SubmissionStatus } from "../../shared/types";
 import { pendingSubmissionStates, submissionStatusName } from "./practicePresentation";
 const props = withDefaults(defineProps<{ question: Question; index: number; answer: AnswerValue; code: string; paperMode?: boolean; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback }>(), { readOnly: false, busy: false, showSubmit: true });
-defineEmits<{ openSingle: []; runningChange: [running: boolean]; "update:answer": [value: AnswerValue]; "update:code": [value: string]; submit: [mode: "submit"]; assistantFeedback: [feedback: AssistantFeedback] }>();
+defineEmits<{ openSingle: []; runningChange: [running: boolean]; "update:answer": [value: AnswerValue]; "update:code": [value: string]; submit: [mode: "submit", runSample?: RunPythonSample]; assistantFeedback: [feedback: AssistantFeedback] }>();
 const headingId = computed(() => `practice-question-${props.question.id}`);
 const view = computed(() => questionViews[props.question.kind]);
 const hasAnswer = computed(() => questionType(props.question.kind).complete(props, props.question));

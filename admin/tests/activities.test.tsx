@@ -57,7 +57,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   expect(writes).toHaveLength(2);
   expect(writes[1]).toMatchObject({
     kind: "practice", chapter_id: 1, published: false, knowledge_point_ids: [11],
-    practice_rules: { retry_interval: 1, goals: [{ knowledge_point_id: 11, total: 3, by_kind: { python: 1 } }] },
+    practice_rules: { goals: [{ knowledge_point_id: 11, total: 3, by_kind: { python: 1 } }] },
   });
   await user.click(await screen.findByRole("button", { name: "选题章节测验" }));
   expect(await screen.findByRole("checkbox", { name: "仅私有用例" })).toBeEnabled();

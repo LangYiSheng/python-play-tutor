@@ -1,5 +1,4 @@
 """Personal practice queues. All mutations share the formal submission transaction."""
-from bisect import bisect_right
 from collections import Counter
 from random import SystemRandom
 
@@ -20,7 +19,7 @@ def lock_learner(db, user_id):
 
 def _item(point, question_id, kind, *, appended=False):
     return {"knowledge_point_id": point, "question_id": question_id, "kind": kind,
-            "status": "unanswered", "last_attempt": 0, "appended": appended}
+            "status": "unanswered", "appended": appended}
 
 
 def open_session(db, user, classroom_id, activity):
@@ -52,26 +51,10 @@ def assigned_questions(db, user, classroom_id, activity):
     return [questions[qid] for qid in ids]
 
 
-def _remaining(items, interval):
-    # Each question's latest attempt is sufficient to count DISTINCT other questions
-    # attempted after a failure. Never advance the sequence for already passed items.
-    attempts = sorted(item["last_attempt"] for item in items)
-
-    remaining = {
-        item["question_id"]: max(0, interval - (len(attempts) - bisect_right(attempts, item["last_attempt"])))
-        for item in items if item["status"] == "wrong"
-    }
-    if remaining and min(remaining.values()) > 0 and all(item["status"] != "unanswered" for item in items):
-        oldest = min((item for item in items if item["status"] == "wrong"), key=lambda item: item["last_attempt"])
-        remaining[oldest["question_id"]] = 0
-    return remaining
-
-
 def practice_progress(db, user, classroom_id, activity):
     session = db.get(PracticeSession, (user.id, classroom_id, activity.id))
     items = session.items if session else []
     rules = activity.content["practice_rules"]
-    remaining = _remaining(items, rules["retry_interval"])
     passed = [item for item in items if item["status"] == "accepted"]
     counts = Counter((item["knowledge_point_id"], item["kind"]) for item in passed)
     goals = []
@@ -83,10 +66,9 @@ def practice_progress(db, user, classroom_id, activity):
         for goal in goals)
     return {"page_no": None, "visited_pages": [], "completed": complete,
             "accepted_question_ids": [item["question_id"] for item in passed],
-            "practice": {"retry_interval": rules["retry_interval"], "goals": goals,
+            "practice": {"goals": goals,
                          "items": [{"question_id": item["question_id"], "knowledge_point_id": item["knowledge_point_id"],
-                                    "status": item["status"], "appended": item["appended"],
-                                    "retry_remaining": remaining.get(item["question_id"], 0)} for item in items]}}
+                                    "status": item["status"], "appended": item["appended"]} for item in items]}}
 
 
 def require_attempt(db, user, classroom_id, activity, question_id):
@@ -96,9 +78,6 @@ def require_attempt(db, user, classroom_id, activity, question_id):
         raise HTTPException(404, "题目不属于本人的练习题单")
     if item["status"] == "accepted":
         raise HTTPException(409, "此题已通过")
-    remaining = _remaining(session.items, activity.content["practice_rules"]["retry_interval"]).get(question_id, 0)
-    if remaining:
-        raise HTTPException(409, f"请先作答其他 {remaining} 道不同的题目，再来订正")
     question = db.get(Question, question_id)
     if not question or question.course_instance_id != activity.course_instance_id or question.status != "ready":
         raise HTTPException(409, "个人题单中的题目已不可用，请联系教师")
@@ -109,7 +88,6 @@ def record_attempt(db, session, activity, submission):
     items = [dict(item) for item in session.items]
     item = next(item for item in items if item["question_id"] == submission.question_id)
     first = item["status"] == "unanswered"
-    item["last_attempt"] = 1 + max(i["last_attempt"] for i in items)
     item["status"] = "accepted" if submission.status == "accepted" else "wrong"
     if first and item["status"] == "wrong":
         point = item["knowledge_point_id"]

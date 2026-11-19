@@ -68,7 +68,6 @@ export interface PracticeGoal {
   by_kind: Partial<Record<QuestionKind, number>>;
 }
 export interface PracticeRules {
-  retry_interval: number;
   goals: PracticeGoal[];
 }
 export interface Course {

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.content_relations import activity_questions, question_chapter_ids, set_activity_questions
 from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
-from app.practice_rules import PracticeRules, allocate_initial, candidate_pool
+from app.practice_rules import PracticeRules, allocate_initial, candidate_pool, without_legacy_retry_interval
 from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_instance_id
 
 
@@ -121,12 +121,13 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     resources = changes.pop("resources", None)
     content = dict(item.content)
     new_points = changes.pop("knowledge_point_ids", None)
-    rules = changes.pop("practice_rules", content.get("practice_rules"))
+    previous_rules = without_legacy_retry_interval(content.get("practice_rules"))
+    rules = changes.pop("practice_rules", previous_rules)
     if body.practice_rules is not None:
         rules = body.practice_rules.model_dump()
     published = changes.pop("published", content.get("published", True))
     if rules is not None or {"practice_rules", "published"} & body.model_fields_set:
-        if content.get("practice_rules") != rules:
+        if previous_rules != rules:
             from app.models import PracticeSession
 
             if any(db.scalar(select(model.activity_id).where(model.activity_id == item.id).limit(1)) is not None

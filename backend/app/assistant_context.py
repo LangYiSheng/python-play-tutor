@@ -227,12 +227,11 @@ def snapshot(context):
         if practice := progress.get("practice"):
             item = next(row for row in practice["items"] if row["question_id"] == question["id"])
             result["完成条件"] = "达到各知识点的目标，并答对个人题单中的全部题目（含追加题和错题）。"
-            result["补题与重试规则"] = (f"同一题仅首次答错可追加一题。重试前需正式作答 {practice['retry_interval']} 道其他不同未通过题，"
-                                    "答对或答错均可；无其他可做题时可提前订正。")
+            result["补题与重试规则"] = "同一题仅首次答错可追加一题，答错后可以立即订正。"
             result["当前知识点"] = context["point_names"].get(item["knowledge_point_id"], "知识点")
             result["当前题来源"] = "答错后追加" if item["appended"] else "初始题单"
             if item["status"] == "wrong":
-                result["当前题订正"] = (f"还须正式作答 {item['retry_remaining']} 道其他题" if item["retry_remaining"] else "现在可以重试")
+                result["当前题订正"] = "可以立即订正"
             result["待订正题数"] = sum(row["status"] == "wrong" for row in practice["items"])
             result["知识点目标"] = describe_practice_goals(practice["goals"], context["point_names"])
     elif "read_total" in progress:
@@ -336,7 +335,7 @@ def build_tools(context, references):
                 return {}
             item = assigned[question_id]
             return {"knowledge_point": context["point_names"].get(item["knowledge_point_id"]),
-                    "status": item["status"], "retry_remaining": item["retry_remaining"], "appended": item["appended"]}
+                    "status": item["status"], "appended": item["appended"]}
         return {"items": [{"question_no": i + 1, "title": q["title"], "accepted": q["id"] in accepted, **item_details(q["id"])}
                           for i, q in enumerate(questions) if offset <= i < offset + limit], "total": len(questions)}
 

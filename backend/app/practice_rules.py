@@ -26,10 +26,17 @@ class PracticeGoal(BaseModel):
         return self
 
 
+def without_legacy_retry_interval(rules):
+    """Earlier course packages and saved activities may still carry this retired field."""
+    if isinstance(rules, dict) and "retry_interval" in rules:
+        return {key: value for key, value in rules.items() if key != "retry_interval"}
+    return rules
+
+
 class PracticeRules(BaseModel):
     model_config = ConfigDict(extra="forbid")
     goals: list[PracticeGoal] = Field(min_length=1, max_length=65)
-    retry_interval: int = Field(default=1, ge=0, le=100, strict=True)
+    _read_legacy_rules = model_validator(mode="before")(without_legacy_retry_interval)
 
     @model_validator(mode="after")
     def unique_points(self):

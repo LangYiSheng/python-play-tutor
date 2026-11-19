@@ -170,11 +170,10 @@ export interface PracticeItem {
   question_id: string;
   knowledge_point_id: number;
   status: 'unanswered' | 'wrong' | 'accepted';
-  retry_remaining: number;
   appended: boolean;
 }
 export interface ActivityProgress {
-  practice?: { retry_interval: number; goals: PracticeGoalProgress[]; items: PracticeItem[] };
+  practice?: { goals: PracticeGoalProgress[]; items: PracticeItem[] };
   resources?: ResourceProgress[];
   material_id?: number | null;
   fraction?: number;

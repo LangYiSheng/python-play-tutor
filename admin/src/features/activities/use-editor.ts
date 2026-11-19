@@ -17,7 +17,7 @@ export function useActivityEditor(
     [kind, setKind] = useState<Activity["kind"]>("lesson"),
     [resources, setResources] = useState<ActivityResource[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
-    [rules, setRules] = useState<PracticeRules>({ retry_interval: 1, goals: [] }),
+    [rules, setRules] = useState<PracticeRules>({ goals: [] }),
     [convertPractice, setConvertPractice] = useState(false),
     [published, setPublished] = useState(true),
     [npc, setNpc] = useState(""),
@@ -37,7 +37,7 @@ export function useActivityEditor(
     setKind(a?.kind ?? "lesson");
     setResources(structuredClone(a?.resources ?? []));
     setPointIds(a?.knowledge_point_ids ?? []);
-    setRules(structuredClone(a?.practice_rules ?? { retry_interval: 1, goals: [] }));
+    setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
     setConvertPractice(false);
     setPublished(a?.published ?? true);
     setNpc(a?.npc_key ?? "");

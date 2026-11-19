@@ -69,9 +69,13 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
     db.add(PracticeSession(user_id=student["id"], classroom_id=classroom["id"], activity_id=activity_id,
                            items=[{"question_id": question_id, "kind": "boolean", "knowledge_point_id": point}]))
     db.commit()
-    assert client.put(edit + scope, headers=headers, json={"practice_rules": {**rules, "retry_interval": 2}}).status_code == 409
+    assert client.put(edit + scope, headers=headers, json={"practice_rules": {**rules, "retry_interval": 2}}).status_code == 200
+    more = {"goals": [{**rules["goals"][0], "total": 2}]}
+    assert client.put(edit + scope, headers=headers, json={"practice_rules": more}).status_code == 409
     changed = deepcopy(bundle)
     next(row for row in changed["data"]["activity"] if row["id"] == "adaptive")["content"]["practice_rules"]["retry_interval"] = 2
+    assert not preview_impact(db, instance, changed)["blockers"]
+    next(row for row in changed["data"]["activity"] if row["id"] == "adaptive")["content"]["practice_rules"]["goals"][0]["total"] = 2
     assert any("练习目标" in message for message in preview_impact(db, instance, changed)["blockers"])
 
 

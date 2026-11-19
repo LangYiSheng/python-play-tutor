@@ -27,31 +27,22 @@
       <p v-if="draftError" class="error" role="alert">{{ draftError }} <button v-if="draftConflict" @click="load">重新载入试卷</button><button v-else-if="!paper?.locked" @click="retryDraft">重试保存</button></p>
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
-        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="submitQuestion(question.id, $event)">
-          <template v-if="currentItem" #metadata>
-            <span class="question-point">考查知识点：{{ pointNames.get(currentItem.knowledge_point_id) }}
-              <span v-if="currentItem.appended"> · 追加题</span><span v-if="currentItem.status === 'accepted'"> · 已通过</span>
-            </span>
-          </template>
-          <template v-if="currentItem?.status === 'wrong'" #correction>
-            <div v-if="currentItem.retry_remaining" class="practice-retry-notice">
-              <div role="status"><strong>本题暂时不能订正</strong>
-                <p>请先提交 {{ currentItem.retry_remaining }} 道其他题的答案，答对或答错都算，再回来订正本题。</p>
-              </div>
-              <button v-if="nextAvailable" class="primary" :disabled="requestBusy" @click="selectQuestion(nextAvailable.id)">去做第 {{ questions.indexOf(nextAvailable) + 1 }} 题 <GameIcon name="arrowRight" /></button>
-            </div>
-            <p v-else class="practice-retry-ready" role="status">现在可以订正，修改答案后重新提交。</p>
+        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample) => submitQuestion(question.id, mode, runSample)">
+          <template v-if="currentItem?.status === 'accepted'" #metadata>
+            <span class="practice-passed">已通过</span>
           </template>
         </PracticeQuestionCard>
       </div>
       <p v-else-if="!loading && activity" class="learning-empty">此活动尚未绑定公开题目，请联系教师。</p>
 
-      <button v-if="storySessionId && !isAssessment && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
-      <template v-if="personalPractice" #goals>
+      <template v-if="!isAssessment" #goals>
         <section class="practice-goal-summary" aria-label="活动进度">
-          <strong>{{ activity.title }}</strong>
+          <div class="practice-goal-heading">
+            <strong>{{ activity.title }}</strong>
+            <button v-if="storySessionId && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
+          </div>
           <div class="support-goal-progress">
             <span>活动进度 · 已通过 {{ passedCount }} / {{ questions.length }} 题</span>
             <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
@@ -90,7 +81,7 @@ import { useSession } from "../../shared/session";
 import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, QuestionOutlineState, Submission } from "../../shared/types";
 import { pendingSubmissionStates } from "./practicePresentation";
 import { createAssessmentDraftQueue } from "./assessmentDraft";
-import { evaluateBrowserSubmission, type BrowserCase } from './browserSubmission';
+import { evaluateBrowserSubmission, type BrowserCase, type RunPythonSample } from './browserSubmission';
 import { useWorkspaceSidebar } from "../../shared/workspaceSidebar";
 import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
@@ -144,18 +135,10 @@ const passedCount = computed(() => activityProgress.value?.accepted_question_ids
 const practiceItems = computed(() => new Map(personalPractice.value?.items.map(item => [item.question_id, item])));
 const pointNames = computed(() => new Map(activity.value?.knowledge_points?.map(point => [point.id, point.title])));
 const currentItem = computed(() => practiceItems.value.get(current.value?.id ?? ''));
-const nextAvailable = computed(() => {
-  const ordered = [...questions.value.slice(questionIndex.value + 1), ...questions.value.slice(0, questionIndex.value)];
-  return ordered.find(question => {
-    const item = practiceItems.value.get(question.id);
-    return item && item.status !== 'accepted' && !item.retry_remaining && !submissionBlocked(question.id);
-  });
-});
 function submissionBlocked(id: string) {
   if (practiceRefreshFailed.value) return true;
   if (drafts.value[id]?.pending) return false;
-  const item = practiceItems.value.get(id);
-  return item?.status === 'accepted' || (item?.retry_remaining ?? 0) > 0;
+  return practiceItems.value.get(id)?.status === 'accepted';
 }
 const isCodeQuestion = computed(() => current.value && questionType(current.value.kind).execution === 'python');
 const assistantState = computed(() => ({ question_id: current.value?.id, answer: drafts.value[current.value?.id ?? '']?.answer ?? '',
@@ -323,7 +306,7 @@ async function load() {
   } catch (cause) { if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '题目加载失败'; }
   finally { if (currentOwner() && ticket === generation) { loading.value = false; if (activity.value) sessionStorage.setItem(questionPositionKey(), String(questionIndex.value + 1)); } }
 }
-async function submitQuestion(id: string, mode: 'submit') {
+async function submitQuestion(id: string, mode: 'submit', runSample?: RunPythonSample) {
   const question = questions.value.find(item => item.id === id), draft = drafts.value[id];
   if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || submissionBlocked(id) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
   const ticket = generation; requestBusy.value = true; busyQuestionId.value = id; error.value = '';
@@ -334,7 +317,7 @@ async function submitQuestion(id: string, mode: 'submit') {
     // its original key first; a missing receipt returns 422 and allows a fresh run.
     if (questionType(question.kind).execution === 'python' && !draft.pending) {
       const controller = new AbortController(); browserSubmission = controller;
-      pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal);
+      pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal, runSample);
       if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;
     }
     draft.pending = pending; persistLocal();

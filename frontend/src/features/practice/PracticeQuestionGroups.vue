@@ -1,11 +1,11 @@
 <template>
   <section class="practice-skills" aria-label="知识点进度">
-    <p class="skill-count">已达标 {{ skills.filter(skill => skill.value === skill.target).length }} / {{ skills.length }} 个知识点</p>
+    <p class="skill-count">已达标 {{ skills.filter(skill => skill.total > 0 && skill.passed === skill.total).length }} / {{ skills.length }} 个知识点</p>
     <section v-for="skill in skills" :key="skill.id" class="practice-skill">
       <header class="skill-heading">
         <h3>{{ skill.name }}</h3>
-        <progress class="support-progress-bar" :value="skill.value" :max="skill.target" :aria-label="skill.name + '达标进度'" />
-        <span>{{ skill.value }} / {{ skill.target }}</span>
+        <progress class="support-progress-bar" :value="skill.passed" :max="Math.max(1, skill.total)" :aria-label="skill.name + '达标进度'" />
+        <span>{{ skill.passed }} / {{ skill.total }}</span>
         <small v-if="skill.detail">{{ skill.detail }}</small>
       </header>
       <QuestionOutlineList :questions="skill.questions" :label="skill.name + '题目列表'" @select-question="$emit('selectQuestion', $event)" />
@@ -23,18 +23,19 @@ import type { QuestionOutlineItem } from "../support/questionOutline";
 const props = defineProps<{
   goals: PracticeGoalProgress[];
   names: Map<number, string>;
-  questions: (QuestionOutlineItem & { pointId?: number })[];
+  questions: (QuestionOutlineItem & { pointId?: number; kind: QuestionKind })[];
 }>();
 defineEmits<{ selectQuestion: [id: string] }>();
 const skills = computed(() => props.goals.map(goal => {
-  const quotas = Object.entries(goal.by_kind) as [QuestionKind, number][];
-  const target = Math.max(goal.total, quotas.reduce((sum, [, count]) => sum + count, 0));
-  const missing = quotas.reduce((sum, [kind, count]) => sum + Math.max(0, count - (goal.accepted_by_kind[kind] ?? 0)), 0);
+  const questions = props.questions.filter(question => question.pointId === goal.knowledge_point_id);
+  const totalsByKind = new Map<QuestionKind, number>();
+  for (const { kind } of questions) totalsByKind.set(kind, (totalsByKind.get(kind) ?? 0) + 1);
+  const detail = Object.keys(goal.by_kind).length
+    ? Array.from(totalsByKind, ([kind, total]) => `${questionKindLabels[kind]} ${goal.accepted_by_kind[kind] ?? 0}/${total}`).join(' · ')
+    : '';
   return {
     id: goal.knowledge_point_id, name: props.names.get(goal.knowledge_point_id) ?? '知识点',
-    target, value: Math.min(goal.accepted, target - missing),
-    questions: props.questions.filter(question => question.pointId === goal.knowledge_point_id),
-    detail: quotas.map(([kind, count]) => `${questionKindLabels[kind]} ${goal.accepted_by_kind[kind] ?? 0}/${count}`).join(' · '),
+    passed: goal.accepted, total: questions.length, questions, detail,
   };
 }));
 </script>

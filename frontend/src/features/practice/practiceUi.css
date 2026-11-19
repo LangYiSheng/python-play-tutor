@@ -227,8 +227,7 @@
 }
 
 .game-workspace .practice-content > .error,
-.game-workspace .practice-content > .learning-empty,
-.game-workspace .practice-content > .practice-complete {
+.game-workspace .practice-content > .learning-empty {
   margin: 12px;
 }
 
@@ -316,9 +315,12 @@
   color: #8b4835;
 }
 
-.game-workspace .practice-complete {
-  margin-top: 1rem;
-  align-self: flex-end;
+.game-workspace .practice-goal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .45rem .75rem;
 }
 
 .game-workspace .assessment-actions {
@@ -364,20 +366,7 @@
   flex-shrink: 0;
 }
 
-.game-workspace .question-point { color: var(--learn-muted); font-size: .875rem; margin-inline-start: .35rem; }
-.game-workspace .practice-retry-notice {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-  gap: .6rem 1rem; margin-block: .7rem; padding: .75rem 1rem;
-  border: 1px solid #c69a5d; border-radius: var(--game-radius); color: #583c1b; background: #fff1d8;
-}
-.game-workspace .practice-retry-notice p { margin: .2rem 0 0; }
-.game-workspace .practice-retry-notice button { display: inline-flex; align-items: center; gap: .35rem; }
-.game-workspace .practice-retry-ready {
-  margin-block: 1rem .75rem;
-  line-height: 1.65;
-  color: var(--learn-forest);
-  font-weight: 600;
-}
+.game-workspace .practice-passed { color: var(--learn-forest); font-size: .875rem; margin-inline-start: .35rem; }
 .game-workspace .practice-navigation {
   display: flex;
   align-items: center;

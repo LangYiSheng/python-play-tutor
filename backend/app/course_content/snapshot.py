@@ -6,6 +6,7 @@ from copy import deepcopy
 
 from sqlalchemy import select
 
+from app.practice_rules import without_legacy_retry_interval
 from app.auth import as_utc
 from app.course_exchange_models import CoursePackageState
 from app.course_instances import CONTENT_MODELS, MODEL_NAMES, remap_references
@@ -94,6 +95,8 @@ def snapshot_content(db, instance):
                     }
                 )
             elif model is Activity:
+                if "practice_rules" in values["content"]:
+                    values["content"]["practice_rules"] = without_legacy_retry_interval(values["content"]["practice_rules"])
                 values["question_ids"] = related_ids(db, row, ActivityQuestion, "question_id")
                 values["resources"] = [resource_payload(item) for item in row.resources]
             converted = values if model is Npc else remap_references(values, inverse)

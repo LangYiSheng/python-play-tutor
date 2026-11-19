@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { kinds } from "@/features/questions/types";
 import type { Point, PracticeGoal, PracticeRules, Question } from "@/lib/types";
 
@@ -88,12 +87,6 @@ export function PracticeGoalsEditor({ rules, points, candidates, onChange }: Pro
           </fieldset> : <p className="hint p-3">勾选知识点后，在这里设置题量。</p>}
         </div>
       </fieldset>
-      <div className="field">
-        <Label htmlFor="practice-retry">重做错题前需作答的其他题数</Label>
-        <Input id="practice-retry" className="max-w-32" type="number" min={0} max={100} required
-          value={rules.retry_interval} onChange={event => onChange({ ...rules, retry_interval: Number(event.target.value) })} />
-        <p className="hint">正式提交其他题即可推进间隔。没有其他题可做时，可以直接订正。</p>
-      </div>
     </div>
   );
 }

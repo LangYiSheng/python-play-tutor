@@ -26,25 +26,29 @@ function paper(overrides: Partial<AssessmentAttempt> = {}): AssessmentAttempt { 
 function result(id: string, status: Submission["status"]): Submission { return { id: `submission-${id}`, activity_id: "test", question_id: id, mode: "submit", status, feedback: { detail: status === "accepted" ? "回答正确" : "请重新思考" }, created_at: "2026-11-08T00:00:00Z" }; }
 afterEach(async () => { await flushPromises(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });
 describe("assessment and practice presentation", () => {
-  it("keeps a wrong question visible while appending and unlocking its retry", async () => {
+  it("allows immediate correction and completes only after the appended question passes", async () => {
     const { pinia, session } = setup("practice");
     const activity = await session.activity("test");
     const [first, extra] = activity.questions;
     const goal = { knowledge_point_id: 7, total: 1, by_kind: { boolean: 1 }, accepted: 0, accepted_by_kind: {} };
-    const item = { question_id: first!.id, knowledge_point_id: 7, appended: false, retry_remaining: 0, status: "unanswered" as const };
+    const item = { question_id: first!.id, knowledge_point_id: 7, appended: false, status: "unanswered" as const };
     const progress = { page_no: null, visited_pages: [], completed: false, accepted_question_ids: [] as string[],
-      practice: { retry_interval: 1, goals: [goal], items: [item] } };
+      practice: { goals: [goal], items: [item] } };
     const initial = { ...activity, knowledge_points: [{ id: 7, title: "条件判断" }], questions: [first!], progress };
     vi.mocked(session.activity).mockResolvedValueOnce(initial).mockResolvedValueOnce({
       ...initial, questions: [first!, extra!], progress: { ...progress, practice: { ...progress.practice,
-        items: [{ ...item, status: "wrong", retry_remaining: 1 }, { ...item, appended: true, question_id: extra!.id }] } },
+        items: [{ ...item, status: "wrong" }, { ...item, appended: true, question_id: extra!.id }] } },
     }).mockResolvedValueOnce({
-      ...initial, questions: [first!, extra!], progress: { ...progress, accepted_question_ids: [extra!.id], practice: {
+      ...initial, questions: [first!, extra!], progress: { ...progress, accepted_question_ids: [first!.id], practice: {
         ...progress.practice, goals: [{ ...goal, accepted: 1, accepted_by_kind: { boolean: 1 } }],
-        items: [{ ...item, status: "wrong" }, { ...item, appended: true, question_id: extra!.id, status: "accepted" }] } },
+        items: [{ ...item, status: "accepted" }, { ...item, appended: true, question_id: extra!.id }] } },
+    }).mockResolvedValueOnce({
+      ...initial, questions: [first!, extra!], progress: { ...progress, completed: true, accepted_question_ids: [first!.id, extra!.id],
+        practice: { ...progress.practice, goals: [{ ...goal, accepted: 2, accepted_by_kind: { boolean: 2 } }],
+          items: [{ ...item, status: "accepted" }, { ...item, appended: true, question_id: extra!.id, status: "accepted" }] } },
     });
-    vi.spyOn(api, "post").mockResolvedValueOnce(result(first!.id, "wrong_answer")).mockResolvedValueOnce(result(extra!.id, "accepted"));
-    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    vi.spyOn(api, "post").mockResolvedValueOnce(result(first!.id, "wrong_answer")).mockResolvedValueOnce(result(first!.id, "accepted")).mockResolvedValueOnce(result(extra!.id, "accepted"));
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test", storySessionId: "story" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
     try {
       await flushPromises();
       const card = () => wrapper.getComponent({ name: "PracticeQuestionCard" });
@@ -54,21 +58,28 @@ describe("assessment and practice presentation", () => {
         card().vm.$emit("submit", "submit");
         await flushPromises();
       };
+      const skill = () => wrapper.get(".skill-heading");
+      expect(skill().get("progress").attributes("max")).toBe("1");
       await submit();
       expect(wrapper.text()).toContain("已通过 0 / 2 题");
-      expect(wrapper.get(".practice-retry-notice").text()).toContain("请先提交 1 道其他题的答案");
-      expect(wrapper.get(".practice-goal-summary > strong").text()).toBe(activity.title);
+      expect(skill().get("progress").attributes("max")).toBe("2");
+      expect(card().props("showSubmit")).toBe(true);
+      expect(wrapper.get(".practice-goal-heading strong").text()).toBe(activity.title);
       expect(wrapper.get('nav[aria-label="条件判断题目列表"]').findAll(".question-list-title").map(row => row.text())).toEqual(["1. q1", "2. q2"]);
-      expect(wrapper.find(".support-goal-marker").exists()).toBe(false);
-      expect(wrapper.get(".question-point").text()).toContain("考查知识点：条件判断");
-      expect(card().props("showSubmit")).toBe(false);
-      await wrapper.get(".practice-retry-notice button").trigger("click");
-      expect(wrapper.get(".question-point").text()).toContain("追加题");
       await submit();
       expect(wrapper.text()).toContain("已通过 1 / 2 题");
-      await wrapper.get('[aria-label="上一题"]').trigger("click");
-      expect(wrapper.get(".practice-retry-ready").text()).toContain("可以订正");
-      expect(card().props("showSubmit")).toBe(true);
+      expect(skill().get("span").text()).toBe("1 / 2");
+      expect(skill().get("small").text()).toBe("判断题 1/2");
+      expect(wrapper.get(".skill-count").text()).toContain("已达标 0 / 1");
+      expect(wrapper.get(".practice-passed").text()).toBe("已通过");
+      expect(wrapper.find(".practice-complete").exists()).toBe(false);
+      await wrapper.get('[aria-label="下一题"]').trigger("click");
+      await submit();
+      expect(wrapper.get(".practice-question-heading").text()).not.toContain("追加题");
+      expect(skill().get("span").text()).toBe("2 / 2");
+      expect(wrapper.get(".skill-count").text()).toContain("已达标 1 / 1");
+      await wrapper.get(".practice-goal-summary .practice-complete").trigger("click");
+      expect(wrapper.emitted("complete")).toHaveLength(1);
     } finally { wrapper.unmount(); }
   });
   it("groups the personal outline by assigned point and navigates using the original question numbers", async () => {
@@ -79,10 +90,10 @@ describe("assessment and practice presentation", () => {
     const points = [{ id: 7, title: "条件判断" }, { id: 8, title: "循环" }];
     vi.mocked(session.activity).mockResolvedValue({ ...activity, questions, knowledge_points: points,
       progress: { page_no: null, visited_pages: [], completed: false, accepted_question_ids: ["q2"],
-        practice: { retry_interval: 1,
+        practice: {
           goals: points.map(point => ({ knowledge_point_id: point.id, total: 1, by_kind: {}, accepted_by_kind: {}, accepted: Number(point.id === 8) })),
           items: questions.map((question, i) => ({ question_id: question.id, knowledge_point_id: i === 1 ? 8 : 7,
-            status: i === 1 ? "accepted" : i === 0 ? "wrong" : "unanswered", retry_remaining: 0, appended: i === 2 })),
+            status: i === 1 ? "accepted" : i === 0 ? "wrong" : "unanswered", appended: i === 2 })),
         } },
     });
     const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
@@ -98,7 +109,7 @@ describe("assessment and practice presentation", () => {
       expect(wrapper.findAll(".support-goals .question-list-title")).toHaveLength(4);
       await groups[0]!.findAll("button")[1]!.trigger("click");
       expect(wrapper.get(".support-goals button[aria-current='step'] .question-list-title").text()).toBe("3. 追加判断");
-      expect(wrapper.get(".question-point").text()).toContain("条件判断");
+      expect(wrapper.get(".practice-question-heading").text()).not.toContain("考查知识点");
       expect(wrapper.get(".practice-question-heading").text()).toContain("追加判断");
     } finally { wrapper.unmount(); }
   });

@@ -9,7 +9,7 @@ from app.course_instances import CONTENT_MODELS, MODEL_NAMES, content_mapping
 from app.course_packages.contracts import CONFIG_FILES
 from app.integration_models import AssistantSession
 from app.materials.storage import get_storage
-from app.practice_rules import practice_question_available
+from app.practice_rules import practice_question_available, without_legacy_retry_interval
 from app.models import ActivityProgress, AssessmentAttempt, LearningRecord, Material, PlayerQuest, PracticeSession, StorySession, Submission
 
 
@@ -174,7 +174,7 @@ def preview_impact(db, instance, bundle):
         for stable in diff["activity"]["updated"]:
             old, new = current["activity"][stable], incoming["activity"][stable]
             key = maps["activity"][stable]
-            changed_rules = old["content"].get("practice_rules") != new["content"].get("practice_rules")
+            changed_rules = old["content"].get("practice_rules") != without_legacy_retry_interval(new["content"].get("practice_rules"))
             if changed_rules or old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
                 count = sum(row.activity_id == key for row in attempts) + sum(row.activity_id == key for row in submissions)
                 count += sum(row.activity_id == key for row in practices)
