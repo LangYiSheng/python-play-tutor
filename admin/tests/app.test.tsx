@@ -52,3 +52,26 @@ it("ignores an old account's class list even when its fetch resolves after cance
   expect(await screen.findByRole("option", { name: "新班级" })).toBeVisible();
   expect(screen.queryByRole("option", { name: "旧班级" })).not.toBeInTheDocument();
 });
+
+it("opens the administrator workspace before any class exists", async () => {
+  setToken("admin-session");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => json(url.endsWith("/auth/me")
+    ? { id: 1, name: "管理员", role: "admin" } : [])));
+  render(<App />);
+  await screen.findByRole("heading", { name: "班级管理" });
+  for (const name of ["课程包", "全局概览", "教师管理", "学生管理", "全站设置"]) {
+    expect(screen.getByRole("link", { name })).toBeVisible();
+  }
+  expect(screen.queryByLabelText("当前班级")).not.toBeInTheDocument();
+});
+it("rejects an admin deep link for teachers without loading site-wide data", async () => {
+  setToken("teacher-session");
+  history.replaceState({}, "", "/teacher/overview");
+  const fetch = vi.fn(async (url: string) => json(url.endsWith("/auth/me")
+    ? { id: 2, name: "教师", role: "teacher" } : []));
+  vi.stubGlobal("fetch", fetch);
+  render(<App />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("此页面仅管理员可访问");
+  expect(screen.queryByRole("link", { name: "全局概览" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.includes("/api/admin/"))).toBe(false);
+});

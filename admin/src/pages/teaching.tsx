@@ -53,6 +53,7 @@ interface Progress {
   }[];
 }
 interface StudentRecord {
+  assessments?: { id: string; activity_id: string; activity_title?: string; score: number | null; max_score: number; status: string }[];
   student: { name: string; student_id: string | null };
   events: { id: string; node_id: string; created_at: string }[];
   participation: {
@@ -407,21 +408,23 @@ function readable(value: unknown): string {
     .map(([k, v]) => `${k}：${readable(v)}`)
     .join("\n");
 }
-function RecordViewer({
+export function RecordViewer({
   classroomId,
   studentId,
   course,
+  history = false,
   onClose,
 }: {
   classroomId: number;
   studentId: number;
-  course: Course | null;
+  course?: Course | null;
+  history?: boolean;
   onClose: () => void;
 }) {
   const result = useResource<StudentRecord>(
-      `/teacher/classrooms/${classroomId}/students/${studentId}`,
+      `/teacher/classrooms/${classroomId}/${history ? "history" : "students"}/${studentId}`,
     ),
-    [tab, setTab] = useState("submissions");
+    [tab, setTab] = useState(history ? "assessments" : "submissions");
   return (
     <Dialog
       open
@@ -441,6 +444,7 @@ function RecordViewer({
         <ErrorNotice message={result.error} />
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList variant="line" aria-label="学生记录类型">
+            {history && <TabsTrigger value="assessments">测验成绩</TabsTrigger>}
             <TabsTrigger value="submissions">作答记录</TabsTrigger>
             <TabsTrigger value="participation">活动参与</TabsTrigger>
             <TabsTrigger value="events">任务节点</TabsTrigger>
@@ -448,6 +452,12 @@ function RecordViewer({
           <TabsContent value={tab} className="max-h-[60vh] space-y-4 overflow-y-auto">
             {result.loading ? (
               <Loading />
+            ) : tab === "assessments" ? (
+              result.data?.assessments?.length ? <Table><TableHeader><TableRow>
+                <TableHead>测验</TableHead><TableHead>成绩</TableHead>
+              </TableRow></TableHeader><TableBody>{result.data.assessments.map(item => <TableRow key={item.id}>
+                <TableCell>{item.activity_title || item.activity_id}</TableCell><TableCell>{item.score === null ? "待判定" : `${item.score} / ${item.max_score}`}</TableCell>
+              </TableRow>)}</TableBody></Table> : <Empty title="暂无测验成绩" />
             ) : tab === "submissions" ? (
             result.data?.submissions.length ? (
               result.data.submissions

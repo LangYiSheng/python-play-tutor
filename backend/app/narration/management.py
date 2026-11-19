@@ -4,12 +4,12 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import case, func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.orm import Session, load_only
 
-from ..auth import require_teacher
+from ..auth import require_admin, require_teacher
 from ..db import get_db
-from ..models import Material, User, now
+from ..models import Classroom, CourseInstance, Material, User, now
 from ..teacher_scope import teacher_instance_id
 from . import repository
 from .access import teacher_material
@@ -18,6 +18,7 @@ from .task_commands import (calibrate_deck, generate_narration, generate_range, 
 from .models import NarrationJob, NarrationRun
 
 router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/synthesis", tags=["narration"])
+global_router = APIRouter(tags=["narration"], dependencies=[Depends(require_admin)])
 OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate"}
 
 
@@ -41,20 +42,30 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None) -> dic
                                                   else "请打开资料审校后重新发起" if status == "failed" else "")}
 
 
+def run_state() -> ColumnElement[str]:
+    cutoff = now() - timedelta(seconds=repository.JOB_STALE_SECONDS)
+    moment = func.coalesce(NarrationRun.heartbeat_at, NarrationRun.started_at)
+    return case(((NarrationRun.status == "running") & ((moment < cutoff) | moment.is_(None)), "interrupted"),
+                else_=NarrationRun.status)
+
+
+@global_router.get("/admin/synthesis")
 @router.get("")
-def list_tasks(classroom_id: int, db: Annotated[Session, Depends(get_db)],
-               user: Annotated[User, Depends(require_teacher)],
+def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
+               classroom_id: int | None = None,
                query: str = "", status: Literal["all", "running", "done", "failed", "interrupted"] = "all",
                view: Literal["all", "running", "history"] = "all",
                page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=100)] = 20) -> dict[str, Any]:
-    instance_id = teacher_instance_id(db, user, classroom_id)
-    cutoff = now() - timedelta(seconds=repository.JOB_STALE_SECONDS)
-    moment = func.coalesce(NarrationRun.heartbeat_at, NarrationRun.started_at)
-    state = case(((NarrationRun.status == "running") & ((moment < cutoff) | moment.is_(None)), "interrupted"),
-        else_=NarrationRun.status)
-    statement = select(NarrationRun, Material, User.name).join(Material, NarrationRun.material_id == Material.id).outerjoin(
-        User, NarrationRun.requested_by == User.id).options(load_only(Material.id, Material.title, Material.kind, Material.deleted_at)).where(
-        Material.course_instance_id == instance_id)
+    state = run_state()
+    statement = (select(NarrationRun, Material, User.name, Classroom.id, Classroom.name)
+        .join(Material, NarrationRun.material_id == Material.id)
+        .join(CourseInstance, Material.course_instance_id == CourseInstance.id)
+        .join(Classroom, CourseInstance.classroom_id == Classroom.id)
+        .outerjoin(User, NarrationRun.requested_by == User.id)
+        .options(load_only(Material.id, Material.title, Material.kind, Material.deleted_at))
+        .execution_options(include_deleted=True))
+    if classroom_id is not None:
+        statement = statement.where(Material.course_instance_id == teacher_instance_id(db, user, classroom_id))
     if query.strip():
         statement = statement.where(Material.title.icontains(query.strip(), autoescape=True))
     counts: dict[str, int] = dict(db.execute(statement.with_only_columns(state, func.count()).group_by(state)).all())
@@ -64,11 +75,12 @@ def list_tasks(classroom_id: int, db: Annotated[Session, Depends(get_db)],
         statement = statement.where(state == status)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     items = []
-    for record, material, name in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
+    for record, material, name, class_id, class_name in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
         item = snapshot(material, record)
-        latest = repository.job_of(db, material.id)
+        latest = repository.job_of(db, material.id) if classroom_id is not None else None
         is_latest = bool(latest and latest.started_at == record.started_at)
-        item.update(requested_by=name or "—", material_available=material.deleted_at is None)
+        item.update(requested_by=name or "—", material_available=material.deleted_at is None,
+                    classroom_id=class_id, classroom_name=class_name)
         if not is_latest or material.deleted_at is not None:
             item.update(retryable=False, retry_note="")
         request = (record.progress or {}).get("request") or {}

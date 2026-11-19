@@ -71,7 +71,7 @@ it("requires a reason and shows global scope before administrator pauses dispatc
     return response(url.includes("/service") ? service : { items: [], total: 0 });
   }));
   const user = userEvent.setup();
-  render(<Judge classroomId={1} canManage />);
+  render(<Judge canManage />);
   await screen.findByText(/连接正常/);
   await user.click(screen.getByRole("button", { name: "暂停派发" }));
   expect(screen.getByText(/此操作影响所有班级/)).toBeVisible();

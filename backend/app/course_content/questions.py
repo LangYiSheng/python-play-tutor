@@ -19,7 +19,7 @@ from app.models import (
     Submission,
     User,
 )
-from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_instance_id
+from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
 
 
 def validate_question_links(db, user, body, instance_id=None):
@@ -139,11 +139,11 @@ def save_question(db, user, question, body):
 
 
 def create_question(body: QuestionInput, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     runtime_id = scoped_key(instance_id, "question", body.id)
     if db.get(Question, runtime_id, execution_options={"include_deleted": True}):
         raise HTTPException(409, "题目ID已存在")
-    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=user.id), body)
+    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=classroom.teacher_id), body)
 
 
 def list_questions(db: Session, user: User, classroom_id: int | None = None):

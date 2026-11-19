@@ -13,6 +13,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.get).mockResolvedValue({ items: [task], total: 1, counts: { running: 0, failed: 1, interrupted: 0 } });
 });
+it('shows global synthesis records with their class and keeps changes in class workspaces', async () => {
+  vi.mocked(api.get).mockResolvedValue({ items: [{ ...task, classroom_name: '一班' }], total: 1, counts: { running: 0, failed: 1, interrupted: 0 } });
+  render(<Synthesis />);
+  expect(await screen.findByText('PDF · 一班')).toBeVisible();
+  expect(vi.mocked(api.get).mock.calls[0][0]).toContain('/admin/synthesis?');
+  expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument();
+});
 it('loads class tasks without invoking services and requires confirmation before retry', async () => {
   vi.mocked(api.post).mockResolvedValue({ ...task, status: 'done' });
   render(<Synthesis classroomId={7} />);

@@ -94,6 +94,8 @@ def reset_classroom_progress(body: ResetProgressInput, user: User, db: Session, 
             if not membership:
                 raise HTTPException(403, "只能重新开始已加入班级的学习")
 
+        from .course_content.access import authorize_classroom
+        authorize_classroom(db, actor, body.classroom_id)
         user_id, classroom_id = actor.id, body.classroom_id
         # Lock existing results while checking: a worker must not dispatch or finish a deleted row.
         statuses = db.execute(

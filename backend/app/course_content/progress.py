@@ -63,6 +63,10 @@ def student_record(classroom_id: int, student_id: int, db: Session, user: User):
     own_classroom(db, user, classroom_id)
     if not db.get(Membership, (student_id, classroom_id)):
         raise HTTPException(404, "学生不在当前班级")
+    return record_payload(classroom_id, student_id, db)
+
+
+def record_payload(classroom_id, student_id, db):
     student = db.get(User, student_id)
     return {
         "student": {"id": student.id, "name": student.name, "student_id": student.student_id},

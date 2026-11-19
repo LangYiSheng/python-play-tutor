@@ -133,6 +133,14 @@ def student(db):
 
 
 @pytest.fixture
+def admin_account(db):
+    row = User(student_id="000001", name="管理员", role="admin", password_hash=hash_password("staff-admin-password"))
+    db.add(row)
+    db.flush()
+    return {"id": row.id, "headers": {"Authorization": "Bearer " + issue(db, row)["access_token"]}}
+
+
+@pytest.fixture
 def teacher(db):
     row = User(student_id="1748881331821", name="教师", role="teacher", password_hash=hash_password("teacher-password-123"))
     db.add(row)
@@ -248,7 +256,7 @@ def branching_course(db, teacher):
         set_resources(db, item, source["resources"])
     db.flush()
     question_specs = {q["id"]: q for q in load_content()["questions"]}
-    problems = {"course-" + str(p["id"]): p for p in json.loads((Path(os.environ["REBORN_COURSE_ROOT"]) / "json/course_problem.json").read_text())}
+    problems = {"course-" + str(p["id"]): p for p in json.loads((Path(os.environ["REBORN_COURSE_ROOT"]) / "json/course_problem.json").read_text(encoding="utf-8"))}
     for activity in spec["activities"]:
         for key in activity["content"]["question_ids"]:
             if db.get(Question, key) is None:

@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .auth import require_teacher
 from .db import get_db
-from .teacher_scope import teacher_instance_id, require_scope, new_stable_id, commit_content
+from .teacher_scope import teacher_course_scope, teacher_instance_id, require_scope, new_stable_id, commit_content
 from .models import Activity, Chapter, KnowledgePoint, QuestionKnowledgePoint, User
 
 router = APIRouter(prefix="/teacher", tags=["curriculum"])
@@ -108,9 +108,9 @@ def commit_metadata(db, instance_id=None):
 
 @router.post("/chapters", status_code=201)
 def create_chapter(body: ChapterInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     order = body.order_index if body.order_index is not None else (db.scalar(select(func.max(Chapter.order_index)).where(Chapter.course_instance_id == instance_id)) or 0) + 1
-    chapter = Chapter(title=body.title, order_index=order, owner_id=user.id, course_id=43,
+    chapter = Chapter(title=body.title, order_index=order, owner_id=classroom.teacher_id, course_id=43,
                       course_instance_id=instance_id, stable_id=new_stable_id())
     db.add(chapter)
     commit_metadata(db, instance_id)
@@ -177,9 +177,9 @@ class PointUpdate(BaseModel):
 
 @router.post("/knowledge-points", status_code=201)
 def create_point(body: PointInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
     authoring_chapter(db, user, body.chapter_id, instance_id)
-    point = KnowledgePoint(**body.model_dump(), owner_id=user.id, course_instance_id=instance_id, stable_id=new_stable_id())
+    point = KnowledgePoint(**body.model_dump(), owner_id=classroom.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
     db.add(point)
     commit_metadata(db, instance_id)
     return point_payload(point)

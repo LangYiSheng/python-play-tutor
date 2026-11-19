@@ -14,11 +14,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .auth import as_utc, require_teacher
+from .auth import as_utc, require_admin, require_teacher
 from app.classrooms.access import own_classroom
 from .db import SessionLocal, get_db
 from .integration_models import JudgeService, SubmissionDiagnostic, SubmissionPayload
-from .models import Activity, Question, Submission, User, now
+from .models import Activity, Classroom, Question, Submission, User, now
 
 router = APIRouter(prefix="/teacher/judge", tags=["judge-management"])
 Teacher = Annotated[User, Depends(require_teacher)]
@@ -116,9 +116,16 @@ def queue_counts(db: Session, classroom_id: int | None = None, period=(None, Non
     return dict(db.execute(within_period(query, period).group_by(Submission.status).execution_options(include_deleted=True)).all())
 
 
+def authorize_scope(db, user, classroom_id):
+    if classroom_id is None:
+        require_admin(user)
+    else:
+        own_classroom(db, user, classroom_id)
+
+
 @router.get("/service")
-def get_service(classroom_id: int, user: Teacher, db: Database, period: DateRange):
-    own_classroom(db, user, classroom_id)
+def get_service(user: Teacher, db: Database, period: DateRange, classroom_id: int | None = None):
+    authorize_scope(db, user, classroom_id)
     row = db.get(JudgeService, 1)
     heartbeat = row.worker_seen_at if row else None
     return {"paused": bool(row and row.paused), "health": row.health if row else {},
@@ -158,17 +165,20 @@ async def check_service(user: Teacher):
     return health
 
 
-def summary(row: Submission, student: User, question: Question, activity: Activity):
-    return {"id": row.id, "student_name": student.name, "student_id": student.student_id,
+def summary(row: Submission, student: User, question: Question, activity: Activity, classroom_name: str):
+    return {"id": row.id, "classroom_id": row.classroom_id, "classroom_name": classroom_name,
+            "student_name": student.name, "student_id": student.student_id,
             "question_title": question.title, "activity_title": activity.title, "status": row.status,
             "created_at": row.created_at, "updated_at": row.updated_at,
             "passed_count": row.feedback.get("passed_count"), "total_count": row.feedback.get("total_count")}
 
 
-def submissions_query(classroom_id: int):
-    return (select(Submission, User, Question, Activity).join(User, Submission.user_id == User.id)
+def submissions_query(classroom_id: int | None):
+    statement = (select(Submission, User, Question, Activity, Classroom.name).join(User, Submission.user_id == User.id)
             .join(Question, Submission.question_id == Question.id).join(Activity, Submission.activity_id == Activity.id)
-            .where(Submission.classroom_id == classroom_id, python_submission()).execution_options(include_deleted=True))
+            .join(Classroom, Submission.classroom_id == Classroom.id)
+            .where(python_submission()).execution_options(include_deleted=True))
+    return statement.where(Submission.classroom_id == classroom_id) if classroom_id is not None else statement
 
 
 def python_submission():
@@ -181,9 +191,9 @@ def python_submission():
 
 
 @router.get("/submissions")
-def list_submissions(classroom_id: int, user: Teacher, db: Database, period: DateRange, q: str = Query(default="", max_length=100),
+def list_submissions(user: Teacher, db: Database, period: DateRange, classroom_id: int | None = None, q: str = Query(default="", max_length=100),
                      status: str = "", page: int = Query(default=1, ge=1), size: int = Query(default=20, ge=1, le=100)):
-    own_classroom(db, user, classroom_id)
+    authorize_scope(db, user, classroom_id)
     query = within_period(submissions_query(classroom_id), period)
     if status:
         if status not in STATUSES:
@@ -198,8 +208,8 @@ def list_submissions(classroom_id: int, user: Teacher, db: Database, period: Dat
 
 
 @router.get("/submissions/{submission_id}")
-def submission_detail(submission_id: str, classroom_id: int, user: Teacher, db: Database):
-    own_classroom(db, user, classroom_id)
+def submission_detail(submission_id: str, user: Teacher, db: Database, classroom_id: int | None = None):
+    authorize_scope(db, user, classroom_id)
     found = db.execute(submissions_query(classroom_id).where(Submission.id == submission_id)).first()
     if not found:
         raise HTTPException(404, "提交不存在")

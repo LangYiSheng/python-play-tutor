@@ -15,6 +15,19 @@ from app.db import get_db
 from app.models import User
 
 router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/course", tags=["course-packages"])
+shared_router = APIRouter(prefix="/teacher/course/packages", tags=["course-packages"])
+
+
+@shared_router.get("")
+def shared_packages(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    return _available_packages(classroom_id=None, db=db, user=user)
+
+
+@shared_router.delete("/{package_key}")
+def delete_shared_package(package_key: str, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    from app.course_packages.exports import delete_export
+
+    return delete_export(None, package_key, db, user)
 
 
 @router.get("/export")

@@ -46,7 +46,7 @@ def public_user(user: User, *, town_preview: bool = False) -> dict:
 def preview_classroom(db: Session, preview: TownPreviewStudent) -> Classroom:
     classroom = db.get(Classroom, preview.classroom_id)
     teacher = db.get(User, preview.teacher_id)
-    if not classroom or not teacher or not teacher.student_id or teacher.must_change_password or (
+    if not classroom or classroom.status != "active" or not teacher or not teacher.student_id or teacher.must_change_password or (
         teacher.role != "admin" and (teacher.role != "teacher" or classroom.teacher_id != teacher.id)
     ):
         raise HTTPException(403, "此体验账号已无权进入班级")
@@ -86,6 +86,12 @@ def current_user(request: Request, credentials: Annotated[HTTPAuthorizationCrede
 def require_teacher(user: Annotated[User, Depends(current_user)]) -> User:
     if user.role not in {"teacher", "admin"}:
         raise HTTPException(403, "需要教师权限")
+    return user
+
+
+def require_admin(user: Annotated[User, Depends(require_teacher)]) -> User:
+    if user.role != "admin":
+        raise HTTPException(403, "需要管理员权限")
     return user
 
 

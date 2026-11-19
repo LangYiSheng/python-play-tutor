@@ -81,7 +81,7 @@ export async function setup(
       cid: classroom.id,
     },
   );
-  await page.goto("/teacher/");
+  await page.goto("/teacher/classroom");
   await expect(page.getByLabel("当前班级")).toContainText(`${name} ${tag}`);
   return {
     headers,
