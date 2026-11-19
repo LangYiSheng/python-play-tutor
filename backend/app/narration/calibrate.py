@@ -118,6 +118,7 @@ def _empty_state(material: Material, items: list[PageNarration], fingerprint: st
                  settings: AuthoringSettings) -> dict[str, Any]:
     return {
         "complete": False,
+        "reused": False,
         "deck_fingerprint": fingerprint,
         "calibrate_version": CALIBRATE_VERSION,
         "prefix_hash": prefix_fingerprint(material),

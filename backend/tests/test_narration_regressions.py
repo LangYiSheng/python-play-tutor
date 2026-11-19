@@ -51,7 +51,8 @@ def test_unconfigured_generation_releases_lock(client,db,classroom,teacher,monke
     monkeypatch.delenv('REBORN_AUTHORING_AI_API_KEY')
     response=client.post(url(classroom,material,suffix),json=body,headers=teacher['headers'])
     assert response.status_code==409
-    assert not repository.job_running(repository.job_of(db,material.id))
+    job=repository.job_of(db,material.id)
+    assert job is None or not repository.job_running(job)
 
 
 def test_generation_cannot_overwrite_edit_made_during_model_call(client, db, classroom, teacher, monkeypatch):
@@ -73,7 +74,7 @@ def test_generation_cannot_overwrite_edit_made_during_model_call(client, db, cla
     assert not repository.job_running(repository.job_of(db, material.id))
 
 
-def test_report_uses_source_and_preserves_a_later_draft_edit(client, db, classroom, teacher, monkeypatch):
+def test_report_uses_source_and_preserves_a_later_draft_edit(client, db, classroom, teacher, run_jobs, monkeypatch):
     import json
     material = doc_material(db, classroom, "原文中的独特证据")
     repository.upsert(db, material, 1, text="待检查稿")
@@ -85,7 +86,8 @@ def test_report_uses_source_and_preserves_a_later_draft_edit(client, db, classro
         calls.append(payload)
         return {"raw": {"issues": [{"page_no": 1, "kind": "mismatch", "detail": "与原文不符"}]}}
     monkeypatch.setattr("app.narration.client.chat", model)
-    assert client.post(url(classroom, material, "/calibrate"), headers=teacher["headers"]).status_code == 200
+    assert client.post(url(classroom, material, "/calibrate"), headers=teacher["headers"]).status_code == 202
+    run_jobs()
     repository.upsert(db, material, 1, text="老师已经修好了，尚未接受")
     db.commit()
     result = client.post(url(classroom, material, "/calibrate/apply"), headers=teacher["headers"])

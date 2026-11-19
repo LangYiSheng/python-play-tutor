@@ -238,6 +238,20 @@ def task(db: Session, material: Material, kind: str, user: User,
         release(db, material.id)
 
 
+def enqueue(db: Session, material: Material, kind: str, user: User | None = None,
+            *, request: dict[str, Any] | None = None) -> NarrationJob:
+    """Take the lock and mark the work queued; the lifecycle worker makes the calls."""
+    from fastapi import HTTPException
+
+    try:
+        job = acquire(db, material, kind, user, request=request)
+    except JobBusy as exc:
+        raise HTTPException(409, str(exc)) from exc
+    job.progress = {**(job.progress or {}), "queued": True, "done": 0, "total": 0}
+    db.commit()
+    return job
+
+
 def interrupt_running(db: Session | None = None) -> int:
     """A restart cannot leave a live narration task: the deployment runs one API process."""
     from sqlalchemy import update

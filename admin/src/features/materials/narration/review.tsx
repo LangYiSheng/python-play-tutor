@@ -194,7 +194,8 @@ export function NarrationReview({
                 </p>
                 {report.complete === false && (
                   <p className="hint" role="status">
-                    进行中 {report.windows_done ?? 0}/{report.windows} 个窗口，再点「全篇校准」从断点继续。
+                    已跑到 {report.windows_done ?? 0}/{report.windows} 个窗口，后台会自己接着跑完；
+                    任务中断时再点「全篇校准」从断点继续。
                   </p>
                 )}
                 {report.reused && (

@@ -57,7 +57,7 @@ def test_accept_batch_respects_a_page_range(client, db, classroom, teacher):
     assert listed == {1: "draft", 2: "accepted", 3: "draft"}
 
 
-def test_audio_batch_skips_drafts_and_reports_failures(client, db, classroom, teacher):
+def test_audio_batch_skips_drafts_and_reports_failures(client, db, classroom, teacher, run_jobs):
     material = doc_material(db, classroom, "一" * 300, "二" * 300, "三" * 300)
     db.commit()
     generate_all(client, classroom, teacher, material, [1, 2, 3])
@@ -70,11 +70,14 @@ def test_audio_batch_skips_drafts_and_reports_failures(client, db, classroom, te
     client.post(url(classroom, material, "/2/accept"), headers=teacher["headers"])
 
     result = client.post(url(classroom, material, "/audio-batch"), json={}, headers=teacher["headers"])
-    assert result.status_code == 200, result.text
-    body = result.json()
-    assert body["made"] == [1, 3]
-    assert [item["page_no"] for item in body["failed"]] == [2]
-    assert body["count"] == 2
+    assert result.status_code == 202, result.text
+    run_jobs()
+    finished = client.get(url(classroom, material, "/job"), headers=teacher["headers"]).json()
+    assert [item["page_no"] for item in finished["failed"]] == [2]
+    assert finished["status"] == "failed" and finished["done"] == 3
+    status = client.get(url(classroom, material, "/audio"), headers=teacher["headers"]).json()
+    ready = {page["page_no"]: page["ready"] for page in status["pages"]}
+    assert ready == {1: True, 2: False, 3: True}
 
 
 def test_audio_batch_requires_an_engine(client, db, classroom, teacher, monkeypatch):

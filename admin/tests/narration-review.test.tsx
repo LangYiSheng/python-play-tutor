@@ -77,6 +77,17 @@ function stub(
           pages: [{ page_no: 1, status: "draft", ready: false, seconds: null }],
         });
       if (url.endsWith("/narrations")) return json(overrides.list ?? list);
+      if (url.endsWith("/job"))
+        return json({
+          running: false,
+          queued: false,
+          kind: "calibrate",
+          status: "done",
+          done: 1,
+          total: 1,
+          message: "",
+          failed: [],
+        });
       if (url.includes("/calibrate/apply"))
         return json({ regenerated: [], failed: [], awaiting_teacher: [] });
       if (url.includes("/calibrate")) return json(overrides.calibration ?? report);
@@ -137,9 +148,10 @@ it("generate and calibrate hit the scoped endpoints", async () => {
   await waitFor(() => expect(calls.some((call) => call.url.endsWith("/calibrate"))).toBe(true));
 });
 
-it("walks the deck in slices until the report is complete", async () => {
+it("queues one calibration request and polls the job until it finishes", async () => {
   const posts: string[] = [];
-  let rounds = 0;
+  let polls = 0;
+  let started = false;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -148,25 +160,38 @@ it("walks the deck in slices until the report is complete", async () => {
       if (url.endsWith("/audio")) return json({ available: true, voice: "Meilin", model: "m", pages: [] });
       if (url.endsWith("/narrations")) return json(list);
       if (url.includes("/calibrate/apply")) return json({ regenerated: [], failed: [], awaiting_teacher: [] });
+      if (url.endsWith("/job")) {
+        const running = started && polls < 1;
+        polls += started ? 1 : 0;
+        return json({
+          running,
+          queued: false,
+          kind: "calibrate",
+          status: running ? "running" : "done",
+          done: running ? 1 : 3,
+          total: 3,
+          message: running ? "第 1/3 个窗口" : "校准完成",
+          failed: [],
+        });
+      }
       if (url.includes("/calibrate")) {
-        if (method !== "POST") return json({ ...report, complete: false, windows: 3, windows_done: 0 });
+        if (method !== "POST") return json({ ...report, complete: false, windows: 3, windows_done: 3 });
         posts.push(url);
-        rounds += 1;
-        return json(
-          rounds === 1
-            ? { ...report, complete: false, windows: 3, windows_done: 1 }
-            : { ...report, windows: 3, windows_done: 3 },
-        );
+        started = true;
+        return json({
+          job: { running: true, queued: true, kind: "calibrate", status: "running", done: 0, total: 3, message: "", failed: [] },
+        });
       }
       return json({ page_no: 1, status: "draft", reused: false, model: "x" });
     }),
   );
   const user = userEvent.setup();
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: /全篇校准/ })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("button", { name: /全篇校准/ })).not.toBeDisabled());
   await user.click(screen.getByRole("button", { name: /全篇校准/ }));
-  await waitFor(() => expect(screen.getByText(/校准报告 · 3 个窗口/)).toBeTruthy());
-  // 服务端一次只跑一个时间片：前端必须循环到 complete，而不是只发一次请求。
-  expect(posts.length).toBe(2);
-  expect(screen.queryByText(/进行中/)).toBeNull();
+  await waitFor(() => expect(posts.length).toBe(1));
+  // 请求只入队一次，进度靠轮询 /job：关掉页面也不会中断后台任务。
+  await waitFor(() => expect(polls).toBeGreaterThan(1), { timeout: 5000 });
+  await waitFor(() => expect(screen.getByText(/校准报告已生成/)).toBeTruthy());
+  expect(posts.length).toBe(1);
 });

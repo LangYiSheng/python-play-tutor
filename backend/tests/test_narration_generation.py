@@ -137,7 +137,7 @@ def test_daily_quota_stops_further_calls(client, db, classroom, teacher, calls, 
     assert len(calls) == 1
 
 
-def test_range_generation_keeps_pages_that_succeeded(client, db, classroom, teacher, monkeypatch):
+def test_range_generation_keeps_pages_that_succeeded(client, db, classroom, teacher, run_jobs, monkeypatch):
     material = doc_material(db, classroom, "一" * 300, "二" * 300, "三" * 300)
     db.commit()
 
@@ -149,12 +149,14 @@ def test_range_generation_keeps_pages_that_succeeded(client, db, classroom, teac
     monkeypatch.setattr(service.model_client, "chat", flaky)
     result = client.post(url(classroom, material, "/generate"),
                          json={"first_page": 1, "last_page": 3}, headers=teacher["headers"])
-    assert result.status_code == 200, result.text
-    statuses = {item["page_no"]: item["status"] for item in result.json()["results"]}
-    assert statuses == {1: "draft", 2: "failed", 3: "draft"}
+    assert result.status_code == 202, result.text
+    run_jobs()
     body = client.get(url(classroom, material), headers=teacher["headers"]).json()
     assert body["coverage"]["covered"] == 2
     assert body["pages"][1]["narration"] is None
+    finished = client.get(url(classroom, material, "/job"), headers=teacher["headers"]).json()
+    assert finished["status"] == "failed"
+    assert [item["page_no"] for item in finished["failed"]] == [2]
 
 
 def test_students_cannot_generate(client, db, classroom, teacher, student, calls):

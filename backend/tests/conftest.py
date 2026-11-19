@@ -124,6 +124,20 @@ def client(db):
 
 
 @pytest.fixture
+def run_jobs(db):
+    """Drive queued background work the way the lifecycle worker would.
+
+    Tests use the request's own session, so no second connection to a throwaway database.
+    """
+    from app.narration import jobs
+
+    def drive():
+        jobs.drain(db)
+
+    return drive
+
+
+@pytest.fixture
 def student(db):
     row = User(student_id="72953879102235", name="学生", role="student", password_hash=hash_password("student-password-123"))
     db.add(row)

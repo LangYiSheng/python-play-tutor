@@ -104,7 +104,8 @@ def test_changed_source_blocks_retry_before_external_request(client, db, classro
     assert repository.job_of(db, material.id).status == "failed"
 
 
-def test_batch_retry_runs_failed_pages_only(client, db, classroom, teacher, monkeypatch):
+def test_batch_retry_runs_failed_pages_only(client, db, classroom, teacher, run_jobs, monkeypatch):
+    monkeypatch.setenv("REBORN_AUTHORING_AI_API_KEY", "test-key")
     material = material_fixture(db, classroom, ["正文" * 150, "正文" * 150], kind="pdf")
     db.commit()
     calls = []
@@ -117,11 +118,15 @@ def test_batch_retry_runs_failed_pages_only(client, db, classroom, teacher, monk
 
     monkeypatch.setattr(service, "generate_page", generate)
     response = client.post(url(classroom, material, "/generate"), json={"first_page": 1, "last_page": 2}, headers=teacher["headers"])
-    assert response.status_code == 200
+    assert response.status_code == 202
+    run_jobs()
     job = repository.job_of(db, material.id)
     assert job.status == "failed" and job.progress["retry_pages"] == [2]
     response = client.post(overview(classroom) + f"/{material.id}/retry", json={"expected_started_at": job.started_at.isoformat()}, headers=teacher["headers"])
     assert response.status_code == 200, response.text
+    retried = repository.job_of(db, material.id)
+    assert retried.progress.get("queued") is True, "重试也要排队，由后台执行"
+    run_jobs()
     assert calls == [1, 2, 2]
 
 

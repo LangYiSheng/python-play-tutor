@@ -14,7 +14,7 @@ from ..auth import current_user, require_teacher
 from ..db import get_db
 from ..models import Material, User
 from ..teacher_scope import require_scope, teacher_instance_id
-from . import audio, calibrate, task_commands
+from . import audio, calibrate, jobs, task_commands
 from .access import teacher_material, require_narratable, require_page
 from .request_contracts import NarrationInput, GenerateInput, RangeInput, PageGenerateInput
 from . import render, repository, service
@@ -48,11 +48,12 @@ def generate_narration(page_no: int, classroom_id: int, material_id: int,
     return task_commands.generate_narration(page_no=page_no, classroom_id=classroom_id, material_id=material_id, db=db, user=user, body=body)
 
 
-@router.post("/generate")
+@router.post("/generate", status_code=202)
 def generate_range(classroom_id: int, material_id: int, body: GenerateInput,
-                   db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, list[GeneratedPage]]:
-    """Serial batch: each page commits on its own, so a failure keeps earlier pages."""
-    return task_commands.generate_range(classroom_id=classroom_id, material_id=material_id, body=body, db=db, user=user)
+                   db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+    """Queue the batch; the worker generates page by page, so leaving the page is safe."""
+    job = task_commands.generate_range(classroom_id=classroom_id, material_id=material_id, body=body, db=db, user=user)
+    return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/job")
@@ -60,18 +61,7 @@ def read_job(classroom_id: int, material_id: int, db: Annotated[Session, Depends
              user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """前端轮询它来置灰按钮：同一份资料同时只允许一个生成/校准/音频任务。"""
     material = teacher_material(db, user, classroom_id, material_id)
-    job = repository.job_of(db, material.id)
-    if job is None:
-        return {"running": False, "kind": "", "status": "idle", "done": 0, "total": 0, "message": ""}
-    return {
-        "running": repository.job_running(job),
-        "kind": job.kind,
-        "status": job.status,
-        "done": (job.progress or {}).get("done", 0),
-        "total": (job.progress or {}).get("total", 0),
-        "message": job.message,
-        "started_at": job.started_at.isoformat() if job.started_at else None,
-    }
+    return jobs.state(material.id, repository.job_of(db, material.id))
 
 
 @router.get("/quota")
@@ -82,15 +72,15 @@ def read_quota(classroom_id: int, material_id: int, db: Annotated[Session, Depen
     return service.quota(db, instance_id)
 
 
-@router.post("/calibrate")
+@router.post("/calibrate", status_code=202)
 def calibrate_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                    user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    """Walk the deck with a rolling summary for one time slice; returns the report so far.
+    """Queue the whole-deck walk; poll `/job` and `/calibrate?partial=1` for progress.
 
-    Long decks are walked over several requests: the caller repeats while `complete` is false.
     The cursor lives in the run's report row, so an interrupted run resumes where it stopped.
     """
-    return task_commands.calibrate_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    job = task_commands.calibrate_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/calibrate")
@@ -249,13 +239,14 @@ def read_page_image(page_no: int, classroom_id: int, material_id: int, db: Annot
     return Response(content=image, media_type="image/jpeg",
                     headers={"Cache-Control": "private, max-age=300"})
 
-@router.post("/audio-batch")
+@router.post("/audio-batch", status_code=202)
 def synthesize_audio_batch(classroom_id: int, material_id: int,
                            db: Annotated[Session, Depends(get_db)],
                            user: Annotated[User, Depends(require_teacher)],
                            body: RangeInput | None = None) -> dict[str, Any]:
-    """Synthesize every accepted page in the range; one failure must not abort the rest."""
-    return task_commands.synthesize_audio_batch(classroom_id=classroom_id, material_id=material_id, db=db, user=user, body=body)
+    """Queue audio for every accepted page in the range; one failure keeps the rest."""
+    job = task_commands.synthesize_audio_batch(classroom_id=classroom_id, material_id=material_id, db=db, user=user, body=body)
+    return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/{page_no}/audio/file")
