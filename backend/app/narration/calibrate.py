@@ -145,6 +145,7 @@ def _empty_state(material: Material, items: list[PageContent], fingerprint: str,
         "tag_stats": {"before": 0, "after": 0, "merged": 0},
         "render_errors": [],
         "shrunk_windows": [],
+        "output_retries": 0,
         "lost_images": [],
         "revisions": {str(row.page_no): revision(row) for row in items},
         "window_budget": {"chars": WINDOW_TEXT_BUDGET, "images": IMAGE_LIMIT},
@@ -364,6 +365,7 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
             hint = getattr(exc, "hint", None)
             if hint == "output":
                 # 输出被截断：这一窗内容本身没问题，加大输出预算重试一次。
+                state["output_retries"] = int(state.get("output_retries") or 0) + 1
                 reply = _call(material, payload, images, settings,
                               max_tokens=min(settings["max_tokens"] * 3, 32000))
             elif hint == "length":
