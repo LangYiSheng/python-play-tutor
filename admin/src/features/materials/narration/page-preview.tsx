@@ -2,7 +2,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
 import type { usePageMedia } from "./use-page-media";
 import type { useNarrationReview } from "./use-review";
 export function NarrationPagePreview({
@@ -14,15 +13,9 @@ export function NarrationPagePreview({
   classroomId: number;
   materialId: number;
 }) {
-  const { data, setPageNo, page, previous, next, saveContent, busy } = review;
+  const { data, setPageNo, page, previous, next } = review;
   const { imageFailed, setImageFailed, pageImage } = media;
   const digest = page?.digest ?? null;
-  const [title, setTitle] = useState(digest?.title ?? "");
-  const [tags, setTags] = useState((digest?.tags ?? []).join("、"));
-  useEffect(() => {
-    setTitle(digest?.title ?? "");
-    setTags((digest?.tags ?? []).join("、"));
-  }, [page?.page_no, digest?.title, digest?.tags]);
   if (!page || !data) return null;
   return (
     <div className="space-y-2">
@@ -61,28 +54,12 @@ export function NarrationPagePreview({
           }}
         />
       </div>
-      <div className="space-y-2 rounded border p-2 text-sm">
+      <div className="space-y-1 rounded border p-2 text-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label="本页标题"
-            className="h-8 max-w-xs"
-            disabled={!digest}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!digest || busy === "content"}
-            onClick={() =>
-              void saveContent(page.page_no, {
-                title,
-                tags: tags.split(/[、,，\s]+/).filter(Boolean),
-              })
-            }
-          >
-            {busy === "content" ? "保存中…" : "保存标题与标签"}
-          </Button>
+          <span className="font-medium">
+            {digest?.title || page.title || `第 ${page.page_no} 页`}
+          </span>
+          {digest?.topic && <span className="hint">{digest.topic}</span>}
           {digest && digest.image_state !== "sent" && (
             <Badge
               variant="secondary"
@@ -92,15 +69,9 @@ export function NarrationPagePreview({
             </Badge>
           )}
         </div>
-        <Input
-          aria-label="本页标签"
-          className="h-8"
-          disabled={!digest}
-          placeholder="标签用顿号或逗号分隔"
-          value={tags}
-          onChange={(event) => setTags(event.target.value)}
-        />
-        {digest?.topic && <p className="hint">{digest.topic}</p>}
+        {digest?.tags?.length ? (
+          <p className="hint">标签：{digest.tags.join("、")}</p>
+        ) : null}
         {!digest && (
           <p className="hint">
             这页还没有整理稿，点「一键梳理文本」生成；未整理时讲解会退回解析原文。
@@ -123,22 +94,20 @@ export function NarrationPagePreview({
           />
         )}
       </div>
-      <details className="text-sm" open>
-        <summary className="cursor-pointer">
-          整理稿（{digest?.text.length ?? 0} 字）
-        </summary>
-        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border p-2 text-xs">
-          {digest?.text || "（这页还没有整理稿）"}
-        </pre>
-      </details>
-      <details className="text-sm">
-        <summary className="cursor-pointer">
-          查看原始文本（{page.source_chars} 字）
-        </summary>
-        <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border p-2 text-xs">
-          {page.raw_text || page.source_text || "（无文本层，内容在页面图像里）"}
-        </pre>
-      </details>
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
+        <section className="min-w-0 space-y-1 rounded border p-2">
+          <p className="font-medium">整理稿（{digest?.text.length ?? 0} 字）</p>
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs">
+            {digest?.text || "（这页还没有整理稿）"}
+          </pre>
+        </section>
+        <section className="min-w-0 space-y-1 rounded border p-2">
+          <p className="font-medium">原始文本（{page.source_chars} 字）</p>
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs">
+            {page.raw_text || page.source_text || "（无文本层，内容在页面图像里）"}
+          </pre>
+        </section>
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ Two request shapes are supported behind one seam, selected by `REBORN_TTS_PROTOC
 Weights for a self-hosted engine are fetched outside the image; nothing is baked in.
 """
 
+import base64
 from typing import cast
 
 import httpx
@@ -21,6 +22,8 @@ from .contracts import SpeechSettings
 from .defaults import environment_protocol
 
 DEEPSEEK_FORMATS = {"wav", "pcm"}
+DASHSCOPE_FORMATS = {"mp3", "wav", "pcm", "opus"}
+DASHSCOPE_SAMPLE_RATE = 24000
 
 
 class SpeechUnavailable(RuntimeError):
@@ -53,7 +56,7 @@ def unavailable_reason(db: Session | None = None) -> str | None:
 def endpoint(base_url: str, path: str) -> str:
     """Accept a service root, /v1 root or complete supported speech endpoint."""
     root = base_url.rstrip("/")
-    for suffix in ("/v1/tools/tts", "/v1/audio/speech", "/v1"):
+    for suffix in ("/api/v1/services/audio/tts/SpeechSynthesizer", "/v1/tools/tts", "/v1/audio/speech", "/v1"):
         if root.endswith(suffix):
             root = root[:-len(suffix)]
             break
@@ -73,6 +76,16 @@ def _request(config: SpeechSettings, text: str) -> tuple[str, dict[str, object]]
             "format": config["format"] if config["format"] in DEEPSEEK_FORMATS else "wav",
             "filter_markdown": False,
         }
+    if config.get("protocol", environment_protocol()) == "dashscope":
+        if config["format"] not in DASHSCOPE_FORMATS:
+            raise SpeechFailed(f"阿里语音不支持 {config['format']}，请改用 mp3/wav/pcm/opus")
+        if not 0.5 <= config["speed"] <= 2:
+            raise SpeechFailed("阿里语音语速只支持 0.5–2")
+        speech: dict[str, object] = {"text": text, "voice": config["voice"],
+                                        "format": config["format"], "sample_rate": DASHSCOPE_SAMPLE_RATE}
+        if config["speed"] != 1:
+            speech["rate"] = config["speed"]
+        return "/api/v1/services/audio/tts/SpeechSynthesizer", {"model": config["model"], "input": speech}
     return "/v1/audio/speech", {
         "model": config["model"],
         "voice": config["voice"],
@@ -106,13 +119,47 @@ def synthesize(text: str, *, settings_override: SpeechSettings | None = None) ->
         raise SpeechFailed("语音合成服务繁忙或超时，请稍后重试")
     if response.status_code != 200:
         raise SpeechFailed(f"语音合成服务返回 {response.status_code}")
-    audio = response.content
+    if config.get("protocol", environment_protocol()) == "dashscope":
+        audio = _dashscope_audio(config, response)
+    else:
+        audio = response.content
     if len(audio) < 512:
         raise SpeechFailed("语音合成返回的音频为空或过短")
     if config["format"] == "pcm":
         audio = _wrap_pcm(audio)
     if config["format"] == "wav":
         audio = _normalise_wav(audio)
+    return audio
+
+
+def _dashscope_audio(config: SpeechSettings, response: httpx.Response) -> bytes:
+    """阿里百炼非流式返回 JSON：优先 base64 数据，否则下载 24 小时有效的音频 URL。"""
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise SpeechFailed("语音合成返回的不是有效 JSON") from exc
+    output = payload.get("output") or {}
+    audio_info = output.get("audio") or {}
+    data = str(audio_info.get("data") or "").strip()
+    if data:
+        try:
+            audio = base64.b64decode(data)
+        except (ValueError, TypeError) as exc:
+            raise SpeechFailed("语音合成返回的音频数据无法解码") from exc
+    else:
+        url = str(audio_info.get("url") or "").strip()
+        if not url:
+            raise SpeechFailed("语音合成没有返回音频")
+        try:
+            with httpx.Client(timeout=config["timeout"]) as client:
+                download = client.get(url)
+        except httpx.HTTPError as exc:
+            raise SpeechFailed("语音合成音频下载失败，请稍后重试") from exc
+        if download.status_code != 200:
+            raise SpeechFailed(f"语音合成音频下载失败（{download.status_code}）")
+        audio = download.content
+    if len(audio) < 512:
+        raise SpeechFailed("语音合成返回的音频为空或过短")
     return audio
 
 

@@ -165,3 +165,70 @@ def test_status_codes_map_to_readable_errors(monkeypatch):
         monkeypatch.setattr(tts.httpx, "Client", respond(status))
         with pytest.raises(tts.SpeechFailed, match=fragment):
             tts.synthesize("这一页讲变量。")
+
+
+def test_dashscope_posts_native_body_and_downloads_the_audio(monkeypatch):
+    posts: list[tuple[str, dict]] = []
+    downloads: list[str] = []
+    payload = wav_bytes(1.0)
+
+    class FakeResponse:
+        def __init__(self, json_body=None, content=b""):
+            self.status_code = 200
+            self.content = content
+            self._json = json_body
+
+        def json(self):
+            return self._json
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            posts.append((url, json))
+            return FakeResponse({"output": {"audio": {"data": "", "url": "https://oss.example/audio.wav"}}})
+
+        def get(self, url):
+            downloads.append(url)
+            return FakeResponse(content=payload)
+
+    monkeypatch.setattr(tts.httpx, "Client", FakeClient)
+    monkeypatch.setenv("REBORN_TTS_BASE_URL", "https://workspace.cn-beijing.maas.aliyuncs.com")
+    monkeypatch.setenv("REBORN_TTS_PROTOCOL", "dashscope")
+    monkeypatch.setenv("REBORN_TTS_MODEL", "qwen-audio-3.0-tts-flash")
+    monkeypatch.setenv("REBORN_TTS_VOICE", "longanhuan_v3.6")
+    monkeypatch.setenv("REBORN_TTS_FORMAT", "wav")
+
+    audio = tts.synthesize("这一页讲变量。")
+
+    url, body = posts[0]
+    assert url == "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
+    assert body == {"model": "qwen-audio-3.0-tts-flash",
+                    "input": {"text": "这一页讲变量。", "voice": "longanhuan_v3.6",
+                              "format": "wav", "sample_rate": 24000}}
+    assert downloads == ["https://oss.example/audio.wav"]
+    assert audio[:4] == b"RIFF"
+
+
+def test_dashscope_rejects_a_format_or_speed_it_cannot_use(monkeypatch):
+    monkeypatch.setenv("REBORN_TTS_BASE_URL", "https://workspace.cn-beijing.maas.aliyuncs.com")
+    monkeypatch.setenv("REBORN_TTS_PROTOCOL", "dashscope")
+    monkeypatch.setenv("REBORN_TTS_FORMAT", "flac")
+    with pytest.raises(tts.SpeechFailed, match="mp3/wav/pcm/opus"):
+        tts.synthesize("x")
+    monkeypatch.setenv("REBORN_TTS_FORMAT", "mp3")
+    monkeypatch.setenv("REBORN_TTS_SPEED", "3")
+    with pytest.raises(tts.SpeechFailed, match="0.5–2"):
+        tts.synthesize("x")
+
+
+def test_endpoint_accepts_a_full_dashscope_url():
+    root = "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
+    assert tts.endpoint(root, "/api/v1/services/audio/tts/SpeechSynthesizer") == root

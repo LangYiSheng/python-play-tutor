@@ -143,6 +143,7 @@ it("keeps audio generation disabled until the page is accepted", async () => {
   await waitFor(() => expect(screen.getByText("音色 Meilin · zonos3-mini")).toBeTruthy());
   const audio = screen.getByRole("button", { name: /生成音频/ });
   expect(audio).toBeDisabled();
+  expect(screen.getByRole("button", { name: /生成全文配音/ })).toBeDisabled();
   expect(screen.getByRole("button", { name: /试听/ })).toBeDisabled();
 });
 
@@ -168,9 +169,9 @@ it("queues the one-click pipeline and shows which stage is running", async () =>
   await waitFor(() => expect(screen.getByRole("button", { name: /一键梳理文本/ })).toBeTruthy());
   await user.click(screen.getByRole("button", { name: /一键梳理文本/ }));
   await waitFor(() => expect(calls.some((call) => call.url.endsWith("/pipeline"))).toBe(true));
-  expect(screen.getByText(/整理原文/)).toBeTruthy();
-  expect(screen.getByText(/整册校准/)).toBeTruthy();
-  expect(screen.getByText(/生成讲解稿/)).toBeTruthy();
+  await waitFor(() => expect(screen.getAllByText(/整理原文/).length).toBeGreaterThan(0));
+  expect(screen.getAllByText(/整册校准/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/生成讲解稿/).length).toBeGreaterThan(0);
 });
 
 it("lists calibration fixes and tag merges, and says the fixes were applied", async () => {
@@ -185,32 +186,36 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
           reason: "补上漏掉的冒号",
         },
       ],
-      tag_map: { "监督学习算法": "监督学习" },
+      tag_map: { "监督学习算法": "监督学习", "监督学习模型": "监督学习" },
+      issues: [
+        { page_no: 1, kind: "ocr", detail: "import 与实例化不一致", status: "draft" },
+        { page_no: 1, kind: "flow", detail: "术语前后不统一", status: "draft" },
+      ],
       tag_stats: { before: 2, after: 1, merged: 1 },
     },
   });
+  const user = userEvent.setup();
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("tab", { name: /校准/ })).toBeTruthy());
+  await user.click(screen.getByRole("tab", { name: /校准/ }));
   await waitFor(() => expect(screen.getByText(/校准修正已自动应用/)).toBeTruthy());
   expect(screen.getByText(/原文修正（1 处，已自动应用）/)).toBeTruthy();
   expect(screen.getByText("补上漏掉的冒号")).toBeTruthy();
-  expect(screen.getByText(/标签合并（1 组）/)).toBeTruthy();
+  expect(screen.getByText(/标签合并（1 个标准名，2 个别名）/)).toBeTruthy();
+  expect(screen.getByText("监督学习算法、监督学习模型")).toBeTruthy();
+  expect(screen.getByText(/需核对的问题（2 条）/)).toBeTruthy();
+  expect(screen.getByText("2 条 · 仅记录，未改整理稿")).toBeTruthy();
+  expect(screen.queryByText(/可自动重生成/)).toBeNull();
 });
 
-it("shows the digest, folds the raw text, and saves title and tags", async () => {
-  const calls: { url: string; method: string; body?: unknown }[] = [];
-  stub(calls);
-  const user = userEvent.setup();
+it("shows the digest read-only and folds the raw text", async () => {
+  stub([]);
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByText("整理后的监督学习定义")).toBeTruthy());
-  expect(screen.getByText(/查看原始文本（12 字）/)).toBeTruthy();
-
-  const title = screen.getByLabelText("本页标题");
-  await user.clear(title);
-  await user.type(title, "监督学习上");
-  await user.click(screen.getByRole("button", { name: /保存标题与标签/ }));
-  await waitFor(() =>
-    expect(calls.some((call) => call.url.endsWith("/1/content"))).toBe(true),
-  );
-  const saved = calls.find((call) => call.url.endsWith("/1/content"))!;
-  expect(saved.body).toEqual({ title: "监督学习上", tags: ["监督学习"] });
+  expect(screen.getByText("监督学习")).toBeTruthy();
+  expect(screen.getByText("这一页讲监督学习的定义")).toBeTruthy();
+  expect(screen.getByText("标签：监督学习")).toBeTruthy();
+  expect(screen.getByText(/原始文本（12 字）/)).toBeTruthy();
+  expect(screen.queryByLabelText("本页标题")).toBeNull();
+  expect(screen.queryByRole("button", { name: /保存标题与标签/ })).toBeNull();
 });

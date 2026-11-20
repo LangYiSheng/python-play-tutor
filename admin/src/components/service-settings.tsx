@@ -1,14 +1,22 @@
 import { useEffect, useState } from 'react';
-import { WandSparkles } from 'lucide-react';
+import { PlugZap, WandSparkles } from 'lucide-react';
 import { SettingsActions, type SettingsActionPlacement } from './settings-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SelectField } from '@/components/select-field';
+import { SuggestInput } from '@/components/suggest-input';
 import { ErrorNotice, Loading } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
+
+type SpeechCatalog = {
+  models: { id: string; name: string }[];
+  voices: { id: string; name: string }[];
+  model_source: string;
+  voice_source: string;
+};
 
 type Service = 'authoring' | 'speech';
 type Settings = Record<string, string | number | boolean> & { revision: number; key_configured: boolean };
@@ -20,17 +28,18 @@ const fields: Record<Service, Field[]> = {
     { key: 'max_tokens', label: '每次回复上限（tokens）', min: 128, max: 65536 },
     { key: 'daily_pages', label: '每门课程每日生成页数', min: 1, max: 10000 },
     { key: 'timeout', label: '请求超时（秒）', min: 10, max: 600 }],
-  speech: [{ key: 'protocol', label: '语音接口协议', options: ['openai', 'deepseek'] }, ...shared,
+  speech: [{ key: 'protocol', label: '语音接口协议', options: ['openai', 'deepseek', 'dashscope'] }, ...shared,
     { key: 'voice', label: '音色名称 / ID' },
     { key: 'format', label: '返回音频格式', options: ['mp3', 'wav', 'pcm', 'opus', 'flac', 'aac'] },
     { key: 'speed', label: '合成语速', min: 0.25, max: 4, step: 0.05 },
     { key: 'timeout', label: '请求超时（秒）', min: 10, max: 600 }],
 };
 const names = { authoring: '讲稿生成', speech: '语音合成' };
-const labels: Record<string, string> = { none: '关闭', minimal: '最少', low: '低', medium: '中', high: '高', stella: 'Stella（女声）', tide: 'Tide（男声）', openai: 'OpenAI 兼容语音接口', deepseek: 'DeepSeek 工具语音接口' };
+const labels: Record<string, string> = { none: '关闭', minimal: '最少', low: '低', medium: '中', high: '高', stella: 'Stella（女声）', tide: 'Tide（男声）', openai: 'OpenAI 兼容语音接口', deepseek: 'DeepSeek 工具语音接口', dashscope: '阿里百炼原生语音接口' };
 
 export function ServiceSettings({ service, actionsTarget, active }: SettingsActionPlacement & { service: Service }) {
   const [saved, setSaved] = useState<Settings>(), [draft, setDraft] = useState<Settings>();
+  const [catalog, setCatalog] = useState<SpeechCatalog>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
   const dirty = !!saved && (JSON.stringify(saved) !== JSON.stringify(draft) || !!key || clearKey);
@@ -43,6 +52,21 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     }).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
     return () => controller.abort();
   }, [path]);
+  useEffect(() => {
+    if (service !== 'speech' || !saved) return;
+    const controller = new AbortController();
+    void api.get<SpeechCatalog>('/teacher/services/speech/catalog', controller.signal)
+      .then(value => { if (!controller.signal.aborted) setCatalog(value); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [service, saved?.key_configured, saved?.revision]);
+  async function testSpeech() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api.post<{ elapsed_ms: number; bytes: number; format: string }>('/teacher/services/speech/test', {});
+      setNotice(`连接正常 · ${result.elapsed_ms} ms · ${result.format} · ${(result.bytes / 1024).toFixed(1)} KB`);
+    } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+  }
   async function save() {
     if (!draft || !saved || busy) return;
     setBusy(true); setError(''); setNotice('');
@@ -55,16 +79,20 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   const deepseek = service === 'speech' && draft?.protocol === 'deepseek';
+  const dashscope = service === 'speech' && draft?.protocol === 'dashscope';
   const visibleFields = fields[service].filter(field => !(deepseek && ['model', 'speed'].includes(field.key))).map(field => {
     if (deepseek && field.key === 'voice') return { ...field, options: ['stella', 'tide'] };
     if (deepseek && field.key === 'format') return { ...field, options: ['wav', 'pcm'] };
+    if (dashscope && field.key === 'format') return { ...field, options: ['mp3', 'wav', 'pcm', 'opus'] };
     return field;
   });
   function applyProtocol(protocol: string, replace = false) {
     if (!draft) return;
     const example = protocol === 'deepseek'
       ? { base_url: 'https://api.deepseek.com', model: '', voice: 'stella', format: 'wav', speed: 1 }
-      : { base_url: 'https://api.openai.com', model: 'tts-1', voice: 'alloy', format: 'mp3', speed: 1 };
+      : protocol === 'dashscope'
+        ? { base_url: 'https://workspace-id.cn-beijing.maas.aliyuncs.com', model: 'qwen-audio-3.1-tts-flash', voice: 'longanhuan_v3.1', format: 'mp3', speed: 1 }
+        : { base_url: 'https://api.openai.com', model: 'tts-1', voice: 'alloy', format: 'mp3', speed: 1 };
     // Custom endpoints remain intact unless the explicit example action is used.
     const known = ['', 'https://api.deepseek.com', 'https://api.openai.com'];
     const root = String(draft.base_url).replace(/\/+$/, '').replace(/\/v1(?:\/(?:tools\/tts|audio\/speech))?$/, '');
@@ -80,10 +108,14 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     <ErrorNotice message={error} />{notice && !dirty && <p role="status" className="hint">{notice}</p>}
     {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="space-y-4">
       {service === 'speech' && <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-3">
-        <p className="hint flex-1">{deepseek ? 'DeepSeek 示例：api.deepseek.com · Stella 女声 / Tide 男声 · WAV / PCM。此接口无需模型名称，合成语速固定为 1。' : 'OpenAI 兼容接口：填写服务基础地址、模型和音色。示例仅供配置参考，是否可用以你的供应商为准。'}</p>
+        <p className="hint flex-1">{deepseek ? 'DeepSeek 示例：api.deepseek.com · Stella 女声 / Tide 男声 · WAV / PCM。此接口无需模型名称，合成语速固定为 1。' : dashscope ? '阿里百炼原生语音接口：地址填业务空间域名（https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com），模型如 qwen-audio-3.0-tts-flash / cosyvoice-v3-plus，音色从控制台复制；返回音频 URL 由服务端下载。' : 'OpenAI 兼容接口：填写服务基础地址、模型和音色。示例仅供配置参考，是否可用以你的供应商为准。'}</p>
         <Button type="button" variant="outline" onClick={() => {
           if (window.confirm('将地址、音色和格式等替换为接口示例？API Key 保持不变，保存后生效。')) applyProtocol(String(draft.protocol), true);
         }}><WandSparkles />填入示例</Button>
+      </div>}
+      {service === 'speech' && <div>
+        <Button type="button" variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void testSpeech()}><PlugZap />测试已保存连接</Button>
+        <p className="hint mt-2">会发送一次短语音请求；有未保存修改时请先保存或取消，测试不保存音频。</p>
       </div>}
       <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{visibleFields.map(field => <div className="field" key={field.key}>
         <Label htmlFor={`${service}-${field.key}`}>{field.label}</Label>
@@ -91,11 +123,22 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           if (field.key === 'protocol') applyProtocol(value); else setDraft({ ...draft, [field.key]: value });
         }}>
           {field.options.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
-        </SelectField> : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
-          placeholder={field.key === 'base_url' && deepseek ? 'https://api.deepseek.com' : field.placeholder}
-          value={String(draft[field.key])} onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
+        </SelectField> : service === 'speech' && (field.key === 'model' || field.key === 'voice') ? (
+          <SuggestInput
+            id={`${service}-${field.key}`}
+            value={String(draft[field.key])}
+            onChange={value => setDraft({ ...draft, [field.key]: value })}
+            options={(field.key === 'model' ? catalog?.models : catalog?.voices) ?? []}
+            placeholder={field.placeholder}
+            label={field.label}
+          />
+        ) : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
+          placeholder={field.key === 'base_url' ? (deepseek ? 'https://api.deepseek.com' : dashscope ? 'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com' : field.placeholder) : field.placeholder}
+          value={String(draft[field.key])}
+          onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
         {field.key === 'base_url' && service === 'speech' && <p className="hint">填写基础地址即可；完整语音接口地址也可识别。留空可停用合成。</p>}
       </div>)}</div>
+      {service === 'speech' && catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
       <div className="field max-w-lg"><Label htmlFor={`${service}-key`}>API Key {saved?.key_configured ? '（已配置）' : '（未配置）'}</Label>
         <Input id={`${service}-key`} type="password" autoComplete="new-password" value={key} placeholder={saved?.key_configured ? '••••••••' : '填写服务密钥'} disabled={clearKey} onChange={e => setKey(e.target.value)} />
         <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>
