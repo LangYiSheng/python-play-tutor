@@ -60,7 +60,7 @@ def current_audio(db: Session, material: Material, page_no: int) -> tuple[str, s
     item = repository.row(db, material.id, page_no)
     if item is None or item.status not in {"accepted"}:
         return None
-    if item.page_hash != repository.source_hash(material, page_no):
+    if item.page_hash != repository.narration_hash(db, material, page_no):
         return None
     if not item.audio_key or not item.audio_text_hash:
         return None
@@ -83,7 +83,7 @@ def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecor
         raise LookupError("本页还没有讲解")
     if item.status != "accepted":
         raise ValueError("只有老师已接受的讲解才能生成音频")
-    if item.page_hash != repository.source_hash(material, page_no):
+    if item.page_hash != repository.narration_hash(db, material, page_no):
         raise ValueError("页面已更新，请重新审校讲解")
     if not item.text.strip():
         raise ValueError("讲解为空，无法生成音频")
@@ -99,7 +99,7 @@ def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecor
     db.refresh(material, with_for_update=True)
     db.refresh(item, with_for_update=True)
     if (item.status != "accepted" or item.audio_text_hash == digest or
-            repository.text_hash(item.text) != digest or item.page_hash != repository.source_hash(material, page_no)):
+            repository.text_hash(item.text) != digest or item.page_hash != repository.narration_hash(db, material, page_no)):
         raise ValueError("讲解或音频已更新，本次合成未覆盖新内容，请刷新")
     key = audio_key(material.id, page_no, digest, stored_format)
     storage = get_storage()

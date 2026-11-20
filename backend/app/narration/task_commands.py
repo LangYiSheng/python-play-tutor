@@ -83,7 +83,6 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any])
             last=body.last_page,
             instance_id=instance_id,
             target_seconds=body.target_seconds,
-            serial=body.mode == "serial",
             only_pages=request.get("only_pages"),
         )
     except (service.NarrationUnavailable, LookupError, ValueError) as exc:

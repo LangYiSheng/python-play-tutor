@@ -20,7 +20,7 @@ mismatch 经页图核实成立（第 27/33/47 页）。生成侧演示文稿不�
 import pytest
 from types import SimpleNamespace
 
-from app.narration import calibrate, repository, service
+from app.narration import calibrate, repository
 from app.narration.input_policy import (DIGEST_TEXT_ONLY_THRESHOLD, IMAGE_POLICY, PDF_TEXT_ONLY_THRESHOLD,
                                         TEXT_AS_IMAGE_BELOW, prefers_image)
 from test_narration import material_fixture
@@ -57,11 +57,6 @@ def test_policy_table_is_the_single_source_of_truth():
     assert TEXT_AS_IMAGE_BELOW == 60 and PDF_TEXT_ONLY_THRESHOLD == 200 and DIGEST_TEXT_ONLY_THRESHOLD == 600
 
 
-@pytest.mark.parametrize("kind", [PRESENTATION, PDF])
-@pytest.mark.parametrize("chars", [0, 1, 59, 60, 61, 199, 200, 201])
-def test_generation_image_policy(kind, chars):
-    assert service.with_image(material_of(kind), "字" * chars) is (chars < GENERATION_POLICY[kind])
-
 
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])
 @pytest.mark.parametrize("chars", [0, 59, 60, 199, 200, 599, 600, 900])
@@ -88,7 +83,6 @@ def test_both_paths_delegate_to_the_same_policy(kind, chars):
 @pytest.mark.parametrize("kind", [PRESENTATION, PDF])
 def test_whitespace_only_text_counts_as_empty(kind):
     assert calibrate.image_input(material_of(kind), " \n\t ") is True
-    assert service.with_image(material_of(kind), " \n\t ") is True
 
 
 def _narrated(db, classroom, texts, kind):

@@ -222,6 +222,8 @@ tag 归并（整册一次或分批 + 两轮合并）：
 - 测试：窗口切分/缺页、跨页不重复、anchors 上限、单页返工、链式续跑、重启恢复。
 - 验证：真机 103 页（假模型 stub）全链跑通，记录调用数、耗时、`length` 次数。
 
+**实现（2026-11-19）**：窗口生成直接并入 `service.generate_page/generate_range`，没有另起链路。批量一律 4 页一窗、输入整理稿、一次写 4 页；`serial` 参数与「前几页讲稿」上下文删除，回看/前瞻只留 `LOOKBACK_PAGES`/`LOOKAHEAD_PAGES` 与 `window_context()` 占位（当前 0）。窗口内页号严格一致，缺页整窗失败，失败按窗重试。锚点写入前按本页整理稿/原文做落地校验，越界丢弃。`page_hash` 统一为 `narration_hash`（整理稿 + 文件指纹），音频、课程包、可见性共用同一身份。剩余：`digest → calibrate → script` 自动接续（`progress.chain`）尚未接入。
+
 ### P5 · 前端（2–3 天）
 
 `admin/src/features/materials/narration/`：

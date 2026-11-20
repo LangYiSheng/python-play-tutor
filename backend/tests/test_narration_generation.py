@@ -2,6 +2,8 @@
 
 The model and the renderer are seams: these tests never call a provider or poppler.
 """
+import json
+
 import pytest
 
 from app.narration import client as model_client
@@ -23,10 +25,20 @@ def authoring_key(monkeypatch):
 def calls(monkeypatch):
     recorded = []
 
-    def fake_chat(messages, *, settings, model, max_tokens=None, effort=None):
+    def fake_chat(messages, *, settings, model, max_tokens=None, effort=None, require_text=True, **kwargs):
         recorded.append({"messages": messages, "model": model, "settings": settings})
-        return {"text": "这一页讲的是变量。", "bridge_in": "接着上一页。", "anchors": ["变量", "赋值"],
-                "usage": {"prompt_tokens": 100, "completion_tokens": 50}, "model": model}
+        user = messages[1]["content"]
+        marker = "本窗每页的整理稿：\n"
+        body = json.loads(user.split(marker, 1)[1]) if marker in user else {}
+        pages_in = body.get("pages") or []
+        if pages_in:
+            return {"raw": {"pages": [{"page_no": page["page_no"], "text": "这一页讲的是变量。",
+                                       "anchors": ["变量", "赋值"]} for page in pages_in]},
+                    "text": "", "bridge_in": "", "anchors": [], "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+                    "model": model}
+        return {"raw": {"text": "这一页讲的是变量。", "anchors": ["变量", "赋值"]}, "text": "这一页讲的是变量。",
+                "bridge_in": "", "anchors": ["变量"], "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+                "model": model}
 
     monkeypatch.setattr(service.model_client, "chat", fake_chat)
     return recorded
@@ -69,34 +81,12 @@ def test_generate_writes_a_draft_and_reuses_identical_input(client, db, classroo
     assert narration["anchors"] == ["变量", "赋值"]
 
 
-def test_presentation_pages_send_the_slide_image_only_when_the_text_is_fragmented(client, db, classroom, teacher, calls, monkeypatch):
-    """演示文稿不再无条件发图：文本层够长就只发文本（2026-11-17 实验结论）。"""
-    long_slide = slide_material(db, classroom, "这一页文本很长" * 40)
-    db.commit()
-    rendered = []
-    monkeypatch.setattr(service.render, "render_page", lambda item, page_no: rendered.append(page_no) or b"\xff\xd8jpeg")
-    long_result = generate(client, classroom, long_slide, 1, teacher["headers"])
-    assert long_result.status_code == 200, long_result.text
-    assert long_result.json()["image_used"] is False and rendered == []
-    assert all(part.get("type") != "image_url" for part in calls[0]["messages"][1]["content"])
-
-    short_slide = slide_material(db, classroom, "这一页很短")
-    db.commit()
-    result = generate(client, classroom, short_slide, 1, teacher["headers"])
-    assert result.status_code == 200, result.text
-    assert result.json()["image_used"] is True and rendered == [1]
-    # The image must ride along as a real content part, not a text note.
-    parts = calls[-1]["messages"][1]["content"]
-    assert parts[-1]["type"] == "image_url" and parts[-1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
-
-
-def test_empty_page_text_without_renderable_source_is_unavailable(client, db, classroom, teacher, calls, monkeypatch):
+def test_empty_page_text_without_digest_is_unavailable(client, db, classroom, teacher, calls):
     material = slide_material(db, classroom, "")
     db.commit()
-    monkeypatch.setattr(service.render, "render_page", lambda item, page_no: None)
     result = generate(client, classroom, material, 1, teacher["headers"])
     assert result.status_code == 409
-    assert "没有可读的页面来源" in result.json()["detail"]
+    assert "没有可讲解的内容" in result.json()["detail"]
     assert calls == []
 
 
@@ -138,26 +128,31 @@ def test_daily_quota_stops_further_calls(client, db, classroom, teacher, calls, 
     assert len(calls) == 1
 
 
-def test_range_generation_keeps_pages_that_succeeded(client, db, classroom, teacher, run_jobs, monkeypatch):
-    material = doc_material(db, classroom, "一" * 300, "二" * 300, "三" * 300)
+def test_window_failure_keeps_completed_windows(client, db, classroom, teacher, run_jobs, monkeypatch):
+    """一窗失败只影响这一窗：前 4 页保留，后 4 页进失败列表。"""
+    material = doc_material(db, classroom, *[f"第{i}页正文" * 40 for i in range(1, 9)])
     db.commit()
 
-    def flaky(messages, *, settings, model, max_tokens=None, effort=None):
-        if "二" in messages[1]["content"][1]["text"]:
+    def flaky(messages, *, settings, model, **kwargs):
+        user = messages[1]["content"]
+        marker = "本窗每页的整理稿：\n"
+        body = json.loads(user.split(marker, 1)[1])
+        pages = [page["page_no"] for page in body["pages"]]
+        if any(no > 4 for no in pages):
             raise model_client.ModelFailed("模型返回空内容，请重试")
-        return {"text": "讲解正文。", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+        return {"raw": {"pages": [{"page_no": no, "text": "讲稿正文。", "anchors": []} for no in pages]},
+                "usage": {}, "model": model}
 
     monkeypatch.setattr(service.model_client, "chat", flaky)
     result = client.post(url(classroom, material, "/generate"),
-                         json={"first_page": 1, "last_page": 3}, headers=teacher["headers"])
+                         json={"first_page": 1, "last_page": 8}, headers=teacher["headers"])
     assert result.status_code == 202, result.text
     run_jobs()
     body = client.get(url(classroom, material), headers=teacher["headers"]).json()
-    assert body["coverage"]["covered"] == 2
-    assert body["pages"][1]["narration"] is None
+    assert body["coverage"]["covered"] == 4
     finished = client.get(url(classroom, material, "/job"), headers=teacher["headers"]).json()
     assert finished["status"] == "failed"
-    assert [item["page_no"] for item in finished["failed"]] == [2]
+    assert [item["page_no"] for item in finished["failed"]] == [5, 6, 7, 8]
 
 
 def test_students_cannot_generate(client, db, classroom, teacher, student, calls):

@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 import pytest
@@ -104,30 +105,37 @@ def test_changed_source_blocks_retry_before_external_request(client, db, classro
     assert repository.job_of(db, material.id).status == "failed"
 
 
-def test_batch_retry_runs_failed_pages_only(client, db, classroom, teacher, run_jobs, monkeypatch):
+def test_batch_retry_repeats_the_failed_window(client, db, classroom, teacher, run_jobs, monkeypatch):
+    """窗口失败按窗重试：第一次两页一窗失败，重试再跑同一窗。"""
     monkeypatch.setenv("REBORN_AUTHORING_AI_API_KEY", "test-key")
     material = material_fixture(db, classroom, ["正文" * 150, "正文" * 150], kind="pdf")
     db.commit()
-    calls = []
+    attempts: list[list[int]] = []
 
-    def generate(db, material, page_no, **kwargs):
-        calls.append(page_no)
-        if page_no == 2 and len(calls) == 2:
-            raise ValueError("第二页失败")
-        return {"page_no": page_no, "status": "draft", "reused": False, "model": "test", "chars": 1, "image_used": False}
+    def chat(messages, *, settings, model, **kwargs):
+        user = messages[1]["content"]
+        body = json.loads(user.split("本窗每页的整理稿：\n", 1)[1])
+        pages = [page["page_no"] for page in body["pages"]]
+        attempts.append(pages)
+        if 2 in pages and len(attempts) == 1:
+            raise service.model_client.ModelFailed("模型返回空内容，请重试")
+        return {"raw": {"pages": [{"page_no": no, "text": "讲稿正文。", "anchors": []} for no in pages]},
+                "usage": {}, "model": model}
 
-    monkeypatch.setattr(service, "generate_page", generate)
-    response = client.post(url(classroom, material, "/generate"), json={"first_page": 1, "last_page": 2}, headers=teacher["headers"])
+    monkeypatch.setattr(service.model_client, "chat", chat)
+    response = client.post(url(classroom, material, "/generate"),
+                           json={"first_page": 1, "last_page": 2}, headers=teacher["headers"])
     assert response.status_code == 202
     run_jobs()
     job = repository.job_of(db, material.id)
-    assert job.status == "failed" and job.progress["retry_pages"] == [2]
-    response = client.post(overview(classroom) + f"/{material.id}/retry", json={"expected_started_at": job.started_at.isoformat()}, headers=teacher["headers"])
+    assert job.status == "failed" and job.progress["retry_pages"] == [1, 2]
+    started = job.started_at.isoformat()
+    response = client.post(overview(classroom) + f"/{material.id}/retry",
+                           json={"expected_started_at": started}, headers=teacher["headers"])
     assert response.status_code == 200, response.text
-    retried = repository.job_of(db, material.id)
-    assert retried.progress.get("queued") is True, "重试也要排队，由后台执行"
+    assert repository.job_of(db, material.id).progress.get("queued") is True, "重试也要排队，由后台执行"
     run_jobs()
-    assert calls == [1, 2, 2]
+    assert attempts == [[1, 2], [1, 2]]
 
 
 def test_legacy_failure_has_no_blind_retry(client, db, classroom, teacher):

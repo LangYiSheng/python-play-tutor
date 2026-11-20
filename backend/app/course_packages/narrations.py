@@ -32,14 +32,14 @@ def current_rows(db, instance):
 
 
 def revision(db, instance):
-    values = [[m.id, repository.source_hash(m, n.page_no), repository.revision(n), n.audio_key,
+    values = [[m.id, repository.narration_hash(db, m, n.page_no), repository.revision(n), n.audio_key,
                n.audio_text_hash, n.audio_seconds] for m, n in current_rows(db, instance)]
     return repository.text_hash(json.dumps(values, ensure_ascii=False, sort_keys=True))
 
 
-def metadata(material, item):
+def metadata(db, material, item):
     result = {field: deepcopy(getattr(item, field)) for field in FIELDS}
-    if item.page_hash != repository.source_hash(material, item.page_no):
+    if item.page_hash != repository.narration_hash(db, material, item.page_no):
         result["status"] = "stale"
     result.update(material_id=stable_id(material), page_no=item.page_no,
                   reviewed_at=as_utc(item.reviewed_at).isoformat() if item.reviewed_at else None)
@@ -52,7 +52,7 @@ def export_narrations(db, instance, root, materials, assets):
     indexed_assets = {a["id"]: a for a in assets}
     grouped = {}
     for material, item in current_rows(db, instance):
-        row = metadata(material, item)
+        row = metadata(db, material, item)
         row["page_hash"] = None if row["status"] == "stale" else fingerprint(by_id[stable_id(material)], item.page_no, indexed_assets)
         row["audio"] = None
         if row["status"] == "accepted" and item.audio_key and item.audio_text_hash == repository.text_hash(item.text):
@@ -97,7 +97,7 @@ def import_narrations(db, bundle, maps, assets):
             db.add(item)
         for field in FIELDS:
             setattr(item, field, deepcopy(source[field]))
-        item.page_hash = "" if source["status"] == "stale" else repository.source_hash(material, item.page_no)
+        item.page_hash = "" if source["status"] == "stale" else repository.narration_hash(db, material, item.page_no)
         item.reviewed_by = None
         item.reviewed_at = datetime.fromisoformat(source["reviewed_at"]) if source["reviewed_at"] else None
         item.input_hash = ""
@@ -112,7 +112,7 @@ def import_narrations(db, bundle, maps, assets):
 def preview_narrations(db, instance, bundle):
     previous = {}
     for material, item in current_rows(db, instance):
-        row = metadata(material, item)
+        row = metadata(db, material, item)
         valid = row["status"] == "accepted" and item.audio_key and item.audio_text_hash == repository.text_hash(item.text)
         row["audio"] = {"text_hash": item.audio_text_hash, "seconds": item.audio_seconds} if valid else None
         previous[f"{stable_id(material)}:{item.page_no}"] = row
