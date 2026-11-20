@@ -68,7 +68,6 @@ const props = defineProps<{ url: string; page: number; title?: string; kind?: st
 let doc: PDFDocumentProxy | undefined,
   documentTask: PDFDocumentLoadingTask | undefined,
   task: RenderTask | undefined,
-  controller: AbortController | undefined,
   resizeObserver: ResizeObserver | undefined,
   resizeFrame = 0,
   lastSize = "",
@@ -82,9 +81,6 @@ function ignoreCancellation(error: unknown) {
 async function load() {
   const generation = ++loadGeneration;
   ++renderGeneration;
-  controller?.abort();
-  controller = new AbortController();
-  const signal = controller.signal;
   task?.cancel();
   task = undefined;
   const previous = doc;
@@ -98,16 +94,23 @@ async function load() {
   error.value = "";
   const current = () => !disposed && generation === loadGeneration;
   try {
-    const [{ getDocument, GlobalWorkerOptions }, worker, blob] = await Promise.all([
+    const [{ getDocument, GlobalWorkerOptions }, worker] = await Promise.all([
       import("pdfjs-dist"),
       import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-      api.blob(props.url, signal),
     ]);
     if (!current()) return;
     GlobalWorkerOptions.workerSrc = worker.default;
-    const data = await blob.arrayBuffer();
-    if (!current()) return;
-    const pending = getDocument({ data, isEvalSupported: false });
+    const token = api.token();
+    const pending = getDocument({
+      url: props.url.startsWith("/api") ? props.url : `/api${props.url}`,
+      isEvalSupported: false,
+      httpHeaders: token ? { Authorization: `Bearer ${token}` } : undefined,
+      // PDF.js 的说明：关闭流式读取后，disableAutoFetch 才会真正按需取 Range。
+      // 首屏只拉当前页所需的 256 KiB 区块，不再整份下载后交给 pdf.js。
+      disableAutoFetch: true,
+      disableStream: true,
+      rangeChunkSize: 256 * 1024,
+    });
     documentTask = pending;
     const loaded = await pending.promise;
     if (!current()) {
@@ -190,7 +193,6 @@ onBeforeUnmount(() => {
   disposed = true;
   ++loadGeneration;
   ++renderGeneration;
-  controller?.abort();
   task?.cancel();
   resizeObserver?.disconnect();
   cancelAnimationFrame(resizeFrame);

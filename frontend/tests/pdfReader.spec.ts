@@ -2,12 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { getDocument, type PDFDocumentLoadingTask } from "pdfjs-dist";
 import PdfReader from "../src/features/learning/PdfReader.vue";
-import { api } from "../src/shared/api";
 import { createPinia, setActivePinia } from "pinia";
 
 vi.mock("pdfjs-dist", () => ({ getDocument: vi.fn(), GlobalWorkerOptions: { workerSrc: "" } }));
 vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({ default: "worker-url" }));
-vi.mock("../src/shared/api", () => ({ api: { blob: vi.fn(), get: vi.fn(async () => ({ pages: [] })) } }));
+vi.mock("../src/shared/api", () => ({ api: { token: vi.fn(() => "test-token"), get: vi.fn(async () => ({ pages: [] })) } }));
 vi.mock("../src/shared/session", () => ({ useSession: () => ({ classroomId: 7 }) }));
 
 const mounted: VueWrapper[] = [];
@@ -15,13 +14,11 @@ let width = 800, height = 500, resizeCallback: ResizeObserverCallback;
 const renderPage = vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() }));
 const page = { getViewport: ({ scale }: { scale: number }) => ({ width: 1200 * scale, height: 675 * scale }), render: renderPage };
 const document = { numPages: 45, getPage: vi.fn(async () => page), destroy: vi.fn(async () => undefined) };
-const blob = () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) as Blob;
 
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
   width = 800; height = 500;
-  vi.mocked(api.blob).mockResolvedValue(blob());
   vi.mocked(getDocument).mockReturnValue({ promise: Promise.resolve(document), destroy: vi.fn(async () => undefined) } as unknown as PDFDocumentLoadingTask);
   document.getPage.mockResolvedValue(page);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("pdf-page-stage") ? width : 0; });
@@ -61,7 +58,12 @@ it("keeps rendering the PDF canvas when narration is unavailable on the current 
   expect(wrapper.get("canvas").isVisible()).toBe(true);
   expect(wrapper.find('.lecture-stage').exists()).toBe(false);
   expect(wrapper.get('.pdf-page-surface').classes()).not.toContain('with-narration');
-  expect(api.blob).not.toHaveBeenCalledWith(expect.stringContaining("page-image"), expect.anything());
+  expect(getDocument).toHaveBeenCalledWith(expect.objectContaining({
+    url: "/api/materials/186/file",
+    httpHeaders: { Authorization: "Bearer test-token" },
+    disableAutoFetch: true,
+    disableStream: true,
+  }));
 });
 
 describe("PDF reading surface", () => {
@@ -86,16 +88,17 @@ describe("PDF reading surface", () => {
     await wrapper.get('[aria-label="下一页 PDF"]').trigger("click");
     expect(wrapper.emitted("page")).toEqual([[35]]);
   });
-  it("ignores a late file response after switching materials", async () => {
-    let finish!: (value: Blob) => void;
-    vi.mocked(api.blob).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-    const wrapper = await reader(), firstSignal = vi.mocked(api.blob).mock.calls[0]![1];
+  it("destroys the previous loading task before opening another material", async () => {
+    let finish!: (value: typeof document) => void;
+    const first = { promise: new Promise<typeof document>(resolve => { finish = resolve; }), destroy: vi.fn(async () => undefined) };
+    vi.mocked(getDocument).mockReturnValueOnce(first as unknown as PDFDocumentLoadingTask);
+    const wrapper = await reader();
     await wrapper.setProps({ url: "/materials/187/file", page: 1, title: "第二章" });
     await flushPromises();
-    expect(firstSignal?.aborted).toBe(true);
-    expect(getDocument).toHaveBeenCalledTimes(1);
-    finish(blob()); await flushPromises();
-    expect(getDocument).toHaveBeenCalledTimes(1);
+    expect(first.destroy).toHaveBeenCalled();
+    expect(getDocument).toHaveBeenCalledTimes(2);
+    finish(document); await flushPromises();
+    expect(document.destroy).toHaveBeenCalled();
     expect(wrapper.get(".reader-position").text()).toContain("第二章");
     expect(wrapper.attributes("aria-busy")).toBe("false");
   });

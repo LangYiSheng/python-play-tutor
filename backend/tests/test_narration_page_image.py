@@ -18,6 +18,7 @@ def test_page_image_returns_the_rendered_jpeg(client, db, classroom, teacher, mo
     response = client.get(url(classroom, material, "/1/page-image"), headers=teacher["headers"])
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
+    assert response.headers["cache-control"] == "private, no-store"
     assert response.content[:3] == b"\xff\xd8\xff"
 
 
