@@ -78,3 +78,29 @@ def test_upsert_rejects_bad_input(db, classroom):
         repository.upsert_content(db, material, 1, title="", topic="", tags=[], text="   ")
     with pytest.raises(ValueError):
         repository.upsert_content(db, material, 1, title="", topic="", tags=[], text="正文", image_state="unknown")
+
+
+def test_review_list_shows_digest_and_teacher_edits_title_and_tags(client, db, classroom, teacher):
+    material = material_fixture(db, classroom, ["第一页原文"])
+    repository.upsert_content(db, material, 1, title="旧标题", topic="这一页讲变量",
+                              tags=["变量"], text="整理后的第一页")
+    repository.upsert(db, material, 1, text="这一页讲变量。")
+    db.commit()
+    url = f"/api/teacher/classrooms/{classroom['id']}/materials/{material.id}/narrations"
+
+    listed = client.get(url, headers=teacher["headers"])
+    assert listed.status_code == 200, listed.text
+    page = listed.json()["pages"][0]
+    assert page["digest"]["title"] == "旧标题" and page["digest"]["text"] == "整理后的第一页"
+    assert page["raw_text"] == "第一页原文"
+    assert page["narration"]["status"] == "draft"
+
+    edited = client.put(f"{url}/1/content", json={"title": "新标题", "tags": ["变量", "变量", " "]},
+                        headers=teacher["headers"])
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["tags"] == ["变量"] and edited.json()["source"] == "teacher"
+
+    # 整理稿的标题/标签变了，旧讲稿不能再算数。
+    again = client.get(url, headers=teacher["headers"])
+    assert again.json()["pages"][0]["digest"]["title"] == "新标题"
+    assert again.json()["pages"][0]["narration"]["status"] == "stale"

@@ -8,8 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { narrationApi } from "@/features/materials/narration/api";
-import { Check, ListChecks, RotateCcw, Sparkles, Volume2 } from "lucide-react";
+import { Check, Sparkles, Volume2 } from "lucide-react";
 import { NarrationPageEditor } from "./page-editor";
 import { NarrationPagePreview } from "./page-preview";
 import { StatusBadge } from "./status-badge";
@@ -32,7 +31,6 @@ export function NarrationReview({
     data,
     quota,
     report,
-    setReport,
     audioState,
     pageNo,
     setPageNo,
@@ -43,9 +41,7 @@ export function NarrationReview({
     page,
     saved,
     dirty,
-    run,
-    calibrateDeck,
-    generateWholeDeck,
+    runPipeline,
     acceptAllDrafts,
     synthesizeAllAudio,
     running,
@@ -60,6 +56,15 @@ export function NarrationReview({
     : null;
   const shrunk = report?.shrunk_windows ?? [];
   const renderErrors = report?.render_errors ?? [];
+  const stages: [string, string][] = [
+    ["digest", "整理原文"],
+    ["calibrate", "整册校准"],
+    ["apply", "应用修正"],
+    ["script", "生成讲解稿"],
+  ];
+  const chain = job?.chain ?? [];
+  const currentStage = job?.stage || chain[0] || "";
+  const stageIndex = stages.findIndex(([key]) => key === currentStage);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -99,9 +104,16 @@ export function NarrationReview({
                   正在处理：
                   {job?.kind === "audio"
                     ? "音频"
-                    : job?.kind === "calibrate"
-                      ? "校准"
-                      : "生成"}
+                    : job?.kind === "pipeline"
+                      ? "一键梳理"
+                      : job?.kind === "calibrate"
+                        ? "校准"
+                        : job?.kind === "digest"
+                          ? "整理原文"
+                          : "生成"}
+                  {job?.stage
+                    ? ` · ${stages.find(([key]) => key === job.stage)?.[1] ?? job.stage}`
+                    : ""}
                   {job && job.total ? ` ${job.done}/${job.total}` : ""}
                 </Badge>
               )}
@@ -112,20 +124,38 @@ export function NarrationReview({
                 </span>
               )}
             </div>
+            {job && job.kind === "pipeline" && (
+              <div className="flex flex-wrap items-center gap-2 text-sm" role="status">
+                {stages.map(([key, label], index) => {
+                  const done = job.status === "done" || (stageIndex >= 0 && index < stageIndex);
+                  const current = !done && key === currentStage;
+                  return (
+                    <Badge
+                      key={key}
+                      variant={done ? "default" : current ? "secondary" : "outline"}
+                      className={current ? "animate-pulse" : undefined}
+                    >
+                      {done ? "✓ " : current ? "● " : "○ "}
+                      {label}
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
             <div className="flex flex-wrap items-end gap-2">
               <Button
                 disabled={!quota?.available || busyNow}
                 onClick={() => {
                   if (
                     !window.confirm(
-                      `将为全部 ${data.coverage.pages} 页生成讲解，已生成的页不会重复计费。继续？`,
+                      `将依次整理原文、校准并生成全部 ${data.coverage.pages} 页讲解；已完成的阶段和页不会重复计费。继续？`,
                     )
                   )
                     return;
-                  void generateWholeDeck();
+                  void runPipeline();
                 }}
               >
-                <Sparkles /> {busy === "all" ? "正在生成…" : "整份生成"}
+                <Sparkles /> {busy === "pipeline" ? "正在梳理…" : "一键梳理文本"}
               </Button>
               <Button
                 variant="outline"
@@ -148,44 +178,6 @@ export function NarrationReview({
               >
                 <Volume2 /> {busy === "audio-all" ? "合成中…" : "批量合成音频"}
               </Button>
-              <Button
-                variant="outline"
-                disabled={
-                  !quota?.available || busyNow || data.coverage.covered === 0
-                }
-                onClick={() => void calibrateDeck()}
-              >
-                <ListChecks /> {busy === "calibrate" ? "正在校准…" : "全篇校准"}
-              </Button>
-              {report && (
-                <Button
-                  variant="outline"
-                  disabled={
-                    Boolean(busy) ||
-                    report.complete === false ||
-                    !(report.issues ?? []).length
-                  }
-                  onClick={() =>
-                    void run(
-                      "apply",
-                      async () => {
-                        const applied = await narrationApi.applyCalibration(
-                          classroomId,
-                          materialId,
-                        );
-                        setReport((current) =>
-                          current
-                            ? { ...current, applied_pages: applied ?? null }
-                            : current,
-                        );
-                      },
-                      "已按报告重生成草稿页",
-                    )
-                  }
-                >
-                  <RotateCcw /> 应用校准（只改草稿）
-                </Button>
-              )}
             </div>
             {report && (
               <section className="surface space-y-2 p-4 text-sm">
@@ -195,9 +187,12 @@ export function NarrationReview({
                 {report.complete === false && (
                   <p className="hint" role="status">
                     已跑到 {report.windows_done ?? 0}/{report.windows} 个窗口，后台会自己接着跑完；
-                    任务中断时再点「全篇校准」从断点继续。
+                    任务中断时再点「一键梳理文本」从断点继续。
                   </p>
                 )}
+                <p className="hint">
+                  校准修正已自动应用到整理稿（保持草稿，原始文本不动）；审校页正文就是修正后的整理稿。
+                </p>
                 {report.reused && (
                   <p className="hint">整册输入未变，直接复用了上一次的报告。</p>
                 )}
@@ -222,6 +217,77 @@ export function NarrationReview({
                     {renderErrors.length} 页无法渲染页图，已改用文本校对。
                   </p>
                 )}
+                {(report.fixes ?? []).length > 0 && (
+                  <details open>
+                    <summary className="cursor-pointer font-medium">
+                      原文修正（{report.fixes!.length} 处，已自动应用）
+                    </summary>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="py-1 pr-2">页</th>
+                            <th className="py-1 pr-2">修正前</th>
+                            <th className="py-1 pr-2">修正后</th>
+                            <th className="py-1">原因</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.fixes!.map((fix) => (
+                            <tr key={fix.page_no} className="border-b align-top">
+                              <td className="py-1 pr-2">
+                                <button
+                                  type="button"
+                                  className="underline"
+                                  onClick={() => setPageNo(fix.page_no)}
+                                >
+                                  第 {fix.page_no} 页
+                                </button>
+                              </td>
+                              <td className="max-w-[240px] whitespace-pre-wrap py-1 pr-2">
+                                {fix.before}
+                              </td>
+                              <td className="max-w-[240px] whitespace-pre-wrap py-1 pr-2">
+                                {fix.after}
+                              </td>
+                              <td className="py-1">{fix.reason}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
+                {Object.keys(report.tag_map ?? {}).length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer font-medium">
+                      标签合并（{Object.keys(report.tag_map ?? {}).length} 组）
+                    </summary>
+                    {report.tag_stats && (
+                      <p className="hint">
+                        标签 {report.tag_stats.before} → {report.tag_stats.after}，合并 {report.tag_stats.merged} 组
+                      </p>
+                    )}
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="py-1 pr-2">别名</th>
+                            <th className="py-1">标准名</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(report.tag_map ?? {}).map(([alias, canonical]) => (
+                            <tr key={alias} className="border-b">
+                              <td className="py-1 pr-2">{alias}</td>
+                              <td className="py-1">{canonical}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
                 {report.issues_truncated && (
                   <p className="hint" role="note">问题过多，只保留前 120 条。</p>
                 )}
@@ -242,11 +308,13 @@ export function NarrationReview({
                           第 {issue.page_no} 页
                         </button>
                         <span className="hint">
-                          {issue.kind === "mismatch"
-                            ? "与页面不符"
-                            : issue.kind === "term"
-                              ? "术语不统一"
-                              : "连贯性"}{" "}
+                          {issue.kind === "ocr"
+                            ? "原文可疑"
+                            : issue.kind === "order"
+                              ? "页内顺序"
+                              : issue.kind === "tag"
+                                ? "标签"
+                                : "连贯性"}{" "}
                           ·{" "}
                           {issue.status === "accepted"
                             ? "已接受，需老师确认"

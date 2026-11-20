@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 
 from ..auth import current_user, require_teacher
 from ..db import get_db
-from ..models import Material, User
+from ..models import Material, User, now
 from ..teacher_scope import require_scope, teacher_instance_id
 from . import audio, calibrate, jobs, task_commands
 from .access import teacher_material, require_narratable, require_page
-from .request_contracts import NarrationInput, GenerateInput, RangeInput, PageGenerateInput
+from .request_contracts import NarrationInput, DigestInput, GenerateInput, RangeInput, PageGenerateInput
 from . import render, repository, service
 from . import tts
 from .contracts import AppliedCalibration, AudioRecord, GeneratedPage, Quota
@@ -143,11 +143,13 @@ def list_narrations(classroom_id: int, material_id: int, db: Annotated[Session, 
     pages = repository.page_map(material)
     items = repository.rows(db, material.id)
     by_page = {item.page_no: item for item in items}
+    contents = repository.content_map(db, material.id)
     return {
         "material_id": material.id,
         "title": material.title,
         "coverage": repository.coverage(pages, items),
-        "pages": [repository.snapshot(material, by_page.get(page_no), pages[page_no]) for page_no in sorted(pages)],
+        "pages": [repository.snapshot(material, by_page.get(page_no), pages[page_no], contents.get(page_no))
+                  for page_no in sorted(pages)],
     }
 
 
@@ -163,6 +165,29 @@ def author_narration(page_no: int, classroom_id: int, material_id: int, body: Na
         raise HTTPException(422, str(exc)) from exc
     db.commit()
     return {"page_no": page_no, "status": item.status, "text": item.text}
+
+
+@router.put("/{page_no}/content")
+def author_content(page_no: int, classroom_id: int, material_id: int, body: DigestInput,
+                   db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+    """老师手工改整理稿的标题/主题/标签；正文改动仍走讲解稿编辑。"""
+    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    require_page(material, page_no)
+    row = repository.content_row(db, material.id, page_no)
+    if row is None:
+        raise HTTPException(404, "这页还没有整理稿，请先梳理文本")
+    if body.title is not None:
+        row.title = body.title.strip()[:80]
+    if body.topic is not None:
+        row.topic = body.topic.strip()[:200]
+    if body.tags is not None:
+        row.tags = repository.clean_tags(body.tags)
+    row.source = "teacher"
+    row.updated_at = now()
+    repository.sync_staleness(db, material)
+    db.commit()
+    return {"page_no": page_no, "title": row.title, "topic": row.topic, "tags": row.tags,
+            "source": row.source}
 
 
 @router.post("/{page_no}/accept")

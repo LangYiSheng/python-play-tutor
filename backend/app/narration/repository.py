@@ -99,7 +99,8 @@ def sync_staleness(db: Session, material: Material) -> bool:
     return changed
 
 
-def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any] | None) -> dict[str, Any]:
+def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any] | None,
+             content: PageContent | None = None) -> dict[str, Any]:
     text = str((page or {}).get("text") or "")
     narration: dict[str, Any] | None = None
     if item is not None:
@@ -123,6 +124,12 @@ def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any
         "source_chars": len(text),
         # Teacher review compares the wording against the page, so send a bounded copy.
         "source_text": text[:2000],
+        "raw_text": text[:2000],
+        "digest": None if content is None else {
+            "title": content.title, "topic": content.topic, "tags": content.tags or [],
+            "text": content.text, "status": content.status, "source": content.source,
+            "image_state": content.image_state, "model": content.model,
+        },
         "narration": narration,
     }
 

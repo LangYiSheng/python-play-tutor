@@ -151,11 +151,19 @@ def build_context(db, user, session, activity, body):
         material = authorize_material(db, user, session.classroom_id, material_id)
         if material.status != "ready":
             raise HTTPException(409, "当前资料不可用")
-        from .narration.repository import visible
+        from .narration.repository import content_map, visible
         narrations = {item.page_no: item.text for item in visible(db, material)} if not practice else {}
-        pages.extend({"material_id": material.id, "material_title": material.title, "page_no": int(p["page_no"]),
-                      "page_id": p.get("id"), "title": str(p.get("title", "")), "excerpt": str(p.get("text", ""))}
-                     for p in material.content.get("pages", []))
+        digests = content_map(db, material.id) if not practice else {}
+        for p in material.content.get("pages", []):
+            raw = str(p.get("text", ""))
+            row = digests.get(int(p["page_no"]))
+            digest_text = (row.text or "").strip() if row else ""
+            # 整理稿是讲解、校准与检索的共同来源；还没整理的页明确标注为原始解析文本。
+            excerpt = digest_text or raw
+            pages.append({"material_id": material.id, "material_title": material.title,
+                          "page_no": int(p["page_no"]), "page_id": p.get("id"),
+                          "title": str(p.get("title", "")), "excerpt": excerpt,
+                          "excerpt_source": "digest" if digest_text else "raw"})
         for page in pages:
             narration = narrations.get(page["page_no"]) if page["material_id"] == material.id else None
             if narration:

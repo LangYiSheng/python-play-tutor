@@ -234,6 +234,8 @@ tag 归并（整册一次或分批 + 两轮合并）：
 - 失败展示：`failed` 页码列表 + 原因；「校准完成自动应用」需在 UI 明确说明。
 - 测试：`narration-review.test.tsx` 增三段进度、fixes/tag 表格渲染、折叠原始文本、tag 编辑提交。
 
+**实现（2026-11-19）**：按钮合并为「一键梳理文本」，三段进度读 `job.stage`/`job.chain`；审校页正文显示整理稿、原始文本折叠、`title`/`tags` 可编辑（`PUT .../content`，`source=teacher`）；`image_state != sent` 显示无图徽标；校准报告列出 fixes 前后对照与 tag 合并表，并说明修正已自动应用。测试覆盖一键入口、进度、修正/合并表、整理稿展示与标题标签保存。
+
 ### P6 · 下游与 RAG 契约（1–2 天）
 
 | 消费方 | 改动 |
@@ -242,6 +244,8 @@ tag 归并（整册一次或分批 + 两轮合并）：
 | `course_packages/narration_contract.py` | **本轮不动**（暂缓，等课程包负责人确认版本与字段） |
 | `LectureStage.vue` | 不变（仍用讲解稿） |
 | RAG | 只定契约：chunk = 一页，`page_id = material_id:page_no`；`tags_canonical` 作过滤维度；embedding 与检索接口本轮不引入 |
+
+**实现（2026-11-19）**：`assistant_context` 的页摘要优先取整理稿，未整理页退回原始解析文本并标 `excerpt_source=raw`；课程包本轮不动；RAG 只落下上述契约，未引入向量检索。
 
 ### P7 · 验证（1–2 天）
 

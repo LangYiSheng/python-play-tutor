@@ -20,12 +20,25 @@ export interface Narration {
   stale_reason: string | null;
 }
 
+export interface Digest {
+  title: string;
+  topic: string;
+  tags: string[];
+  text: string;
+  status: string;
+  source: string;
+  image_state: string;
+  model: string;
+}
+
 export interface NarrationPage {
   page_no: number;
   title: string;
   has_text: boolean;
   source_chars: number;
   source_text: string;
+  raw_text: string;
+  digest: Digest | null;
   narration: Narration | null;
 }
 
@@ -67,9 +80,17 @@ export interface NarrationQuota {
 
 export interface CalibrationIssue {
   page_no: number;
-  kind: "flow" | "mismatch" | "term" | string;
+  kind: "ocr" | "order" | "tag" | "flow" | string;
   detail: string;
   status: "draft" | "accepted";
+}
+
+export interface CalibrationFix {
+  page_no: number;
+  before: string;
+  after: string;
+  reason: string;
+  status?: string;
 }
 
 export interface CalibrationUsage {
@@ -93,6 +114,9 @@ export interface CalibrationReport {
   summary: string;
   terms: string[];
   issues: CalibrationIssue[];
+  fixes?: CalibrationFix[];
+  tag_map?: Record<string, string>;
+  tag_stats?: { before: number; after: number; merged: number };
   issues_truncated?: boolean;
   shrunk_windows?: number[];
   render_errors?: number[];
@@ -101,9 +125,8 @@ export interface CalibrationReport {
   generated_at?: string | null;
   applied_at?: string | null;
   applied_pages?: {
-    regenerated: number[];
-    failed: { page_no: number; error: string }[];
-    awaiting_teacher: number[];
+    pages: number[];
+    tags: number;
   } | null;
 }
 
@@ -121,6 +144,8 @@ export interface NarrationJobState {
   total: number;
   message: string;
   failed: { page_no: number; error?: string }[];
+  stage?: string;
+  chain?: string[];
   started_at: string | null;
 }
 
@@ -161,6 +186,21 @@ export const narrationApi = {
     ),
   job: (classroomId: number, materialId: number) =>
     api.get<NarrationJobState>(`${base(classroomId, materialId)}/job`),
+  pipeline: (classroomId: number, materialId: number) =>
+    api.post<{ job: NarrationJobState }>(
+      `${base(classroomId, materialId)}/pipeline`,
+      {},
+    ),
+  saveContent: (
+    classroomId: number,
+    materialId: number,
+    pageNo: number,
+    body: { title?: string; topic?: string; tags?: string[] },
+  ) =>
+    api.put<{ page_no: number; title: string; tags: string[]; source: string }>(
+      `${base(classroomId, materialId)}/${pageNo}/content`,
+      body,
+    ),
   acceptBatch: (
     classroomId: number,
     materialId: number,
