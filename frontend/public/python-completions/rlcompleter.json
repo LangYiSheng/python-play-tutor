@@ -1,0 +1,1 @@
+{"name":"rlcompleter","members":[{"name":"Completer","kind":"class","signature":"(namespace=None)","doc":""},{"name":"get_class_members","kind":"function","signature":"(klass)","doc":""}]}

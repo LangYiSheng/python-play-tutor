@@ -1,0 +1,1 @@
+{"name":"netrc","members":[{"name":"netrc","kind":"class","signature":"(file=None)","doc":""},{"name":"NetrcParseError","kind":"class","signature":"(msg, filename=None, lineno=None)","doc":"Exception raised on syntax errors in the .netrc file."}]}

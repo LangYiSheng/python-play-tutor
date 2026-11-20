@@ -1,0 +1,1 @@
+{"name":"chunk","members":[{"name":"Chunk","kind":"class","signature":"(file, align=True, bigendian=True, inclheader=False)","doc":""}]}
