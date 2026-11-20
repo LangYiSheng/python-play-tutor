@@ -187,6 +187,10 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
         },
       ],
       tag_map: { "监督学习算法": "监督学习", "监督学习模型": "监督学习" },
+      issues: [
+        { page_no: 1, kind: "ocr", detail: "import 与实例化不一致", status: "draft" },
+        { page_no: 1, kind: "flow", detail: "术语前后不统一", status: "draft" },
+      ],
       tag_stats: { before: 2, after: 1, merged: 1 },
     },
   });
@@ -199,6 +203,9 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
   expect(screen.getByText("补上漏掉的冒号")).toBeTruthy();
   expect(screen.getByText(/标签合并（1 个标准名，2 个别名）/)).toBeTruthy();
   expect(screen.getByText("监督学习算法、监督学习模型")).toBeTruthy();
+  expect(screen.getByText(/需核对的问题（2 条）/)).toBeTruthy();
+  expect(screen.getByText("2 条 · 仅记录，未改整理稿")).toBeTruthy();
+  expect(screen.queryByText(/可自动重生成/)).toBeNull();
 });
 
 it("shows the digest read-only and folds the raw text", async () => {

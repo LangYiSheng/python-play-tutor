@@ -1,4 +1,14 @@
-import type { CalibrationReport } from "./api";
+import type { CalibrationIssue, CalibrationReport } from "./api";
+
+function kindLabel(kind: string): string {
+  return kind === "ocr"
+    ? "原文可疑"
+    : kind === "order"
+      ? "页内顺序"
+      : kind === "tag"
+        ? "标签"
+        : "连贯性";
+}
 
 export function CalibrationPanel({
   report,
@@ -34,6 +44,16 @@ export function CalibrationPanel({
     left.localeCompare(right, "zh"),
   );
   const aliasCount = tagRows.reduce((sum, [, aliases]) => sum + aliases.length, 0);
+  const issueGroups = (report.issues ?? []).reduce<Record<number, CalibrationIssue[]>>(
+    (groups, issue) => {
+      (groups[issue.page_no] ??= []).push(issue);
+      return groups;
+    },
+    {},
+  );
+  const issueRows = Object.entries(issueGroups)
+    .map(([page, items]) => [Number(page), items] as const)
+    .sort(([left], [right]) => left - right);
   return (
     <section className="surface space-y-2 p-4 text-sm">
       <p className="font-medium">
@@ -146,36 +166,43 @@ export function CalibrationPanel({
       {(report.issues ?? []).length === 0 ? (
         <p className="hint">没有发现问题。</p>
       ) : (
-        <ul className="space-y-1">
-          {(report.issues ?? []).map((issue) => (
-            <li
-              key={`${issue.page_no}-${issue.kind}`}
-              className="flex items-start gap-2"
-            >
-              <button
-                type="button"
-                className="underline"
-                onClick={() => setPageNo(issue.page_no)}
-              >
-                第 {issue.page_no} 页
-              </button>
-              <span className="hint">
-                {issue.kind === "ocr"
-                  ? "原文可疑"
-                  : issue.kind === "order"
-                    ? "页内顺序"
-                    : issue.kind === "tag"
-                      ? "标签"
-                      : "连贯性"}{" "}
-                ·{" "}
-                {issue.status === "accepted"
-                  ? "已接受，需老师确认"
-                  : "草稿页，可自动重生成"}
-              </span>
-              <span>{issue.detail}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-1">
+          <p className="font-medium">
+            需核对的问题（{report.issues?.length ?? 0} 条）
+          </p>
+          <p className="hint">这些是原文或跨页的疑点，校准只记录、未改整理稿。</p>
+          <ul className="space-y-2">
+            {issueRows.map(([pageNo, items]) => (
+              <li key={pageNo} className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => setPageNo(pageNo)}
+                  >
+                    第 {pageNo} 页
+                  </button>
+                  <span className="hint">
+                    {items.length} 条 · 仅记录，未改整理稿
+                  </span>
+                </div>
+                <ul className="space-y-1 pl-4">
+                  {items.map((issue, index) => (
+                    <li
+                      key={`${issue.kind}-${index}`}
+                      className="flex items-start gap-2"
+                    >
+                      <span className="hint shrink-0">
+                        {kindLabel(issue.kind)}
+                      </span>
+                      <span>{issue.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );
