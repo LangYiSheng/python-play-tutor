@@ -31,7 +31,7 @@ export interface ExperienceOverview {
     published: boolean;
     questions: number;
   }[];
-  quests: { id: string; title: string; chapter_id: number; nodes: ExperienceNode[] }[];
+  quests: { id: string; title: string; chapter_id: number | null; nodes: ExperienceNode[] }[];
   checkpoints: { id: string; name: string; created_at: string; valid: boolean }[];
 }
 

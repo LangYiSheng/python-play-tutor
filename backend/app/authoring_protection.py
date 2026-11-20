@@ -38,8 +38,13 @@ def _changed_story(existing, incoming):
 
 
 def changed_quest_structure(existing, incoming):
+    ignored = {"title", "nodes"}
+    if existing.get("kind") == incoming.get("kind") == "side" and incoming["chapter_id"] is None:
+        # Town quests remain in an existing player's journal once granted.
+        ignored.update(("chapter_id", "when"))
+
     def without_labels(definition):
-        return {**{key: value for key, value in definition.items() if key not in {"title", "nodes"}},
+        return {**{key: value for key, value in definition.items() if key not in ignored},
                 "nodes": {node["id"]: {key: value for key, value in node.items() if key != "title"}
                           for node in definition["nodes"]}}
 
@@ -121,7 +126,7 @@ def _scope_changes(existing, incoming, maps, changed):
 
 def _changed_task(existing, incoming):
     incoming["definition"]["id"] = existing.id
-    return existing.chapter_id != incoming["chapter_id"] or changed_quest_structure(existing.definition, incoming["definition"])
+    return changed_quest_structure(existing.definition, incoming["definition"])
 
 
 def _checkpoint_flags(stories, quests, flow_changes, progress_by_quest):
@@ -159,12 +164,16 @@ def _story_impacts(stories, changes, reset_sessions, removed_flags):
                "students": len({row.user_id for row in rows} | removed_flags.get(story_id, set()))}
 
 
-def publication_plan(db, instance, data, maps, configuration):
+def publication_plan(db, instance, data, maps, configuration, *, changed_activity_ids=()):
     classroom_id = instance.classroom_id
     stories = {row.id: row for row in db.scalars(select(StoryDefinition).where(StoryDefinition.course_instance_id == instance.id))}
     quests = {row.id: row for row in db.scalars(select(QuestDefinition).where(QuestDefinition.course_instance_id == instance.id))}
     flow_changes = _scope_changes(stories, data["story"], maps, _changed_story)
     task_changes = _scope_changes(quests, data["quest"], maps, _changed_task)
+    if changed_activity_ids:
+        for quest in quests.values():
+            if any(node.get("activity_id") in changed_activity_ids for node in quest.definition["nodes"]):
+                task_changes.setdefault(quest.id, "edit")
     affected_stories = {key for key, reason in flow_changes.items() if reason == "delete"}
     affected_stories.update(row.id for row in stories.values() if row.quest_id in task_changes)
     sessions = db.scalars(select(StorySession).where(StorySession.classroom_id == classroom_id,

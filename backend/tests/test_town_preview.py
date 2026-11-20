@@ -40,6 +40,7 @@ def test_town_preview_persists_real_progress_without_adding_a_roster_member(db, 
     teacher_headers = teacher["headers"]
     user, preview_headers = launch(client, cid, teacher_headers)
     assert user["role"] == "student" and user["dev_tools_enabled"] and user["town_preview"]
+    assert user["name"] == "教师体验学生"
     assert client.get("/api/auth/me", headers=preview_headers).json() == user
     assert client.get("/api/auth/me", headers=teacher_headers).json()["role"] == "teacher"
     assert client.get("/api/auth/me", headers=student["headers"]).json()["dev_tools_enabled"] is False
@@ -101,7 +102,7 @@ def test_town_preview_student_cannot_change_class_or_access_teacher_controls(cli
     user, headers = launch(client, cid, teacher_headers)
     second_user, _ = launch(client, second["id"], teacher_headers)
     assert user["id"] != second_user["id"]
-    assert [row["id"] for row in client.get("/api/classrooms", headers=headers).json()] == [cid]
+    assert [(row["id"], row["course_name"]) for row in client.get("/api/classrooms", headers=headers).json()] == [(cid, "测试课程")]
     assert client.post("/api/classrooms/join", headers=headers, json={"join_code": second["join_code"]}).status_code == 403
     assert client.get(f"/api/world?classroom_id={second['id']}", headers=headers).status_code == 403
     assert client.post("/api/teacher-town/progress/reset", headers=headers,

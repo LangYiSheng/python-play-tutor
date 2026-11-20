@@ -13,13 +13,17 @@ def _authoring_definition(db, user, definition, instance_id):
     from app.curriculum import authoring_chapter
     from app.teacher_scope import require_scope
 
-    authoring_chapter(db, user, definition["chapter_id"], instance_id)
+    if definition["chapter_id"] is not None:
+        authoring_chapter(db, user, definition["chapter_id"], instance_id)
+    activities = {node["activity_id"] for node in definition["nodes"] if node.get("activity_id")}
+    if "when" in definition:
+        activities.add(definition["when"]["activity_completed"])
+    for key in activities:
+        activity = require_scope(db.get(Activity, key), instance_id)
+        authoring_chapter(db, user, activity.chapter_id, instance_id)
+        if activity.owner_id and activity.owner_id != user.id and user.role != "admin":
+            raise HTTPException(403, "任务不能绑定其他教师的活动")
     for node in definition["nodes"]:
-        if node.get("activity_id"):
-            activity = require_scope(db.get(Activity, node["activity_id"]), instance_id)
-            authoring_chapter(db, user, activity.chapter_id, instance_id)
-            if activity.owner_id and activity.owner_id != user.id and user.role != "admin":
-                raise HTTPException(403, "任务不能绑定其他教师的活动")
         if node.get("navigation_target"):
             require_scope(db.get(Npc, node["navigation_target"]), instance_id)
         if node["type"] in {"TALK_TO_NPC", "PLAY_DIALOGUE", "REPORT_BACK"}:

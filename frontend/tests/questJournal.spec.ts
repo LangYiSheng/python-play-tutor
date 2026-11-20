@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { nextTick } from "vue";
 import GameSelect from "../src/shared/GameSelect.vue";
 import { mount } from "@vue/test-utils";
@@ -53,10 +53,10 @@ describe("quest journal main and side classification", () => {
           id: "side",
           kind: "side",
           title: "支线找书",
-          chapter_id: 179,
+          chapter_id: null,
 
           status: "active",
-          nodes: [],
+          nodes: [{ id: "open", title: "打开书架", type: "INTERACT_OBJECT", target: "library_shelf", dependencies: [], aggregation: "ALL", optional: false, status: "ready" }],
         },
         {
           id: "finished-side",
@@ -74,15 +74,18 @@ describe("quest journal main and side classification", () => {
     await nextTick();
     expect(wrapper.findAll(".journal-entry h3").map((h) => h.text())).toEqual(["支线找书"]);
     expect(wrapper.find(".journal-entry .eyebrow").text()).toContain(
-      "支线委托",
+      "全镇支线",
     );
+    const guide = vi.spyOn(store, "guideTo").mockImplementation(() => {});
+    await wrapper.get(".journal-entry li button").trigger("click");
+    expect(guide).toHaveBeenCalledWith("library_shelf");
     await wrapper
       .findAll("button")
       .find((b) => b.text() === "已完成")!
       .trigger("click");
     expect(wrapper.findAll(".journal-entry h3").map((h) => h.text())).toEqual(["已归还的书"]);
     expect(wrapper.find(".journal-entry .eyebrow").text()).toContain(
-      "支线委托 · 已完成",
+      "章节支线 · 已完成",
     );
     wrapper.unmount();
   });

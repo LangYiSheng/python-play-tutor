@@ -21,12 +21,13 @@
           "id": "mayor_hall",
           "object_name": "building_mayor_hall",
           "label": "镇长大厅",
-          "purpose": "镇长目前在南侧广场，可以前往广场拜访。",
-          "status": "landmark",
+          "purpose": "小镇接待与议事的地方。",
+          "status": "open",
           "anchor": {
             "x": 24,
             "y": 13
-          }
+          },
+          "portal_id": "mayor_hall_door"
         },
         {
           "id": "cottage_a",
@@ -132,14 +133,25 @@
           "id": "arena",
           "object_name": "building_arena",
           "label": "练习会馆",
-          "purpose": "当前请到东侧练习场与教练交谈，室内暂未开放。",
-          "status": "closed",
+          "purpose": "排列着练习桌与器材的会馆。",
+          "status": "open",
           "anchor": {
             "x": 33,
             "y": 35
-          }
+          },
+          "portal_id": "arena_door"
         }
       ]
+    },
+    "mayor_hall": {
+      "label": "镇长大厅",
+      "width": 18, "height": 14, "renderer": "tiled", "asset": "/assets/maps/mayor_hall.json",
+      "camera_mode": "centered", "buildings": []
+    },
+    "arena": {
+      "label": "练习会馆",
+      "width": 18, "height": 14, "renderer": "tiled", "asset": "/assets/maps/arena.json",
+      "camera_mode": "centered", "buildings": []
     },
     "library": {
       "label": "小镇图书馆",
@@ -187,6 +199,30 @@
   },
   "portal_marker": {"asset": "/assets/pixel/ui/portal-chevron-up.png", "width": 8, "height": 8},
   "portals": [
+    {
+      "id": "mayor_hall_door", "label": "镇长大厅入口", "action_label": "进入镇长大厅",
+      "from": {"map_key": "town_hub", "tile_x": 24, "tile_y": 13, "radius": 2},
+      "to": {"map_key": "mayor_hall", "tile_x": 9, "tile_y": 11, "direction": "up"},
+      "required_flags": [], "blocked_message": "这座建筑暂未开放。", "building_id": "mayor_hall"
+    },
+    {
+      "id": "mayor_hall_exit", "label": "返回小镇", "action_label": "离开镇长大厅，返回小镇",
+      "from": {"map_key": "mayor_hall", "tile_x": 9, "tile_y": 12, "radius": 2},
+      "to": {"map_key": "town_hub", "tile_x": 24, "tile_y": 13, "direction": "down"},
+      "required_flags": [], "blocked_message": ""
+    },
+    {
+      "id": "arena_door", "label": "练习会馆入口", "action_label": "进入练习会馆",
+      "from": {"map_key": "town_hub", "tile_x": 33, "tile_y": 35, "radius": 2},
+      "to": {"map_key": "arena", "tile_x": 9, "tile_y": 11, "direction": "up"},
+      "required_flags": [], "blocked_message": "这座建筑暂未开放。", "building_id": "arena"
+    },
+    {
+      "id": "arena_exit", "label": "返回小镇", "action_label": "离开练习会馆，返回小镇",
+      "from": {"map_key": "arena", "tile_x": 9, "tile_y": 12, "radius": 2},
+      "to": {"map_key": "town_hub", "tile_x": 33, "tile_y": 35, "direction": "down"},
+      "required_flags": [], "blocked_message": ""
+    },
     {
       "id": "library_door",
       "label": "图书馆入口",

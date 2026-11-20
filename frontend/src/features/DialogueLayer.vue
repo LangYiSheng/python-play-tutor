@@ -62,10 +62,26 @@ const panel = ref<HTMLElement>();
 const preferences = useUiPreferences();
 useModalFocus(panel, () => props.story?.id ?? "interaction", close);
 const line = computed(() => {
-    const current = props.story?.node;
-    return current && current.type !== "action" ? current : undefined;
-  }),
-  speaker = computed(() => line.value?.speaker ?? "小镇互动");
+  const story = props.story;
+  const current = story?.node;
+  if (!current || current.type === "action") return undefined;
+  if (story.chapter_id === undefined) return current;
+  const values = {
+    name: session.user?.name ?? "同学",
+    course_name: session.classes.find(c => c.id === session.classroomId)?.course_name || "这门课程",
+    chapter_name: session.world?.chapters.find(c => c.id === story.chapter_id)?.title || "本章",
+  };
+  const render = (text: string) => text.replace(
+    /(?<!\{)\{(name|course_name|chapter_name)\}(?!\})/g,
+    (_, key: keyof typeof values) => values[key],
+  );
+  return {
+    ...current,
+    text: render(current.text),
+    choices: current.choices?.map(choice => ({ ...choice, label: render(choice.label) })),
+  };
+});
+const speaker = computed(() => line.value?.speaker ?? "小镇互动");
 const portrait = useCharacterImage(computed(() => imageError.value ? undefined : line.value?.portrait));
 let timer: ReturnType<typeof setInterval> | undefined;
 function close() { emit("close"); }

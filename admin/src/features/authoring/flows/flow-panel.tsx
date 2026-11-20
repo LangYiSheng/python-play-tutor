@@ -283,6 +283,7 @@ export function FlowPanel({
         <FlowSettings
           flow={flow}
           catalog={data.catalog}
+          quests={data.quests}
           entries={availableEntries}
           onChange={replaceFlow}
           onClose={() => setSettingsOpen(false)}

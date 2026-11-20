@@ -8,7 +8,7 @@ from app.course_instances import MODEL_NAMES, remap_references
 from app.course_packages.contracts import EXTRAS
 from app.course_packages.manifest import PackageError
 from app.materials.uploads import validate_upload
-from app.models import Activity, Chapter, CourseExample, KnowledgePoint, Material, QuestDefinition
+from app.models import Activity, Chapter, CourseExample, KnowledgePoint, Material
 
 
 def _object(value, keys, required=None):
@@ -100,7 +100,7 @@ def validate_bundle(bundle, root):
             maps[kind] = {key: (i + 1 if model in {Chapter, Material, KnowledgePoint, CourseExample} else key) for i, key in enumerate(indexed[kind])}
         # Typed conversion resolves every declared foreign reference, including conditions.
         converted = {kind: {key: remap_references(row, maps) for key, row in items.items()} for kind, items in indexed.items()}
-        for model in (KnowledgePoint, Material, Activity, QuestDefinition):
+        for model in (KnowledgePoint, Material, Activity):
             for row in indexed[MODEL_NAMES[model]].values():
                 if "chapter_id" in row and row["chapter_id"] is None:
                     raise PackageError("此类课程条目必须绑定章节")
@@ -212,6 +212,12 @@ def validate_bundle(bundle, root):
                 definition,
                 objects=set(interaction_points()) | {item["id"] for item in bundle["configuration"].get("world", {}).get("interactions", [])},
             )
+            if "when" in definition:
+                activity = converted["activity"].get(definition["when"]["activity_completed"])
+                if not activity or activity["content"].get("published") is False:
+                    raise PackageError("支线开放条件必须绑定已发布的活动")
+                if row["chapter_id"] is not None and activity["chapter_id"] != row["chapter_id"]:
+                    raise PackageError("章节支线开放条件必须绑定本章已发布的活动")
             for node in definition["nodes"]:
                 if node.get("navigation_target") and node["navigation_target"] not in indexed["npc"]:
                     raise PackageError("任务导航NPC不存在")
@@ -222,7 +228,7 @@ def validate_bundle(bundle, root):
                     expected = {"STUDY_LESSON": {"lesson", "reading"}, "COMPLETE_PRACTICE": {"practice"}, "PASS_ASSESSMENT": {"assessment"}}
                     if node["type"] in expected and activity["kind"] not in expected[node["type"]]:
                         raise PackageError("任务节点活动类型不匹配")
-                    if activity["chapter_id"] != row["chapter_id"]:
+                    if row["chapter_id"] is not None and activity["chapter_id"] != row["chapter_id"]:
                         raise PackageError("任务活动必须属于当前章节")
 
         class Catalog:
@@ -254,7 +260,11 @@ def validate_bundle(bundle, root):
             validate_story(row["content"], quest_definition=definition, story_id=key)
             conditions(row["content"], row["content"]["bindings"], definition)
         course = bundle["course"]
-        _object(course, {"schema_version", "title", "releases"}, {"schema_version", "title", "releases"})
+        _object(course, {"schema_version", "title", "releases", "quick_orchestration"}, {"schema_version", "title", "releases"})
+        if "quick_orchestration" in course:
+            from app.teaching.quick_template.contracts import Recipe
+
+            Recipe.model_validate(course["quick_orchestration"])
         if course["schema_version"] != 1 or not _short(course["title"], 200) or not isinstance(course["releases"], list):
             raise PackageError("课程目录格式无效")
         releases = {}

@@ -203,7 +203,14 @@ def import_bundle(db, classroom, instance, bundle, root):
         for kind in ("portrait", "sprite"):
             if npc[kind].startswith("asset:"):
                 assets[npc[kind][6:]]["owner_npc_id"] = npc["id"]
-    state.configuration = {**deepcopy(bundle["configuration"]), "_assets": list(assets.values()), "_character_garbage": list(dict.fromkeys(garbage))}
+    from app.course_packages.quick_orchestration import restore_template
+
+    state.configuration = {
+        **deepcopy(bundle["configuration"]),
+        **restore_template(bundle, {} if replace else previous_config.get("_quick_orchestration", {})),
+        "_assets": list(assets.values()),
+        "_character_garbage": list(dict.fromkeys(garbage)),
+    }
     instance.package_id, instance.name, instance.package_version = manifest["package_id"], manifest["name"], manifest["package_version"]
     instance.revision += 1
     db.flush()

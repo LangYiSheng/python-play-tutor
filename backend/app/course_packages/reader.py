@@ -49,6 +49,7 @@ def load_bundle(root):
         "curriculum/chapters/*/chapter.yaml",
         "curriculum/chapters/*/quests/*.yaml",
         "curriculum/chapters/*/flows/*.yaml",
+        "world/quests/*.yaml",
         "world/flows/*.yaml",
         "content/activities/*.yaml",
         "content/questions/*.jsonl",
@@ -62,7 +63,12 @@ def load_bundle(root):
         raise PackageError("课程包含未识别配置文件，不能静默丢弃")
     data = {kind: [] for kind in MODEL_NAMES.values()}
     data["chapter"] = [_load(path) for path in sorted(root.glob("curriculum/chapters/*/chapter.yaml"))]
-    data["quest"] = [_load(path) for path in sorted(root.glob("curriculum/chapters/*/quests/*.yaml"))]
+    for pattern, town_wide in (("curriculum/chapters/*/quests/*.yaml", False), ("world/quests/*.yaml", True)):
+        for path in sorted(root.glob(pattern)):
+            quest = _load(path)
+            if not isinstance(quest, dict) or "chapter_id" not in quest or (quest["chapter_id"] is None) != town_wide:
+                raise PackageError("任务目录与章节归属不一致")
+            data["quest"].append(quest)
     data["story"] = [_load(path) for path in sorted(root.glob("curriculum/chapters/*/flows/*.yaml"))] + [
         _load(path) for path in sorted(root.glob("world/flows/*.yaml"))
     ]

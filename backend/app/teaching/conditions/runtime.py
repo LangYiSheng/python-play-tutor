@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.course_content.access import authorize_activity, authorize_classroom, chapter_available, chapter_completion_requirements
 from app.course_scope import belongs_to_course, course_clause
-from app.models import ActivityProgress, Chapter, NodeState, PlayerQuest, PracticeSession, QuestDefinition
+from app.models import ActivityProgress, AssessmentAttempt, Chapter, NodeState, PlayerQuest, PracticeSession, QuestDefinition
 from app.teaching.quests.access import quest_visible
 from app.teaching.quests.graph import node_statuses
 
@@ -53,6 +53,10 @@ def _matches(db, user, classroom_id, story, condition):
             activity = authorize_activity(db, user, classroom_id, activity_id)
         except HTTPException as exc:
             raise UnavailableCondition from exc
+        if activity.kind == "assessment":
+            return db.scalar(select(AssessmentAttempt.id).where(
+                AssessmentAttempt.user_id == user.id, AssessmentAttempt.classroom_id == classroom_id,
+                AssessmentAttempt.activity_id == activity.id)) is not None
         model = PracticeSession if activity.kind == "practice" and activity.content.get("practice_rules") else ActivityProgress
         return bool(db.get(model, (user.id, classroom_id, activity_id)))
     if key == "assessment_score":
@@ -77,7 +81,7 @@ def _matches(db, user, classroom_id, story, condition):
             ids = {
                 item.id
                 for item in db.scalars(select(QuestDefinition).where(course_clause(db, QuestDefinition, classroom_id)))
-                if quest_visible(item, user, classroom, db) and chapter_available(db, user, classroom_id, item.chapter_id)
+                if quest_visible(item, user, classroom, db) and (item.chapter_id is None or chapter_available(db, user, classroom_id, item.chapter_id))
             }
         completed = set(
             db.scalars(
@@ -93,7 +97,7 @@ def _matches(db, user, classroom_id, story, condition):
         raise UnavailableCondition
     if key != "quest" and (value["id"] if key == "goal" else value) not in {node["id"] for node in definition.definition["nodes"]}:
         raise UnavailableCondition
-    if not _chapter_available(db, user, classroom, definition.chapter_id):
+    if definition.chapter_id is not None and not _chapter_available(db, user, classroom, definition.chapter_id):
         return False
     instance = db.scalar(
         select(PlayerQuest).where(PlayerQuest.user_id == user.id, PlayerQuest.classroom_id == classroom_id, PlayerQuest.quest_id == quest_id)

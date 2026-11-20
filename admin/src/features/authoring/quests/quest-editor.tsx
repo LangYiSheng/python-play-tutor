@@ -97,6 +97,8 @@ export function QuestEditor({
     onChange({
       ...data,
       quests,
+      flows: q.chapter_id === quest?.chapter_id ? data.flows : data.flows.map(flow =>
+        flow.quest_id === q.id ? { ...flow, chapter_id: q.chapter_id } : flow),
       configuration: nextPositions
         ? withLayout(q.id, nextPositions)
         : data.configuration,
@@ -126,15 +128,14 @@ export function QuestEditor({
     // Selecting the new task replaces the previous workspace and its toolbar.
     const anchor = event.currentTarget.getBoundingClientRect();
     const id = newId("quest"),
-      chapter = data.catalog.chapters[0]?.id ?? "",
       q: Quest = {
         id,
         title: "新的教学任务",
-        chapter_id: chapter,
+        chapter_id: null,
         definition: {
           id,
           title: "新的教学任务",
-          chapter_id: chapter,
+          chapter_id: null,
           kind: "side",
           nodes: [],
           effects: [],
@@ -284,7 +285,6 @@ export function QuestEditor({
       </SelectField>
       <Button
         variant="outline"
-        disabled={!data.catalog.chapters.length}
         onClick={create}
       >
         <Plus />

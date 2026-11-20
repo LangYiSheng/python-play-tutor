@@ -36,6 +36,56 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); sessionStorage.clear(); document.body.replaceChildren(); });
 
 describe("server-owned chapter performance", () => {
+  it("renders restored dialogue and choices once from the signed-in learner and sends the original choice id", async () => {
+    const session = useSession();
+    session.user!.name = "小禾{course_name}<b>$&";
+    session.classes = [
+      { id: 1, teacher_id: 1, name: "隔壁班", course_name: "隔壁课程" },
+      { id: 2, teacher_id: 1, name: "体验班", course_name: "欣赏音乐" },
+    ];
+    session.world!.chapters = [
+      { id: 178, title: "前奏", order_index: 1, available: true },
+      { id: 179, title: "变奏", order_index: 2, available: true },
+    ];
+    const template = { ...view(), chapter_id: 179, node: {
+      id: "intro", text: "{name}，欢迎学习{course_name}的{chapter_name}。{{name}} {unknown}",
+      choices: [{ id: "study-{name}", label: "我是{name}，开始{chapter_name}" }],
+    } };
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(template));
+    await session.restoreStory();
+    const wrapper = mount(DialogueLayer, { props: { story: session.story! } });
+    const expected = "小禾{course_name}<b>$&，欢迎学习欣赏音乐的变奏。{{name}} {unknown}";
+    expect(wrapper.get(".dialogue-text").text()).toBe(expected);
+    expect(wrapper.get(".dialogue-text").attributes("aria-label")).toBe(expected);
+    expect(wrapper.find(".dialogue-text b").exists()).toBe(false);
+    expect(wrapper.get(".dialogue-response").text()).toContain("我是小禾{course_name}<b>$&，开始变奏");
+    await wrapper.get(".dialogue-response").trigger("click");
+    await flushPromises();
+    expect(fetch.mock.calls.map(([path]) => path)).toEqual([
+      "/api/story/current?classroom_id=2", "/api/story/sessions/story-session/advance",
+    ]);
+    for (const [, init] of fetch.mock.calls) {
+      expect(new Headers(init?.headers).get("X-Dialogue-Format")).toBe("template");
+    }
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({ choice: "study-{name}" });
+    expect(session.story!.node).toEqual(template.node);
+    wrapper.unmount();
+  });
+  it("uses the preview learner and town defaults and leaves legacy responses as literal text", async () => {
+    const session = useSession();
+    session.user = { ...session.user!, town_preview: true, name: "教师体验学生" };
+    const raw = { ...view(), chapter_id: null, node: { id: "welcome", text: "{name}，{course_name}·{chapter_name}" } };
+    const wrapper = mount(DialogueLayer, { props: { story: raw } });
+    expect(wrapper.get(".dialogue-text").text()).toBe("教师体验学生，这门课程·本章");
+    session.user = { ...session.user, id: 42, name: "新同学", town_preview: false };
+    await flushPromises();
+    expect(wrapper.get(".dialogue-text").text()).toBe("新同学，这门课程·本章");
+    const literal = { id: "welcome", text: "欢迎，小禾{course_name}", choices: [{ id: "yes", label: "我是小禾{name}" }] };
+    await wrapper.setProps({ story: { ...view(), node: literal } });
+    expect(wrapper.get(".dialogue-text").text()).toBe(literal.text);
+    expect(wrapper.get(".dialogue-response").text()).toContain(literal.choices[0]!.label);
+    wrapper.unmount();
+  });
   it("types the new round immediately when NPC and story props change on the same node", async () => {
     vi.useFakeTimers();
     useUiPreferences().reduceMotion = false;

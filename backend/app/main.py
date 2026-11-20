@@ -30,6 +30,7 @@ from app.course_packages.cleanup import cleanup_worker
 from app.materials import router as storage
 from app.teaching.authoring import router as world_authoring
 from app.teaching.quests import router as quests
+from app.teaching.quick_template import router as quick_template
 from app.teaching.story import router as story
 from app.teaching.world import router as world
 
@@ -84,7 +85,7 @@ def create_app() -> FastAPI:
         allow_origins=CORS_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Range"],
+        allow_headers=["Authorization", "Content-Type", "Range", "X-Dialogue-Format"],
     )
     for module in (
         admin_workbench,
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
         classroom_courses,
         course_exchange,
         world_authoring,
+        quick_template,
     ):
         app.include_router(module.router, prefix="/api")
     # Narration authoring is additive and isolated; see app/narration.

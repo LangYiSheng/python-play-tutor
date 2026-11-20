@@ -35,7 +35,7 @@
           {{ tracked.status === "complete" ? "委托已完成" : "当前目标" }}
         </p>
         <p class="quest-next">
-          {{ node ? node.title : "全部目标已达成，去看看下一段故事吧。" }}
+          {{ node ? node.title : tracked.status === "complete" ? "这份委托已完成，可以在小镇里自由走走。" : "打开任务日志查看目标进度。" }}
         </p>
         <p v-if="readyCount > 1" class="quest-parallel">
           还有 {{ readyCount - 1 }} 个目标可在日志中查看

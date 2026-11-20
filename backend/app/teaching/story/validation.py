@@ -61,7 +61,7 @@ def validate_story(content: dict, db: Session | None = None, quest_definition: d
                 raise ValueError("活动绑定不存在")
             if activity.content.get("published") is False:
                 raise ValueError("演出不能绑定未发布活动")
-            if quest_definition and activity.chapter_id != quest_definition["chapter_id"]:
+            if quest_definition and quest_definition["chapter_id"] is not None and activity.chapter_id != quest_definition["chapter_id"]:
                 raise ValueError("演出活动必须属于当前章节")
             if activity.kind in {"lesson", "reading"}:
                 from app.learning_rules import has_completion_rule, validate_learning

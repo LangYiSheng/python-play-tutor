@@ -55,6 +55,11 @@ def preview_impact(db, instance, bundle):
     compare("answers", {row["id"]: row for row in snapshot[1]} if snapshot else {}, {row["id"]: row for row in bundle["secrets"]})
     old_config = snapshot[3] if snapshot else {}
     compare("configuration", {key: old_config.get(key, {}) for key in CONFIG_FILES}, bundle["configuration"])
+    previous_recipe = old_config.get("_quick_orchestration", {}).get("recipe")
+    incoming_recipe = bundle["course"].get("quick_orchestration")
+    if previous_recipe is not None or incoming_recipe is not None:
+        compare("quick_orchestration", {"课程流程": previous_recipe} if previous_recipe else {},
+                {"课程流程": incoming_recipe} if incoming_recipe else {})
     compare(
         "releases",
         {row["chapter_id"]: row for row in snapshot[2]} if snapshot else {},
@@ -149,7 +154,7 @@ def preview_impact(db, instance, bundle):
 
         for stable in diff["quest"]["updated"]:
             old, new = current["quest"][stable], incoming["quest"][stable]
-            if old["chapter_id"] != new["chapter_id"] or changed_quest_structure(old["definition"], new["definition"]):
+            if changed_quest_structure(old["definition"], new["definition"]):
                 progress_count = db.scalar(
                     select(func.count())
                     .select_from(PlayerQuest)

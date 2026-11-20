@@ -12,6 +12,7 @@ export interface User {
 export interface Classroom {
   id: number;
   name: string;
+  course_name?: string | null;
   teacher_id: number;
   teacher_name?: string;
   join_code?: string;
@@ -59,7 +60,7 @@ export interface Quest {
   kind: "main" | "side";
   id: string;
   title: string;
-  chapter_id: number;
+  chapter_id: number | null;
   story_id?: string;
   status: string;
   nodes: QuestNode[];
@@ -195,6 +196,8 @@ export interface ActivityProgress {
 }
 export interface StoryView {
   mode?: "task" | "ambient" | "public";
+  /** Present on template responses, null for town-wide dialogue. */
+  chapter_id?: number | null;
   id: string;
   revision: number;
   status: "active" | "waiting" | "ended";

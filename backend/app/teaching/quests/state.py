@@ -27,12 +27,12 @@ def ensure_quests(db, user, classroom_id, *, commit=True):
         )
     ).all()
     for definition in definitions:
-        if not chapter_available(db, user, classroom_id, definition.chapter_id):
+        if definition.chapter_id is not None and not chapter_available(db, user, classroom_id, definition.chapter_id):
             continue
         existing = db.scalar(
             select(PlayerQuest).where(PlayerQuest.user_id == user.id, PlayerQuest.classroom_id == classroom_id, PlayerQuest.quest_id == definition.id)
         )
-        if not existing:
+        if not existing and ("when" not in definition.definition or quest_visible(definition, user, classroom, db, granted=False)):
             db.add(PlayerQuest(user_id=user.id, classroom_id=classroom_id, quest_id=definition.id))
     if not commit:
         db.flush()
@@ -66,7 +66,7 @@ def world_payload(db, user, classroom_id, initialize_quests=True):
     quests = []
     for instance in db.scalars(select(PlayerQuest).where(PlayerQuest.user_id == user.id, PlayerQuest.classroom_id == classroom_id)):
         definition = db.get(QuestDefinition, instance.quest_id)
-        if not quest_visible(definition, user, classroom, db):
+        if not quest_visible(definition, user, classroom, db, granted=True):
             continue
         states = {state.node_id: state for state in db.scalars(select(NodeState).where(NodeState.player_quest_id == instance.id))}
         statuses = node_statuses(definition.definition, states)

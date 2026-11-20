@@ -16,7 +16,7 @@ from app.teaching.quests.graph import node_statuses
 from app.teaching.quests.state import ensure_quests, world_payload
 
 
-def apply_quest_event(db, user, body: EventInput):
+def apply_quest_event(db, user, body: EventInput, *, opened_workspace=None):
     """Validate and stage progress in the caller's transaction; return whether duplicated."""
     authorize_classroom(db, user, body.classroom_id)
     if user.role != "student":
@@ -39,7 +39,8 @@ def apply_quest_event(db, user, body: EventInput):
     )
     if not instance:
         raise HTTPException(404, "任务尚未开放")
-    authorize_chapter(db, user, body.classroom_id, definition.chapter_id)
+    if definition.chapter_id is not None:
+        authorize_chapter(db, user, body.classroom_id, definition.chapter_id)
     states = {state.node_id: state for state in db.scalars(select(NodeState).where(NodeState.player_quest_id == instance.id))}
     node = next((n for n in definition.definition["nodes"] if n["id"] == body.node_id), None)
     if not node:
@@ -62,7 +63,7 @@ def apply_quest_event(db, user, body: EventInput):
         )
         if not verified or not db.get(WorldFlag, (user.id, body.classroom_id, f"dialogue:completed:{node['target']}:{marker}")):
             raise HTTPException(422, "请先确认当前版本的指定流程对白")
-    validate_evidence(db, user, body.classroom_id, node, body.evidence)
+    validate_evidence(db, user, body.classroom_id, node, body.evidence, opened_workspace=opened_workspace)
     state = NodeState(player_quest_id=instance.id, node_id=node["id"], status="complete", choice=body.evidence.get("choice"), evidence=body.evidence)
     db.add(state)
     states[state.node_id] = state

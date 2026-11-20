@@ -26,6 +26,7 @@ export const api = {
   },
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
+    if (path.startsWith("/story/")) headers.set("X-Dialogue-Format", "template");
     if (!(init.body instanceof FormData))
       headers.set("Content-Type", "application/json");
     const token = this.token();

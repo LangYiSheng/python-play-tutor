@@ -67,6 +67,7 @@ export function DialogueFields({
         <p className="font-medium text-sm">对白内容</p>
         <p className="hint">
           每个输入框是一轮对白。玩家逐轮继续，最后一轮显示选项并完成交谈目标。
+          {"可用 {name} 称呼学生，{course_name} 和 {chapter_name} 会显示当前课程名和章节名。"}
         </p>
         {rounds.map((text, index) => (
           <div key={index} className="space-y-2">
