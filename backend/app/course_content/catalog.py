@@ -36,8 +36,9 @@ def selected_point_labels(db, user, classroom_id, ids):
     return [dict(row) for row in db.execute(query).mappings()]
 
 
-def page_window(db, query, page, size):
-    total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery()))
+def page_window(db, query, page, size, *, total=None):
+    if total is None:
+        total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery()))
     current = min(page, max(1, (total + size - 1) // size))
     return {"page": current, "total": total}, query.limit(size).offset((current - 1) * size)
 

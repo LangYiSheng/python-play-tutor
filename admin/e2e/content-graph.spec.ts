@@ -148,7 +148,8 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/teacher\/content-graph$/);
   const review = page.getByRole("complementary", {name: "待审批"});
-  await expect(review.getByText("未归章", {exact: true})).toBeVisible();
+  const drafts = review.getByRole("link", {name: /待审题目/});
+  await expect(drafts).toHaveAttribute("href", "/teacher/content-list?tab=questions&status=draft&reviewable=true");
   await expect(detail).toHaveCount(0);
   await expect(approval).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".cg-question.cg-selected")).toHaveText(/循环习题 12/);
@@ -159,6 +160,16 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   await page.getByRole("complementary", {name: "任务队列"}).getByRole("button", {name: "关闭详情栏"}).click();
   await expect(detail.getByRole("heading", {name: "循环习题 12"})).toBeVisible();
   await expect(map).toHaveAttribute("style", viewport!);
+  await approval.click();
+  await drafts.click();
+  await expect(page.getByRole("row").filter({hasText: "循环习题 12"})).toBeVisible();
+  await expect(page.getByRole("row").filter({hasText: "循环习题 01"})).toHaveCount(0);
+  const draftRequest = banks.at(-1)?.searchParams;
+  expect(draftRequest?.get("status")).toBe("draft");
+  expect(draftRequest?.get("reviewable")).toBe("true");
+  const bankCount = banks.length;
+  await page.goBack();
+  await expect(detail.getByRole("heading", {name: "循环习题 12"})).toBeVisible();
   await page.getByRole("button", { name: "课程全貌", exact: true }).click();
   await search.fill("仅能通过题干定位");
   await expect(results.locator(".cg-search-hit")).toHaveCount(1);
@@ -171,8 +182,8 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   await expect(page.locator(".cg-question")).toHaveCount(6);
   await detail.getByRole("button", {name: "下一页"}).click();
   await expect(page.locator(".cg-question")).toHaveCount(5);
-  expect(banks.length).toBeGreaterThanOrEqual(2);
-  expect(banks.every(u => u.searchParams.get("size") === "6" && u.searchParams.get("knowledge_point_id") === String(point.id))).toBe(true);
+  expect(banks.length - bankCount).toBeGreaterThanOrEqual(2);
+  expect(banks.slice(bankCount).every(u => u.searchParams.get("size") === "6" && u.searchParams.get("knowledge_point_id") === String(point.id))).toBe(true);
 });
 
 test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书签", async ({ page }, info) => {
@@ -184,6 +195,8 @@ test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书�
   const running = { id: 6, run_id: 21, material_id: 31, status: "running", queued: false, stage: "script",
     kind: "generate", done: 2, total: 5, percent: 40, started_at: "2026-11-20T08:00:00Z" };
   const jobs = [running, { ...running, id: 8, run_id: 22, material_id: 32, status: "interrupted", percent: 20 }];
+  let draft = true;
+  let outOfScopeRequests = 0;
   await page.context().route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     let response: unknown = [];
@@ -191,9 +204,21 @@ test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书�
     if (path.endsWith("/classrooms")) response = [{ id: 9, name: "当前班级", teacher_id: 1 }];
     if (path.endsWith("/course-graph")) response = { title: "测试课程", chapters: [{ id: 3, title: "计算思维" }], materials };
     if (path.endsWith("/course-graph/tasks")) response = jobs;
-    if (path.endsWith("/content-review/summary")) response = { total: 0 };
-    if (path.includes("/content-review/groups")) response = { items: [], total: 0, page: 1, item_total: 0 };
-    if (path.endsWith("/content-review")) response = { items: [], total: 0, page: 1, chapter_title: "计算思维", material_title: "第 31 份课件" };
+    if (path.endsWith("/content-review/summary")) response = { total: Number(draft), material_count: Number(draft), question_count: 0 };
+    if (path.endsWith("/content-review/materials")) response = { total: Number(draft), page: 1, question_count: 0,
+      items: draft ? [{material_id: 31, material_title: materials[0].title, material_kind: "pdf", narration_count: 1, first_page_no: 2}] : [] };
+    if (path.endsWith("/teacher/materials/31")) response = materials[0];
+    if (path.includes("/materials/999")) outOfScopeRequests++;
+    if (path.endsWith("/materials/31/narrations")) response = { material_id: 31, title: materials[0].title,
+      coverage: {pages: 2, covered: 1, missing: 1, draft: Number(draft), accepted: Number(!draft), rejected: 0, unavailable: 0, stale: 0},
+      pages: [1, 2].map(n => ({page_no: n, title: "课件原文", has_text: true, source_chars: 4, source_text: "课件原文", raw_text: "课件原文", digest: null,
+        narration: n === 1 ? null : {text: "待核对的讲稿", status: draft ? "draft" : "accepted", source: "ai_generated", anchors: []} })) };
+    if (path.endsWith("/narrations/2/accept") && route.request().method() === "POST") { draft = false; response = {page_no: 2, status: "accepted"}; }
+    if (path.endsWith("/narrations/audio")) response = {available: false, pages: []};
+    if (path.endsWith("/narrations/quota")) response = {available: false, used_today: 0, daily_limit: 0};
+    if (path.endsWith("/narrations/job")) response = {running: false, status: "done", failed: [], done: 0, total: 0};
+    if (path.includes("/narrations/calibrate")) response = {issues: [], fixes: [], terms: [], windows: 0};
+    if (path.endsWith("/page-image")) { await route.fulfill({status: 404}); return; }
     if (path.includes("/course-graph/materials/")) response = { points: [], pages: 5, narrations: 0, audio: 0, drafts: 0 };
     await route.fulfill({ json: response });
   });
@@ -201,7 +226,8 @@ test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书�
   await expect(page.locator('.react-flow__node[data-id="material-31"]')).toHaveAccessibleName(/执行中.*40%/);
   await expect(page.locator('.react-flow__node[data-id="material-32"] .cg-task-error')).toBeVisible();
   await expect(page.locator(".cg-node.cg-task")).toHaveCount(0);
-  const approval = page.getByRole("button", { name: /待审批\s*0 项/ });
+  const approval = page.getByRole("button", { name: /^待审批/ });
+  await expect(approval).toHaveAccessibleName(/待审批\s*1 项/);
   const queue = page.getByRole("button", { name: /任务队列\s*2 项/ });
   await expect(approval).toHaveAttribute("aria-expanded", "false");
   for (const [width, height] of [[1396, 1000], [430, 915], [885, 871]]) {
@@ -236,7 +262,18 @@ test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书�
   await expect(page).toHaveURL(/\/teacher\/content-graph$/);
   const review = page.getByRole("complementary", {name: "待审批"});
   await expect(review).toBeFocused();
-  await expect(review.getByText("当前班级没有待审批内容")).toBeVisible();
+  const source = review.getByRole("button", {name: /第 31 份课件/});
+  await source.click();
+  const narration = page.getByRole("dialog", {name: "课程生成 · 第 31 份课件"});
+  await expect(narration.getByRole("button", {name: /第 2 页/})).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await narration.getByRole("button", {name: "接受", exact: true}).click();
+  await expect(narration.getByRole("button", {name: /第 2 页.*已接受/})).toHaveAttribute("aria-current", "true");
+  await narration.getByRole("button", {name: "关闭", exact: true}).click();
+  await expect(approval).toHaveAccessibleName(/待审批\s*0 项/);
+  await expect(source).toHaveCount(0);
+  await expect(review).toBeVisible();
+  await review.focus();
   await page.keyboard.press("Escape");
   await expect(approval).toBeFocused();
   await expect(review).toHaveCount(0);
@@ -270,17 +307,19 @@ test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书�
   await expect(queue).toBeVisible();
   await expect(nodeDetails).toHaveCount(0);
   await expect(page.locator(".cg-selected")).toHaveCount(0);
-  const [scopedDrafts] = await Promise.all([
-    page.waitForRequest(r => /\/content-review\?/.test(r.url())),
-    page.goto("/teacher/content-review?chapter_id=3&material_id=31"),
-  ]);
-  const filters = new URL(scopedDrafts.url()).searchParams;
-  expect(filters.get("chapter_id")).toBe("3");
-  expect(filters.get("material_id")).toBe("31");
+  await page.goto("/teacher/content-review?chapter_id=3&material_id=31");
   await expect(page).toHaveURL(/\/teacher\/content-graph$/);
+  await expect(narration).toBeVisible();
+  await narration.getByRole("button", {name: "关闭", exact: true}).click();
   await expect(review).toBeVisible();
+  await page.reload();
+  await expect(review).toBeVisible();
+  await expect(narration).toHaveCount(0);
   await queue.click();
   await page.reload();
   await expect(approval).toHaveAttribute("aria-expanded", "false");
   await expect(review).toHaveCount(0);
+  await page.goto("/teacher/content-review?chapter_id=3&material_id=999");
+  await expect(review.getByText("这份资料在当前班级无法审校。")).toBeVisible();
+  expect(outOfScopeRequests).toBe(0);
 });

@@ -8,8 +8,8 @@ vi.mock("../src/pages/content-list", async () => {
   return { ContentListPage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
 });
 vi.mock("../src/features/content-workspace/knowledge-graph", () => ({
-  KnowledgeGraph: ({ classroomId, initialReview }: { classroomId: number; initialReview?: { chapterId?: number; materialId?: number } }) =>
-    <><h1>图谱班级 {classroomId}</h1>{initialReview && <aside aria-label="待审批">{initialReview.chapterId ?? "全部章节"} / {initialReview.materialId ?? "全部资料"}</aside>}</>,
+  KnowledgeGraph: ({ classroomId, initialReview }: { classroomId: number; initialReview?: { materialId?: number } }) =>
+    <><h1>图谱班级 {classroomId}</h1>{initialReview && <aside aria-label="待审批">{initialReview.materialId ?? "全部课件"}</aside>}</>,
 }));
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); setToken(null); history.replaceState({}, "", "/"); });
@@ -21,14 +21,14 @@ it("保留待审批直达链接与班级切换，切班清除旧章节和资料�
   render(<App/>);
   expect(await screen.findByRole("heading", {name: "图谱班级 10"})).toBeVisible();
   expect(location.pathname + location.search).toBe("/teacher/content-graph");
-  expect(screen.getByLabelText("待审批")).toHaveTextContent("9 / 16");
+  expect(screen.getByLabelText("待审批")).toHaveTextContent("16");
   expect(screen.queryByRole("link", {name: "待审批"})).not.toBeInTheDocument();
   expect(screen.getByRole("link", {name: "知识图谱"})).toHaveAttribute("aria-current", "page");
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", {name: "当前班级"}));
   await user.click(await screen.findByRole("option", {name: "乙班"}));
   expect(await screen.findByRole("heading", {name: "图谱班级 12"})).toBeVisible();
-  expect(screen.getByLabelText("待审批")).toHaveTextContent("全部章节 / 全部资料");
+  expect(screen.getByLabelText("待审批")).toHaveTextContent("全部课件");
 });
 it("cancelling draft discard prevents class creation and keeps the current class and draft", async () => {
   setToken("test-session");

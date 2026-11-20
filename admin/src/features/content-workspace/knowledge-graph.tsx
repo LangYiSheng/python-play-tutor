@@ -47,7 +47,7 @@ function MaterialOutputs({ detail, open }: { detail: MaterialDetail; open: (mode
   </ul></section>;
 }
 
-type GraphProps = { classroomId: number; initialReview?: { chapterId?: number; materialId?: number } };
+type GraphProps = { classroomId: number; initialReview?: { materialId?: number } };
 type Panel = "node" | "review" | "tasks" | null;
 export function KnowledgeGraph(props: GraphProps) {
   return <GraphPage key={props.classroomId} {...props}/>;
@@ -62,6 +62,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   const [focus, setFocus] = useState<{ key: string; seq: number } | null>(null);
   const [panel, setPanel] = useState<Panel>(initialReview ? "review" : saved.current?.selection ? "node" : null);
   const [reviewScope, setReviewScope] = useState(initialReview);
+  const [bookmarkNotice, setBookmarkNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const [reviewRevision, setReviewRevision] = useState(0);
   const [action, setAction] = useState<ContentAction | null>(null);
@@ -83,7 +84,9 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   const endpoint = (suffix: string) => scoped("/teacher/course-graph" + suffix, classroomId);
   const catalog = useGraphData<GraphData>(endpoint(""), revision);
   const taskList = useGraphData<TaskSnapshot[]>(endpoint("/tasks"), revision, 4000);
-  const pending = useGraphData<{ total: number }>(`/teacher/classrooms/${classroomId}/content-review/summary`, revision + reviewRevision);
+  const pending = useGraphData<{ material_count: number; question_count: number }>(
+    `/teacher/classrooms/${classroomId}/content-review/summary`, revision + reviewRevision);
+  const pendingEntries = pending?.data && pending.data.material_count + Number(pending.data.question_count > 0);
   const material = useGraphData<MaterialDetail>(branch?.kind === "material" ? endpoint("/materials/" + branch.id) : null, revision);
   const points = useGraphData<{ items: PointNode[]; total: number; page: number }>(branch?.kind === "chapter" && selection?.kind === "chapter"
     ? scoped("/teacher/knowledge-points?chapter_id=" + branch.id + "&page=" + chapterPage + "&size=12", classroomId) : null, revision);
@@ -93,6 +96,17 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
     scoped("/teacher/questions?knowledge_point_id=" + contextPoint + "&page=" + questionPage + "&size=" + pageSize, classroomId) : null, revision);
   const question = useGraphData<GraphQuestion>(selection?.kind === "question" ? endpoint("/questions/" + encodeURIComponent(selection.id)) : null, revision);
   const graph = catalog?.data ?? emptyGraph;
+  useEffect(() => {
+    const id = reviewScope?.materialId;
+    if (!id || panel !== "review" || !catalog?.data) return;
+    // Old chapter/material bookmarks open the original dialog once. A deck can move
+    // between chapters; only the current classroom's material identity is authoritative.
+    setReviewScope({});
+    history.replaceState({ ...history.state, initialReview: {} }, "");
+    const deck = catalog.data.materials.find(m => m.id === id);
+    if (deck && ["presentation", "pdf"].includes(deck.kind)) setAction({kind: "material", mode: "narration", id});
+    else setBookmarkNotice("这份资料在当前班级无法审校。");
+  }, [reviewScope, panel, catalog?.data]);
   const jobs = taskList?.data;
   const layout = useMemo(() => graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data,
     point?.data ? questions?.data?.items : undefined, question?.data),
@@ -112,6 +126,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   function focusOn(key: string) { setFocus(prev => ({ key, seq: (prev?.seq ?? 0) + 1 })); }
   function showPanel(next: Panel) {
     if (next !== "review" && reviewScope) {
+      setBookmarkNotice("");
       setReviewScope(undefined);
       const state = { ...history.state };
       delete state.initialReview;
@@ -247,7 +262,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
           <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></>}</div>
         <div className="cg-bar">{catalog?.data && <GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>}
         <Button ref={reviewButton} variant="outline" size="sm" aria-expanded={panel === "review"} aria-controls={panel === "review" ? inspectorId : undefined}
-          onClick={e => togglePanel("review", e.detail === 0)}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pending?.data?.total}/></Button>
+          onClick={e => togglePanel("review", e.detail === 0)}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pendingEntries}/></Button>
         <Button ref={taskButton} variant="outline" size="sm" aria-expanded={panel === "tasks"} aria-controls={panel === "tasks" ? inspectorId : undefined}
           onClick={e => togglePanel("tasks", e.detail === 0)}>
           <ToolbarLabel icon={ListTodo} label="任务队列" count={jobs?.length}/></Button>
@@ -267,8 +282,9 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
           {panel === "node" && details}
           {panel === "tasks" && (taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> :
             <TaskQueue jobs={jobs} titleOf={id => graph.materials.find(m => m.id === id)?.title ?? "课件"} onSelect={chooseTask} request={commands.request}/>)}
-          {panel === "review" && <Suspense fallback={<Loading/>}><ContentReviewPanel classroomId={classroomId}
-            initialChapterId={reviewScope?.chapterId} initialMaterialId={reviewScope?.materialId} onChanged={refresh}/></Suspense>}
+          {panel === "review" && <Suspense fallback={<Loading/>}>{bookmarkNotice && <p className="inspector-meta" role="status">{bookmarkNotice}</p>}
+            <ContentReviewPanel classroomId={classroomId} revision={revision + reviewRevision}
+              onOpenMaterial={(id, pageNo) => setAction({kind: "material", mode: "narration", id, pageNo})}/></Suspense>}
         </aside>}
       </div>
     </section>

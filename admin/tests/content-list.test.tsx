@@ -39,6 +39,34 @@ it("pages only the selected knowledge point and loads other catalogs on demand",
   expect(await screen.findByText("知识点 · 表达式")).toBeVisible();
 });
 
+it("从待审批直达本人可审的题目，翻页保留范围，切换状态解除审批筛选", async () => {
+  const requests: URLSearchParams[] = [];
+  vi.stubGlobal("fetch", async (path: string) => {
+    const url = new URL(path, location.origin);
+    if (url.pathname.endsWith("/courses")) return json({ chapters: [] });
+    requests.push(url.searchParams);
+    const page = Number(url.searchParams.get("page"));
+    return json({ page, total: 12, items: [{ id: "q" + page, title: "题目 " + page, kind: "fill",
+      source_type: "imported", status: "draft", chapter_ids: [] }] });
+  });
+  history.replaceState({}, "", "/teacher/content-list?tab=questions&status=draft&reviewable=true");
+  const user = userEvent.setup();
+  render(<ContentListPage classroomId={12}/>);
+  expect(await screen.findByText("题目 1")).toBeVisible();
+  const status = screen.getByRole("combobox", { name: "题目状态" });
+  expect(status).toHaveTextContent("待我审核");
+  await user.click(screen.getByRole("button", { name: "下一页" }));
+  expect(await screen.findByText("题目 2")).toBeVisible();
+  expect(requests.map(params => [params.get("page"), params.get("status"), params.get("reviewable")]))
+    .toEqual([["1", "draft", "true"], ["2", "draft", "true"]]);
+  await user.click(status);
+  await user.click(await screen.findByRole("option", { name: "全部状态" }));
+  expect(await screen.findByText("题目 1")).toBeVisible();
+  expect(location.search).toBe("?tab=questions");
+  expect(requests.at(-1)?.has("reviewable")).toBe(false);
+  expect(requests.at(-1)?.has("status")).toBe(false);
+});
+
 it("graph editing reads the selected point and saves through the curriculum editor", async () => {
   const saved = vi.fn(), closed = vi.fn();
   vi.stubGlobal("fetch", async (path: string, init: RequestInit) => {

@@ -100,12 +100,9 @@ function currentPage(): Page {
   const part = location.pathname.split("/")[2];
   if (part === "content-review") {
     const params = new URLSearchParams(location.search);
-    const readId = (name: string) => {
-      const value = params.get(name);
-      return value !== null && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
-    };
-    const chapterId = readId("chapter_id");
-    const initialReview = { chapterId, materialId: chapterId === undefined ? undefined : readId("material_id") };
+    const rawMaterial = params.get("material_id") ?? "";
+    const id = Number(rawMaterial);
+    const initialReview = { materialId: /^\d+$/.test(rawMaterial) && Number.isSafeInteger(id) && id > 0 ? id : undefined };
     history.replaceState({ ...history.state, initialReview }, "", "/teacher/content-graph");
     return "content-graph";
   }

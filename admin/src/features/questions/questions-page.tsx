@@ -34,15 +34,17 @@ import { useCatalogPage } from "@/lib/use-catalog-page";
 
 type QuestionRow = Pick<Question, "id" | "title" | "kind" | "status" | "source_type" | "chapter_ids">;
 
-export function Questions({ classroomId, pointId, clearPoint }: {
-  classroomId: number; pointId?: string; clearPoint?: () => void;
+export function Questions({ classroomId, pointId, clearPoint, status, onStatusChange }: {
+  classroomId: number; pointId?: string; clearPoint: () => void;
+  status: string; onStatusChange: (value: string) => void;
 }) {
   const [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all"),
     [sourceFilter, setSourceFilter] = useState("all"),
     [kindFilter, setKindFilter] = useState("all");
   const list = useCatalogPage<QuestionRow>("/teacher/questions", classroomId, query, {
-    status: filter, source: sourceFilter, kind: kindFilter, knowledge_point_id: pointId ?? "all",
+    status: status === "reviewable" ? "draft" : status,
+    reviewable: status === "reviewable" ? "true" : "all",
+    source: sourceFilter, kind: kindFilter, knowledge_point_id: pointId ?? "all",
   });
   const point = useResource<Pick<Point, "id" | "title">[]>(pointId
     ? scoped("/teacher/knowledge-point-labels?ids=" + encodeURIComponent(pointId), classroomId) : null);
@@ -116,14 +118,15 @@ export function Questions({ classroomId, pointId, clearPoint }: {
           </SelectField>
           <SelectField
             aria-label="题目状态"
-            value={filter}
+            value={status}
             onValueChange={(value) => {
-              setFilter(value);
+              onStatusChange(value);
               list.firstPage();
               deletion.clear();
             }}
           >
             <option value="all">全部状态</option>
+            <option value="reviewable">待我审核</option>
             {Object.entries(statuses).map(([key, value]) => (
               <option key={key} value={key}>
                 {value}

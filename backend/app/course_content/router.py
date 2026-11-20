@@ -111,9 +111,11 @@ def create_question(
 @router.get("/teacher/questions")
 def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None,
                    page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
-                   kind: str | None = None, status: str | None = None, source: str | None = None, knowledge_point_id: int | None = None):
-    if page is not None or knowledge_point_id is not None:
-        return question_page(db, user, classroom_id, page or 1, size, search, kind, status, source, knowledge_point_id)
+                   kind: str | None = None, status: str | None = None, source: str | None = None,
+                   knowledge_point_id: int | None = None, reviewable: bool = False):
+    if page is not None or knowledge_point_id is not None or reviewable:
+        return question_page(db, user, classroom_id, page or 1, size, search, kind, status, source,
+                             knowledge_point_id, reviewable=reviewable)
     return _list_questions(db=db, user=user, classroom_id=classroom_id)
 
 

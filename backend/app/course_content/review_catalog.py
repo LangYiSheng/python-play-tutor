@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import BigInteger, String, and_, case, cast, func, literal, select, union_all
 from sqlalchemy.orm import Session
 
+from app.course_content.catalog import page_window
 from app.models import Chapter, Material, MaterialChapter, Question, QuestionChapter, User
 from app.narration.models import PageNarration
 
@@ -25,11 +26,28 @@ def material_scope(instance: int, user: User):
     return (*visible(Material, instance, user), Material.kind.in_(("presentation", "pdf")))
 
 
-def draft_count(db: Session, instance: int, user: User) -> int:
+def draft_narrations(instance: int, user: User, *columns):
+    return (select(*columns).select_from(PageNarration).join(Material, Material.id == PageNarration.material_id)
+            .where(*material_scope(instance, user), PageNarration.status == "draft"))
+
+
+def draft_summary(db: Session, instance: int, user: User) -> dict[str, int]:
     questions = select(func.count(Question.id)).where(*question_scope(instance, user))
-    narrations = (select(func.count(PageNarration.id)).join(Material, Material.id == PageNarration.material_id)
-                  .where(*material_scope(instance, user), PageNarration.status == "draft"))
-    return db.scalar(select(questions.scalar_subquery() + narrations.scalar_subquery())) or 0
+    question_count, narration_count, material_count = db.execute(draft_narrations(
+        instance, user, questions.scalar_subquery(), func.count(PageNarration.id), func.count(Material.id.distinct()))).one()
+    return {"total": question_count + narration_count, "material_count": material_count,
+            "question_count": question_count, "narration_count": narration_count}
+
+
+def material_draft_page(db: Session, instance: int, user: User, page: int, size: int):
+    # Group by durable material ID, independent of how many chapters use the deck.
+    query = (draft_narrations(instance, user, Material.id.label("material_id"), Material.title.label("material_title"),
+                              Material.kind.label("material_kind"), func.count(PageNarration.id).label("narration_count"),
+                              func.min(PageNarration.page_no).label("first_page_no"))
+             .group_by(Material.id, Material.title, Material.kind).order_by(Material.title, Material.id))
+    counts = draft_summary(db, instance, user)
+    meta, window = page_window(db, query, page, size, total=counts["material_count"])
+    return {**meta, "question_count": counts["question_count"], "items": [dict(row) for row in db.execute(window).mappings()]}
 
 
 def first_chapter(relation, parent_id, target, instance: int, user: User):
@@ -54,12 +72,10 @@ def draft_rows(db: Session, instance: int, user: User, kind: Kind | None):
         func.coalesce(Material.id, 0).label("material_id"), literal(0).label("narration_page"))
         .select_from(Question).outerjoin(Material, and_(Material.id == integer_id, *visible(Material, instance, user)))
         .where(*question_scope(instance, user)))
-    narration = (select(literal("narration").label("kind"), cast(PageNarration.id, String).label("id"), Material.title,
+    narration = draft_narrations(instance, user, literal("narration").label("kind"), cast(PageNarration.id, String).label("id"), Material.title,
         cast(PageNarration.page_no, String).label("page_no"), PageNarration.source, literal("").label("question_kind"),
         first_chapter(MaterialChapter, MaterialChapter.material_id, Material.id, instance, user), Material.id.label("material_id"),
         PageNarration.page_no.label("narration_page"))
-        .select_from(PageNarration).join(Material, Material.id == PageNarration.material_id)
-        .where(*material_scope(instance, user), PageNarration.status == "draft"))
     return (question if kind == "question" else narration if kind == "narration" else union_all(question, narration)).subquery()
 
 

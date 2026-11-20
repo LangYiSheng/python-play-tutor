@@ -44,6 +44,7 @@ def test_edit_and_accept_narration_reject_question_and_class_isolation(client, d
     db.commit()
     other = f"/api/teacher/classrooms/{second}/content-review"
     assert client.get(other, headers=headers).json()["total"] == 0
+    assert client.get(other + "/materials", headers=headers).json() == {"items": [], "total": 0, "page": 1, "question_count": 0}
     rows = client.get(base, headers=headers).json()["items"]
     narr = next(r for r in rows if r["kind"] == "narration" and r["id"] == str(narration.id))
     assert client.post(other + "/decisions", json={"decision": "accept", "items": [narr]}, headers=headers).status_code == 409
@@ -89,7 +90,8 @@ def test_groups_count_shared_materials_once_and_include_orphans(client, db, clas
     make_question(db, chapter_ids=[], id="review-foreign", title="其他所有者的草稿", kind="fill", prompt="x",
                   owner_id=student["id"]).status = "draft"
     db.commit()
-    assert client.get(base + "/summary", headers=h).json() == {"total": 4}
+    assert client.get(base + "/summary", headers=h).json() == {
+        "total": 4, "material_count": 1, "question_count": 3, "narration_count": 1}
     assert client.get(base + "/summary", headers=student["headers"]).status_code == 403
     first = client.get(base + "/groups?page=1&size=1", headers=h).json()
     assert first["total"] == 3 and first["item_total"] == 4
@@ -109,6 +111,68 @@ def test_groups_count_shared_materials_once_and_include_orphans(client, db, clas
     assert client.get(base + "?chapter_id=0&material_id=0", headers=h).json()["items"][0]["id"] == "review-orphan"
     assert client.get(base + "/groups/999999/materials", headers=h).status_code == 404
     assert db.get(Question, qid).status == "draft" and row.status == "draft"
+
+
+def test_material_queue_groups_by_deck_and_links_first_pending_page(client, db, classroom, teacher, student):
+    from app.content_relations import set_material_chapters
+    from app.narration.models import PageNarration
+
+    base, slides, original, _ = drafts(client, db, classroom, teacher)
+    h = teacher["headers"]
+    set_material_chapters(db, slides.id, [180, 179])
+    original.status = "accepted"
+    pdf = make_material(db, kind="pdf", title=slides.title)
+    foreign = make_material(db, kind="pdf", title="其他所有者", owner_id=student["id"])
+    video = make_material(db, kind="video", title="视频")
+    for material, page, status in [(slides, 11, "draft"), (slides, 2, "draft"), (slides, 3, "rejected"),
+                                   (pdf, 8, "draft"), (foreign, 5, "draft"), (video, 1, "draft")]:
+        db.add(PageNarration(material_id=material.id, page_no=page, status=status))
+    db.commit()
+
+    assert client.get(base + "/materials", headers=student["headers"]).status_code == 403
+    assert client.get(base + "/summary", headers=h).json() == {
+        "total": 4, "material_count": 2, "question_count": 1, "narration_count": 3}
+    first = client.get(base + "/materials?size=1", headers=h).json()
+    assert first == {"page": 1, "total": 2, "question_count": 1, "items": [
+        {"material_id": slides.id, "material_title": slides.title, "material_kind": "presentation",
+         "narration_count": 2, "first_page_no": 2}]}
+    second = client.get(base + "/materials?size=1&page=99", headers=h).json()
+    assert second == {"page": 2, "total": 2, "question_count": 1, "items": [
+        {"material_id": pdf.id, "material_title": pdf.title, "material_kind": "pdf",
+         "narration_count": 1, "first_page_no": 8}]}
+
+    repository.row(db, slides.id, 2).status = "accepted"
+    repository.row(db, pdf.id, 8).status = "accepted"
+    db.commit()
+    remaining = client.get(base + "/materials?page=2&size=1", headers=h).json()
+    assert remaining["page"] == remaining["total"] == 1
+    assert [(r["material_id"], r["narration_count"], r["first_page_no"]) for r in remaining["items"]] == [(slides.id, 1, 11)]
+    repository.row(db, slides.id, 11).status = "accepted"
+    db.commit()
+    assert client.get(base + "/materials", headers=h).json() == {"page": 1, "total": 0, "question_count": 1, "items": []}
+
+
+def test_reviewable_question_filter_matches_counter_but_normal_catalog_shows_shared(client, db, classroom, teacher, student):
+    from app.models import User
+
+    base, _, _, own = drafts(client, db, classroom, teacher)
+    h = teacher["headers"]
+    for key, owner in [("shared-q", None), ("foreign-q", student["id"])]:
+        make_question(db, chapter_ids=[179], id=key, title=key, kind="fill", prompt="草稿", owner_id=owner).status = "draft"
+    db.commit()
+    path = f"/api/teacher/questions?classroom_id={classroom['id']}"
+    review_page = client.get(path + "&reviewable=true", headers=h).json()
+    assert [r["id"] for r in review_page["items"]] == [own]
+    assert review_page["total"] == client.get(base + "/materials", headers=h).json()["question_count"] == 1
+    regular = client.get(path + "&page=1&status=draft", headers=h).json()
+    assert {r["id"] for r in regular["items"]} == {own, "shared-q"}
+    assert client.get(path + "&reviewable=true&status=ready", headers=h).json()["total"] == 0
+
+    db.get(User, teacher["id"]).role = "admin"
+    db.commit()
+    admin_page = client.get(path + "&reviewable=true", headers=h).json()
+    assert {r["id"] for r in admin_page["items"]} == {own, "shared-q", "foreign-q"}
+    assert admin_page["total"] == client.get(base + "/summary", headers=h).json()["question_count"] == 3
 
 
 def test_chapter_accept_verifies_full_scope_and_skips_interactive(client, db, classroom, teacher):

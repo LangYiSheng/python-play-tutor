@@ -13,8 +13,8 @@ from app.auth import require_teacher
 from app.course_content.catalog import page_window
 from app.course_content.question_contracts import QuestionUpdate
 from app.course_content.questions import stage_question, updated_question_input
-from app.course_content.review_catalog import (Kind, draft_count, draft_rows, grouped_page, material_scope, question_scope,
-                                              scope_name, visible)
+from app.course_content.review_catalog import (Kind, draft_rows, draft_summary, grouped_page, material_draft_page,
+                                              material_scope, question_scope, scope_name, visible)
 from app.course_content.review_narrations import apply_narrations
 from app.db import get_db
 from app.models import Chapter, CourseInstance, Material, Question, User
@@ -29,7 +29,12 @@ Teacher = Annotated[User, Depends(require_teacher)]
 
 @router.get("/summary")
 def summary(classroom_id: int, db: Db, user: Teacher):
-    return {"total": draft_count(db, teacher_instance_id(db, user, classroom_id), user)}
+    return draft_summary(db, teacher_instance_id(db, user, classroom_id), user)
+
+
+@router.get("/materials")
+def materials(classroom_id: int, db: Db, user: Teacher, page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
+    return material_draft_page(db, teacher_instance_id(db, user, classroom_id), user, page, size)
 
 
 @router.get("/groups")

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.content_relations import question_chapter_ids, question_knowledge_point_ids, set_question_chapters, set_question_knowledge_points
 from app.course_content.question_contracts import QuestionInput, QuestionUpdate
+from app.course_content.review_catalog import question_scope
 from app.models import (
     Activity,
     ActivityQuestion,
@@ -191,8 +192,10 @@ def create_question(body: QuestionInput, db: Session, user: User, classroom_id: 
     return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=classroom.teacher_id), body)
 
 
-def visible_questions(db, user, classroom_id):
+def visible_questions(db, user, classroom_id, *, reviewable=False):
     instance_id = teacher_instance_id(db, user, classroom_id)
+    if reviewable:
+        return select(Question).where(*question_scope(instance_id, user))
     query = select(Question).where(Question.course_instance_id == instance_id)
     if user.role != "admin":
         query = query.where(Question.owner_id.is_(None) | (Question.owner_id == user.id))
@@ -204,10 +207,10 @@ def list_questions(db: Session, user: User, classroom_id: int | None = None):
     return [teacher_question_payload(db, item, user) for item in db.scalars(query.order_by(Question.id))]
 
 
-def question_page(db, user, classroom_id, page, size, search, kind, status, source, knowledge_point_id=None):
+def question_page(db, user, classroom_id, page, size, search, kind, status, source, knowledge_point_id=None, *, reviewable=False):
     from app.course_content.catalog import page_window, point_detail
 
-    query = visible_questions(db, user, classroom_id).with_only_columns(
+    query = visible_questions(db, user, classroom_id, reviewable=reviewable).with_only_columns(
         Question.id, Question.title, Question.kind, Question.source_type, Question.status)
     if knowledge_point_id is not None:
         point_detail(db, user, classroom_id, knowledge_point_id)
