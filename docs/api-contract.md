@@ -85,7 +85,10 @@ Paused policy denies new content/progress/assistant requests immediately and pre
 
 ### 全站讲稿与语音服务设置
 
-管理员 GET/PUT `/teacher/services/authoring` 与 `/teacher/services/speech`，普通教师/学生403。两者均含 expected_revision、base_url、api_key（空值保留）、clear_key、timeout；authoring 另含 model、vision_model、effort、max_tokens、daily_pages；speech 另含 protocol（openai/deepseek/dashscope）、model、voice、format、speed。DeepSeek 语音限制 wav/pcm 与合成速度1；DashScope 走原生 `/api/v1/services/audio/tts/SpeechSynthesizer`，只支持 mp3/wav/pcm/opus 与 0.5–2 语速，服务端从返回 JSON 的音频 URL 下载。修订冲突409，验证失败422且不回显输入密钥。GET/PUT 响应含 revision、key_configured、source，无明文密钥。首次读取环境初始化，保存后独立覆盖；保存不产生外部调用，不影响学生模型与课程预算。
+管理员 GET/PUT `/teacher/services/authoring` 与 `/teacher/services/speech`，普通教师/学生403。两者均含 expected_revision、base_url、api_key（空值保留）、clear_key、timeout；authoring 另含 model、vision_model、effort、max_tokens、daily_pages；speech 另含 protocol（openai/deepseek/dashscope）、model、voice、format、speed。DeepSeek 语音限制 wav/pcm 与合成速度1；DashScope 走原生 `/api/v1/services/audio/tts/SpeechSynthesizer`，只支持 mp3/wav/pcm/opus 与 0.5–2 语速，服务端从返回 JSON 的音频 URL 下载；原生地址含 `/compatible-mode` 时保存返回422，避免错误拼接兼容层。修订冲突409，验证失败422且不回显输入密钥。GET/PUT 响应含 revision、key_configured、source，无明文密钥。首次读取环境初始化，保存后独立覆盖；保存不产生外部调用，不影响学生模型与课程预算。
+
+- GET `/teacher/services/speech/catalog`：用已保存地址与密钥拉取 TTS 模型，实时列表与内置列表合并；音色返回内置常用中文列表（复刻/设计音色仍可手填）。返回 `models`、`voices`、`model_source`；拉取失败回退内置列表，不阻断设置页。
+- POST `/teacher/services/speech/test`：用已保存配置合成一句短文本，返回 `elapsed_ms`、`bytes`、`format`、`model`、`voice`，不保存音频。未保存配置409，未保存密钥503，语音配置不可用409，供应商失败502；仅管理员可调用。
 
 ## 资料逐页讲解与音频
 
