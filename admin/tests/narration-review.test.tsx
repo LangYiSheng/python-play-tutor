@@ -34,6 +34,17 @@ const list = {
       has_text: true,
       source_chars: 12,
       source_text: "监督学习的定义",
+      raw_text: "监督学习的定义",
+      digest: {
+        title: "监督学习",
+        topic: "这一页讲监督学习的定义",
+        tags: ["监督学习"],
+        text: "整理后的监督学习定义",
+        status: "draft",
+        source: "ai",
+        image_state: "sent",
+        model: "deepseek-flash",
+      },
       narration: {
         text: "这一页先看监督学习的定义。",
         bridge_in: "",
@@ -78,7 +89,7 @@ function stub(
         });
       if (url.endsWith("/narrations")) return json(overrides.list ?? list);
       if (url.endsWith("/job"))
-        return json({
+        return json(overrides.job ?? {
           running: false,
           queued: false,
           kind: "calibrate",
@@ -135,63 +146,71 @@ it("keeps audio generation disabled until the page is accepted", async () => {
   expect(screen.getByRole("button", { name: /试听/ })).toBeDisabled();
 });
 
-it("generate and calibrate hit the scoped endpoints", async () => {
+it("queues the one-click pipeline and shows which stage is running", async () => {
+  const calls: { url: string; method: string; body?: unknown }[] = [];
+  stub(calls, {
+    job: {
+      running: false,
+      queued: false,
+      kind: "pipeline",
+      status: "done",
+      stage: "calibrate",
+      chain: ["calibrate", "apply", "script"],
+      done: 0,
+      total: 0,
+      message: "",
+      failed: [],
+    },
+  });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const user = userEvent.setup();
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: /一键梳理文本/ })).toBeTruthy());
+  await user.click(screen.getByRole("button", { name: /一键梳理文本/ }));
+  await waitFor(() => expect(calls.some((call) => call.url.endsWith("/pipeline"))).toBe(true));
+  expect(screen.getByText(/整理原文/)).toBeTruthy();
+  expect(screen.getByText(/整册校准/)).toBeTruthy();
+  expect(screen.getByText(/生成讲解稿/)).toBeTruthy();
+});
+
+it("lists calibration fixes and tag merges, and says the fixes were applied", async () => {
+  stub([], {
+    calibration: {
+      ...report,
+      fixes: [
+        {
+          page_no: 1,
+          before: "监督学习的定义是",
+          after: "监督学习的定义：",
+          reason: "补上漏掉的冒号",
+        },
+      ],
+      tag_map: { "监督学习算法": "监督学习" },
+      tag_stats: { before: 2, after: 1, merged: 1 },
+    },
+  });
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByText(/校准修正已自动应用/)).toBeTruthy());
+  expect(screen.getByText(/原文修正（1 处，已自动应用）/)).toBeTruthy();
+  expect(screen.getByText("补上漏掉的冒号")).toBeTruthy();
+  expect(screen.getByText(/标签合并（1 组）/)).toBeTruthy();
+});
+
+it("shows the digest, folds the raw text, and saves title and tags", async () => {
   const calls: { url: string; method: string; body?: unknown }[] = [];
   stub(calls);
   const user = userEvent.setup();
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: /生成本页/ })).toBeTruthy());
-  await user.click(screen.getByRole("button", { name: /生成本页/ }));
-  await waitFor(() => expect(calls.some((call) => call.url.endsWith("/1/generate"))).toBe(true));
+  await waitFor(() => expect(screen.getByText("整理后的监督学习定义")).toBeTruthy());
+  expect(screen.getByText(/查看原始文本（12 字）/)).toBeTruthy();
 
-  await user.click(screen.getByRole("button", { name: /全篇校准/ }));
-  await waitFor(() => expect(calls.some((call) => call.url.endsWith("/calibrate"))).toBe(true));
-});
-
-it("queues one calibration request and polls the job until it finishes", async () => {
-  const posts: string[] = [];
-  let polls = 0;
-  let started = false;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init: RequestInit = {}) => {
-      const method = init.method ?? "GET";
-      if (url.endsWith("/quota")) return json({ used_today: 0, daily_limit: 300, available: true });
-      if (url.endsWith("/audio")) return json({ available: true, voice: "Meilin", model: "m", pages: [] });
-      if (url.endsWith("/narrations")) return json(list);
-      if (url.includes("/calibrate/apply")) return json({ regenerated: [], failed: [], awaiting_teacher: [] });
-      if (url.endsWith("/job")) {
-        const running = started && polls < 1;
-        polls += started ? 1 : 0;
-        return json({
-          running,
-          queued: false,
-          kind: "calibrate",
-          status: running ? "running" : "done",
-          done: running ? 1 : 3,
-          total: 3,
-          message: running ? "第 1/3 个窗口" : "校准完成",
-          failed: [],
-        });
-      }
-      if (url.includes("/calibrate")) {
-        if (method !== "POST") return json({ ...report, complete: false, windows: 3, windows_done: 3 });
-        posts.push(url);
-        started = true;
-        return json({
-          job: { running: true, queued: true, kind: "calibrate", status: "running", done: 0, total: 3, message: "", failed: [] },
-        });
-      }
-      return json({ page_no: 1, status: "draft", reused: false, model: "x" });
-    }),
+  const title = screen.getByLabelText("本页标题");
+  await user.clear(title);
+  await user.type(title, "监督学习上");
+  await user.click(screen.getByRole("button", { name: /保存标题与标签/ }));
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.endsWith("/1/content"))).toBe(true),
   );
-  const user = userEvent.setup();
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: /全篇校准/ })).not.toBeDisabled());
-  await user.click(screen.getByRole("button", { name: /全篇校准/ }));
-  await waitFor(() => expect(posts.length).toBe(1));
-  // 请求只入队一次，进度靠轮询 /job：关掉页面也不会中断后台任务。
-  await waitFor(() => expect(polls).toBeGreaterThan(1), { timeout: 5000 });
-  await waitFor(() => expect(screen.getByText(/校准报告已生成/)).toBeTruthy());
-  expect(posts.length).toBe(1);
+  const saved = calls.find((call) => call.url.endsWith("/1/content"))!;
+  expect(saved.body).toEqual({ title: "监督学习上", tags: ["监督学习"] });
 });

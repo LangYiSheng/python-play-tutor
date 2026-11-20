@@ -1,7 +1,15 @@
-"""Generate one page of narration: idempotent, per-page retryable, never incidental."""
+"""整册讲稿：4 页一窗，从整理稿生成；回看/前瞻预留位置。
 
-import base64
+窗口是实验 D3 的形态：本窗只带 4 页整理稿，不塞前文讲稿、不带后文。
+- `LOOKBACK_PAGES` / `LOOKAHEAD_PAGES` 默认 0，改这两个数并在 `window_context()` 里拼内容即可启用；
+- 提示词模板已留 `{context}` 段落，context 为空时不占位置；
+- 窗口分组与幂等键都不依赖上下文，所以加回看/前瞻不会动数据模型。
+
+只处理「缺讲稿、整理稿已变、或换了提示词/模型」的页；教师已接受的页不覆盖。
+"""
+
 import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -11,212 +19,246 @@ from sqlalchemy.orm import Session
 
 from ..models import Material, now
 from . import client as model_client
-from . import config, prompts, render, repository
-from .contracts import AuthoringSettings, GeneratedPage, Quota
-from .input_policy import PDF_TEXT_ONLY_THRESHOLD, prefers_image
+from . import config, prompts, repository
+from .contracts import AuthoringSettings, ChatReply, GeneratedPage, Quota
 from .models import PageNarration
 
 log = logging.getLogger("narration")
 
-# 生成侧 PDF 的旧阀值；演示文稿已改用 <60，见 input_policy。
-TEXT_ONLY_THRESHOLD = PDF_TEXT_ONLY_THRESHOLD
+WINDOW = 4
+# 预留：回看/前瞻的页数。启用时只改这里 + window_context()。
+LOOKBACK_PAGES = 0
+LOOKAHEAD_PAGES = 0
+MAX_TEXT = 4000
+MAX_ANCHORS = 6
 
 
 class NarrationUnavailable(RuntimeError):
-    """Authoring cannot run right now: no credentials, no quota, no renderer."""
+    """Authoring cannot run right now: no credentials, no quota, no digest."""
 
 
-def with_image(material: Material, page_text: str) -> bool:
-    return prefers_image(material, page_text, purpose="generation")
+def page_source(db: Session, material: Material, page_no: int) -> str | None:
+    """讲稿页内容：优先整理稿；还没梳理的资料退回解析原文。"""
+    raw = repository.page_text(material, page_no)
+    if raw is None:
+        return None
+    row = repository.content_row(db, material.id, page_no)
+    return row.text if row is not None and row.text.strip() else raw
 
 
-def input_hash(*, page_hash: str, image: bytes | None, settings: AuthoringSettings, model: str,
-               target_seconds: int, history: str = "") -> str:
-    """Re-running the same page with the same inputs must not spend another call."""
-    parts = "\n".join([
-        page_hash, prompts.PROMPT_VERSION, prompts.fingerprint(), model, settings["effort"],
-        str(target_seconds), "image" if image else "text",
-        hashlib.sha256(image).hexdigest() if image else "",
-        # 串行模式下上下文变了，同一页的产出也会变，必须算进幂等键。
-        hashlib.sha256(history.encode("utf-8")).hexdigest() if history else "",
-    ])
+def page_hash(db: Session, material: Material, page_no: int) -> str:
+    """整理稿（或原文）变了，这一页就该重写。"""
+    return repository.narration_hash(db, material, page_no)
+
+
+def input_hash(db: Session, material: Material, page_no: int, settings: AuthoringSettings,
+               seconds: int) -> str:
+    parts = "\n".join([page_hash(db, material, page_no), prompts.window_fingerprint(),
+                       prompts.WINDOW_VERSION, settings["model"], settings["effort"] or "none", str(seconds)])
     return hashlib.sha256(parts.encode("utf-8")).hexdigest()
 
 
-def previous_tail(db: Session, material: Material, page_no: int) -> str:
-    """Carry the teacher-approved ending of the previous page to keep one voice."""
-    previous = repository.row(db, material.id, page_no - 1)
-    if previous is None or previous.status != "accepted" or not previous.text.strip():
-        return ""
-    text = previous.text.strip()
-    return text[-120:]
+def window_context(db: Session, material: Material, page_nos: list[int]) -> str:
+    """回看/前瞻的唯一拼装入口，当前默认关闭，返回空串。
 
-
-HISTORY_PAGES = 4
-HISTORY_CHARS = 2400
-OUTLINE_CHARS = 600
-
-
-def previous_context(db: Session, material: Material, page_no: int) -> str:
-    """What the class has already heard, in order: recent wording plus an outline of earlier pages.
-
-    Reading it back from stored rows (instead of holding server-side conversation state) keeps
-    the continuity working even when the frontend submits the deck in small batches.
+    以后启用时在这里拼：前 `LOOKBACK_PAGES` 页的讲稿全文、后 `LOOKAHEAD_PAGES` 页整理稿的标题与开头。
     """
-    earlier = [item for item in repository.rows(db, material.id)
-               if item.page_no < page_no and item.text.strip() and item.status in {"draft", "accepted"}]
-    if not earlier:
+    if not LOOKBACK_PAGES and not LOOKAHEAD_PAGES:
         return ""
-    recent = earlier[-HISTORY_PAGES:]
-    older = earlier[:-HISTORY_PAGES]
-    pages = repository.page_map(material)
     blocks: list[str] = []
-    if older:
-        titles = []
-        for item in older:
-            title = str(pages.get(item.page_no, {}).get("title") or "").strip()
-            titles.append(f"第 {item.page_no} 页 {title}".strip())
-        outline = "；".join(titles)[-OUTLINE_CHARS:]
-        blocks.append("更早讲过：" + outline)
-    for item in recent:
-        blocks.append(f"第 {item.page_no} 页：{item.text.strip()}")
-    return "\n".join(blocks)[-HISTORY_CHARS:]
+    if LOOKBACK_PAGES:
+        earlier = [no for no in range(max(1, page_nos[0] - LOOKBACK_PAGES), page_nos[0])]
+        earlier_rows = [repository.row(db, material.id, no) for no in earlier]
+        text = "\n".join(f"第 {row.page_no} 页：{row.text}" for row in earlier_rows if row and row.text.strip())
+        if text:
+            blocks.append("前面已经这样讲过（接着这个讲法，不要重复）：\n" + text[-2400:])
+    if LOOKAHEAD_PAGES:
+        later = [no for no in range(page_nos[-1] + 1, page_nos[-1] + 1 + LOOKAHEAD_PAGES)]
+        later_rows = [repository.content_row(db, material.id, no) for no in later]
+        text = "；".join(f"第 {row.page_no} 页：{row.text[:80]}" for row in later_rows if row and row.text.strip())
+        if text:
+            blocks.append("后文（只用来避免撞车与衔接，不要写它们）：" + text)
+    return ("\n".join(blocks) + "\n\n") if blocks else ""
 
 
-def next_page_hint(material: Material, page_no: int) -> tuple[str, bool]:
-    """What the next page actually is (and whether it exists), so transitions stop being invented.
+def payload(db: Session, material: Material, page_nos: list[int], seconds: int) -> tuple[str, str]:
+    """返回 (上下文, 本窗页面 JSON)。上下文默认空，是回看/前瞻的预留位置。"""
+    rows = {row.page_no: row for row in repository.content_rows(db, material.id) if row.page_no in page_nos}
+    pages = []
+    for no in page_nos:
+        text = page_source(db, material, no)
+        if text is None:
+            continue
+        row = rows.get(no)
+        pages.append({"page_no": no, "title": row.title if row else "", "topic": row.topic if row else "",
+                      "tags": row.tags if row else [], "text": text, "target_seconds": seconds})
+    return window_context(db, material, page_nos), json.dumps({"pages": pages}, ensure_ascii=False, sort_keys=True)
 
-    大部分幻灯片没有文本层：这时不能假装知道下一页讲什么，也不能让模型以为已经是最后一页。
-    """
-    page = repository.page_map(material).get(page_no + 1)
-    if page is None:
-        return "", False
-    title = str(page.get("title") or "").strip()
-    if title:
-        return title, True
-    return str(page.get("text") or "").strip().replace("\n", " ")[:40], True
+
+def call(material: Material, context: str, body: str, settings: AuthoringSettings) -> ChatReply:
+    template = prompts.WINDOW_TEMPLATE.replace("{context}", (context + "\n") if context else "")
+    messages = [{"role": "system", "content": prompts.WINDOW_SYSTEM},
+                {"role": "user", "content": template + "\n本窗每页的整理稿：\n" + body}]
+    return model_client.chat(messages, settings=settings, model=settings["model"],
+                             effort=settings["effort"] or "none",
+                             max_tokens=settings["max_tokens"], require_text=False)
 
 
-def used_today(db: Session, instance_id: int) -> int:
-    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    return db.scalar(select(func.count()).select_from(PageNarration).join(
-        Material, Material.id == PageNarration.material_id).where(
-        Material.course_instance_id == instance_id, PageNarration.source == "ai_generated",
-        PageNarration.updated_at >= start)) or 0
+def parse(reply: ChatReply, expected: list[int]) -> list[dict[str, Any]]:
+    """页号必须与输入完全一致；单页重写时也接受顶层的 text/anchors。"""
+    raw = reply.get("raw") or {}
+    items = raw.get("pages")
+    if items is None:
+        # 单页重写也接受顶层 text/anchors（老客户端与测试桩都这么返回）。
+        single = str(raw.get("text") or reply.get("text") or "").strip()
+        if len(expected) == 1 and single:
+            anchors = raw.get("anchors") or reply.get("anchors") or []
+            items = [{"page_no": expected[0], "text": single, "anchors": anchors}]
+        else:
+            raise ValueError("讲稿结果格式不正确：缺少 pages 数组")
+    if not isinstance(items, list):
+        raise ValueError("讲稿结果格式不正确：pages 不是数组")
+    found: dict[int, dict[str, Any]] = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("page_no"), int):
+            found[item["page_no"]] = item
+    missing = sorted(set(expected) - set(found))
+    extra = sorted(set(found) - set(expected))
+    if missing or extra:
+        detail = "，".join(filter(None, [f"缺少第 {missing} 页" if missing else "",
+                                        f"多出第 {extra} 页" if extra else ""]))
+        raise ValueError(f"讲稿页码与输入不一致：{detail}")
+    out: list[dict[str, Any]] = []
+    for page_no in expected:
+        text = str(found[page_no].get("text") or "").strip()
+        if not text:
+            raise ValueError(f"第 {page_no} 页讲稿为空")
+        anchors = [str(a).strip()[:200] for a in (found[page_no].get("anchors") or []) if str(a).strip()]
+        out.append({"page_no": page_no, "text": text[:MAX_TEXT], "anchors": anchors[:MAX_ANCHORS]})
+    return out
+
+
+def run_window(db: Session, material: Material, page_nos: list[int], settings: AuthoringSettings,
+               seconds: int) -> tuple[list[int], dict[str, int]]:
+    """写一窗讲稿；整窗失败不写半截。返回页号与用量。"""
+    repository.ensure_lease(db, material.id)
+    before = {no: page_hash(db, material, no) for no in page_nos}
+    before_revision = {no: repository.revision(repository.row(db, material.id, no)) for no in page_nos}
+    context, body = payload(db, material, page_nos, seconds)
+    reply = call(material, context, body, settings)
+    pages = parse(reply, page_nos)
+    # 模型调用期间别的会话可能改过整理稿或讲解：丢掉缓存再校验，避免覆盖别人的修改。
+    db.expire_all()
+    if any(page_hash(db, material, no) != before[no] for no in page_nos):
+        raise ValueError("整理稿已修改，本次生成未覆盖新内容，请重试")
+    if any(repository.revision(repository.row(db, material.id, no)) != before_revision[no] for no in page_nos):
+        raise ValueError("讲解已被修改，本次生成未覆盖新内容，请重试")
+    for page in pages:
+        reference = page_source(db, material, page["page_no"]) or ""
+        anchors, dropped = repository.grounded_anchors(reference, page["anchors"])
+        if dropped:
+            log.info("narration page %s: dropped anchors not found on page: %s", page["page_no"], dropped)
+        item = repository.row(db, material.id, page["page_no"]) or PageNarration(
+            material_id=material.id, page_no=page["page_no"])
+        item.text = page["text"]
+        item.bridge_in = ""
+        item.target_seconds = seconds
+        item.status = "draft"
+        item.source = "ai_generated"
+        item.page_hash = page_hash(db, material, page["page_no"])
+        item.input_hash = input_hash(db, material, page["page_no"], settings, seconds)
+        item.prompt_version = prompts.WINDOW_VERSION
+        item.model = str(reply.get("model") or settings["model"])
+        item.image_used = False
+        item.anchors = anchors
+        item.edited_by_teacher = False
+        item.reviewed_by = None
+        item.reviewed_at = None
+        item.updated_at = now()
+        db.add(item)
+    usage = reply.get("usage") or {}
+    db.commit()
+    return [page["page_no"] for page in pages], {
+        key: int(usage.get(key) or 0)
+        for key in ("prompt_tokens", "completion_tokens", "cache_hit_tokens", "cache_miss_tokens")}
 
 
 def generate_page(db: Session, material: Material, page_no: int, *, instance_id: int,
-                  target_seconds: int | None = None, serial: bool = False) -> GeneratedPage:
-    """One page, one model call. Returns the stored row's public state."""
+                  target_seconds: int | None = None) -> GeneratedPage:
+    """单页重写：用同一个窗口提示词，只放这一页。"""
     reason = config.unavailable_reason(db)
     if reason:
         raise NarrationUnavailable(reason)
-    page_text = repository.page_text(material, page_no)
-    if page_text is None:
+    if repository.page_text(material, page_no) is None:
         raise LookupError("本页不存在或页码超出范围")
+    if not (page_source(db, material, page_no) or "").strip():
+        raise NarrationUnavailable("这一页没有可讲解的内容")
     settings = config.settings(db)
     seconds = repository.trim_seconds(target_seconds)
-    use_image = with_image(material, page_text)
-    image = render.render_page(material, page_no) if use_image else None
-    if use_image and image is None:
-        # A presentation without a readable source cannot be narrated from an empty text layer.
-        raise NarrationUnavailable("本页没有可读的页面来源，无法生成讲解")
-    model = settings["vision_model"] if image else settings["model"]
-    page_hash = repository.source_hash(material, page_no)
-    history = previous_context(db, material, page_no) if serial else ""
-    fingerprint = input_hash(page_hash=page_hash, image=image, settings=settings, model=model,
-                             target_seconds=seconds, history=history)
     existing = repository.row(db, material.id, page_no)
-    original_revision = repository.revision(existing)
-    expected = db.info.get("narration_expected_revision")
-    if expected and original_revision != expected:
-        raise ValueError("讲解已修改，请重新校准")
+    fingerprint = input_hash(db, material, page_no, settings, seconds)
     if existing is not None and existing.input_hash == fingerprint and existing.status in {"draft", "accepted"}:
         return {"page_no": page_no, "status": existing.status, "reused": True, "model": existing.model}
     if used_today(db, instance_id) >= settings["daily_pages"]:
         raise NarrationUnavailable("本班今日讲解生成额度已用完，请明天再试")
-
-    hint, has_next = next_page_hint(material, page_no)
-    messages: list[dict[str, Any]] = [{"role": "system", "content": prompts.SYSTEM},
-                {"role": "user", "content": prompts.user_parts(
-                    material_title=material.title, page_no=page_no, page_text=page_text,
-                    target_seconds=seconds, previous_tail=previous_tail(db, material, page_no),
-                    next_page_hint=hint, next_page_exists=has_next, history=history,
-                    image_b64=base64.b64encode(image).decode("ascii") if image else None)}]
-    result = model_client.chat(messages, settings=settings, model=model)
-
-    repository.ensure_lease(db, material.id)
-    db.refresh(material, with_for_update=True)
-    if existing is not None:
-        db.refresh(existing, with_for_update=True)
-    else:
-        existing = repository.row(db, material.id, page_no)
-    if repository.source_hash(material, page_no) != page_hash or repository.revision(existing) != original_revision:
-        raise ValueError("页面或讲解已被修改，本次生成未覆盖新内容，请刷新后重试")
-
-    digest_row = repository.content_row(db, material.id, page_no)
-    reference = (digest_row.text if digest_row is not None else "") or page_text
-    anchors, dropped_anchors = repository.grounded_anchors(reference, result["anchors"])
-    if dropped_anchors:
-        log.info("narration page %s: dropped anchors not found on page: %s", page_no, dropped_anchors)
-
-    item = existing or PageNarration(material_id=material.id, page_no=page_no)
-    if existing is None:
-        db.add(item)
-    item.text = repository.trim_text(result["text"])
-    # 口播稿只用 text；bridge_in 概念已取消，旧列保留但不再写入。\n    item.bridge_in = ""
-    item.target_seconds = seconds
-    # A regenerated page is a new draft: the old approval no longer applies to the new wording.
-    item.status = "draft"
-    item.source = "ai_generated"
-    item.page_hash = page_hash
-    item.input_hash = fingerprint
-    item.prompt_version = prompts.PROMPT_VERSION
-    item.model = result["model"]
-    item.image_used = bool(image)
-    item.anchors = anchors
-    item.edited_by_teacher = False
-    item.reviewed_by = None
-    item.reviewed_at = None
-    item.updated_at = now()
-    db.flush()
-    usage = result["usage"] or {}
-    log.info("narration page %s of material %s: model=%s prompt=%s completion=%s reasoning=%s",
-             page_no, material.id, item.model, usage.get("prompt_tokens"),
-             usage.get("completion_tokens"), (usage.get("completion_tokens_details") or {}).get("reasoning_tokens"))
-    return {"page_no": page_no, "status": item.status, "reused": False, "model": item.model,
-            "chars": len(item.text), "image_used": item.image_used}
+    run_window(db, material, [page_no], settings, seconds)
+    row = repository.row(db, material.id, page_no)
+    return {"page_no": page_no, "status": row.status if row else "draft", "reused": False,
+            "model": row.model if row else "", "chars": len(row.text) if row else 0, "image_used": False}
 
 
 def generate_range(db: Session, material: Material, *, first: int, last: int, instance_id: int,
-                   target_seconds: int | None = None, serial: bool = False,
-                   only_pages: list[int] | None = None) -> list[GeneratedPage]:
-    """Serial generation; one failing page must not discard the pages that worked."""
+                   target_seconds: int | None = None, only_pages: list[int] | None = None) -> list[GeneratedPage]:
+    """4 页一窗整批生成；一窗失败不影响已完成的窗。"""
     pages = repository.page_map(material)
-    wanted = [page_no for page_no in range(first, last + 1) if page_no in pages and (only_pages is None or page_no in only_pages)]
+    wanted = [page_no for page_no in range(first, last + 1)
+              if page_no in pages and (only_pages is None or page_no in only_pages)]
     if not wanted:
         raise LookupError("指定范围内没有可生成的页面")
-    repository.beat(db, material.id, done=0, total=len(wanted))
-    db.commit()
+    settings = config.settings(db)
+    seconds = repository.trim_seconds(target_seconds)
     results: list[GeneratedPage] = []
-    for position, page_no in enumerate(wanted, start=1):
+    todo: list[int] = []
+    for page_no in wanted:
+        existing = repository.row(db, material.id, page_no)
+        if existing is not None and existing.input_hash == input_hash(db, material, page_no, settings, seconds) \
+                and existing.status in {"draft", "accepted"}:
+            results.append({"page_no": page_no, "status": existing.status, "reused": True, "model": existing.model})
+        elif not (page_source(db, material, page_no) or "").strip():
+            results.append({"page_no": page_no, "status": "failed", "error": "这一页没有可讲解的内容"})
+        else:
+            todo.append(page_no)
+    groups = [todo[start:start + WINDOW] for start in range(0, len(todo), WINDOW)]
+    repository.beat(db, material.id, done=0, total=len(groups))
+    db.commit()
+    for index, group in enumerate(groups, start=1):
         try:
-            results.append(generate_page(db, material, page_no, instance_id=instance_id,
-                                         target_seconds=target_seconds, serial=serial))
-            # 心跳和页码写进任务状态，前端能显示“第 7/103 页”，进程死掉也能被判为过期。
-            repository.beat(db, material.id, done=position, total=len(wanted), message=f"第 {page_no} 页")
+            written, _usage = run_window(db, material, group, settings, seconds)
+            results.extend({"page_no": no, "status": "draft", "reused": False, "model": settings["model"]}
+                           for no in written)
+            repository.beat(db, material.id, done=index, total=len(groups),
+                            message=f"第 {group[0]}–{group[-1]} 页")
             db.commit()
         except (NarrationUnavailable, LookupError):
             db.rollback()
             raise
-        except Exception as exc:  # noqa: BLE001 -- one page must not abort the batch
+        except Exception as exc:  # noqa: BLE001 -- 一窗失败不拖垮整批
             db.rollback()
-            log.warning("narration failed for page %s: %s", page_no, exc)
-            results.append({"page_no": page_no, "status": "failed", "error": str(exc)[:200]})
+            log.warning("narration window %s failed: %s", group, exc)
+            results.extend({"page_no": no, "status": "failed", "error": str(exc)[:200]} for no in group)
             repository.ensure_lease(db, material.id)
-            repository.beat(db, material.id, done=position, total=len(wanted))
+            repository.beat(db, material.id, done=index, total=len(groups))
             db.commit()
     return results
+
+
+def used_today(db: Session, instance_id: int) -> int:
+    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return db.scalar(
+        select(func.count()).select_from(PageNarration).join(
+            Material, Material.id == PageNarration.material_id).where(
+            Material.course_instance_id == instance_id, PageNarration.source == "ai_generated",
+            PageNarration.updated_at >= start)) or 0
 
 
 def quota(db: Session, instance_id: int) -> Quota:

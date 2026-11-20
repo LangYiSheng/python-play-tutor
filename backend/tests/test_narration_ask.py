@@ -44,3 +44,21 @@ def test_learning_tools_receive_only_current_approved_narration(client, db, clas
     assert "教师解释" not in str(newer)
     assert "教师解释" in context["pages"][0]["excerpt"]
     assert approved.status == "accepted"  # Read-only context filtering does not rewrite history.
+
+
+def test_learning_context_prefers_the_digest_and_labels_raw_pages(client, db, classroom, student):
+    material = doc_material(db, classroom, "原始第一页", "原始第二页")
+    repository.upsert_content(db, material, 1, title="变量", topic="赋值", tags=["变量"], text="整理后的第一页")
+    db.commit()
+    response = client.post("/api/assistant/sessions", json={"classroom_id": classroom["id"], "material_id": material.id}, headers=student["headers"])
+    assert response.status_code == 201, response.text
+    user = db.get(User, student["id"])
+    session, activity = assistant.authorized_session(db, user, response.json()["id"])
+
+    first = assistant.build_context(db, user, session, activity, MessageInput(message="解释", state={"page_no": 1}))
+    assert first["current_page"]["excerpt"] == "整理后的第一页"
+    assert first["current_page"]["excerpt_source"] == "digest"
+
+    second = assistant.build_context(db, user, session, activity, MessageInput(message="解释", state={"page_no": 2}))
+    assert second["current_page"]["excerpt"].startswith("原始第二页")
+    assert second["current_page"]["excerpt_source"] == "raw"

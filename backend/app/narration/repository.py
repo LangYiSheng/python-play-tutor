@@ -51,6 +51,18 @@ def source_hash(material: Material, page_no: int) -> str:
     return text_hash(json.dumps(payload, ensure_ascii=False, sort_keys=True))
 
 
+def narration_hash(db: Session, material: Material, page_no: int) -> str:
+    """讲稿依赖的页面身份：整理稿优先，没有整理稿时用解析原文。"""
+    raw = page_text(material, page_no)
+    row = content_row(db, material.id, page_no)
+    content = material.content or {}
+    payload = {"page": page_no, "title": row.title if row else "", "tags": row.tags if row else [],
+               "text": (row.text if row is not None and row.text.strip() else (raw or "")),
+               "file": material.storage_key, "sha256": content.get("sha256"),
+               "preview": content.get("preview_key")}
+    return text_hash(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
 def revision(item: PageNarration | None) -> str:
     if item is None:
         return "missing"
@@ -78,7 +90,7 @@ def sync_staleness(db: Session, material: Material) -> bool:
     changed = False
     for item in rows(db, material.id):
         current = pages.get(item.page_no)
-        if current is None or source_hash(material, item.page_no) != item.page_hash:
+        if current is None or narration_hash(db, material, item.page_no) != item.page_hash:
             if item.status in {"draft", "accepted", "rejected"}:
                 item.status = "stale"
                 changed = True
@@ -87,7 +99,8 @@ def sync_staleness(db: Session, material: Material) -> bool:
     return changed
 
 
-def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any] | None) -> dict[str, Any]:
+def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any] | None,
+             content: PageContent | None = None) -> dict[str, Any]:
     text = str((page or {}).get("text") or "")
     narration: dict[str, Any] | None = None
     if item is not None:
@@ -111,6 +124,12 @@ def snapshot(material: Material, item: PageNarration | None, page: dict[str, Any
         "source_chars": len(text),
         # Teacher review compares the wording against the page, so send a bounded copy.
         "source_text": text[:2000],
+        "raw_text": text[:2000],
+        "digest": None if content is None else {
+            "title": content.title, "topic": content.topic, "tags": content.tags or [],
+            "text": content.text, "status": content.status, "source": content.source,
+            "image_state": content.image_state, "model": content.model,
+        },
         "narration": narration,
     }
 
@@ -157,7 +176,7 @@ def upsert(db: Session, material: Material, page_no: int, *, text: str, target_s
     item.text = clean
     item.target_seconds = seconds
     item.source = source
-    item.page_hash = source_hash(material, page_no)
+    item.page_hash = narration_hash(db, material, page_no)
     item.input_hash = ""
     item.prompt_version = ""
     item.model = ""
@@ -202,7 +221,7 @@ def remove(db: Session, material: Material, page_no: int) -> bool:
 def visible(db: Session, material: Material) -> list[PageNarration]:
     """Only teacher-approved wording reaches a student."""
     return [item for item in rows(db, material.id) if item.status in VISIBLE_STATUSES and item.text.strip()
-            and item.page_hash == source_hash(material, item.page_no)]
+            and item.page_hash == narration_hash(db, material, item.page_no)]
 
 
 # 心跳超过这个时间就认为上一次任务已经死掉（进程被杀、容器重启），允许接管。
@@ -358,6 +377,16 @@ def beat(db: Session, material_id: int, *, done: int | None = None, total: int |
                         **({"total": total} if total is not None else {})}
     if message is not None:
         job.message = message[:200]
+    sync_run(db, job)
+
+
+def set_chain(db: Session, material_id: int, chain: list[str], stage: str) -> None:
+    """记录链上还剩哪几段；重启或重试从这里继续。"""
+    job = owned_job(db, material_id)
+    if job is None or job.status != "running":
+        return
+    job.heartbeat_at = now()
+    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage}
     sync_run(db, job)
 
 

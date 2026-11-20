@@ -102,30 +102,54 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       setBusy("");
     }
   }
-  async function generateWholeDeck() {
+  async function runPipeline() {
     if (!data) return;
-    const total = data.coverage.pages;
-    setBusy("all");
+    setBusy("pipeline");
     setError("");
-    setMessage("已提交整份生成，后台继续执行，可以切去别的资料");
+    setMessage("已提交一键梳理，后台会依次完成整理、校准与讲解稿");
     try {
-      await narrationApi.generateRange(classroomId, materialId, 1, total);
+      await narrationApi.pipeline(classroomId, materialId);
       const state = await waitForJob();
-      const failures = (state.failed ?? []).map(
-        (item) => `第 ${item.page_no} 页：${item.error ?? "未知错误"}`,
-      );
+      const next = await narrationApi
+        .calibration(classroomId, materialId, true)
+        .catch(() => null);
+      if (next) setReport(next);
       setMessage(
         state.status === "done"
-          ? `整份生成已结束（${state.done}/${state.total} 页）`
-          : `整份生成结束于「${state.status}」：${state.message || "请检查失败页"}`,
+          ? "梳理、校准、讲解稿已完成，校准修正已自动应用"
+          : `一键梳理结束于「${state.status}」：${state.message || "请检查失败页"}`,
       );
-      if (failures.length) setError(failures.slice(0, 5).join("；"));
+      if (state.failed?.length) {
+        setError(
+          state.failed
+            .map((item) => `第 ${item.page_no} 页：${item.error ?? "未知错误"}`)
+            .slice(0, 5)
+            .join("；"),
+        );
+      }
     } catch (e) {
       setError(errorMessage(e));
-      setMessage("已生成的页已保存，可直接重试（不会重复计费）");
+      setMessage("已完成的阶段已保存，可直接重试（不会重复计费）");
     } finally {
       setBusy("");
       await load().catch(() => {});
+    }
+  }
+  async function saveContent(
+    page: number,
+    body: { title?: string; tags?: string[] },
+  ) {
+    setBusy("content");
+    setError("");
+    setMessage("");
+    try {
+      await narrationApi.saveContent(classroomId, materialId, page, body);
+      setMessage("整理稿信息已保存；改过的页若已有讲解，会自动标记为待重新生成");
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy("");
     }
   }
   async function waitForJob(): Promise<NarrationJobState> {
@@ -138,30 +162,6 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       if (Date.now() > deadline)
         throw new Error("任务仍在后台运行，可稍后刷新查看");
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    }
-  }
-  async function calibrateDeck() {
-    setBusy("calibrate");
-    setError("");
-    setMessage("已提交整篇校准，后台继续执行，可以切去别的资料");
-    try {
-      await narrationApi.calibrate(classroomId, materialId);
-      const state = await waitForJob();
-      const next = await narrationApi
-        .calibration(classroomId, materialId, true)
-        .catch(() => null);
-      if (next) setReport(next);
-      setMessage(
-        state.status === "done"
-          ? "校准报告已生成"
-          : `校准未完成：${state.message || state.status}`,
-      );
-    } catch (e) {
-      setError(errorMessage(e));
-      setMessage("已完成的窗口已保存，可再次点击继续");
-    } finally {
-      setBusy("");
-      await load().catch(() => {});
     }
   }
   async function acceptAllDrafts() {
@@ -269,8 +269,8 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     saved,
     dirty,
     run,
-    calibrateDeck,
-    generateWholeDeck,
+    runPipeline,
+    saveContent,
     acceptAllDrafts,
     synthesizeAllAudio,
     running,

@@ -18,6 +18,10 @@ from .models import NarrationJob
 from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
 
 
+PIPELINE = ("digest", "calibrate", "apply", "script")
+STAGE_LABELS = {"digest": "梳理文本", "calibrate": "整册校准", "apply": "应用修正", "script": "生成讲解稿"}
+
+
 def generate_narration(
     page_no: int, classroom_id: int, material_id: int, db: Session, user: User, body: PageGenerateInput | None = None
 ) -> GeneratedPage:
@@ -68,13 +72,14 @@ def generate_range(classroom_id: int, material_id: int, body: GenerateInput, db:
         "operation": "generate_range", "body": body.model_dump(), "only_pages": db.info.get("narration_retry_pages")})
 
 
-def run_generate_range(db: Session, material: Material, request: dict[str, Any]) -> None:
+def run_generate_range(db: Session, material: Material, request: dict[str, Any], *,
+                       chained: bool = False, extra: dict[str, Any] | None = None) -> bool:
     """Worker side: each page commits on its own, so a failure keeps earlier pages."""
     body = GenerateInput(**request["body"])
     instance_id = material.course_instance_id
     if instance_id is None:
-        repository.release(db, material.id, status="failed", message="资料不属于当前班级，请刷新后重试")
-        return
+        repository.release(db, material.id, status="failed", message="资料不属于当前班级，请刷新后重试", extra=extra)
+        return False
     try:
         results = service.generate_range(
             db,
@@ -83,22 +88,34 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any])
             last=body.last_page,
             instance_id=instance_id,
             target_seconds=body.target_seconds,
-            serial=body.mode == "serial",
             only_pages=request.get("only_pages"),
         )
     except (service.NarrationUnavailable, LookupError, ValueError) as exc:
-        repository.release(db, material.id, status="failed", message=str(exc))
-        return
+        repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
+        return False
     done = sum(1 for item in results if item.get("status") != "failed")
     failed = [item for item in results if item.get("status") == "failed"]
+    if failed:
+        repository.release(
+            db,
+            material.id,
+            status="failed",
+            message=f"已生成 {done} 页，失败 {len(failed)} 页",
+            extra={"done": len(results), "total": len(results), "failed": failed,
+                   "retry_pages": [item["page_no"] for item in failed], **(extra or {})},
+        )
+        return False
+    if chained:
+        repository.beat(db, material.id, done=len(results), total=len(results), message=f"已生成 {done} 页")
+        db.commit()
+        return True
     repository.release(
         db,
         material.id,
-        status="failed" if failed else "done",
-        message=f"已生成 {done} 页，失败 {len(failed)} 页" if failed else f"已生成 {done} 页",
-        extra={"done": len(results), "total": len(results), "failed": failed,
-               "retry_pages": [item["page_no"] for item in failed]},
+        message=f"已生成 {done} 页",
+        extra={"done": len(results), "total": len(results), "failed": []},
     )
+    return True
 
 
 def digest_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
@@ -118,15 +135,20 @@ def digest_deck(classroom_id: int, material_id: int, db: Session, user: User) ->
     return repository.enqueue(db, material, "digest", user, request={"operation": "digest"})
 
 
-def run_digest(db: Session, material: Material, request: dict[str, Any]) -> None:
+def run_digest(db: Session, material: Material, request: dict[str, Any], *,
+               chained: bool = False, extra: dict[str, Any] | None = None) -> bool:
     """Worker side: 整理还没整理或原文已变的页；每窗落库，失败保留已完成部分。"""
     settings = config.settings(db)
     effort = settings["effort"] or "none"
     groups = digest.pending_windows(db, material, settings, effort)
     total = len(groups)
     if total == 0:
+        if chained:
+            repository.beat(db, material.id, done=0, total=0, message="原文已整理")
+            db.commit()
+            return True
         repository.release(db, material.id, message="原文已是整理稿，无需重跑", extra={"done": 0, "total": 0})
-        return
+        return True
     repository.beat(db, material.id, done=0, total=total)
     db.commit()
     written: list[int] = []
@@ -141,12 +163,18 @@ def run_digest(db: Session, material: Material, request: dict[str, Any]) -> None
         except (model_client.ModelFailed, ValueError) as exc:
             repository.release(db, material.id, status="failed", message=str(exc), extra={
                 "done": index - 1, "total": total,
-                "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group]})
-            return
+                "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group],
+                **(extra or {})})
+            return False
         repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页")
         db.commit()
+    if chained:
+        repository.beat(db, material.id, done=total, total=total, message=f"已整理 {len(written)} 页")
+        db.commit()
+        return True
     repository.release(db, material.id, message=f"已整理 {len(written)} 页",
                        extra={"done": total, "total": total, "usage": usage})
+    return True
 
 
 def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
@@ -162,7 +190,8 @@ def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User)
     return repository.enqueue(db, material, "calibrate", user, request={"operation": "calibrate"})
 
 
-def run_calibration(db: Session, material: Material) -> None:
+def run_calibration(db: Session, material: Material, *,
+                    chained: bool = False, extra: dict[str, Any] | None = None) -> bool:
     """Worker side: walk slice by slice until the report is complete."""
     report: dict[str, Any] = {}
     before = -1
@@ -170,11 +199,11 @@ def run_calibration(db: Session, material: Material) -> None:
         try:
             row, reused, _ = calibrate.run_slice(db, material)
         except model_client.ModelUnavailable as exc:
-            repository.release(db, material.id, status="failed", message=str(exc))
-            return
+            repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
+            return False
         except (model_client.ModelFailed, RuntimeError, LookupError, ValueError) as exc:
-            repository.release(db, material.id, status="failed", message=str(exc))
-            return
+            repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
+            return False
         report = dict(row.report or {})
         repository.beat(db, material.id, done=report.get("windows_done", 0), total=report.get("windows", 0),
                         message=f"第 {report.get('windows_done', 0)}/{report.get('windows', 0)} 个窗口")
@@ -187,11 +216,90 @@ def run_calibration(db: Session, material: Material) -> None:
                 db.commit()
             break
         if report.get("windows_done", 0) <= before:
-            repository.release(db, material.id, status="failed", message="校准没有前进，请刷新后重试")
-            return
+            repository.release(db, material.id, status="failed", message="校准没有前进，请刷新后重试", extra=extra)
+            return False
         before = report.get("windows_done", 0)
+    if chained:
+        repository.beat(db, material.id, done=report.get("windows_done", 0), total=report.get("windows", 0),
+                        message="校准完成")
+        db.commit()
+        return True
     repository.release(db, material.id, message="校准完成",
                        extra={"done": report.get("windows_done", 0), "total": report.get("windows", 0)})
+    return True
+
+
+def pipeline_deck(classroom_id: int, material_id: int, db: Session, user: User,
+                  resume: dict[str, Any] | None = None) -> NarrationJob:
+    """Queue 梳理 → 校准 → 应用 → 讲解稿 as one task; 老师只点一次。"""
+    instance_id = teacher_instance_id(db, user, classroom_id)
+    material = require_scope(db.get(Material, material_id), instance_id)
+    require_narratable(material)
+    repository.sync_staleness(db, material)
+    repository.sync_content_staleness(db, material)
+    db.commit()
+    pages = repository.page_map(material)
+    if not pages:
+        raise HTTPException(409, "资料还没有可整理的页面")
+    reason = config.unavailable_reason(db)
+    if reason:
+        # 未配置就当场告知，不留一个必定失败的后台任务。
+        raise HTTPException(409, reason)
+    resume = resume or {}
+    chain = list(resume.get("chain") or PIPELINE)
+    body = resume.get("body") or {"first_page": 1, "last_page": max(pages)}
+    return repository.enqueue(db, material, "pipeline", user, request={
+        "operation": "pipeline", "body": body, "chain": chain,
+        "only_pages": db.info.get("narration_retry_pages") or resume.get("only_pages")})
+
+
+def _apply_latest(db: Session, material: Material, extra: dict[str, Any] | None) -> bool:
+    entry = calibrate.latest_any(db, material.id)
+    if entry is None or not (entry.report or {}).get("complete", True):
+        repository.release(db, material.id, status="failed", message="校准报告不完整，不能应用", extra=extra)
+        return False
+    try:
+        applied = calibrate.apply_report(db, material, entry)
+    except (LookupError, ValueError) as exc:
+        repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
+        return False
+    db.commit()
+    repository.beat(db, material.id, message=f"已应用 {len(applied['applied_fixes'])} 处修正")
+    db.commit()
+    return True
+
+
+def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> None:
+    """Worker side: 逐段执行链；失败停在原地，重试从这一段继续。"""
+    chain = list(request.get("chain") or PIPELINE)
+    pages = repository.page_map(material)
+    if not pages:
+        repository.release(db, material.id, status="failed", message="资料还没有可整理的页面")
+        return
+    while chain:
+        stage = chain[0]
+        remaining = {"chain": chain, "stage": stage, "failed_stage": stage}
+        repository.beat(db, material.id, message=f"{STAGE_LABELS.get(stage, stage)}…")
+        db.commit()
+        if stage == "digest":
+            ok = run_digest(db, material, request, chained=True, extra=remaining)
+        elif stage == "calibrate":
+            ok = run_calibration(db, material, chained=True, extra=remaining)
+        elif stage == "apply":
+            ok = _apply_latest(db, material, remaining)
+        elif stage == "script":
+            body = {**(request.get("body") or {}), "first_page": 1, "last_page": max(pages)}
+            ok = run_generate_range(db, material, {"body": body, "only_pages": request.get("only_pages")},
+                                    chained=True, extra=remaining)
+        else:
+            repository.release(db, material.id, status="failed", message=f"未知阶段 {stage}", extra=remaining)
+            return
+        if not ok:
+            return
+        chain.pop(0)
+        repository.set_chain(db, material.id, chain, chain[0] if chain else "done")
+        db.commit()
+    repository.release(db, material.id, message="梳理、校准、讲解稿已完成", extra={"done": 1, "total": 1})
 
 
 def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Session, user: User) -> AudioRecord:

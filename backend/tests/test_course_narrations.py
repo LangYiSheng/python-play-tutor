@@ -49,7 +49,7 @@ def narrated(db, teacher, exchange, tmp_path):
                             anchors=[f"正文{page}"], image_used=True, edited_by_teacher=False,
                             reviewed_by=teacher["id"] if status == "accepted" else None,
                             reviewed_at=now() if status == "accepted" else None,
-                            page_hash="old" if status == "stale" else repository.source_hash(material, page))
+                            page_hash="old" if status == "stale" else repository.narration_hash(db, material, page))
         if page in {1, 3}:
             row.audio_key = "narrations/source/page.wav"
             row.audio_text_hash = repository.text_hash(row.text)
@@ -86,7 +86,7 @@ def test_narration_roundtrip_copied_directory_preserves_review_and_audio(client,
     assert material.id != original.id and material.storage_key != original.storage_key
     row = repository.row(db, material.id, 1)
     assert row.text == pages[0]["text"] and row.reviewed_by is None and row.reviewed_at is not None
-    assert row.page_hash == repository.source_hash(material, 1)
+    assert row.page_hash == repository.narration_hash(db, material, 1)
     assert current_audio(db, material, 1) == (row.audio_key, row.audio_text_hash)
     assert row.audio_key != repository.row(db, original.id, 1).audio_key
     original_bytes = b"".join(get_storage().chunks(row.audio_key, 0, get_storage().size(row.audio_key) - 1))

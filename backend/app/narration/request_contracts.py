@@ -11,6 +11,15 @@ class NarrationInput(BaseModel):
     target_seconds: int | None = None
 
 
+class DigestInput(BaseModel):
+    """审校页手工修正整理稿的标题、主题与标签。"""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = None
+    topic: str | None = None
+    tags: list[str] | None = None
+
+
 class GenerateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     first_page: int
