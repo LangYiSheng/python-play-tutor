@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SelectField } from '@/components/select-field';
+import { SuggestInput } from '@/components/suggest-input';
 import { ErrorNotice, Loading } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
@@ -52,7 +53,7 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     return () => controller.abort();
   }, [path]);
   useEffect(() => {
-    if (service !== 'speech' || !saved?.key_configured) return;
+    if (service !== 'speech' || !saved) return;
     const controller = new AbortController();
     void api.get<SpeechCatalog>('/teacher/services/speech/catalog', controller.signal)
       .then(value => { if (!controller.signal.aborted) setCatalog(value); })
@@ -122,17 +123,22 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           if (field.key === 'protocol') applyProtocol(value); else setDraft({ ...draft, [field.key]: value });
         }}>
           {field.options.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
-        </SelectField> : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
+        </SelectField> : service === 'speech' && (field.key === 'model' || field.key === 'voice') ? (
+          <SuggestInput
+            id={`${service}-${field.key}`}
+            value={String(draft[field.key])}
+            onChange={value => setDraft({ ...draft, [field.key]: value })}
+            options={(field.key === 'model' ? catalog?.models : catalog?.voices) ?? []}
+            placeholder={field.placeholder}
+            label={field.label}
+          />
+        ) : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
           placeholder={field.key === 'base_url' ? (deepseek ? 'https://api.deepseek.com' : dashscope ? 'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com' : field.placeholder) : field.placeholder}
-          value={String(draft[field.key])} list={service === 'speech' && field.key === 'model' ? 'speech-models' : service === 'speech' && field.key === 'voice' ? 'speech-voices' : undefined}
+          value={String(draft[field.key])}
           onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
         {field.key === 'base_url' && service === 'speech' && <p className="hint">填写基础地址即可；完整语音接口地址也可识别。留空可停用合成。</p>}
       </div>)}</div>
-      {service === 'speech' && <>
-        <datalist id="speech-models">{catalog?.models?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
-        <datalist id="speech-voices">{catalog?.voices?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
-        {catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
-      </>}
+      {service === 'speech' && catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
       <div className="field max-w-lg"><Label htmlFor={`${service}-key`}>API Key {saved?.key_configured ? '（已配置）' : '（未配置）'}</Label>
         <Input id={`${service}-key`} type="password" autoComplete="new-password" value={key} placeholder={saved?.key_configured ? '••••••••' : '填写服务密钥'} disabled={clearKey} onChange={e => setKey(e.target.value)} />
         <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>
