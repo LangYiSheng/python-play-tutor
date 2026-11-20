@@ -153,6 +153,8 @@ def _save_question(db, user, question, body):
     ).all()
     if bound and body.status != "ready":
         raise HTTPException(409, "题目仍被活动引用，请先从活动移除再改为草稿或停用")
+    if body.kind == "interactive" and any(activity.kind != "practice" for activity in bound):
+        raise HTTPException(409, "交互练习题只能用于练习活动，请先从其他活动移除此题")
     if any(activity.chapter_id not in body.chapter_ids for activity in bound):
         raise HTTPException(409, "题目仍被活动引用，不能移除所用章节")
     validate_practice_question_edit(db, question, body)

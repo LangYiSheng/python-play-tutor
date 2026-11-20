@@ -12,6 +12,8 @@ def learning_questions(db, activity, teacher_id=None):
     for question in questions:
         if question.course_instance_id != activity.course_instance_id:
             raise HTTPException(403, "活动题目不属于当前班级课程")
+        if question.kind == "interactive" and activity.kind != "practice":
+            raise HTTPException(409, "交互练习题只能用于练习活动，请联系教师调整题单")
         if question.status != "ready":
             raise HTTPException(409, "活动存在尚未就绪的题目，请联系教师")
         if activity.chapter_id not in question_chapter_ids(db, question.id):

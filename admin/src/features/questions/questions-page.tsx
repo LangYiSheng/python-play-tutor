@@ -75,6 +75,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
       <ErrorNotice
         message={list.error || course.error || (!open ? error : "")}
       />
+      {!open && editor.savedWarning && <p role="status" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{editor.savedWarning}</p>}
       <div className="surface">
         <div className="toolbar">
           <div className="search">

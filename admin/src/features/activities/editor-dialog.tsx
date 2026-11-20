@@ -92,6 +92,7 @@ export function ActivityDialog({
               <>
                 <div className="field">
                   <Label>题库</Label>
+                  {kind === "assessment" && <p className="hint">交互练习题仅可用于练习。</p>}
                   <div className="check-list">
                     {candidates.map((q) => (
                       <label key={q.id}>

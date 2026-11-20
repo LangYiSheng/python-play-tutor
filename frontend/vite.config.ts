@@ -14,6 +14,7 @@ export default defineConfig({
   server: {
     port: 5178,
     strictPort: true,
+    fs: { allow: [fileURLToPath(new URL('./', import.meta.url)), fileURLToPath(new URL('../shared/', import.meta.url))] },
     // Trace snapshots are generated HTML, not application pages or HMR inputs.
     watch: {
       ignored: ["**/.tmp*/**", "**/test-results/**", "**/playwright-report/**"],

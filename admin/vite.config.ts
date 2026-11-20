@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     strictPort: true,
-    fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), fileURLToPath(new URL("../shared/world", import.meta.url))] },
+    fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), fileURLToPath(new URL("../shared", import.meta.url))] },
     proxy: { "/api": process.env.API_PROXY ?? "http://127.0.0.1:18081" },
   },
   test: {

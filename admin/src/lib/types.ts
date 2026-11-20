@@ -1,4 +1,5 @@
 import type { QuestionKind } from "../../../shared/questions";
+import type { InteractiveSource } from "../../../shared/interactivePractice";
 export interface User {
   id: number;
   student_id: string;
@@ -88,6 +89,7 @@ export interface Material {
   has_file?: boolean;
 }
 export interface Question {
+  interactive?: InteractiveSource | null;
   hints?: string[];
   starter_code?: string;
   id: string;

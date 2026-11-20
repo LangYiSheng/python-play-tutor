@@ -46,7 +46,8 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
     { classroomId, kind: () => "activity" },
   );
   const candidates = (questions.data ?? []).filter(
-    (q) => q.chapter_ids.includes(chapter) && q.status === "ready",
+    (q) => q.chapter_ids.includes(chapter) && q.status === "ready" &&
+      (q.kind !== "interactive" || editor.kind === "practice"),
   );
   const practiceOwner = editor.editing ? editor.editing.owner_id : teacherId;
   const activities = (course.data?.activities ?? []).filter(

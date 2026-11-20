@@ -206,6 +206,8 @@ def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db
         if not question:
             raise HTTPException(422, "选中的题目不存在")
         require_scope(question, instance_id)
+        if question.kind == "interactive" and activity.kind != "practice":
+            raise HTTPException(422, "交互练习题只能用于练习活动")
         if question.owner_id not in {None, activity.owner_id}:
             raise HTTPException(403, "题目必须属于活动教师或共享题库")
         if question.status != "ready":

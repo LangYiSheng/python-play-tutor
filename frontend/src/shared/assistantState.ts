@@ -1,4 +1,5 @@
 import type { AnswerValue } from "../../../shared/questions";
+import type { JsonValue } from "../../../shared/interactiveValues";
 import type { SubmissionStatus } from './types';
 
 export interface AssistantLocalRun {
@@ -23,4 +24,6 @@ export interface AssistantState extends AssistantFeedback {
   question_id?: string;
   answer?: AnswerValue;
   code?: string;
+  interactive_state?: { available: true; value: JsonValue } | { available: false };
 }
+export type ReadInteractiveState = (questionId: string) => Promise<JsonValue>;

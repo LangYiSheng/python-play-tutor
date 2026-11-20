@@ -27,7 +27,7 @@
       <p v-if="draftError" class="error" role="alert">{{ draftError }} <button v-if="draftConflict" @click="load">重新载入试卷</button><button v-else-if="!paper?.locked" @click="retryDraft">重试保存</button></p>
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
-        <PracticeQuestionCard v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample) => submitQuestion(question.id, mode, runSample)">
+        <PracticeQuestionCard ref="questionCards" v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :interactive-reset-key="interactiveResetKey" :can-reset-interactive="canResetInteractive" @reset-interactive="resetInteractive(question.id)" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample, checkInteractive) => submitQuestion(question.id, mode, runSample, checkInteractive)">
           <template v-if="currentItem?.status === 'accepted'" #metadata>
             <span class="practice-passed">已通过</span>
           </template>
@@ -36,7 +36,7 @@
       <p v-else-if="!loading && activity" class="learning-empty">此活动尚未绑定公开题目，请联系教师。</p>
 
     </section>
-    <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="drafts[current?.id ?? '']?.code ?? ''" :assistant-state="assistantState" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
+    <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="assistantState.code ?? ''" :assistant-state="assistantState" :read-interactive-state="current?.kind === 'interactive' ? readInteractiveState : undefined" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
       <template v-if="!isAssessment" #goals>
         <section class="practice-goal-summary" aria-label="活动进度">
           <div class="practice-goal-heading">
@@ -73,8 +73,9 @@
 </template>
 <script setup lang="ts">
 import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
+import type { InteractiveResult } from '../../../../shared/interactivePractice';
 import { randomUUID } from "../../shared/uuid";
-import type { AssistantFeedback } from '../../shared/assistantState';
+import type { AssistantFeedback, AssistantState } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { api, ApiError, notify } from "../../shared/api";
 import { useSession } from "../../shared/session";
@@ -92,7 +93,7 @@ import PracticeQuestionCard from "./PracticeQuestionCard.vue";
 import "../support/learningUi.css";
 import "./practiceUi.css";
 import "./programmingUi.css";
-interface Draft extends QuestionDraft { submission_id?: string; pending?: { key: string; mode: 'submit'; answer: AnswerValue; code: string; browser_cases?: BrowserCase[] } }
+interface Draft extends QuestionDraft { submission_id?: string; pending?: { key: string; mode: 'submit'; answer: AnswerValue | InteractiveResult; code: string; browser_cases?: BrowserCase[] } }
 const props = defineProps<{ activityId: string; storySessionId?: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
 const emit = defineEmits<{ complete: []; activityKind: [kind: string] }>();
 const session = useSession(), { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
@@ -135,19 +136,42 @@ const passedCount = computed(() => activityProgress.value?.accepted_question_ids
 const practiceItems = computed(() => new Map(personalPractice.value?.items.map(item => [item.question_id, item])));
 const pointNames = computed(() => new Map(activity.value?.knowledge_points?.map(point => [point.id, point.title])));
 const currentItem = computed(() => practiceItems.value.get(current.value?.id ?? ''));
+const interactiveResetKey = ref(0);
+const canResetInteractive = computed(() => {
+  const question = current.value;
+  if (!question || question.kind !== 'interactive' || activity.value?.kind !== 'practice' || !currentOwner()) return false;
+  const id = question.id, draft = drafts.value[id];
+  return Boolean(draft) && !draft?.pending && !questionBusy(id) && !submissionBlocked(id)
+    && results.value[id]?.status !== 'submission_unknown';
+});
+function resetInteractive(id: string) {
+  if (current.value?.id !== id || !canResetInteractive.value) return;
+  drafts.value[id]!.answer = null;
+  persistLocal(id);
+  interactiveResetKey.value++;
+}
 function submissionBlocked(id: string) {
   if (practiceRefreshFailed.value) return true;
   if (drafts.value[id]?.pending) return false;
   return practiceItems.value.get(id)?.status === 'accepted';
 }
 const isCodeQuestion = computed(() => current.value && questionType(current.value.kind).execution === 'python');
-const assistantState = computed(() => ({ question_id: current.value?.id, answer: drafts.value[current.value?.id ?? '']?.answer ?? '',
-  code: drafts.value[current.value?.id ?? '']?.code ?? '', ...assistantFeedback.value[current.value?.id ?? ''] }));
+const questionCards = ref<InstanceType<typeof PracticeQuestionCard>[]>([]);
+function readInteractiveState(id: string) {
+  const card = questionCards.value.find(instance => instance.$props.question.id === id);
+  if (!currentOwner() || current.value?.id !== id || !card) throw new Error('当前交互练习已关闭');
+  return card.getInteractiveState();
+}
+const assistantState = computed<AssistantState>(() => {
+  const id = current.value?.id;
+  if (!id || current.value?.kind === 'interactive') return { question_id: id };
+  return { question_id: id, answer: drafts.value[id]?.answer ?? '', code: drafts.value[id]?.code ?? '', ...assistantFeedback.value[id] };
+});
 const visibleQuestions = computed(() => isAssessment.value && viewMode.value === 'paper' ? questions.value : current.value ? [current.value] : []);
 const role = computed(() => activity.value?.role);
 const roleName = computed(() => role.value?.name ?? '练习助教'), rolePortrait = computed(() => role.value?.portrait);
 const containerKey = computed(() => `draft:${contextUserId}:${contextClassroomId}:assessment-${props.activityId}`);
-const questionKey = (id: string) => activityProgress.value?.practice
+const questionKey = (id: string) => activityProgress.value?.practice || activity.value?.questions.some(question => question.id === id && question.kind === 'interactive')
   ? `draft:${contextUserId}:${contextClassroomId}:practice:${props.activityId}:${id}`
   : `draft:${contextUserId}:${contextClassroomId}:${id}`;
 const questionPositionKey = () => `read:${contextUserId}:${contextClassroomId}:question:${props.activityId}`;
@@ -192,11 +216,11 @@ function applyAnswers(answers: AssessmentAnswer[]) {
   }
 }
 function localJson(key: string) { try { return JSON.parse(localStorage.getItem(key) ?? 'null'); } catch { return null; } }
-function persistLocal() {
+function persistLocal(questionId?: string) {
   if (!ownerActive()) return;
   try {
     if (isAssessment.value) localStorage.setItem(containerKey.value, JSON.stringify({ revision: draftQueue?.revision() ?? paper.value?.revision ?? 0, answers: allAnswers(), mode: viewMode.value, submission: pendingPaper }));
-    else for (const [id, draft] of Object.entries(drafts.value)) localStorage.setItem(questionKey(id), JSON.stringify(draft));
+    else for (const id of questionId ? [questionId] : Object.keys(drafts.value)) localStorage.setItem(questionKey(id), JSON.stringify(drafts.value[id]));
   } catch { draftError.value = '本机草稿保存失败，请保持页面打开并重试。'; }
 }
 function edit(id: string, change: Partial<QuestionDraft>) {
@@ -209,7 +233,11 @@ function updateAnswer(id: string, value: AnswerValue) { edit(id, { answer: value
 function updateCode(id: string, value: string) { edit(id, { code: value }); }
 function trackDraftTask(task: Promise<void>) { draftTasks.add(task); void task.finally(() => draftTasks.delete(task)); return task; }
 async function flushDrafts() { clearTimeout(saveTimer); if (draftQueue) await trackDraftTask(draftQueue.flush()); }
-async function retryDraft() { draftError.value = ''; await flushDrafts(); }
+async function retryDraft() {
+  draftError.value = '';
+  if (isAssessment.value) await flushDrafts();
+  else persistLocal();
+}
 async function prepareRestart() { browserSubmission?.abort(); clearTimeout(saveTimer); await flushDrafts(); await Promise.all([...draftTasks]); await Promise.allSettled([...mutationTasks]); if (draftQueue?.hasPending()) throw new Error(draftError.value || '试卷草稿尚未保存，请重试。'); }
 function updateCompact() { if (!compactMedia) return; if (compactMedia.matches && !compact.value) showAssistant.value = Boolean(document.getElementById('practice-assistant-region')?.contains(document.activeElement)); compact.value = compactMedia.matches; }
 async function switchView(support: boolean) { if (support) sidebarCollapsed.value = false; showAssistant.value = support; await nextTick(); document.getElementById(support ? 'practice-assistant-region' : 'practice-content-region')?.focus({ preventScroll: true }); }
@@ -247,12 +275,18 @@ function restoreQuestion(question: Question) {
     submission_id: old?.submission_id, pending: old?.pending,
   };
 }
+function validateActivityQuestions(loaded: Activity) {
+  if (loaded.kind !== 'practice' && loaded.questions.some(question => question.kind === 'interactive')) {
+    throw new Error('交互练习题仅可用于练习，请联系教师调整此活动。');
+  }
+}
 let refreshSequence = 0;
 async function refreshPractice(ticket: number) {
   const sequence = ++refreshSequence;
   let updated: Activity;
   try {
     updated = await session.activity(props.activityId);
+    validateActivityQuestions(updated);
   } catch (cause) {
     if (currentOwner() && ticket === generation && sequence === refreshSequence) {
       practiceRefreshFailed.value = true;
@@ -282,6 +316,7 @@ async function load() {
   try {
     const loaded = await session.activity(props.activityId);
     if (!currentOwner() || ticket !== generation) return;
+    validateActivityQuestions(loaded);
     const savedQuestion = Number(sessionStorage.getItem(questionPositionKey())) || 1;
     activity.value = loaded; emit('activityKind', loaded.kind); activityProgress.value = loaded.progress; questionIndex.value = Math.max(0, Math.min((props.initialQuestion ?? savedQuestion) - 1, loaded.questions.length - 1)); viewMode.value = 'single';
     for (const question of loaded.questions) { restoreQuestion(question); }
@@ -306,18 +341,24 @@ async function load() {
   } catch (cause) { if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '题目加载失败'; }
   finally { if (currentOwner() && ticket === generation) { loading.value = false; if (activity.value) sessionStorage.setItem(questionPositionKey(), String(questionIndex.value + 1)); } }
 }
-async function submitQuestion(id: string, mode: 'submit', runSample?: RunPythonSample) {
+async function submitQuestion(id: string, mode: 'submit', runSample?: RunPythonSample, checkInteractive?: () => Promise<InteractiveResult>) {
   const question = questions.value.find(item => item.id === id), draft = drafts.value[id];
-  if (!currentOwner() || !question || !draft || !activity.value || !hasAnswer(question) || submissionBlocked(id) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
+  if (!currentOwner() || !question || !draft || !activity.value || submissionBlocked(id) || requestBusy.value || publicRunBusy.value || isAssessment.value) return;
+  if (question.kind === 'interactive' ? activity.value.kind !== 'practice' || !draft.pending && !checkInteractive : !hasAnswer(question)) return;
   const ticket = generation; requestBusy.value = true; busyQuestionId.value = id; error.value = '';
-  const body = { answer: questionType(question.kind).serialize(draft.answer), code: draft.code, mode };
-  const pending: NonNullable<Draft['pending']> = draft.pending ?? { ...body, key: randomUUID() };
+  const pending: NonNullable<Draft['pending']> = draft.pending ?? {
+    answer: questionType(question.kind).serialize(draft.answer), code: question.kind === 'interactive' ? '' : draft.code, mode, key: randomUUID(),
+  };
   try {
     // An older saved request may already have reached the server judge. Resolve
     // its original key first; a missing receipt returns 422 and allows a fresh run.
     if (questionType(question.kind).execution === 'python' && !draft.pending) {
       const controller = new AbortController(); browserSubmission = controller;
       pending.browser_cases = await evaluateBrowserSubmission(pending.code, question.samples, controller.signal, runSample);
+      if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;
+    } else if (question.kind === 'interactive' && !draft.pending && checkInteractive) {
+      const controller = new AbortController(); browserSubmission = controller;
+      pending.answer = await checkInteractive();
       if (!currentOwner() || ticket !== generation || controller.signal.aborted) return;
     }
     draft.pending = pending; persistLocal();

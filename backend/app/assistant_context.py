@@ -3,14 +3,15 @@ import hashlib
 import json
 import math
 import re
-from typing import Literal
+from typing import Literal, Self
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, field_validator, model_validator
 from sqlalchemy import select
 
 from .models import Classroom, KnowledgePoint, Material, Submission
 from .course_assistant import activity_npc, default_npc, decorate_context
+from .interactive_practice import validate_json_value
 
 TEMPLATE_VERSION = 1
 
@@ -34,6 +35,20 @@ class LocalRun(BaseModel):
     stopped: bool = False
 
 
+class InteractiveState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    available: StrictBool
+    value: JsonValue = None
+
+    @model_validator(mode="after")
+    def check_snapshot(self) -> Self:
+        if self.available != ("value" in self.model_fields_set):
+            raise ValueError("交互状态可用时须附带当前 JSON 值，不可用时仅发送 available")
+        if self.available:
+            validate_json_value(self.value)
+        return self
+
+
 class TurnState(BaseModel):
     material_id: int | None = Field(default=None, strict=True, ge=1)
     model_config = ConfigDict(extra="forbid")
@@ -43,8 +58,16 @@ class TurnState(BaseModel):
     answer: str | bool | list[str] | None = Field(default=None)
     code: str | None = Field(default=None, max_length=20000)
     local_run: LocalRun | None = None
+    interactive_state: InteractiveState | None = None
     displayed: Literal["local_run", "submission"] | None = None
     selected_case: int = Field(default=0, ge=0, le=99)
+
+    @field_validator("interactive_state", mode="before")
+    @classmethod
+    def panel_must_be_object(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("交互状态须标明是否可用")
+        return value
 
     @model_validator(mode="after")
     def bounded(self):
@@ -69,7 +92,7 @@ class MessageInput(BaseModel):
     code: str | None = Field(default=None, max_length=20000)
 
     def turn_state(self):
-        values = self.state.model_dump()
+        values = self.state.model_dump(exclude_unset=True)
         for key in ("page_no", "video_time", "code"):
             if getattr(self, key) is not None:
                 values[key] = getattr(self, key)
@@ -133,6 +156,8 @@ def build_context(db, user, session, activity, body):
     current = next((q for q in questions if q.id == state.question_id), None)
     if practice and current is None:
         raise HTTPException(422, "请提供当前活动中的题目")
+    if state.interactive_state is not None and (current is None or current.kind != "interactive"):
+        raise HTTPException(422, "交互状态必须来自当前活动中正在提问的交互练习题")
     if not practice and (state.question_id or state.local_run or state.code or state.answer is not None):
         raise HTTPException(422, "阅读助教不接收练习作答")
     if practice and (state.page_no is not None or state.video_time is not None):
@@ -189,8 +214,8 @@ def build_context(db, user, session, activity, body):
     context = decorate_context(db, session.classroom_id, activity, npc, {
         "kind": "practice" if practice else "learning", "pages": pages, "current_page": page,
         "activity": {"id": activity.id if activity else None, "title": activity.title if activity else material.title,
-                     "kind": activity.kind if activity else "reading", "questions": [public_question(q) for q in questions]},
-        "current_question": public_question(current) if current else None,
+                     "kind": activity.kind if activity else "reading", "questions": [public_question(q, include_interactive=False) for q in questions]},
+        "current_question": public_question(current, include_interactive=False) if current else None,
         "point_names": point_names,
         "question_no": next((i + 1 for i, q in enumerate(questions) if q.id == state.question_id), None),
         "progress": progress, "state": state.model_dump(), "submission": submission, "local_run": local,
@@ -202,6 +227,13 @@ def build_context(db, user, session, activity, body):
 
 def inline(text, reader):
     return text if len(text) <= 2000 else f"{text[:2000]}\n（共 {len(text)} 字符，内容标识 {hashlib.sha256(text.encode()).hexdigest()[:12]}；其余通过 {reader} 分段读取）"
+
+
+def interactive_state_text(state: dict) -> str:
+    panel = state.get("interactive_state")
+    if not panel or not panel["available"]:
+        return "本次提问的交互状态不可用。"
+    return json.dumps(panel["value"], ensure_ascii=False, separators=(",", ":"))
 
 
 def snapshot(context):
@@ -217,8 +249,11 @@ def snapshot(context):
     if question:
         result["当前题"] = f"第 {context['question_no']} 题 / 共 {len(context['activity']['questions'])} 题：{question['title']}（{question['id']}）"
         result["题目内容"] = inline(question_text(question), "read_activity_question")
-        attempt = state["code"] if question["kind"] == "python" else state["answer"]
-        result["当前作答"] = inline(str(attempt), "read_current_attempt") if attempt not in (None, "") else "尚未填写"
+        if question["kind"] == "interactive":
+            result["提问时的交互状态"] = inline(interactive_state_text(state), "read_current_attempt")
+        else:
+            attempt = state["code"] if question["kind"] == "python" else state["answer"]
+            result["当前作答"] = inline(str(attempt), "read_current_attempt") if attempt not in (None, "") else "尚未填写"
         if question["kind"] == "python":
             result["作答标识"] = hashlib.sha256((state["code"] or "").encode()).hexdigest()[:16]
     progress = context["progress"]
@@ -243,14 +278,14 @@ def snapshot(context):
                                   + ("；运行已停止" if local["stopped"] else "") + (f"；{local['error']}" if local["error"] else ""))
     if submission:
         result["最近正式提交"] = f"{submission['id']}：{submission['status']}" + ("；代码已修改，结果对应旧代码" if submission["code_changed"] else "")
-    if question:
+    if question and question["kind"] != "interactive":
         result["正在查看的结果"] = state["displayed"] or ("submission" if submission else "local_run" if local else "尚无结果")
         result["选中公开用例"] = state["selected_case"] + 1
     return result
 
 
 def describe_practice_goals(goals, names):
-    kinds = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程"}
+    kinds = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程", "interactive": "交互练习"}
     lines = []
     for goal in goals:
         details = [f"已通过 {goal['accepted']} 题"]
@@ -350,8 +385,10 @@ def build_tools(context, references):
 
     @tool
     def read_current_attempt(offset: int = 0, limit: int = 2000) -> dict:
-        """读取本次提问时当前题的学生作答或代码，可分段，不执行代码。"""
+        """读取本次提问时当前题的作答、代码或交互面板状态，可分段。面板状态与最近一次正式提交分别记录。"""
         state = context["state"]
+        if context["current_question"]["kind"] == "interactive":
+            return segment(interactive_state_text(state), offset, limit)
         value = state["code"] if context["current_question"]["kind"] == "python" else state["answer"]
         return segment(str(value) if value is not None else "", offset, limit)
 
@@ -359,12 +396,15 @@ def build_tools(context, references):
     def get_current_question_feedback(source: Literal["displayed", "local_run", "submission"] = "displayed",
                                       offset: int = 0, limit: int = 2000) -> dict:
         """读取当前题最新反馈，默认学生正在查看的结果。区分本机公开样例和正式提交，可分段。"""
-        if source == "displayed":
+        interactive = context["current_question"]["kind"] == "interactive"
+        if interactive and source == "displayed":
+            source = "submission"
+        elif source == "displayed":
             source = context["state"]["displayed"] or ("submission" if context["submission"] else "local_run")
         value = context["local_run"] if source == "local_run" else context["submission"]
         if value is None:
             return {"source": source, "message": "当前题暂无此类结果"}
-        return {"source": source, "selected_case": context["state"]["selected_case"] + 1,
+        return {"source": source, **({} if interactive else {"selected_case": context["state"]["selected_case"] + 1}),
                 **segment(json.dumps(value, ensure_ascii=False), offset, limit)}
 
     @tool

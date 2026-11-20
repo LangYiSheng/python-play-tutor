@@ -10,7 +10,7 @@ from app.models import Question, QuestionChapter, QuestionKnowledgePoint
 from app.question_types import QuestionKind
 
 Count = Annotated[int, Field(strict=True, ge=0, le=500)]
-KIND_LABELS = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程"}
+KIND_LABELS = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程", "interactive": "交互练习"}
 
 
 class PracticeGoal(BaseModel):

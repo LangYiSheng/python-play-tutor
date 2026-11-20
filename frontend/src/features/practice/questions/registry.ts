@@ -3,6 +3,7 @@ import type { QuestionKind } from '../../../../../shared/questions';
 import ChoiceAnswer from './ChoiceAnswer.vue';
 import MultipleChoiceAnswer from './MultipleChoiceAnswer.vue';
 import FillAnswer from './FillAnswer.vue';
+import InteractiveAnswer from './InteractiveAnswer.vue';
 import ProgrammingQuestion from '../ProgrammingQuestion.vue';
 import ProgrammingPaperSummary from '../ProgrammingPaperSummary.vue';
 
@@ -12,5 +13,6 @@ export const questionViews: Record<QuestionKind, QuestionView> = {
   multiple_choice: { input: MultipleChoiceAnswer },
   boolean: { input: ChoiceAnswer },
   fill: { input: FillAnswer },
+  interactive: { input: InteractiveAnswer },
   python: { input: ProgrammingQuestion, standalone: true, paper: ProgrammingPaperSummary },
 };

@@ -11,6 +11,7 @@
 | 系统边界、数据流与模块职责 | [架构](architecture.md) |
 | HTTP接口、字段与权限契约 | [API契约](api-contract.md) |
 | 课程格式、内容规则及对白编写 | [内容规范](content-authoring.md) |
+| 制作交互练习题、预览助教状态及试答 | [交互练习题编写指南](interactive-practice-authoring.md) |
 | 学生与教师两套界面规则 | [设计索引](design/README.md) |
 | 安装、配置、导入、升级、排查与验证命令 | [开发手册](development.md) |
 | 开发习惯、提交格式与核心边界 | [协作约定](../AGENTS.md) |

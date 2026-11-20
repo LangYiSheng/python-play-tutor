@@ -11,6 +11,30 @@
 .case-row textarea {
   font-family: monospace;
 }
+.interactive-preview {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.interactive-preview iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+.interactive-validation-frame {
+  position: fixed;
+  inset: 0 auto auto -10000px;
+  width: 640px;
+  height: 360px;
+  border: 0;
+  pointer-events: none;
+}
+.interactive-preview pre {
+  max-height: 8rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 600px) {
   .case-row {
     grid-template-columns: 1fr;

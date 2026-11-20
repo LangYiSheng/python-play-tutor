@@ -1,14 +1,7 @@
 /* Game workspaces only. Teacher administration has an independent design system. */
+@import "../../../shared/gamePalette.css";
 
 .game-workspace {
-  --game-forest: #284b43;
-  --game-forest-deep: #203b32;
-  --game-paper: #fbf5e9;
-  --game-paper-raised: #fffaf0;
-  --game-gold: #e6be76;
-  --game-line: #d7c7a9;
-  --game-ink: #513b28;
-  --game-muted: #7c6b55;
   --game-radius: 10px;
   --game-control-radius: 8px;
   --game-gap: 10px;

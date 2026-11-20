@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>交互练习运行测试</title></head>
+<body><iframe title="交互作答区"></iframe><output id="status"></output>
+<script type="module">
+  import {mountInteractivePractice} from '../../../shared/interactivePractice';
+  import {interactiveExamples} from '../../../shared/interactiveExamples';
+  import css from './authored-practice/workbench.css?raw';
+  import sliceHtml from './authored-practice/slice.html?raw';
+  import sliceJs from './authored-practice/slice.js?raw';
+  import branchHtml from './authored-practice/branch.html?raw';
+  import branchJs from './authored-practice/branch.js?raw';
+  import loopHtml from './authored-practice/loop.html?raw';
+  import loopJs from './authored-practice/loop.js?raw';
+  const sources = new Map([
+    ...interactiveExamples.map(example => [example.id, example.source]),
+    ['slice', {html: sliceHtml, js: sliceJs, css}],
+    ['branch', {html: branchHtml, js: branchJs, css}],
+    ['loop', {html: loopHtml, js: loopJs, css}],
+  ]);
+  const frame = document.querySelector('iframe');
+  const status = document.querySelector('output');
+  let session;
+  const drafts = new Map();
+  window.exercise = {
+    mount(id, js) {
+      session?.dispose();
+      const source = sources.get(id);
+      status.value = 'loading';
+      session = mountInteractivePractice(frame, {...source, js: js ?? source.js}, {
+        initialDraft: drafts.get(id),
+        onDraft(value) { drafts.set(id, value); },
+        onReady() { status.value = 'ready'; },
+        onError(reason) { status.value = reason; },
+      });
+    },
+    check() { return session.check(); },
+    getState() { return session.getState(); },
+  };
+  window.exercise.mount('range');
+</script></body></html>

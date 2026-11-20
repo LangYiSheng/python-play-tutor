@@ -24,7 +24,8 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
     if (url.includes("/teacher/questions")) return json([{
       id: "private-cases", title: "仅私有用例", kind: "python", owner_id: 9,
       status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [],
-    }]);
+    }, { id: "fruits", title: "水果索引", kind: "interactive", owner_id: 9,
+      status: "ready", chapter_ids: [1], knowledge_point_ids: [12] }]);
     return json(url.includes("/teacher/courses") ? course : []);
   }));
   const user = userEvent.setup();
@@ -42,6 +43,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   await user.type(screen.getByRole("spinbutton", { name: /编程题至少/ }), "1");
   await user.click(screen.getByRole("checkbox", { name: "表达式" }));
   expect(screen.getAllByRole("spinbutton", { name: /答对总数/ })).toHaveLength(1);
+  expect(screen.getByRole("spinbutton", { name: /交互练习题至少/ })).toBeVisible();
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(1);
   await user.click(screen.getByRole("button", { name: "变量" }));
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(3);
@@ -61,6 +63,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   });
   await user.click(await screen.findByRole("button", { name: "选题章节测验" }));
   expect(await screen.findByRole("checkbox", { name: "仅私有用例" })).toBeEnabled();
+  expect(screen.queryByRole("checkbox", { name: "水果索引" })).not.toBeInTheDocument();
 });
 
 it("previews cascading impact, requires two confirmations, and refreshes after deletion", async () => {

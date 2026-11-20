@@ -1,0 +1,8 @@
+.bench { display: grid; gap: .8rem; padding: .9rem; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.bench p { margin: 0; }
+.controls, .tiles { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.controls label { display: inline-flex; gap: .35rem; align-items: center; }
+.tile { display: grid; justify-items: center; padding: .35rem .65rem; border-radius: 6px; border: 1px solid var(--line); }
+.tile small { color: var(--muted); }
+.tile.selected { border-color: var(--forest); color: var(--forest); background: var(--wash); font-weight: 700; }
+.readout { border-top: 1px solid var(--line); padding-top: .65rem; color: var(--forest); }
