@@ -196,21 +196,21 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     }
     if (
       !window.confirm(
-        `为 ${accepted} 页已接受的讲解合成音频？已合成的页会复用，不重复计费。`,
+        `为 ${accepted} 页已接受的讲解生成全文配音？已生成的页会复用，不重复计费。`,
       )
     )
       return;
     const total = data.coverage.pages;
     setBusy("audio-all");
     setError("");
-    setMessage("已提交整份音频合成，后台继续执行，可以切去别的资料");
+    setMessage("已提交全文配音生成，后台继续执行，可以切去别的资料");
     try {
       await narrationApi.audioBatch(classroomId, materialId, 1, total);
       const state = await waitForJob();
       setMessage(
         state.status === "done"
-          ? `音频合成已结束（${state.done}/${state.total} 页）`
-          : `音频合成结束于「${state.status}」：${state.message || "请检查失败页"}`,
+          ? `全文配音已生成（${state.done}/${state.total} 页）`
+          : `配音生成结束于「${state.status}」：${state.message || "请检查失败页"}`,
       );
       if (state.failed?.length) {
         setError(
@@ -222,7 +222,7 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       }
     } catch (e) {
       setError(errorMessage(e));
-      setMessage("已合成的音频已保存，可直接重试");
+      setMessage("已生成的配音已保存，可直接重试");
     } finally {
       setBusy("");
       await load().catch(() => {});

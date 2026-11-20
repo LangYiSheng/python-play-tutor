@@ -143,6 +143,7 @@ it("keeps audio generation disabled until the page is accepted", async () => {
   await waitFor(() => expect(screen.getByText("音色 Meilin · zonos3-mini")).toBeTruthy());
   const audio = screen.getByRole("button", { name: /生成音频/ });
   expect(audio).toBeDisabled();
+  expect(screen.getByRole("button", { name: /生成全文配音/ })).toBeDisabled();
   expect(screen.getByRole("button", { name: /试听/ })).toBeDisabled();
 });
 

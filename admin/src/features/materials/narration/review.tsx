@@ -119,6 +119,17 @@ export function NarrationReview({
               >
                 <Sparkles /> {busy === "pipeline" ? "正在梳理…" : "一键梳理文本"}
               </Button>
+              <Button
+                variant="outline"
+                disabled={
+                  busyNow ||
+                  audioState?.available === false ||
+                  data.coverage.accepted === 0
+                }
+                onClick={() => void synthesizeAllAudio()}
+              >
+                <Volume2 /> {busy === "audio-all" ? "生成中…" : "生成全文配音"}
+              </Button>
               <span className="hint">
                 生成后可逐页审校；已接受的内容不会因重新生成被覆盖。
               </span>
@@ -211,20 +222,9 @@ export function NarrationReview({
                         ? "接受中…"
                         : `接受全部草稿（${data.coverage.draft}）`}
                     </Button>
-                    <Button
-                      variant="outline"
-                      disabled={
-                        busyNow ||
-                        audioState?.available === false ||
-                        data.coverage.accepted === 0
-                      }
-                      onClick={() => void synthesizeAllAudio()}
-                    >
-                      <Volume2 /> {busy === "audio-all" ? "合成中…" : "批量合成音频"}
-                    </Button>
                   </div>
                   <p className="hint">
-                    接受全部只影响待审草稿；批量音频只合成已接受且内容未变的页。
+                    接受全部只影响待审草稿；配音只生成已接受且内容未变的页。
                   </p>
                   {job && (
                     <div className="space-y-1">
