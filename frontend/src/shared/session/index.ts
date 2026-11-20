@@ -15,6 +15,8 @@ import { createWorkspaceNavigation } from "./navigation";
 import { createWorldPosition } from "./position";
 import { createStorySession } from "./story";
 import { createExperienceCoordinator } from "./experience";
+import { mediaCache } from "../mediaCache";
+import { pdfCache } from "../pdfCache";
 
 // The session owns identity and classroom. Feature coordinators receive these
 // refs explicitly; they never create competing stores or initialize each other.
@@ -47,6 +49,8 @@ export const useSession = defineStore("session", () => {
     reading: stories.reading,
     invalidateRequests,
     resetClientState() {
+      mediaCache.clear();
+      pdfCache.clear();
       stories.clear();
       navigationTarget.value = null;
       trackedQuest.value = "";
@@ -163,6 +167,8 @@ export const useSession = defineStore("session", () => {
   watch(
     [() => user.value?.id, classroomId],
     () => {
+      mediaCache.clear();
+      pdfCache.clear();
       experience.invalidate();
       stories.clear();
       navigationTarget.value = null;
@@ -176,6 +182,8 @@ export const useSession = defineStore("session", () => {
       sessionStorage.setItem(`classroom:${user.value.id}`, String(id));
   });
   function reset() {
+    mediaCache.clear();
+    pdfCache.clear();
     invalidateRequests();
     experience.invalidate();
     user.value = null;

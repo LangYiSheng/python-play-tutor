@@ -155,6 +155,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | 模块 | 职责与边界 |
 | --- | --- |
 | `frontend/src/shared/session/` | `index.ts` 是唯一身份、班级和世界快照所有者；navigation、position、story、reading、experience 分别处理工作区导航、实时位置、对白幂等请求、串行阅读保存和恢复前准备。子模块显式接收引用与回调，不自行创建相互依赖的 store。 |
+| `frontend/src/shared/mediaCache.ts`、`pdfCache.ts`、`mediaMaintenance.ts` | 学生端有界内存媒体缓存：音频与页面图共 50 MB、PDF 文档 40 MB，保留最近使用项并做 LRU；15 分钟空闲淘汰未引用项，标签页隐藏 30 分钟清理未引用项，登录、切班、退出登录全部销毁。鉴权媒体仍由 HTTP `private, no-store` 交付，缓存只在内存中，不写入浏览器磁盘。 |
 | `frontend/src/features/developer/` | DeveloperWorkspace 组装账户概要、内容定位、任务阶段、体验检查点四个图标侧标签。模块内 API 和请求协调器负责权限范围、并发动作与迟到结果；重置指向当前学生在当前班级的进度。 |
 | `frontend/src/features/learning/` | LessonWorkspace 组装阅读与支持侧栏；LessonMaterial 负责 PDF、文本、视频展示；source、reading evidence、video、completion、goals 分别管理资料生命周期、阅读证据、播放采样、显式完成和目标展示。旧资料的迟到响应不能覆盖新资料，离开释放媒体 URL。 |
 | `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |

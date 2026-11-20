@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import GameSelect from "../src/shared/GameSelect.vue";
 import LectureStage from "../src/features/learning/LectureStage.vue";
+import { mediaCache } from "../src/shared/mediaCache";
 import { createPinia, setActivePinia } from "pinia";
 import { api } from "../src/shared/api";
 
@@ -15,9 +16,15 @@ beforeEach(() => {
   vi.mocked(api.get).mockResolvedValue({ pages });
   vi.mocked(api.blob).mockResolvedValue(new Blob(["audio"]));
   vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:current"), revokeObjectURL: vi.fn() });
+  mediaCache.clear();
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
 });
-afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  wrappers.splice(0).forEach(w => w.unmount());
+  mediaCache.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 function player(pageNo = 1) {
   const w = mount(LectureStage, { props: { materialId: 3, pageNo, totalPages: 3 } });
   wrappers.push(w);
@@ -80,7 +87,22 @@ it("drops an old page's delayed audio and preserves Python whitespace", async ()
   expect(w.get("audio").attributes("src")).toBe("blob:current");
   await w.setProps({ pageNo: 2 });
   expect(w.find("audio").exists()).toBe(false);
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  w.unmount();
+  wrappers.splice(wrappers.indexOf(w), 1);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:current");
+});
+it("reuses cached audio when returning to a narrated page", async () => {
+  const w = player();
+  await flushPromises();
+  expect(api.blob).toHaveBeenCalledTimes(1);
+  await w.setProps({ pageNo: 3 });
+  await flushPromises();
+  expect(api.blob).toHaveBeenCalledTimes(2);
+  await w.setProps({ pageNo: 1 });
+  await flushPromises();
+  expect(api.blob).toHaveBeenCalledTimes(2);
+  expect(w.get("audio").attributes("src")).toBe("blob:current");
 });
 it("ignores a material response arriving after a switch or unmount", async () => {
   let finish!: (data: unknown) => void;

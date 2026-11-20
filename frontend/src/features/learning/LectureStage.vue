@@ -51,6 +51,7 @@ import GameSelect from "../../shared/GameSelect.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import { api } from "../../shared/api";
+import { mediaCache } from "../../shared/mediaCache";
 import { useSession } from "../../shared/session";
 import { useUiPreferences } from "../../shared/uiPreferences";
 import { lectureTimeline, lectureTarget, lectureStamp, type LectureSegment } from "../../shared/lectureTimeline";
@@ -67,6 +68,8 @@ const loading = ref(true);
 const playable = ref<number[]>([]);
 const texts = ref<Record<number, string>>({});
 const clip = ref("");
+let currentAudioKey = "";
+let loadedScope = "";
 const playing = ref(false);
 const wantsPlay = ref(false);
 const audio = ref<HTMLAudioElement>();
@@ -143,7 +146,10 @@ function clearAudio() {
   ++audioGeneration;
   audio.value?.pause();
   playing.value = false;
-  if (clip.value) URL.revokeObjectURL(clip.value);
+  if (currentAudioKey) {
+    mediaCache.unpin(currentAudioKey);
+    currentAudioKey = "";
+  }
   clip.value = "";
   audioError.value = "";
   position.value = duration.value = lineIndex.value = 0;
@@ -151,6 +157,10 @@ function clearAudio() {
 
 async function load() {
   const ticket = ++generation;
+  const scope = `${session.classroomId}:${props.materialId}`;
+  if (loadedScope && loadedScope !== scope)
+    mediaCache.clearPrefix(`audio:${loadedScope}:`);
+  loadedScope = scope;
   clearAudio();
   wantsPlay.value = false;
   pendingSeek = undefined;
@@ -181,10 +191,20 @@ async function loadAudio() {
   const ticket = audioGeneration;
   const controller = new AbortController();
   audioController = controller;
+  const key = `audio:${loadedScope}:${props.pageNo}`;
   try {
-    const blob = await api.blob(`/materials/${props.materialId}/narrations/${props.pageNo}/audio?${query()}`, controller.signal);
-    if (ticket !== audioGeneration || controller.signal.aborted) return;
-    clip.value = URL.createObjectURL(blob);
+    const url = await mediaCache.load(
+      key,
+      "audio",
+      () => api.blob(`/materials/${props.materialId}/narrations/${props.pageNo}/audio?${query()}`, controller.signal),
+      { pin: true, signal: controller.signal },
+    );
+    if (ticket !== audioGeneration || controller.signal.aborted) {
+      mediaCache.unpin(key);
+      return;
+    }
+    currentAudioKey = key;
+    clip.value = url;
   } catch {
     if (ticket === audioGeneration && !controller.signal.aborted) audioError.value = "音频暂时无法播放，可以继续阅读讲解文字。";
   }
@@ -265,6 +285,7 @@ watch(() => [props.pageNo, playable.value], () => void loadAudio());
 onBeforeUnmount(() => {
   ++generation;
   clearAudio();
+  if (loadedScope) mediaCache.clearPrefix(`audio:${loadedScope}:`);
 });
 </script>
 

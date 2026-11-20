@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { getDocument, type PDFDocumentLoadingTask } from "pdfjs-dist";
 import PdfReader from "../src/features/learning/PdfReader.vue";
+import { pdfCache } from "../src/shared/pdfCache";
 import { createPinia, setActivePinia } from "pinia";
 
 vi.mock("pdfjs-dist", () => ({ getDocument: vi.fn(), GlobalWorkerOptions: { workerSrc: "" } }));
@@ -20,6 +21,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   width = 800; height = 500;
   vi.mocked(getDocument).mockReturnValue({ promise: Promise.resolve(document), destroy: vi.fn(async () => undefined) } as unknown as PDFDocumentLoadingTask);
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 206, headers: { "Content-Range": "bytes 0-0/1000" } })));
   document.getPage.mockResolvedValue(page);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("pdf-page-stage") ? width : 0; });
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("pdf-page-stage") ? height : 0; });
@@ -34,6 +36,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount();
+  pdfCache.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -98,9 +101,17 @@ describe("PDF reading surface", () => {
     expect(first.destroy).toHaveBeenCalled();
     expect(getDocument).toHaveBeenCalledTimes(2);
     finish(document); await flushPromises();
-    expect(document.destroy).toHaveBeenCalled();
+    expect(document.destroy).not.toHaveBeenCalled();
     expect(wrapper.get(".reader-position").text()).toContain("第二章");
     expect(wrapper.attributes("aria-busy")).toBe("false");
+  });
+  it("reuses a recently opened PDF document after remounting the reader", async () => {
+    const first = await reader();
+    first.unmount();
+    mounted.splice(mounted.indexOf(first), 1);
+    const second = await reader();
+    expect(getDocument).toHaveBeenCalledTimes(1);
+    expect(second.get("canvas").isVisible()).toBe(true);
   });
   it("shows page rendering failures and reloads through the visible retry action", async () => {
     document.getPage.mockRejectedValueOnce(new Error("课件无法读取"));
