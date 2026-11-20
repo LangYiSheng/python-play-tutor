@@ -3,7 +3,8 @@
 The existing configuration store reserves id 1 for the student assistant, 2 for
 authoring and 3 for speech. Environment values initialize an unsaved service only.
 """
-from typing import Annotated, Literal
+import time
+from typing import Annotated, Literal, cast
 from urllib.parse import urlparse
 
 from cryptography.fernet import InvalidToken
@@ -17,6 +18,8 @@ from .auth import require_admin
 from .db import get_db
 from .integration_models import AssistantModelSettings
 from .models import User
+from .narration import tts, tts_catalog
+from .narration.contracts import SpeechSettings
 
 Service = Literal["authoring", "speech"]
 IDS = {"authoring": 2, "speech": 3}
@@ -132,3 +135,32 @@ def save_authoring(body: AuthoringInput, db: Annotated[Session, Depends(get_db)]
 def save_speech(body: SpeechInput, db: Annotated[Session, Depends(get_db)],
                 user: Annotated[User, Depends(require_admin)]):
     return save("speech", body, db, user)
+
+
+@router.get("/speech/catalog")
+def speech_catalog(db: Annotated[Session, Depends(get_db)],
+                   user: Annotated[User, Depends(require_admin)]):
+    value = cast(SpeechSettings, configuration("speech", db))
+    models, source = tts_catalog.catalog_models(value)
+    return {"models": models, "voices": tts_catalog.VOICE_CATALOG,
+            "model_source": source, "voice_source": "builtin"}
+
+
+@router.post("/speech/test")
+def test_speech(db: Annotated[Session, Depends(get_db)],
+                user: Annotated[User, Depends(require_admin)]):
+    value = cast(SpeechSettings, configuration("speech", db))
+    if not value["base_url"]:
+        raise HTTPException(409, "请先保存语音合成配置")
+    if not value["api_key"]:
+        raise HTTPException(503, "请先保存语音接口密钥")
+    db.rollback()
+    started = time.monotonic()
+    try:
+        audio = tts.synthesize("你好，这是一次语音合成测试。", settings_override=value)
+    except tts.SpeechUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except tts.SpeechFailed as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"ok": True, "elapsed_ms": round((time.monotonic() - started) * 1000),
+            "bytes": len(audio), "format": value["format"], "model": value["model"], "voice": value["voice"]}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { WandSparkles } from 'lucide-react';
+import { PlugZap, WandSparkles } from 'lucide-react';
 import { SettingsActions, type SettingsActionPlacement } from './settings-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,13 @@ import { SelectField } from '@/components/select-field';
 import { ErrorNotice, Loading } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
+
+type SpeechCatalog = {
+  models: { id: string; name: string }[];
+  voices: { id: string; name: string }[];
+  model_source: string;
+  voice_source: string;
+};
 
 type Service = 'authoring' | 'speech';
 type Settings = Record<string, string | number | boolean> & { revision: number; key_configured: boolean };
@@ -31,6 +38,7 @@ const labels: Record<string, string> = { none: '关闭', minimal: '最少', low:
 
 export function ServiceSettings({ service, actionsTarget, active }: SettingsActionPlacement & { service: Service }) {
   const [saved, setSaved] = useState<Settings>(), [draft, setDraft] = useState<Settings>();
+  const [catalog, setCatalog] = useState<SpeechCatalog>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
   const dirty = !!saved && (JSON.stringify(saved) !== JSON.stringify(draft) || !!key || clearKey);
@@ -43,6 +51,21 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     }).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
     return () => controller.abort();
   }, [path]);
+  useEffect(() => {
+    if (service !== 'speech' || !saved?.key_configured) return;
+    const controller = new AbortController();
+    void api.get<SpeechCatalog>('/teacher/services/speech/catalog', controller.signal)
+      .then(value => { if (!controller.signal.aborted) setCatalog(value); })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [service, saved?.key_configured, saved?.revision]);
+  async function testSpeech() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await api.post<{ elapsed_ms: number; bytes: number; format: string }>('/teacher/services/speech/test', {});
+      setNotice(`连接正常 · ${result.elapsed_ms} ms · ${result.format} · ${(result.bytes / 1024).toFixed(1)} KB`);
+    } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+  }
   async function save() {
     if (!draft || !saved || busy) return;
     setBusy(true); setError(''); setNotice('');
@@ -67,7 +90,7 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     const example = protocol === 'deepseek'
       ? { base_url: 'https://api.deepseek.com', model: '', voice: 'stella', format: 'wav', speed: 1 }
       : protocol === 'dashscope'
-        ? { base_url: 'https://workspace-id.cn-beijing.maas.aliyuncs.com', model: 'qwen-audio-3.0-tts-flash', voice: 'longanhuan_v3.6', format: 'mp3', speed: 1 }
+        ? { base_url: 'https://workspace-id.cn-beijing.maas.aliyuncs.com', model: 'qwen-audio-3.1-tts-flash', voice: 'longanhuan_v3.1', format: 'mp3', speed: 1 }
         : { base_url: 'https://api.openai.com', model: 'tts-1', voice: 'alloy', format: 'mp3', speed: 1 };
     // Custom endpoints remain intact unless the explicit example action is used.
     const known = ['', 'https://api.deepseek.com', 'https://api.openai.com'];
@@ -89,6 +112,10 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           if (window.confirm('将地址、音色和格式等替换为接口示例？API Key 保持不变，保存后生效。')) applyProtocol(String(draft.protocol), true);
         }}><WandSparkles />填入示例</Button>
       </div>}
+      {service === 'speech' && <div>
+        <Button type="button" variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void testSpeech()}><PlugZap />测试已保存连接</Button>
+        <p className="hint mt-2">会发送一次短语音请求；有未保存修改时请先保存或取消，测试不保存音频。</p>
+      </div>}
       <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{visibleFields.map(field => <div className="field" key={field.key}>
         <Label htmlFor={`${service}-${field.key}`}>{field.label}</Label>
         {field.options ? <SelectField id={`${service}-${field.key}`} value={String(draft[field.key])} onValueChange={value => {
@@ -97,9 +124,15 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           {field.options.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
         </SelectField> : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
           placeholder={field.key === 'base_url' ? (deepseek ? 'https://api.deepseek.com' : dashscope ? 'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com' : field.placeholder) : field.placeholder}
-          value={String(draft[field.key])} onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
+          value={String(draft[field.key])} list={service === 'speech' && field.key === 'model' ? 'speech-models' : service === 'speech' && field.key === 'voice' ? 'speech-voices' : undefined}
+          onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
         {field.key === 'base_url' && service === 'speech' && <p className="hint">填写基础地址即可；完整语音接口地址也可识别。留空可停用合成。</p>}
       </div>)}</div>
+      {service === 'speech' && <>
+        <datalist id="speech-models">{catalog?.models?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
+        <datalist id="speech-voices">{catalog?.voices?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</datalist>
+        {catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
+      </>}
       <div className="field max-w-lg"><Label htmlFor={`${service}-key`}>API Key {saved?.key_configured ? '（已配置）' : '（未配置）'}</Label>
         <Input id={`${service}-key`} type="password" autoComplete="new-password" value={key} placeholder={saved?.key_configured ? '••••••••' : '填写服务密钥'} disabled={clearKey} onChange={e => setKey(e.target.value)} />
         <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>

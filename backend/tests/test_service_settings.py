@@ -74,3 +74,71 @@ def test_dashscope_rejects_the_openai_compatible_base_url():
     with pytest.raises(ValidationError, match="compatible-mode"):
         SpeechInput(**body)
     SpeechInput(**{**body, "base_url": "https://ws-test.cn-beijing.maas.aliyuncs.com"})
+
+
+def test_speech_catalog_fetches_tts_models_and_falls_back(client, db, teacher, monkeypatch, tmp_path):
+    monkeypatch.setenv("REBORN_AI_MASTER_KEY_FILE", str(tmp_path / "master.key"))
+    db.get(User, teacher["id"]).role = "admin"
+    db.commit()
+    body = {"expected_revision": 0, "base_url": "https://tts.example.com/v1",
+            "protocol": "openai", "model": "tts-1", "voice": "alloy",
+            "format": "mp3", "speed": 1, "timeout": 30, "api_key": "test-key"}
+    assert client.put("/api/teacher/services/speech", headers=teacher["headers"], json=body).status_code == 200
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"data": [{"id": "qwen-audio-3.1-tts-flash"}, {"id": "text-embedding-v4"},
+                             {"id": "cosyvoice-v3-plus"}]}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url, headers=None):
+            return Response()
+
+    monkeypatch.setattr("app.narration.tts_catalog.httpx.Client", Client)
+    data = client.get("/api/teacher/services/speech/catalog", headers=teacher["headers"]).json()
+    ids = [item["id"] for item in data["models"]]
+    assert ids[:2] == ["qwen-audio-3.1-tts-flash", "cosyvoice-v3-plus"]
+    assert "qwen-audio-3.1-tts-plus" in ids, "实时列表之外仍保留内置 TTS 模型"
+    assert data["model_source"] == "api"
+    assert any(item["id"] == "longanhuan_v3.1" for item in data["voices"])
+
+    class Failing(Client):
+        def get(self, url, headers=None):
+            raise __import__("httpx").ConnectError("offline")
+
+    monkeypatch.setattr("app.narration.tts_catalog.httpx.Client", Failing)
+    data = client.get("/api/teacher/services/speech/catalog", headers=teacher["headers"]).json()
+    assert data["model_source"] == "builtin" and data["models"]
+
+
+def test_speech_test_uses_the_saved_connection(client, db, teacher, monkeypatch, tmp_path):
+    monkeypatch.setenv("REBORN_AI_MASTER_KEY_FILE", str(tmp_path / "master.key"))
+    db.get(User, teacher["id"]).role = "admin"
+    db.commit()
+    body = {"expected_revision": 0, "base_url": "https://tts.example.com/v1",
+            "protocol": "openai", "model": "tts-1", "voice": "alloy",
+            "format": "mp3", "speed": 1, "timeout": 30, "api_key": "test-key"}
+    assert client.put("/api/teacher/services/speech", headers=teacher["headers"], json=body).status_code == 200
+    spoken = []
+    monkeypatch.setattr("app.service_settings.tts.synthesize",
+                        lambda text, **kwargs: spoken.append(text) or b"ID3" + b"\x00" * 600)
+    result = client.post("/api/teacher/services/speech/test", headers=teacher["headers"])
+    assert result.status_code == 200, result.text
+    assert spoken and result.json()["bytes"] == 603
+
+    def failed(text, **kwargs):
+        raise __import__("app.narration.tts", fromlist=["SpeechFailed"]).SpeechFailed("鉴权失败")
+
+    monkeypatch.setattr("app.service_settings.tts.synthesize", failed)
+    assert client.post("/api/teacher/services/speech/test", headers=teacher["headers"]).status_code == 502
