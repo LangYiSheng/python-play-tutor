@@ -200,21 +200,14 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
   expect(screen.getByText(/标签合并（1 组）/)).toBeTruthy();
 });
 
-it("shows the digest, folds the raw text, and saves title and tags", async () => {
-  const calls: { url: string; method: string; body?: unknown }[] = [];
-  stub(calls);
-  const user = userEvent.setup();
+it("shows the digest read-only and folds the raw text", async () => {
+  stub([]);
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByText("整理后的监督学习定义")).toBeTruthy());
+  expect(screen.getByText("监督学习")).toBeTruthy();
+  expect(screen.getByText("这一页讲监督学习的定义")).toBeTruthy();
+  expect(screen.getByText("标签：监督学习")).toBeTruthy();
   expect(screen.getByText(/查看原始文本（12 字）/)).toBeTruthy();
-
-  const title = screen.getByLabelText("本页标题");
-  await user.clear(title);
-  await user.type(title, "监督学习上");
-  await user.click(screen.getByRole("button", { name: /保存标题与标签/ }));
-  await waitFor(() =>
-    expect(calls.some((call) => call.url.endsWith("/1/content"))).toBe(true),
-  );
-  const saved = calls.find((call) => call.url.endsWith("/1/content"))!;
-  expect(saved.body).toEqual({ title: "监督学习上", tags: ["监督学习"] });
+  expect(screen.queryByLabelText("本页标题")).toBeNull();
+  expect(screen.queryByRole("button", { name: /保存标题与标签/ })).toBeNull();
 });

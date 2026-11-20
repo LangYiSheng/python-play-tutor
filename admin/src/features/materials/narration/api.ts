@@ -191,16 +191,6 @@ export const narrationApi = {
       `${base(classroomId, materialId)}/pipeline`,
       {},
     ),
-  saveContent: (
-    classroomId: number,
-    materialId: number,
-    pageNo: number,
-    body: { title?: string; topic?: string; tags?: string[] },
-  ) =>
-    api.put<{ page_no: number; title: string; tags: string[]; source: string }>(
-      `${base(classroomId, materialId)}/${pageNo}/content`,
-      body,
-    ),
   acceptBatch: (
     classroomId: number,
     materialId: number,

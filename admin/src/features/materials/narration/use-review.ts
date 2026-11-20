@@ -135,23 +135,6 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       await load().catch(() => {});
     }
   }
-  async function saveContent(
-    page: number,
-    body: { title?: string; tags?: string[] },
-  ) {
-    setBusy("content");
-    setError("");
-    setMessage("");
-    try {
-      await narrationApi.saveContent(classroomId, materialId, page, body);
-      setMessage("整理稿信息已保存；改过的页若已有讲解，会自动标记为待重新生成");
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy("");
-    }
-  }
   async function waitForJob(): Promise<NarrationJobState> {
     const deadline = Date.now() + 30 * 60_000;
     for (;;) {
@@ -270,7 +253,6 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     dirty,
     run,
     runPipeline,
-    saveContent,
     acceptAllDrafts,
     synthesizeAllAudio,
     running,

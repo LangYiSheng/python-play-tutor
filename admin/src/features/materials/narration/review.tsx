@@ -130,10 +130,26 @@ export function NarrationReview({
               >
                 <Volume2 /> {busy === "audio-all" ? "生成中…" : "生成全文配音"}
               </Button>
+              <Button
+                variant="outline"
+                disabled={busyNow || data.coverage.draft === 0}
+                onClick={() => void acceptAllDrafts()}
+              >
+                <Check />{" "}
+                {busy === "accept-all"
+                  ? "接受中…"
+                  : `接受全部草稿（${data.coverage.draft}）`}
+              </Button>
               <span className="hint">
                 生成后可逐页审校；已接受的内容不会因重新生成被覆盖。
               </span>
             </div>
+            {job?.failed?.length ? (
+              <p className="hint" role="note">
+                失败页：{job.failed.slice(0, 8).map((item) => `第 ${item.page_no} 页`).join("、")}
+                {job.failed.length > 8 ? " 等" : ""}
+              </p>
+            ) : null}
             {job && job.kind === "pipeline" && (chain.length > 0 || running) && (
               <div className="flex flex-wrap items-center gap-2 text-sm" role="status">
                 {STAGES.map(([key, label], index) => {
@@ -162,7 +178,6 @@ export function NarrationReview({
                 <TabsTrigger value="calibration">
                   校准{calibrationCount ? ` · ${calibrationCount}` : ""}
                 </TabsTrigger>
-                <TabsTrigger value="overview">概览</TabsTrigger>
               </TabsList>
               <TabsContent value="review">
                 <div className="grid gap-4 lg:grid-cols-[140px_minmax(0,1fr)_420px]">
@@ -208,43 +223,6 @@ export function NarrationReview({
               </TabsContent>
               <TabsContent value="calibration">
                 <CalibrationPanel report={report} setPageNo={setPageNo} />
-              </TabsContent>
-              <TabsContent value="overview">
-                <section className="surface space-y-3 p-4 text-sm">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={busyNow || data.coverage.draft === 0}
-                      onClick={() => void acceptAllDrafts()}
-                    >
-                      <Check />{" "}
-                      {busy === "accept-all"
-                        ? "接受中…"
-                        : `接受全部草稿（${data.coverage.draft}）`}
-                    </Button>
-                  </div>
-                  <p className="hint">
-                    接受全部只影响待审草稿；配音只生成已接受且内容未变的页。
-                  </p>
-                  {job && (
-                    <div className="space-y-1">
-                      <p className="hint">
-                        最近任务：{job.kind} · {job.status}
-                        {job.total ? ` · ${job.done}/${job.total}` : ""}
-                        {job.message ? ` · ${job.message}` : ""}
-                      </p>
-                      {job.failed?.length > 0 && (
-                        <ul className="space-y-1 text-xs">
-                          {job.failed.slice(0, 8).map((item) => (
-                            <li key={item.page_no}>
-                              第 {item.page_no} 页：{item.error ?? "未完成"}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </section>
               </TabsContent>
             </Tabs>
           </>
