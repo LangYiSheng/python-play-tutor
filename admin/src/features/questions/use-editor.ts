@@ -34,12 +34,11 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     [savedWarning, setSavedWarning] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
-  useDraft(dirty);
+  useDraft(open && dirty);
   const activeSave = useRef<AbortController | null>(null);
   useEffect(() => () => activeSave.current?.abort(), [classroomId]);
   function edit(q: Question | null) {
     if (activeSave.current) return;
-    if (dirty && !window.confirm("放弃当前题目的未保存修改？")) return;
     setEditing(q);
     setId(q?.id ?? newId("question"));
     setTitle(q?.title ?? "");

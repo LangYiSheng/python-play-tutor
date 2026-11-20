@@ -105,7 +105,7 @@ export function Teaching({ classroomId }: { classroomId: number }) {
     [progressFilter, setProgressFilter] = useState("all"),
     [page, setPage] = useState(1),
     [size, setSize] = useState(25);
-  useDraft(dirty);
+  useDraft(!!editing && dirty);
   function edit(chapter: Chapter) {
     const row = releases.data?.find((r) => r.chapter_id === chapter.id);
     setEditing(chapter);
@@ -319,11 +319,7 @@ export function Teaching({ classroomId }: { classroomId: number }) {
       <Dialog
         open={!!editing}
         onOpenChange={(v) => {
-          if (
-            !v &&
-            !busy &&
-            (!dirty || window.confirm("放弃未保存的章节安排？"))
-          ) {
+          if (!v && !busy) {
             setEditing(null);
             setDirty(false);
           }

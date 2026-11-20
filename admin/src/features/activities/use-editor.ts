@@ -26,10 +26,9 @@ export function useActivityEditor(
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
-  useDraft(dirty);
+  useDraft(open && dirty);
   const goalPractice = kind === "practice" && practiceMode === "goals";
   function edit(a: Activity | null, pick = false) {
-    if (dirty && !window.confirm("放弃当前活动的未保存修改？")) return;
     setEditing(a);
     setId(a?.id ?? newId("activity"));
     setTitle(a?.title ?? "");

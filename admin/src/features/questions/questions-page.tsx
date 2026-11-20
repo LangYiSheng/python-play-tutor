@@ -23,42 +23,48 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { scoped } from "@/lib/api";
+import { api, errorMessage, scoped } from "@/lib/api";
 import type { Course, Material, Question } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QuestionDialog } from "./editor-dialog";
 import { kinds, statuses } from "./types";
 import { useQuestionEditor } from "./use-editor";
-export function Questions({ classroomId }: { classroomId: number }) {
-  const list = useResource<Question[]>(
-      scoped("/teacher/questions", classroomId),
-    ),
-    course = useResource<Course>(scoped("/teacher/courses", classroomId)),
-    materials = useResource<Material[]>(
-      scoped("/teacher/materials", classroomId),
-    );
-  const editor = useQuestionEditor(classroomId, list.reload);
-  const { open, error, edit } = editor;
+import { useCatalogPage } from "@/lib/use-catalog-page";
 
+type QuestionRow = Pick<Question, "id" | "title" | "kind" | "status" | "source_type" | "chapter_ids">;
+
+export function Questions({ classroomId }: { classroomId: number }) {
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [sourceFilter, setSourceFilter] = useState("all"),
-    [kindFilter, setKindFilter] = useState("all"),
-    [page, setPage] = useState(1),
-    [size, setSize] = useState(10);
-  const rows = (list.data ?? []).filter(
-    (q) =>
-      (q.title.toLowerCase().includes(query.trim().toLowerCase()) ||
-        q.prompt.toLowerCase().includes(query.trim().toLowerCase())) &&
-      (kindFilter === "all" || q.kind === kindFilter) &&
-      (filter === "all" || q.status === filter) &&
-      (sourceFilter === "all" || q.source_type === sourceFilter),
-  );
-  const safePage = Math.min(page, Math.max(1, Math.ceil(rows.length / size)));
-  const visible = rows.slice((safePage - 1) * size, safePage * size);
-  const deletion = useTableDelete<Question>(
+    [kindFilter, setKindFilter] = useState("all");
+  const list = useCatalogPage<QuestionRow>("/teacher/questions", classroomId, query, {
+    status: filter, source: sourceFilter, kind: kindFilter,
+  });
+  const editor = useQuestionEditor(classroomId, list.reload);
+  const { open, error } = editor;
+  const chapters = useResource<Pick<Course, "chapters">>(scoped("/teacher/courses?view=chapters", classroomId));
+  const materials = useResource<Material[]>(open ? scoped("/teacher/materials", classroomId) : null);
+  const pending = useRef<AbortController | null>(null);
+  const [detailError, setDetailError] = useState("");
+  useEffect(() => () => pending.current?.abort(), [classroomId]);
+  async function edit(row: QuestionRow | null) {
+    pending.current?.abort();
+    setDetailError("");
+    if (!row) { editor.edit(null); return; }
+    const controller = new AbortController();
+    pending.current = controller;
+    try {
+      const question = await api.get<Question>(scoped("/teacher/questions/" + encodeURIComponent(row.id), classroomId), controller.signal);
+      if (!controller.signal.aborted) editor.edit(question);
+    } catch (cause) {
+      if (!controller.signal.aborted) setDetailError(errorMessage(cause));
+    }
+  }
+  const visible = list.rows;
+  const deletion = useTableDelete<QuestionRow>(
     (q) =>
       scoped(`/teacher/questions/${encodeURIComponent(q.id)}`, classroomId),
     list.reload,
@@ -73,7 +79,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
         </Button>
       </PageHeader>
       <ErrorNotice
-        message={list.error || course.error || (!open ? error : "")}
+        message={list.error || detailError || chapters.error || materials.error || (!open ? error : "")}
       />
       {!open && editor.savedWarning && <p role="status" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{editor.savedWarning}</p>}
       <div className="surface">
@@ -86,7 +92,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
-                setPage(1);
+                list.firstPage();
                 deletion.clear();
               }}
             />
@@ -96,7 +102,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
             value={kindFilter}
             onValueChange={(value) => {
               setKindFilter(value);
-              setPage(1);
+              list.firstPage();
               deletion.clear();
             }}
           >
@@ -112,7 +118,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
             value={filter}
             onValueChange={(value) => {
               setFilter(value);
-              setPage(1);
+              list.firstPage();
               deletion.clear();
             }}
           >
@@ -128,7 +134,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
             value={sourceFilter}
             onValueChange={(value) => {
               setSourceFilter(value);
-              setPage(1);
+              list.firstPage();
               deletion.clear();
             }}
           >
@@ -140,7 +146,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
         <DeleteSelection actions={deletion} />
         {list.loading ? (
           <Loading />
-        ) : !rows.length ? (
+        ) : !visible.length ? (
           <Empty title="没有匹配的题目" />
         ) : (
           <Table>
@@ -171,7 +177,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
                       {q.chapter_ids
                         .map(
                           (id) =>
-                            course.data?.chapters.find((c) => c.id === id)
+                            chapters.data?.chapters.find((c) => c.id === id)
                               ?.title ?? "章节",
                         )
                         .join("、") || "未归类"}
@@ -213,18 +219,9 @@ export function Questions({ classroomId }: { classroomId: number }) {
             </TableBody>
           </Table>
         )}
-        <Pager
-          page={safePage}
-          size={size}
-          total={rows.length}
-          onPage={setPage}
-          onSize={(v) => {
-            setSize(v);
-            setPage(1);
-          }}
-        />
+        <Pager {...list.pager} />
       </div>
-      <QuestionDialog editor={editor} course={course} materials={materials} />
+      <QuestionDialog editor={editor} classroomId={classroomId} course={chapters} materials={materials} />
     </>
   );
 }

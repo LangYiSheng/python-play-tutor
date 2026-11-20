@@ -16,13 +16,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { PageHeader, ErrorNotice, Loading, Empty, TableSearch } from "@/components/common";
+import { Pager, PageHeader, ErrorNotice, Loading, Empty, TableSearch } from "@/components/common";
 import { api, scoped, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
+import { useCatalogPage } from "@/lib/use-catalog-page";
 import { useDraft } from "@/lib/drafts";
 import type { Course, Chapter, Point } from "@/lib/types";
 export function Curriculum({ classroomId }: { classroomId: number }) {
-  const course = useResource<Course>(scoped("/teacher/courses", classroomId));
+  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
   const [tab, setTab] = useState("chapters"),
     [query, setQuery] = useState(""),
     [pointChapter, setPointChapter] = useState("all"),
@@ -35,12 +36,13 @@ export function Curriculum({ classroomId }: { classroomId: number }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
-  useDraft(dirty);
+  const points = useCatalogPage<Point>("/teacher/knowledge-points", classroomId, query, { chapter_id: pointChapter }, tab === "points");
+  const reload = tab === "points" ? points.reload : course.reload;
+  useDraft(open && dirty);
   const deletion = useTableDelete<Chapter | Point>((item) => scoped(
     `/teacher/${"order_index" in item ? "chapters" : "knowledge-points"}/${item.id}`, classroomId,
-  ), course.reload, { classroomId, kind: item => "order_index" in item ? "chapter" : null });
+  ), reload, { classroomId, kind: item => "order_index" in item ? "chapter" : null });
   function edit(item: Chapter | Point | null) {
-    if (dirty && !window.confirm("放弃当前内容的未保存修改？")) return;
     setEditing(item);
     setTitle(item?.title ?? "");
     setOrder(
@@ -86,17 +88,15 @@ export function Curriculum({ classroomId }: { classroomId: number }) {
       await (editing ? api.put : api.post)(scoped(endpoint, classroomId), body);
       setOpen(false);
       setDirty(false);
-      course.reload();
+      reload();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
-  const rows = ((tab === "chapters" ? course.data?.chapters : course.data?.knowledge_points) ?? []).filter((item) =>
-    item.title.toLowerCase().includes(query.trim().toLowerCase()) &&
-    (!("chapter_id" in item) || pointChapter === "all" || String(item.chapter_id) === pointChapter),
-  );
+  const rows = tab === "points" ? points.rows : (course.data?.chapters ?? []).filter(item =>
+    item.title.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <>
       <PageHeader
@@ -108,8 +108,8 @@ export function Curriculum({ classroomId }: { classroomId: number }) {
           新增{tab === "chapters" ? "章节" : "知识点"}
         </Button>
       </PageHeader>
-      <ErrorNotice message={course.error || (!open ? error : "")} />
-      <Tabs value={tab} onValueChange={(value) => { setTab(value); setQuery(""); deletion.clear(); }} className="gap-4">
+      <ErrorNotice message={course.error || points.error || (!open ? error : "")} />
+      <Tabs value={tab} onValueChange={(value) => { setTab(value); setQuery(""); deletion.clear(); points.firstPage(); }} className="gap-4">
         <TabsList variant="line" aria-label="课程结构视图">
           <TabsTrigger value="chapters">章节</TabsTrigger>
           <TabsTrigger value="points">知识点</TabsTrigger>
@@ -117,16 +117,16 @@ export function Curriculum({ classroomId }: { classroomId: number }) {
         <TabsContent value={tab}>
           <div className="surface">
             <div className="toolbar">
-              <TableSearch label={tab === "chapters" ? "搜索章节" : "搜索知识点"} value={query} onValueChange={(value) => { setQuery(value); deletion.clear(); }} />
+              <TableSearch label={tab === "chapters" ? "搜索章节" : "搜索知识点"} value={query} onValueChange={(value) => { setQuery(value); deletion.clear(); points.firstPage(); }} />
               {tab === "points" && (
-                <SelectField aria-label="知识点所属章节" value={pointChapter} onValueChange={(value) => { setPointChapter(value); deletion.clear(); }}>
+                <SelectField aria-label="知识点所属章节" value={pointChapter} onValueChange={(value) => { setPointChapter(value); deletion.clear(); points.firstPage(); }}>
                   <option value="all">全部章节</option>
                   {course.data?.chapters.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
                 </SelectField>
               )}
             </div>
             <DeleteSelection actions={deletion} />
-            {course.loading ? <Loading /> : !rows.length ? <Empty title="没有匹配的内容" /> : (
+            {course.loading || (tab === "points" && points.loading) ? <Loading /> : !rows.length ? <Empty title="没有匹配的内容" /> : (
               <Table>
                 <TableHeader><TableRow>
                   <TableHead className="w-12"><SelectTablePage actions={deletion} rows={rows} /></TableHead>
@@ -154,6 +154,7 @@ export function Curriculum({ classroomId }: { classroomId: number }) {
                 </TableBody>
               </Table>
             )}
+            {tab === "points" && <Pager {...points.pager} />}
           </div>
         </TabsContent>
       </Tabs>

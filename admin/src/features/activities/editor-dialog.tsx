@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KnowledgePointPicker } from "@/features/curriculum/knowledge-point-picker";
-import type { Activity, Course, Material, Question } from "@/lib/types";
+import type { Activity, Course, Material, QuestionCandidate } from "@/lib/types";
 import { PaperEditor } from "./paper-editor";
 import { EditorTabs } from "@/components/editor-tabs";
 import { ResourceEditor } from "./resource-editor";
@@ -28,8 +28,8 @@ export function ActivityDialog({
   editor: ReturnType<typeof useActivityEditor>;
   course: { data: Course | null };
   materials: { data: Material[] | null };
-  questions: { data: Question[] | null };
-  candidates: Question[];
+  questions: { data: QuestionCandidate[] | null };
+  candidates: QuestionCandidate[];
 }) {
   const {
     editing,

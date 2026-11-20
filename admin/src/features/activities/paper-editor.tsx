@@ -3,11 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectField } from "@/components/select-field";
-import type { Point, Question } from "@/lib/types";
+import type { Point, QuestionCandidate } from "@/lib/types";
 import { kinds } from "@/features/questions/types";
 
 interface Props {
-  candidates: Question[]; questions: Question[]; points: Point[]; selected: string[];
+  candidates: QuestionCandidate[]; questions: QuestionCandidate[]; points: Point[]; selected: string[];
   assessment: boolean; order: boolean; onChange: (ids: string[]) => void;
 }
 
@@ -16,7 +16,7 @@ export function PaperEditor({candidates, questions, points, selected, assessment
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("");
   const rank = new Map(points.map((p,i) => [p.id, i]));
-  const groups = new Map<number, Question[]>(points.map(p => [p.id, []]));
+  const groups = new Map<number, QuestionCandidate[]>(points.map(p => [p.id, []]));
   groups.set(0, []);
   for (const q of candidates) {
     const ids = [...new Set(q.knowledge_point_ids.filter(id => rank.has(id)))];

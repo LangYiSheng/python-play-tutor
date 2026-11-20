@@ -108,6 +108,8 @@ export interface Question {
   owner_id: number | null;
 }
 
+export type QuestionCandidate = Pick<Question, "id" | "title" | "kind" | "status" | "owner_id" | "knowledge_point_ids"> & { has_samples: boolean };
+
 export interface ActivityResource {
   material_id: number;
   required: boolean;

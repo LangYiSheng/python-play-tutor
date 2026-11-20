@@ -11,9 +11,8 @@ export function useMaterialEditor(classroomId: number, onSaved: () => void) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
-  useDraft(dirty);
+  useDraft(open && dirty);
   function edit(m: Material | null) {
-    if (dirty && !window.confirm("放弃当前资料的未保存修改？")) return;
     setEditing(m);
     setTitle(m?.title ?? "");
     setChapterIds(m?.chapter_ids ?? []);

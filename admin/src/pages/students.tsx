@@ -66,7 +66,7 @@ export function Students({ classroomId }: { classroomId: number }) {
     [error, setError] = useState(""),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  useDraft(Boolean(id || name || preview.length));
+  useDraft(modal !== null && Boolean(id || name || preview.length));
   const rows = (list.data ?? [])
     .filter(
       (s) =>
@@ -93,6 +93,9 @@ export function Students({ classroomId }: { classroomId: number }) {
   }
   function open(value: typeof modal) {
     setError("");
+    setId("");
+    setName("");
+    setPreview([]);
     setModal(value);
   }
   function openAction(action: "reset-password" | "remove", ids: string[]) {

@@ -21,7 +21,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
         ? new Response(JSON.stringify({ detail: "变量缺少可用编程题" }), { status: 422 })
         : json({});
     }
-    if (url.includes("/teacher/questions")) return json([{
+    if (url.includes("/question-candidates")) return json([{
       id: "private-cases", title: "仅私有用例", kind: "python", owner_id: 9,
       status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [],
     }, { id: "fruits", title: "水果索引", kind: "interactive", owner_id: 9,
@@ -82,7 +82,7 @@ it("selects shared and untagged questions once and saves their final positions w
   ].map(q => ({...q, chapter_ids: [1], owner_id: null, kind: "fill", status: "ready"}));
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (init.method === "PUT") { update(url, JSON.parse(String(init.body))); return json({}); }
-    return json(url.includes("/teacher/courses") ? course : url.includes("/teacher/questions") ? questions : []);
+    return json(url.includes("/teacher/courses") ? course : url.includes("/question-candidates") ? questions : []);
   }));
   const user = userEvent.setup();
   render(<Activities classroomId={7} teacherId={9} />);

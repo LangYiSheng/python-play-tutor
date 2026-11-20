@@ -23,7 +23,7 @@ const question: Question = {
 function Host({ initial = question }: { initial?: Question } = {}) {
   const editor = useQuestionEditor(1, () => {});
   return <><button onClick={() => editor.edit(initial)}>打开</button><p>{editor.savedWarning}</p>
-    <QuestionDialog editor={editor} course={{ data: null }} materials={{ data: [] }} /></>;
+    <QuestionDialog editor={editor} classroomId={1} course={{ data: null }} materials={{ data: [] }} /></>;
 }
 
 it('keeps selected answers when renaming options, removes deleted answers and saves arrays', async () => {

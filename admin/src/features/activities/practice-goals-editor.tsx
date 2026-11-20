@@ -2,14 +2,14 @@ import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { kinds } from "@/features/questions/types";
-import type { Point, PracticeGoal, PracticeRules, Question } from "@/lib/types";
+import type { Point, PracticeGoal, PracticeRules, QuestionCandidate } from "@/lib/types";
 
-const questionKinds = Object.keys(kinds) as Question["kind"][];
+const questionKinds = Object.keys(kinds) as QuestionCandidate["kind"][];
 
 interface Props {
   rules: PracticeRules;
   points: Point[];
-  candidates: Question[] | null;
+  candidates: QuestionCandidate[] | null;
   onChange: (rules: PracticeRules) => void;
 }
 

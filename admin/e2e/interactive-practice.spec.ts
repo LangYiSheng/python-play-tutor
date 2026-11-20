@@ -74,7 +74,8 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
       Object.assign(question, body);
       writes.push(body.status);
       await route.fulfill({ json: question });
-    } else await route.fulfill({ json: [question] });
+    } else await route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/old")
+      ? question : {items: [question], total: 1, page: 1} });
   });
   await page.goto("/teacher/questions");
   await page.getByRole("button", { name: "编辑已有交互题" }).click();

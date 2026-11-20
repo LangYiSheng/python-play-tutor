@@ -1,8 +1,8 @@
 """Teacher course content HTTP routes and authenticated dependencies."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth import require_teacher
@@ -12,12 +12,14 @@ from app.course_content.activities import delete_activity as _delete_activity
 from app.course_content.activities import update_activity as _update_activity
 from app.course_content.activities import update_activity_questions as _update_activity_questions
 from app.course_content.catalog import teacher_courses as _teacher_courses
+from app.course_content.catalog import point_page, selected_point_labels
 from app.course_content.progress import progress as _progress
 from app.course_content.progress import student_record as _student_record
 from app.course_content.question_contracts import QuestionInput, QuestionUpdate
 from app.course_content.questions import create_question as _create_question
 from app.course_content.questions import delete_question as _delete_question
 from app.course_content.questions import list_questions as _list_questions
+from app.course_content.questions import chapter_candidates, question_detail, question_page
 from app.course_content.questions import update_question as _update_question
 from app.course_content.releases import ReleaseInput
 from app.course_content.releases import list_releases as _list_releases
@@ -36,8 +38,21 @@ def release_chapter(
 
 
 @router.get("/teacher/courses")
-def teacher_courses(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    return _teacher_courses(db=db, user=user, classroom_id=classroom_id)
+def teacher_courses(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
+                    classroom_id: int | None = None, view: Literal["chapters", "full"] = "full"):
+    return _teacher_courses(db=db, user=user, classroom_id=classroom_id, view=view)
+
+
+@router.get("/teacher/knowledge-points")
+def list_points(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int,
+                page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100), search: str = "", chapter_id: int | None = None):
+    return point_page(db, user, classroom_id, page, size, search, chapter_id)
+
+
+@router.get("/teacher/knowledge-point-labels")
+def point_labels(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int,
+                 ids: Annotated[list[int], Query(max_length=65)]):
+    return selected_point_labels(db, user, classroom_id, ids)
 
 
 @router.get("/teacher/classrooms/{classroom_id}/progress")
@@ -89,8 +104,22 @@ def create_question(
 
 
 @router.get("/teacher/questions")
-def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
+def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None,
+                   page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
+                   kind: str | None = None, status: str | None = None, source: str | None = None):
+    if page is not None:
+        return question_page(db, user, classroom_id, page, size, search, kind, status, source)
     return _list_questions(db=db, user=user, classroom_id=classroom_id)
+
+
+@router.get("/teacher/questions/{question_id}")
+def get_question(question_id: str, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int):
+    return question_detail(db, user, classroom_id, question_id)
+
+
+@router.get("/teacher/chapters/{chapter_id}/question-candidates")
+def list_candidates(chapter_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int):
+    return chapter_candidates(db, user, classroom_id, chapter_id)
 
 
 @router.put("/teacher/questions/{question_id}")

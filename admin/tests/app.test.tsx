@@ -74,7 +74,7 @@ it("counts the class teacher's practice pool when an administrator creates an ac
     if (url.endsWith("/classrooms")) return json([{ id: 7, name: "一班", teacher_id: 9 }]);
     if (url.includes("/teacher/courses")) return json({ chapters: [{ id: 1, title: "第一章" }],
       knowledge_points: [{ id: 11, chapter_id: 1, title: "变量" }], npcs: [], activities: [] });
-    if (url.includes("/teacher/questions")) return json([
+    if (url.includes("/question-candidates")) return json([
       { ...question, id: "shared", owner_id: null }, { ...question, id: "teacher", owner_id: 9 },
     ]);
     return json([]);
