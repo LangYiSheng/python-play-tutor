@@ -2,11 +2,17 @@ import { SelectField } from "@/components/select-field";
 import { useState, useEffect, lazy, Suspense } from "react";
 import {
   GraduationCap,
+  School,
+  ChartNoAxesCombined,
+  Presentation,
   Users,
+  IdCard,
+  LayoutDashboard,
+  CalendarDays,
   BookOpen,
   Network,
-  ListChecks,
-  Layers3,
+  List,
+  GitBranch,
   ChevronDown,
   LogOut,
   KeyRound,
@@ -14,7 +20,9 @@ import {
   PanelLeftOpen,
   Package,
   Settings,
-  ArrowUpRight,
+  ExternalLink,
+  LoaderCircle,
+  MessageCircleQuestionMark,
   ShieldCheck,
   FileAudio,
   ListPlus,
@@ -61,23 +69,23 @@ const Authoring = lazy(() =>
 import { ClassroomManagement, Accounts, GlobalOverview, GlobalSettings } from "@/features/management/pages";
 
 const globalNav = [
-  { key: "classes", title: "班级管理", icon: GraduationCap, adminOnly: false },
-  { key: "overview", title: "全局概览", icon: Layers3, adminOnly: true },
-  { key: "teachers", title: "教师管理", icon: Users, adminOnly: true },
+  { key: "classes", title: "班级管理", icon: School, adminOnly: false },
+  { key: "overview", title: "全局概览", icon: ChartNoAxesCombined, adminOnly: true },
+  { key: "teachers", title: "教师管理", icon: Presentation, adminOnly: true },
   { key: "accounts", title: "学生管理", icon: Users, adminOnly: true },
   { key: "system", title: "全站设置", icon: Settings, adminOnly: true },
 ] as const;
 const classNav = [
-  { key: "classroom", title: "班级概况", icon: GraduationCap },
-  { key: "students", title: "学生账号", icon: Users },
-  { key: "teaching", title: "教学管理", icon: GraduationCap },
+  { key: "classroom", title: "班级概况", icon: LayoutDashboard },
+  { key: "students", title: "学生账号", icon: IdCard },
+  { key: "teaching", title: "教学管理", icon: CalendarDays },
   { key: "content-graph", title: "知识图谱", icon: Network },
-  { key: "content-list", title: "内容列表", icon: ListChecks },
+  { key: "content-list", title: "内容列表", icon: List },
   { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
   { key: "activities", title: "学习活动", icon: BookOpen },
-  { key: "authoring", title: "教学流程", icon: Layers3 },
+  { key: "authoring", title: "教学流程", icon: GitBranch },
   { key: "packages", title: "课程包", icon: Package },
-  { key: "settings", title: "本班答疑设置", icon: Settings },
+  { key: "settings", title: "本班答疑设置", icon: MessageCircleQuestionMark },
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
@@ -306,7 +314,7 @@ function Workbench() {
   function link({ key, title, icon: Icon }: (typeof globalNav | typeof classNav)[number]) {
     const parent = page === "content-review" && key === "content-graph";
     return <a key={key} href={`/teacher/${key}`} aria-current={page === key ? "page" : parent ? "location" : undefined}
-      onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} />{title}</a>;
+      onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} aria-hidden />{title}</a>;
   }
   function renderPage(currentUser: User) {
     if (!allowed) return <ErrorNotice message="此页面仅管理员可访问。" />;
@@ -337,7 +345,7 @@ function Workbench() {
   }
   return (
     <div className={`workbench ${sidebar ? "" : "sidebar-collapsed"}`}>
-      <aside className="sidebar">
+      <aside id="workbench-sidebar" className="sidebar">
         <a
           href="/teacher/"
           className="brand"
@@ -372,7 +380,7 @@ function Workbench() {
         <div className="sidebar-bottom">
           <DropdownMenu>
             <DropdownMenuTrigger render={<button className="account" />}>
-              <span className="avatar">{user.name.slice(0, 1)}</span>
+              <span className="avatar" aria-hidden>{user.name.slice(0, 1)}</span>
               <span>
                 {user.name}
                 <small>{user.role === "admin" ? "管理员" : "教师"}</small>
@@ -398,6 +406,8 @@ function Workbench() {
             variant="ghost"
             size="icon"
             aria-label={sidebar ? "收起导航" : "展开导航"}
+            aria-expanded={sidebar}
+            aria-controls="workbench-sidebar"
             onClick={() => setSidebar((v) => !v)}
           >
             {sidebar ? <PanelLeftClose /> : <PanelLeftOpen />}
@@ -432,10 +442,11 @@ function Workbench() {
             variant="outline"
             size="sm"
             disabled={!classroom || openingTown || user.must_change_password}
+            aria-busy={openingTown}
             onClick={() => classroom && void enterTown(classroom.id)}
           >
             {openingTown ? "正在进入小镇…" : "进入小镇"}
-            <ArrowUpRight />
+            {openingTown ? <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" /> : <ExternalLink data-icon="inline-end" />}
           </Button>}
         </header>
         <main className={page === "content-graph" && classroom ? "main-content graph-main" : "main-content"}>

@@ -84,6 +84,33 @@ it("opens the administrator workspace before any class exists", async () => {
   expect(screen.queryByRole("link", { name: "课程包" })).not.toBeInTheDocument();
   expect(screen.queryByLabelText("当前班级")).not.toBeInTheDocument();
 });
+it("distinguishes global and classroom navigation and exposes the sidebar's toggle state", async () => {
+  setToken("admin-session");
+  history.replaceState({}, "", "/teacher/content-review");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => json(url.endsWith("/auth/me")
+    ? { id: 1, name: "管理员", role: "admin" } : [{ id: 3, name: "一班", teacher_id: 1 }])));
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "审批班级 3" });
+  for (const group of [
+    ["班级管理", "班级概况", "教学管理"], ["教师管理", "学生管理", "学生账号"],
+    ["全局概览", "教学流程"], ["全站设置", "本班答疑设置"],
+  ]) {
+    const icons = group.map(name => {
+      const icon = screen.getByRole("link", { name }).querySelector("svg");
+      expect(icon).toHaveAttribute("aria-hidden", "true");
+      return icon!.innerHTML;
+    });
+    expect(new Set(icons).size).toBe(group.length);
+  }
+  const toggle = screen.getByRole("button", { name: "收起导航" });
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toContainElement(screen.getByRole("navigation", { name: "班级导航" }));
+  await user.click(toggle);
+  expect(screen.getByRole("button", { name: "展开导航" })).toHaveAttribute("aria-expanded", "false");
+  await user.click(toggle);
+  expect(screen.getByRole("button", { name: "收起导航" })).toHaveAttribute("aria-expanded", "true");
+});
 it("counts the class teacher's practice pool when an administrator creates an activity", async () => {
   setToken("admin-session");
   history.replaceState({}, "", "/teacher/activities");

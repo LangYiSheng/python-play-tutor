@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, FileText, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileText, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -47,7 +47,7 @@ export function ResourceEditor({ resources, materials, chapterId, classroomId, o
         <label className="flex items-center gap-1 text-sm"><Checkbox checked={row.required} onCheckedChange={value => update(index, { ...row, required: value === true })} />必读</label>
         <Button type="button" variant="ghost" size="icon" aria-label={`上移资料${index + 1}`} disabled={!index} onClick={() => move(index, -1)}><ArrowUp /></Button>
         <Button type="button" variant="ghost" size="icon" aria-label={`下移资料${index + 1}`} disabled={index === resources.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
-        <Button type="button" variant="ghost" size="icon" aria-label={`移除资料${index + 1}`} onClick={() => onChange(resources.filter((_, i) => i !== index))}><Trash2 /></Button>
+        <Button type="button" variant="ghost" size="icon" aria-label={`移除资料${index + 1}`} onClick={() => onChange(resources.filter((_, i) => i !== index))}><X /></Button>
       </div>
       <ResourceRules classroomId={classroomId} resource={row} kind={materials.find(m => m.id === row.material_id)?.kind} onChange={value => update(index, value)} />
     </section> : <p className="hint">添加资料后，在这里设置完成要求。</p>}</div></div>

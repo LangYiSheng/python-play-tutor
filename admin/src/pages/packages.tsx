@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Download, PackageCheck, Search, LoaderCircle, Trash2 } from "lucide-react";
+import { FolderOutput, PackageCheck, RefreshCw, Search, LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -280,7 +280,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
           disabled={busy}
           onClick={() => void exportPackage()}
         >
-          <Download />
+          <FolderOutput />
           导出课程包
         </Button>
       </PageHeader>
@@ -309,7 +309,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Input aria-label="搜索课程包" placeholder="搜索课程名称或文件夹" className="max-w-sm"
               value={packageSearch} onChange={(event) => setPackageSearch(event.target.value)} />
-            <Button variant="outline" size="sm" disabled={busy || available.loading} onClick={available.reload}>刷新列表</Button>
+            <Button variant="outline" size="sm" disabled={busy || available.loading} onClick={available.reload}><RefreshCw />刷新列表</Button>
           </div>
           <ErrorNotice message={available.error} />
           <Table aria-label="可用课程包">

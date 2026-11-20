@@ -87,6 +87,9 @@
 .sidebar nav a:hover {
   background: #eee;
 }
+.sidebar nav a > svg {
+  flex-shrink: 0;
+}
 .sidebar nav a[aria-current="page"],.sidebar nav a[aria-current="location"] {
   background: #e8ece7;
   color: #253b2a;

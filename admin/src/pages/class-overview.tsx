@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ArrowDownToLine, BookOpen, CheckCircle2, Pencil } from "lucide-react";
+import { Plus, Copy, BookOpen, CheckCircle2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader, ErrorNotice, Loading } from "@/components/common";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -145,7 +145,7 @@ export function ClassOverview({
                   .catch(() => setError("复制失败，请手动选择加入码复制。"));
               }}
             >
-              <ArrowDownToLine />
+              <Copy />
               复制加入码
             </Button>
           ) : null}

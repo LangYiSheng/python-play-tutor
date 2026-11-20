@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export type Suggestion = { id: string; name: string };
@@ -38,15 +39,17 @@ export function SuggestInput({
         onChange={(event) => onChange(event.target.value)}
         className="pr-8"
       />
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
         aria-label={`选择${label}`}
         aria-expanded={open}
-        className="absolute right-1 top-1 rounded p-1 text-muted-foreground hover:bg-muted"
+        className="absolute right-1 top-1 text-muted-foreground"
         onClick={() => setOpen((current) => !current)}
       >
-        <ChevronDown className="size-4" />
-      </button>
+        <ChevronDown aria-hidden="true" />
+      </Button>
       {open && (
         <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md">
           {options.length === 0 ? (

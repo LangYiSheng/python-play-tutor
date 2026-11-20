@@ -34,7 +34,7 @@ it('loads class tasks without invoking services and requires confirmation before
   fireEvent.click(screen.getByRole('button', { name: '确认重试' }));
   await screen.findByText(/已提交重试/);
   expect(api.post).toHaveBeenCalledWith('/teacher/classrooms/7/synthesis/11/retry', { expected_started_at: task.started_at });
-  fireEvent.click(screen.getByRole('button', { name: '查看资料' }));
+  fireEvent.click(screen.getByRole('button', { name: '打开课件审校' }));
   expect(screen.getByText('审校对话框')).toBeInTheDocument();
 });
 it('explains the current stage and the real unit in the run detail, with audio actions only on audio runs', async () => {
@@ -52,7 +52,7 @@ it('explains the current stage and the real unit in the run detail, with audio a
   expect(within(row).getByText(/已处理 2 \/ 13 个文本窗口/)).toBeVisible();
   expect(within(row).queryByRole('button', {name:'试听'})).toBeNull();
   expect(screen.getAllByRole('button', {name:'试听'})).toHaveLength(1);
-  expect(within(row).getByRole('button', {name:'重试'}).className).toEqual(within(row).getByRole('button', {name:'查看资料'}).className);
+  expect(within(row).getByRole('button', {name:'重试'}).className).toEqual(within(row).getByRole('button', {name:'打开课件审校'}).className);
   fireEvent.click(within(row).getByRole('button', {name:'任务详情'}));
   const popup = await screen.findByRole('dialog', {name:/任务详情 · 课程生成/});
   expect(within(popup).getByText('阶段 2/4 · 校准整理稿')).toBeVisible();

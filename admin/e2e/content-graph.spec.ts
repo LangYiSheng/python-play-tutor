@@ -167,8 +167,7 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   expect(banks.every(u => u.searchParams.get("size") === "6" && u.searchParams.get("knowledge_point_id") === String(point.id))).toBe(true);
 });
 
-test("任务队列能定位到带百分比的运行节点，异常节点显示静态告警", async ({ page }) => {
-  await page.setViewportSize({ width: 810, height: 960 });
+test("图谱工具栏保持链接与按钮一致，任务队列可定位运行与异常节点", async ({ page }, info) => {
   await page.addInitScript(() => {
     sessionStorage.setItem("pythontopia-reborn-session", "graph-task-fixture");
     sessionStorage.setItem("classroom:1", "9");
@@ -177,13 +176,15 @@ test("任务队列能定位到带百分比的运行节点，异常节点显示�
   const running = { id: 6, run_id: 21, material_id: 31, status: "running", queued: false, stage: "script",
     kind: "generate", done: 2, total: 5, percent: 40, started_at: "2026-11-20T08:00:00Z" };
   const jobs = [running, { ...running, id: 8, run_id: 22, material_id: 32, status: "interrupted", percent: 20 }];
-  await page.route("**/api/**", async route => {
+  await page.context().route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     let response: unknown = [];
     if (path.endsWith("/auth/me")) response = { id: 1, name: "教师", role: "teacher" };
     if (path.endsWith("/classrooms")) response = [{ id: 9, name: "当前班级", teacher_id: 1 }];
     if (path.endsWith("/course-graph")) response = { title: "测试课程", chapters: [{ id: 3, title: "计算思维" }], materials };
     if (path.endsWith("/course-graph/tasks")) response = jobs;
+    if (path.endsWith("/content-review/summary")) response = { total: 0 };
+    if (path.includes("/content-review/groups")) response = { items: [], total: 0, page: 1, item_total: 0 };
     if (path.includes("/course-graph/materials/")) response = { points: [], pages: 5, narrations: 0, audio: 0, drafts: 0 };
     await route.fulfill({ json: response });
   });
@@ -191,8 +192,49 @@ test("任务队列能定位到带百分比的运行节点，异常节点显示�
   await expect(page.locator('.react-flow__node[data-id="material-31"]')).toHaveAccessibleName(/执行中.*40%/);
   await expect(page.locator('.react-flow__node[data-id="material-32"] .cg-task-error')).toBeVisible();
   await expect(page.locator(".cg-node.cg-task")).toHaveCount(0);
-  const queue = page.getByRole("button", { name: /^任务队列/ });
-  await queue.click();
+  const approval = page.getByRole("link", { name: /待审批\s*0 项/ });
+  const queue = page.getByRole("button", { name: /任务队列\s*2 项/ });
+  await expect(approval).toHaveAttribute("href", "/teacher/content-review");
+  for (const [width, height] of [[1396, 1000], [430, 915], [885, 871]]) {
+    await page.setViewportSize({ width, height });
+    await page.mouse.move(0, 0);
+    await expect(approval).toBeInViewport();
+    await expect(queue).toBeInViewport();
+    // Sidebar width animates briefly while the viewport crosses a layout breakpoint.
+    await expect.poll(async () => {
+      const [a, b] = await Promise.all([approval.boundingBox(), queue.boundingBox()]);
+      return a && b && a.y - b.y;
+    }).toBe(0);
+    const metrics = await page.locator(".cg-bar > [data-slot=button]").evaluateAll(elements => elements.map(el => {
+      const style = getComputedStyle(el);
+      const frame = el.getBoundingClientRect();
+      const icon = el.querySelector("svg")!.getBoundingClientRect();
+      return { top: frame.top, width: frame.width, style: [frame.height, style.paddingLeft, style.paddingRight,
+        style.gap, style.color, style.backgroundColor, style.borderColor, style.borderRadius, style.fontSize,
+        style.fontWeight, style.display, style.alignItems, icon.width, icon.height, icon.y - frame.y] };
+    }));
+    expect(metrics).toHaveLength(2);
+    expect(metrics[0].style).toEqual(metrics[1].style);
+    expect(metrics[0].top).toBe(metrics[1].top);
+    expect(metrics[0].width).toBeLessThan(metrics[1].width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator(".cg-bar").screenshot({ path: info.outputPath("toolbar-" + width + ".png"), animations: "disabled" });
+  }
+  await page.getByRole("textbox", {name: "搜索图谱节点"}).focus();
+  await page.keyboard.press("Tab");
+  await expect(approval).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/teacher\/content-review$/);
+  await page.getByRole("link", {name: "返回知识图谱"}).click();
+  const [newTab] = await Promise.all([page.context().waitForEvent("page"), approval.click({ modifiers: ["ControlOrMeta"] })]);
+  await expect(newTab).toHaveURL(/\/teacher\/content-review$/);
+  await newTab.close();
+  await expect(page).toHaveURL(/\/teacher\/content-graph$/);
+  await approval.focus();
+  await page.keyboard.press("Tab");
+  await expect(queue).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(queue).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: /讲稿生成.*第 31 份课件/ }).click();
   const active = page.locator('.react-flow__node[data-id="task-21"]');
   await expect(active).toHaveAccessibleName(/执行中.*40%/);

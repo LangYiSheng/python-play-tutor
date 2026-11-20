@@ -95,9 +95,9 @@
   .cg-inspecting .cg-map-tools { bottom: calc(43% + 14px); }
 }
 @container (max-width: 400px) {
-  .cg-bar { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cg-search { grid-column: 1 / -1; position: relative; width: 100%; }
+  .cg-bar { width: 100%; flex-wrap: wrap; justify-content: flex-end; }
+  .cg-search { flex: 0 0 100%; position: relative; width: 100%; }
   .cg-search > svg { left: 9px; }
   .cg-results { width: 100%; right: 0; }
-  .cg-bar > a, .cg-bar > button { min-width: 0; gap: 4px; padding-inline: 4px; }
+  .cg-bar > [data-slot="button"] { padding-inline: 4px; }
 }

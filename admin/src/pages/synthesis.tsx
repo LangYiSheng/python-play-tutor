@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useState } from 'react';
-import { FilePenLine, Headphones, RefreshCw, ListChecks } from 'lucide-react';
+import { Eye, Headphones, NotebookPen, RefreshCw } from 'lucide-react';
 import { PageHeader, ErrorNotice, Loading, Empty, Pager } from '@/components/common';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,9 +80,9 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
           </TableCell>
           <TableCell className="text-xs text-muted-foreground"><div>开始：{item.started_at ? new Date(item.started_at).toLocaleString('zh-CN') : '—'}</div><div>结束：{item.finished_at ? new Date(item.finished_at).toLocaleString('zh-CN') : '—'}</div></TableCell>
           <TableCell><div className="flex flex-wrap justify-end gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setSelected(item)}><ListChecks/>任务详情</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(item)}><Eye/>任务详情</Button>
             {classroomId !== undefined && <>
-              <Button variant="ghost" size="sm" disabled={item.material_available === false} onClick={() => setReview(item)}><FilePenLine />查看资料</Button>
+              <Button variant="ghost" size="sm" disabled={item.material_available === false} onClick={() => setReview(item)}><NotebookPen />打开课件审校</Button>
               {item.kind === 'audio' && <Button variant="ghost" size="sm" disabled={item.material_available === false} onClick={() => setListen(item)}><Headphones />试听</Button>}
               <TaskButtons job={item} material={item.title} request={commands.request} variant="ghost"/>
             </>}

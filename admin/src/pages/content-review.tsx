@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader, Pager } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,7 @@ function ReviewQueue({ classroomId }: { classroomId: number }) {
           }}>
             {Object.entries(kindLabel).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </SelectField>
-          <Button variant="outline" onClick={() => { setMessage(""); reload(); }}>刷新</Button>
+          <Button variant="outline" onClick={() => { setMessage(""); reload(); }}><RefreshCw />刷新</Button>
           {chapter && level === "materials" && !!materials.data?.total && <Button variant="outline"
             onClick={() => setChapterApproval({ ...chapter, name: chapterName })}>按章通过</Button>}
         </div>

@@ -49,8 +49,9 @@
 .search > svg {
   position: absolute;
   left: 11px;
-  top: 9px;
-  color: #858585;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
   pointer-events: none;
 }
 .search input {

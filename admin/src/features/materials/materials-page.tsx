@@ -33,7 +33,7 @@ import {
   Headphones,
   NotebookPen,
   Pencil,
-  Plus,
+  Upload,
   Search,
   Trash2,
 } from "lucide-react";
@@ -130,7 +130,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
             <option value="converting">转换中</option>
             <option value="failed">转换失败</option>
           </SelectField>
-          <div className="ml-auto"><Button onClick={() => edit(null)}><Plus />上传资料</Button></div>
+          <div className="ml-auto"><Button onClick={() => edit(null)}><Upload />上传资料</Button></div>
         </div>
         <DeleteSelection actions={deletion} />
         {list.loading ? (

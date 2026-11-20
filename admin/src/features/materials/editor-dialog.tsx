@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Course } from "@/lib/types";
-import { FileUp } from "lucide-react";
+import { Save, Upload } from "lucide-react";
 import type { useMaterialEditor } from "./use-editor";
 export function MaterialDialog({
   editor,
@@ -113,7 +113,7 @@ export function MaterialDialog({
               取消
             </Button>
             <Button type="submit" disabled={busy}>
-              <FileUp />
+              {editing ? <Save /> : <Upload />}
               {busy ? "处理中…" : "保存资料"}
             </Button>
           </DialogFooter>

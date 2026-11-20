@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, ClipboardCheck, ListChecks, Route } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ClipboardCheck, ListChecks, RefreshCw, Route } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -226,7 +226,7 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
           : <div className="surface"><Empty title="先为这门课程添加章节" description="在「课程结构」中创建章节和知识点，再到「资料库」关联课件。" />
             <div className="flex justify-center gap-3 pb-5">
               <a href="/teacher/content-list?tab=chapters" className="text-sm underline underline-offset-2">前往章节列表</a>
-              <Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("refresh")}>刷新章节</Button>
+              <Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("refresh")}><RefreshCw />刷新章节</Button>
             </div>
           </div>}
       </TabsContent>

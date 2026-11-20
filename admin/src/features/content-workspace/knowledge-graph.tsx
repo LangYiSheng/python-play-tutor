@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlowProvider, type Viewport } from "@xyflow/react";
-import { ChevronRight, ClipboardCheck, Eye, Headphones, ListTodo, NotebookPen, Pencil, Plus, X } from "lucide-react";
+import { ChevronRight, ClipboardCheck, Eye, Headphones, ListTodo, NotebookPen, Pencil, Plus, Upload, X, type LucideIcon } from "lucide-react";
 import { ErrorNotice, Loading, PageHeader } from "@/components/common";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { kinds, statuses } from "@/features/questions/types";
 import { scoped } from "@/lib/api";
 import { ContentActionDialog, type ContentAction } from "./action-dialog";
@@ -21,6 +21,11 @@ type GraphLocation = { classroomId: number; selection: Selection | null; branch:
 const pageSize = 6;
 const kindNames = { course: "课程", chapter: "章节", material: "教学资料", point: "知识点",
   narration: "讲解稿", audio: "讲解音频", task: "生成任务", question: "题目" };
+
+function ToolbarLabel({ icon: Icon, label, count }: {icon: LucideIcon; label: string; count?: number}) {
+  return <><Icon data-icon="inline-start" aria-hidden="true"/><span>{label}</span>
+    {count != null && <span className="tabular-nums">{count} 项</span>}</>;
+}
 
 function Relations<T extends string | number>({ title, rows, onSelect, empty }: {
   title: string; rows: { id: T; title: string; note?: string }[]; onSelect: (id: T) => void; empty?: string;
@@ -125,10 +130,10 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
     setBranch({kind: "material", id: job.material_id});
     choose("task", taskNodeId(job));
   }
-  const reviewLink = <a className={buttonVariants({ variant: "outline", size: "sm" })} href="/teacher/content-review"
+  const reviewLink = <ButtonLink variant="outline" size="sm" href="/teacher/content-review"
     onClick={e => {
       if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) { e.preventDefault(); persist(); onReview(); }
-    }}><ClipboardCheck/>待审批{typeof pending?.data?.total === "number" && <span>{pending.data.total} 项</span>}</a>;
+    }}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pending?.data?.total}/></ButtonLink>;
   if (!graph || !layout) return <><PageHeader title="知识图谱"/>{catalog?.error
     ? <><ErrorNotice message={catalog.error}/><div className="flex gap-2"><Button variant="outline" onClick={refresh}>重新加载</Button>{reviewLink}</div></> : <Loading/>}</>;
   const deck = branch?.kind === "material" ? graph.materials.find(m => m.id === branch.id) : null;
@@ -148,7 +153,7 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
   } else if (selection?.kind === "chapter" && chapter) {
     const chapterMaterials = graph.materials.filter(m => m.chapter_ids.includes(chapter.id));
     details = <><p className="inspector-meta">{graph.title}</p><div className="inspector-actions">
-      <Button onClick={() => edit("material", "create", undefined, chapter.id)}><Plus/>添加资料</Button>
+      <Button onClick={() => edit("material", "create", undefined, chapter.id)}><Upload/>上传资料</Button>
       <Button variant="outline" onClick={() => edit("point", "create", undefined, chapter.id)}><Plus/>添加知识点</Button>
       <Button variant="ghost" onClick={() => edit("chapter", "edit", chapter.id)}><Pencil/>编辑章节</Button>
     </div><Relations title={`教学资料 · ${chapterMaterials.length}`} rows={chapterMaterials} onSelect={id => choose("material", id)}/>
@@ -173,8 +178,8 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
   } else if (selection?.kind === "point") {
     const p = point?.data;
     details = p ? <><p className="inspector-meta">{chapterLookup(p.chapter_id)}</p>
-      <div className="inspector-actions"><a className={buttonVariants()} href={`/teacher/content-list?tab=questions&point=${p.id}&pointName=${encodeURIComponent(p.title)}`}>
-        查看关联题目（{p.questions}）<ChevronRight size={15}/></a>
+      <div className="inspector-actions"><ButtonLink href={`/teacher/content-list?tab=questions&point=${p.id}&pointName=${encodeURIComponent(p.title)}`}>
+        查看关联题目（{p.questions}）<ChevronRight data-icon="inline-end" aria-hidden="true"/></ButtonLink>
         <Button variant="outline" onClick={() => edit("point", "edit", p.id)}><Pencil/>编辑知识点</Button></div>
       {questions?.data ? <><Relations title={`关联题目 · ${questions.data.total}`} rows={questions.data.items.map(q => ({ ...q, note: kinds[q.kind] }))}
         onSelect={chooseQuestion} empty="暂无关联题目"/>
@@ -220,7 +225,8 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
           <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></div>
         <div className="cg-bar"><GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>
         {reviewLink}
-        <Button variant={queue ? "secondary" : "outline"} size="sm" aria-expanded={queue} onClick={() => setQueue(!queue)}><ListTodo/>任务队列{jobs?.length ? `（${jobs.length}）` : ""}</Button>
+        <Button variant="outline" size="sm" aria-expanded={queue} onClick={() => setQueue(!queue)}>
+          <ToolbarLabel icon={ListTodo} label="任务队列" count={jobs?.length}/></Button>
         </div>
       </header>
       <div className={"cg-body" + (selection || queue ? " cg-inspecting" : "")}>

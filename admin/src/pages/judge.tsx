@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Pause, Play, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { Activity, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -199,7 +199,7 @@ function SubmissionDialog({ classroomId, id, onClose }: { classroomId?: number; 
   const data = detail.data;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="judge-detail sm:max-w-4xl">
     <DialogHeader><DialogTitle>提交详情</DialogTitle><DialogDescription>仅本班教师与管理员可见。用例来自提交时快照，题目名称为当前名称；隐藏用例与诊断不可转发给学生。</DialogDescription></DialogHeader>
-    <ErrorNotice message={detail.error} />{detail.error ? <Button variant="outline" onClick={detail.reload}>重试</Button> : null}
+    <ErrorNotice message={detail.error} />{detail.error ? <Button variant="outline" onClick={detail.reload}><RotateCcw />重试</Button> : null}
     {detail.loading ? <Loading /> : data ? <div className="judge-detail-body">
       <div className="flex flex-wrap justify-between gap-2"><div><h3 className="font-semibold">{data.question_title}</h3><p className="text-sm">{data.student_name} · {data.student_id ?? "无学号"} · {timestamp(data.created_at)}</p></div><Status value={data.status} /></div>
       <p className="mt-2 break-all text-xs text-muted-foreground">提交编号：{data.id}</p>
