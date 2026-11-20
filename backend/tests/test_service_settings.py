@@ -62,3 +62,15 @@ def test_speech_protocol_validation(client, db, teacher):
         "model": "", "voice": "stella", "format": "mp3", "api_key": "secret-must-not-leak",
     })
     assert response.status_code == 422 and "secret-must-not-leak" not in response.text
+
+
+def test_dashscope_rejects_the_openai_compatible_base_url():
+    from pydantic import ValidationError
+    from app.service_settings import SpeechInput
+
+    body = {"expected_revision": 1, "protocol": "dashscope", "model": "qwen-audio-3.1-tts-flash",
+            "voice": "longanhuan_v3.1", "format": "mp3", "speed": 1,
+            "base_url": "https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"}
+    with pytest.raises(ValidationError, match="compatible-mode"):
+        SpeechInput(**body)
+    SpeechInput(**{**body, "base_url": "https://ws-test.cn-beijing.maas.aliyuncs.com"})

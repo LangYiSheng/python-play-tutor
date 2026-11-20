@@ -65,6 +65,8 @@ class SpeechInput(ConnectionInput):
         if self.protocol == "openai" and not self.model.strip():
             raise ValueError("请填写语音模型")
         if self.protocol == "dashscope":
+            if "compatible-mode" in self.base_url:
+                raise ValueError("阿里原生语音接口请填业务空间域名，不要带 /compatible-mode/v1")
             if not self.model.strip():
                 raise ValueError("请填写阿里语音模型")
             if self.format not in {"mp3", "wav", "pcm", "opus"}:
