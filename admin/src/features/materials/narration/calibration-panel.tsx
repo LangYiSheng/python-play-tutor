@@ -22,6 +22,18 @@ export function CalibrationPanel({
     : null;
   const shrunk = report.shrunk_windows ?? [];
   const renderErrors = report.render_errors ?? [];
+  // 同一标准名下的别名合成一行；标准名映射到自身的不算合并。
+  const tagGroups = Object.entries(report.tag_map ?? {}).reduce<Record<string, string[]>>(
+    (groups, [alias, canonical]) => {
+      if (alias !== canonical) (groups[canonical] ??= []).push(alias);
+      return groups;
+    },
+    {},
+  );
+  const tagRows = Object.entries(tagGroups).sort(([left], [right]) =>
+    left.localeCompare(right, "zh"),
+  );
+  const aliasCount = tagRows.reduce((sum, [, aliases]) => sum + aliases.length, 0);
   return (
     <section className="surface space-y-2 p-4 text-sm">
       <p className="font-medium">
@@ -99,37 +111,36 @@ export function CalibrationPanel({
           </div>
         </details>
       )}
-      {Object.keys(report.tag_map ?? {}).length > 0 && (
-        <details>
-          <summary className="cursor-pointer font-medium">
-            标签合并（{Object.keys(report.tag_map ?? {}).length} 组）
-          </summary>
+      {tagRows.length > 0 && (
+        <div className="space-y-1">
+          <p className="font-medium">
+            标签合并（{tagRows.length} 个标准名，{aliasCount} 个别名）
+          </p>
           {report.tag_stats && (
             <p className="hint">
               标签 {report.tag_stats.before} → {report.tag_stats.after}，合并 {report.tag_stats.merged} 组
             </p>
           )}
-          <div className="mt-2 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b">
-                  <th className="py-1 pr-2">别名</th>
-                  <th className="py-1">标准名</th>
+                  <th className="py-1 pr-2">标准名</th>
+                  <th className="py-1">合并的别名</th>
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(report.tag_map ?? {}).map(([alias, canonical]) => (
-                  <tr key={alias} className="border-b">
-                    <td className="py-1 pr-2">{alias}</td>
-                    <td className="py-1">{canonical}</td>
+                {tagRows.map(([canonical, aliases]) => (
+                  <tr key={canonical} className="border-b align-top">
+                    <td className="py-1 pr-2 font-medium">{canonical}</td>
+                    <td className="py-1">{aliases.join("、")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </details>
-      )}
-      {report.issues_truncated && (
+        </div>
+      )}      {report.issues_truncated && (
         <p className="hint" role="note">问题过多，只保留前 120 条。</p>
       )}
       {(report.issues ?? []).length === 0 ? (

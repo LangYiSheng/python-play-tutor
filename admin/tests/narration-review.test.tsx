@@ -186,7 +186,7 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
           reason: "补上漏掉的冒号",
         },
       ],
-      tag_map: { "监督学习算法": "监督学习" },
+      tag_map: { "监督学习算法": "监督学习", "监督学习模型": "监督学习" },
       tag_stats: { before: 2, after: 1, merged: 1 },
     },
   });
@@ -197,7 +197,8 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
   await waitFor(() => expect(screen.getByText(/校准修正已自动应用/)).toBeTruthy());
   expect(screen.getByText(/原文修正（1 处，已自动应用）/)).toBeTruthy();
   expect(screen.getByText("补上漏掉的冒号")).toBeTruthy();
-  expect(screen.getByText(/标签合并（1 组）/)).toBeTruthy();
+  expect(screen.getByText(/标签合并（1 个标准名，2 个别名）/)).toBeTruthy();
+  expect(screen.getByText("监督学习算法、监督学习模型")).toBeTruthy();
 });
 
 it("shows the digest read-only and folds the raw text", async () => {
