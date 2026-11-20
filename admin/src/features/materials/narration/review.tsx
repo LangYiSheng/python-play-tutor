@@ -29,14 +29,16 @@ export function NarrationReview({
   classroomId,
   materialId,
   title,
+  initialPage,
   onClose,
 }: {
   classroomId: number;
   materialId: number;
   title: string;
+  initialPage?: number;
   onClose: () => void;
 }) {
-  const review = useNarrationReview(classroomId, materialId);
+  const review = useNarrationReview(classroomId, materialId, initialPage);
   const {
     data,
     quota,

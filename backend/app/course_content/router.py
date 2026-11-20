@@ -12,7 +12,7 @@ from app.course_content.activities import delete_activity as _delete_activity
 from app.course_content.activities import update_activity as _update_activity
 from app.course_content.activities import update_activity_questions as _update_activity_questions
 from app.course_content.catalog import teacher_courses as _teacher_courses
-from app.course_content.catalog import point_page, selected_point_labels
+from app.course_content.catalog import point_detail, point_page, selected_point_labels
 from app.course_content.progress import progress as _progress
 from app.course_content.progress import student_record as _student_record
 from app.course_content.question_contracts import QuestionInput, QuestionUpdate
@@ -53,6 +53,11 @@ def list_points(db: Annotated[Session, Depends(get_db)], user: Annotated[User, D
 def point_labels(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int,
                  ids: Annotated[list[int], Query(max_length=65)]):
     return selected_point_labels(db, user, classroom_id, ids)
+
+
+@router.get("/teacher/knowledge-points/{point_id}")
+def get_point(point_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int):
+    return point_detail(db, user, classroom_id, point_id)
 
 
 @router.get("/teacher/classrooms/{classroom_id}/progress")
@@ -106,9 +111,9 @@ def create_question(
 @router.get("/teacher/questions")
 def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None,
                    page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
-                   kind: str | None = None, status: str | None = None, source: str | None = None):
-    if page is not None:
-        return question_page(db, user, classroom_id, page, size, search, kind, status, source)
+                   kind: str | None = None, status: str | None = None, source: str | None = None, knowledge_point_id: int | None = None):
+    if page is not None or knowledge_point_id is not None:
+        return question_page(db, user, classroom_id, page or 1, size, search, kind, status, source, knowledge_point_id)
     return _list_questions(db=db, user=user, classroom_id=classroom_id)
 
 

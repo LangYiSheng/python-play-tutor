@@ -8,11 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .auth import require_teacher
+from .course_content.knowledge_graph import router as graph_router
 from .db import get_db
 from .teacher_scope import teacher_course_scope, teacher_instance_id, require_scope, new_stable_id, commit_content
 from .models import Activity, Chapter, KnowledgePoint, QuestionKnowledgePoint, User
 
 router = APIRouter(prefix="/teacher", tags=["curriculum"])
+router.include_router(graph_router)
 
 
 def authoring_chapter(db, user, chapter_id, instance_id=None):

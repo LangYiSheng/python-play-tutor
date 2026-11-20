@@ -25,6 +25,7 @@ from app import (
 )
 from app.classrooms import router as classrooms
 from app.course_content import router as course_content
+from app.course_content import review as content_review
 from app.course_packages import router as course_exchange
 from app.course_packages.cleanup import cleanup_worker
 from app.materials import router as storage
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
         courses,
         classrooms,
         course_content,
+        content_review,
         world,
         quests,
         practice,

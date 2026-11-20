@@ -19,7 +19,7 @@ from app.materials.access import teacher_material, teacher_material_chapters, te
 from app.materials.contracts import MaterialUpdate
 from app.materials.storage import get_storage, storage_root
 from app.materials.uploads import KINDS, MAX_UPLOAD, UploadValidationError, validate_upload
-from app.models import Material, User
+from app.models import Chapter, Material, MaterialChapter, User
 from app.teacher_scope import commit_content, new_stable_id, require_scope, teacher_course_scope, teacher_instance_id
 
 
@@ -97,12 +97,42 @@ async def upload_material(
     return {"id": material.id, "status": material.status, "title": material.title}
 
 
-def teacher_materials(user: User, db: Session, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def visible_materials(instance_id, user):
     query = select(Material).where(Material.course_instance_id == instance_id)
     if user.role != "admin":
         query = query.where(Material.owner_id.is_(None) | (Material.owner_id == user.id))
+    return query
+
+
+def teacher_materials(user: User, db: Session, classroom_id: int | None = None):
+    query = visible_materials(teacher_instance_id(db, user, classroom_id), user)
     return [teacher_material_payload(db, material, user) for material in db.scalars(query.order_by(Material.id))]
+
+
+def material_page(db, user, classroom_id, page, size, search, kind, status):
+    from app.course_content.catalog import page_window
+
+    instance_id = teacher_instance_id(db, user, classroom_id)
+    query = visible_materials(instance_id, user).with_only_columns(
+        Material.id, Material.title, Material.kind, Material.status, Material.error, Material.owner_id)
+    links = select(MaterialChapter.material_id, Chapter.id).join(Chapter, Chapter.id == MaterialChapter.chapter_id).where(
+        Chapter.course_instance_id == instance_id)
+    if user.role != "admin":
+        links = links.where(Chapter.owner_id.is_(None) | (Chapter.owner_id == user.id))
+    if search.strip():
+        query = query.where(Material.title.icontains(search.strip(), autoescape=True))
+    if kind == "unassigned":
+        query = query.where(~links.where(MaterialChapter.material_id == Material.id).exists())
+    elif kind:
+        query = query.where(Material.kind == kind)
+    if status:
+        query = query.where(Material.status.in_(("queued", "processing")) if status == "converting" else Material.status == status)
+    meta, window = page_window(db, query.order_by(Material.id), page, size)
+    rows = {row.id: dict(row, chapter_ids=[]) for row in db.execute(window).mappings()}
+    if rows:
+        for material_id, chapter_id in db.execute(links.where(MaterialChapter.material_id.in_(rows)).order_by(Chapter.id)):
+            rows[material_id]["chapter_ids"].append(chapter_id)
+    return {**meta, "items": list(rows.values())}
 
 
 def teacher_material_preview(material_id: int, user: User, db: Session, classroom_id: int | None = None):

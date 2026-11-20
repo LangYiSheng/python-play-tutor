@@ -118,6 +118,12 @@ it("shows coverage and the generated draft next to the page source", async () =>
   await waitFor(() => expect(screen.getByLabelText("讲解稿")).toHaveValue("这一页先看监督学习的定义。"));
 });
 
+it("opens the source page requested by the approval queue", async () => {
+  stub([]);
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" initialPage={2} onClose={() => {}} />);
+  expect(await screen.findByRole("button", { name: /第 2 页/ })).toHaveAttribute("aria-current", "true");
+});
+
 it("accepting is blocked until an edited draft is saved", async () => {
   const calls: { url: string; method: string; body?: unknown }[] = [];
   stub(calls);

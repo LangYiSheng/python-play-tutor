@@ -130,7 +130,7 @@ def validate_practice_question_edit(db, question, body):
             raise HTTPException(409, f"修改会导致已发布练习「{activity.title}」无法抽题：{exc}") from exc
 
 
-def _save_question(db, user, question, body):
+def stage_question(db, user, question, body):
     validate_question_links(db, user, body, question.course_instance_id)
     if (
         question.kind is not None
@@ -171,13 +171,13 @@ def _save_question(db, user, question, body):
     secret.answer, secret.hidden_cases = body.answer, body.hidden_cases
     set_question_chapters(db, question.id, body.chapter_ids)
     set_question_knowledge_points(db, question.id, body.knowledge_point_ids)
-    commit_content(db, question.course_instance_id)
-    return teacher_question_payload(db, question, user)
 
 
 def save_question(db, user, question, body):
     try:
-        return _save_question(db, user, question, body)
+        stage_question(db, user, question, body)
+        commit_content(db, question.course_instance_id)
+        return teacher_question_payload(db, question, user)
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "题目标识冲突或内容同时更新，请刷新后重试") from exc
@@ -204,11 +204,15 @@ def list_questions(db: Session, user: User, classroom_id: int | None = None):
     return [teacher_question_payload(db, item, user) for item in db.scalars(query.order_by(Question.id))]
 
 
-def question_page(db, user, classroom_id, page, size, search, kind, status, source):
-    from app.course_content.catalog import page_window
+def question_page(db, user, classroom_id, page, size, search, kind, status, source, knowledge_point_id=None):
+    from app.course_content.catalog import page_window, point_detail
 
     query = visible_questions(db, user, classroom_id).with_only_columns(
         Question.id, Question.title, Question.kind, Question.source_type, Question.status)
+    if knowledge_point_id is not None:
+        point_detail(db, user, classroom_id, knowledge_point_id)
+        linked = select(QuestionKnowledgePoint.question_id).where(QuestionKnowledgePoint.knowledge_point_id == knowledge_point_id)
+        query = query.where(Question.id.in_(linked))
     if search.strip():
         term = search.strip()
         query = query.where(Question.title.icontains(term, autoescape=True) | Question.prompt.icontains(term, autoescape=True))
@@ -262,22 +266,24 @@ def chapter_candidates(db, user, classroom_id, chapter_id):
     return list(by_id.values())
 
 
-def update_question(question_id: str, body: QuestionUpdate, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def updated_question_input(db, question, user, body):
     from pydantic import ValidationError
-
-    from app.curriculum import editable
-
-    question = editable(db.scalar(select(Question).where(Question.id == question_id).with_for_update()), user, instance_id)
     fields = teacher_question_payload(db, question, user)
     for key in ("activities", "owner_id"):
         fields.pop(key, None)
     fields.update(body.model_dump(exclude_unset=True))
     try:
-        merged = QuestionInput.model_validate(fields)
+        return QuestionInput.model_validate(fields)
     except ValidationError as exc:
         raise HTTPException(422, "题目配置无效：" + "; ".join(error["msg"] for error in exc.errors())) from exc
-    return save_question(db, user, question, merged)
+
+
+def update_question(question_id: str, body: QuestionUpdate, db: Session, user: User, classroom_id: int | None = None):
+    from app.curriculum import editable
+
+    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    question = editable(db.scalar(select(Question).where(Question.id == question_id).with_for_update()), user, instance_id)
+    return save_question(db, user, question, updated_question_input(db, question, user, body))
 
 
 def delete_question(question_id: str, db: Session, user: User, classroom_id: int | None = None):

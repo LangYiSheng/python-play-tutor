@@ -10,7 +10,7 @@ import {
 import { errorMessage } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
-export function useNarrationReview(classroomId: number, materialId: number) {
+export function useNarrationReview(classroomId: number, materialId: number, initialPage?: number) {
   const [data, setData] = useState<NarrationList | null>(null);
   const [quota, setQuota] = useState<NarrationQuota | null>(null);
   const [report, setReport] = useState<CalibrationReport | null>(null);
@@ -35,13 +35,13 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       setData(list);
       setQuota(limits);
       setAudioState(sound);
-      setPageNo((current) => current ?? list.pages[0]?.page_no ?? null);
+      setPageNo(current => list.pages.find(page => page.page_no === (current ?? initialPage))?.page_no ?? list.pages[0]?.page_no ?? null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy("");
     }
-  }, [classroomId, materialId]);
+  }, [classroomId, materialId, initialPage]);
   useEffect(() => {
     void load();
   }, [load]);

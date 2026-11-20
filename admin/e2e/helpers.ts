@@ -93,6 +93,11 @@ export async function setup(
   };
 }
 export async function go(page: Page, name: string) {
+  if (["章节", "资料", "知识点", "题目"].includes(name)) {
+    await page.getByRole("link", { name: "内容列表", exact: true }).click();
+    await page.getByRole("tab", { name, exact: true }).click();
+    return;
+  }
   await page.getByRole("link", { name, exact: true }).click();
 }
 export function pdf() {

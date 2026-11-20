@@ -53,8 +53,10 @@ def source_hash(material: Material, page_no: int) -> str:
 
 def narration_hash(db: Session, material: Material, page_no: int) -> str:
     """讲稿依赖的页面身份：整理稿优先，没有整理稿时用解析原文。"""
-    raw = page_text(material, page_no)
-    row = content_row(db, material.id, page_no)
+    return narration_page_hash(material, page_no, page_text(material, page_no), content_row(db, material.id, page_no))
+
+
+def narration_page_hash(material: Material, page_no: int, raw: str | None, row: PageContent | None) -> str:
     content = material.content or {}
     payload = {"page": page_no, "title": row.title if row else "", "tags": row.tags if row else [],
                "text": (row.text if row is not None and row.text.strip() else (raw or "")),

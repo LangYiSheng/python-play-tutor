@@ -4,7 +4,8 @@ import {
   GraduationCap,
   Users,
   BookOpen,
-  LibraryBig,
+  Network,
+  ClipboardCheck,
   ListChecks,
   Layers3,
   ChevronDown,
@@ -45,9 +46,9 @@ import type { User, Classroom } from "@/lib/types";
 import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
 import { ClassOverview } from "@/pages/class-overview";
-import { Curriculum } from "@/pages/curriculum";
-import { Materials } from "@/features/materials/materials-page";
-import { Questions } from "@/features/questions/questions-page";
+const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
+const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
+const ContentReview = lazy(() => import("@/pages/content-review").then(module => ({ default: module.ContentReviewPage })));
 import { Activities } from "@/features/activities/activities-page";
 import { CourseSettings } from "@/pages/course-settings";
 import { Packages } from "@/pages/packages";
@@ -71,9 +72,9 @@ const classNav = [
   { key: "classroom", title: "班级概况", icon: GraduationCap },
   { key: "students", title: "学生账号", icon: Users },
   { key: "teaching", title: "教学管理", icon: GraduationCap },
-  { key: "curriculum", title: "课程结构", icon: Layers3 },
-  { key: "materials", title: "资料库", icon: LibraryBig },
-  { key: "questions", title: "题库", icon: ListChecks },
+  { key: "content-graph", title: "知识图谱", icon: Network },
+  { key: "content-list", title: "内容列表", icon: ListChecks },
+  { key: "content-review", title: "待审批", icon: ClipboardCheck },
   { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
   { key: "activities", title: "学习活动", icon: BookOpen },
   { key: "authoring", title: "教学流程", icon: Layers3 },
@@ -85,12 +86,21 @@ const classNav = [
 const nav = [...globalNav, ...classNav];
 type Page = (typeof nav)[number]["key"];
 const classroomScreens = {
-  packages: Packages, students: Students, teaching: Teaching, curriculum: Curriculum, materials: Materials,
-  questions: Questions, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
+  packages: Packages, students: Students, teaching: Teaching, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
+  "content-graph": KnowledgeGraph, "content-list": ContentList, "content-review": ContentReview,
   "quick-orchestration": QuickOrchestration,
 };
+const legacyContentTabs = new Map([["curriculum", "chapters"], ["materials", "materials"], ["questions", "questions"]]);
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
+  const legacyTab = legacyContentTabs.get(part);
+  if (legacyTab) {
+    const url = new URL(location.href);
+    url.pathname = "/teacher/content-list";
+    url.searchParams.set("tab", legacyTab);
+    history.replaceState(history.state, "", url);
+    return "content-list";
+  }
   return nav.some((n) => n.key === part) ? (part as Page) : "classes";
 }
 export default function App() {
@@ -181,12 +191,19 @@ function Workbench() {
     return () => window.removeEventListener("popstate", pop);
   }, [canLeave, page]);
   function navigate(next: Page) {
+    if (next === page) return;
     if (!canLeave()) return;
     history.pushState({}, "", `/teacher/${next}`);
     setPage(next);
   }
   function changeClass(id: number) {
     if (id === classroomId || !canLeave()) return;
+    if (page === "content-list") {
+      const url = new URL(location.href);
+      url.searchParams.delete("point");
+      url.searchParams.delete("pointName");
+      history.replaceState(history.state, "", url);
+    }
     setClassroomId(id);
     if (user) sessionStorage.setItem(`classroom:${user.id}`, String(id));
     setError("");
@@ -308,7 +325,7 @@ function Workbench() {
     </div>;
     if (page === "classroom") return <ClassOverview classroom={classroom}
       onRenamed={name => setClasses(rows => rows.map(row => row.id === classroom.id ? { ...row, name } : row))}
-      onContent={() => navigate("curriculum")} onImport={() => navigate("packages")} />;
+      onContent={() => navigate("content-graph")} onImport={() => navigate("packages")} />;
     if (page === "judge") return <Judge classroomId={classroom.id} canManage={false} />;
     if (page === "activities") return <Activities classroomId={classroom.id} teacherId={classroom.teacher_id} />;
     const Screen = classroomScreens[page];
@@ -340,7 +357,7 @@ function Workbench() {
             {classNav.map(item => (
               <div key={item.key}>
                 {item.key === "classroom" && <p className="nav-label">班级教学</p>}
-                {item.key === "curriculum" && <p className="nav-label">课程内容</p>}
+                {item.key === "content-graph" && <p className="nav-label">课程内容</p>}
                 {item.key === "quick-orchestration" && <p className="nav-label">课程编排</p>}
                 {item.key === "settings" && <p className="nav-label">任务与设置</p>}
                 {link(item)}

@@ -2,7 +2,6 @@ import {
   Empty,
   ErrorNotice,
   Loading,
-  PageHeader,
   Pager,
 } from "@/components/common";
 import { SelectField } from "@/components/select-field";
@@ -27,6 +26,7 @@ import { NarrationPlayer } from "@/features/materials/narration/player";
 import { NarrationReview } from "@/features/materials/narration/review";
 import { api, errorMessage, scoped } from "@/lib/api";
 import type { Course, Material } from "@/lib/types";
+import { useCatalogPage } from "@/lib/use-catalog-page";
 import { useResource } from "@/lib/use-resource";
 import {
   Eye,
@@ -43,41 +43,24 @@ import { MaterialViewer } from "./material-viewer";
 import { MaterialPreview } from "./types";
 import { useMaterialEditor } from "./use-editor";
 export function Materials({ classroomId }: { classroomId: number }) {
-  const list = useResource<Material[]>(
-    scoped("/teacher/materials", classroomId),
-  );
+  const [query, setQuery] = useState(""), [kind, setKind] = useState("all"), [status, setStatus] = useState("all");
+  const list = useCatalogPage<Material>("/teacher/materials", classroomId, query, { kind, status });
   const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
   const editor = useMaterialEditor(classroomId, list.reload);
   const { open, error, setError, busy, setBusy, edit } = editor;
 
-  const [query, setQuery] = useState(""),
-    [kind, setKind] = useState("all"),
-    [status, setStatus] = useState("all"),
-    [page, setPage] = useState(1),
-    [size, setSize] = useState(10),
-    [previewData, setPreviewData] = useState<MaterialPreview | null>(null),
+  const [previewData, setPreviewData] = useState<MaterialPreview | null>(null),
     [narration, setNarration] = useState<Material | null>(null),
     [listening, setListening] = useState<Material | null>(null);
   useEffect(() => {
     if (
-      list.data?.some((m) => m.status === "queued" || m.status === "processing")
+      list.data?.items.some((m) => m.status === "queued" || m.status === "processing")
     ) {
       const timer = window.setTimeout(list.reload, 2000);
       return () => window.clearTimeout(timer);
     }
   }, [list.data, list.reload]);
-  const rows = (list.data ?? []).filter(
-    (m) =>
-      m.title.toLowerCase().includes(query.trim().toLowerCase()) &&
-      (status === "all" ||
-        status === m.status ||
-        (status === "converting" &&
-          ["queued", "processing"].includes(m.status))) &&
-      (kind === "all" ||
-        (kind === "unassigned" ? !m.chapter_ids.length : m.kind === kind)),
-  );
-  const safePage = Math.min(page, Math.max(1, Math.ceil(rows.length / size)));
-  const visible = rows.slice((safePage - 1) * size, safePage * size);
+  const visible = list.rows;
   const deletion = useTableDelete<Material>(
     (m) => scoped(`/teacher/materials/${m.id}`, classroomId),
     list.reload,
@@ -99,12 +82,6 @@ export function Materials({ classroomId }: { classroomId: number }) {
   }
   return (
     <>
-      <PageHeader title="资料库" description="资料独立保存，可关联多个章节。">
-        <Button onClick={() => edit(null)}>
-          <Plus />
-          上传资料
-        </Button>
-      </PageHeader>
       <ErrorNotice
         message={list.error || course.error || (!open ? error : "")}
       />
@@ -118,7 +95,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
-                setPage(1);
+                list.firstPage();
                 deletion.clear();
               }}
             />
@@ -128,7 +105,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
             value={kind}
             onValueChange={(value) => {
               setKind(value);
-              setPage(1);
+              list.firstPage();
               deletion.clear();
             }}
           >
@@ -144,7 +121,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
             value={status}
             onValueChange={(value) => {
               setStatus(value);
-              setPage(1);
+              list.firstPage();
               deletion.clear();
             }}
           >
@@ -153,11 +130,12 @@ export function Materials({ classroomId }: { classroomId: number }) {
             <option value="converting">转换中</option>
             <option value="failed">转换失败</option>
           </SelectField>
+          <div className="ml-auto"><Button onClick={() => edit(null)}><Plus />上传资料</Button></div>
         </div>
         <DeleteSelection actions={deletion} />
         {list.loading ? (
           <Loading />
-        ) : !rows.length ? (
+        ) : !visible.length ? (
           <Empty title="没有匹配的资料" />
         ) : (
           <Table>
@@ -270,16 +248,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
             </TableBody>
           </Table>
         )}
-        <Pager
-          page={safePage}
-          size={size}
-          total={rows.length}
-          onPage={setPage}
-          onSize={(v) => {
-            setSize(v);
-            setPage(1);
-          }}
-        />
+        <Pager {...list.pager} />
       </div>
       <MaterialDialog editor={editor} course={course} />
       {previewData && (

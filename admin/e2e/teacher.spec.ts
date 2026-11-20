@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { cp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { chooseOption, credentials, json } from "./helpers";
+import { chooseOption, credentials, go, json } from "./helpers";
 const stamp = Date.now().toString().slice(-9);
 async function login(page: Page) {
   await page.goto("/teacher/");
@@ -9,9 +9,6 @@ async function login(page: Page) {
   await page.getByLabel("密码", { exact: true }).fill(credentials.password);
   await page.getByRole("button", { name: "进入工作台" }).click();
   await expect(page.getByRole("heading", { name: "班级管理" })).toBeVisible();
-}
-async function navigate(page: Page, name: string) {
-  await page.getByRole("link", { name, exact: true }).click();
 }
 async function chooseFromGroup(page: Page, label: string, group: string, choice: string) {
   await page.getByRole("button", { name: label, exact: true }).click();
@@ -32,7 +29,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     .getByRole("button", { name: "创建班级", exact: true })
     .click();
   await expect(page.getByText("此班级的课程独立维护，修改不会同步到其他班级。", { exact: true })).toBeVisible();
-  await navigate(page, "学生账号");
+  await go(page, "学生账号");
   await page.getByRole("button", { name: "添加学生", exact: true }).click();
   await page.getByLabel("学号", { exact: true }).fill(`00${stamp}`);
   await page.getByLabel("姓名", { exact: true }).fill("验收学生甲");
@@ -52,7 +49,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     page.getByRole("cell", { name: `01${stamp}`, exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: info.outputPath("students.png"), animations: "disabled" });
-  await navigate(page, "课程结构");
+  await go(page, "章节");
   await page.getByRole("button", { name: "新增章节", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill("验收第一章");
   await page
@@ -62,7 +59,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await expect(
     page.getByRole("cell", { name: "验收第一章", exact: true }),
   ).toBeVisible();
-  await navigate(page, "资料库");
+  await go(page, "资料");
   await page.getByRole("button", { name: "上传资料", exact: true }).click();
   await page.getByLabel("资料名称").fill("验收讲义");
   await page.getByLabel("文件", { exact: true }).setInputFiles({
@@ -84,7 +81,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     }),
   ).toBeVisible();
   await page.getByRole("button", { name: "关闭", exact: true }).click();
-  await navigate(page, "题库");
+  await go(page, "题目");
   await page.getByRole("button", { name: "新增题目", exact: true }).click();
   await page.getByLabel("题目名称").fill("验收单选题");
   await page.getByLabel("题干").fill("哪一个是 Python 输出函数？");
@@ -99,7 +96,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("验收单选题", { exact: true })).toBeVisible();
-  await navigate(page, "教学流程");
+  await go(page, "教学流程");
   await page
     .getByRole("tab", { name: "助教教学角色", exact: true })
     .click();
@@ -223,15 +220,15 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     page.getByRole("button", { name: "保存课程", exact: true }),
   ).toBeDisabled();
   // 课程默认角色已从课程编辑器的角色页拆到“本班答疑设置”：发布后在设置里再指定。
-  await navigate(page, "本班答疑设置");
+  await go(page, "本班答疑设置");
   await chooseOption(page, page.getByLabel("课程默认答疑角色", { exact: true }), "新的教学角色");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("设置已保存");
-  await navigate(page, "教学管理");
+  await go(page, "教学管理");
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("button", { name: "保存安排", exact: true }).click();
   await expect(page.getByText("章节安排已保存")).toBeVisible();
-  await navigate(page, "课程包");
+  await go(page, "课程包");
   const exportResponse = page.waitForResponse((response) => response.url().endsWith("/course/export"));
   await page.getByRole("button", { name: "导出课程包", exact: true }).click();
   const exported = await json<{ directory: string; path: string }>(await exportResponse);
@@ -240,7 +237,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   if (!exchangeRoot) throw new Error("REBORN_COURSE_EXCHANGE_ROOT must point to the isolated browser test exchange directory.");
   expect(exported.directory).toMatch(/^export-\d+-.+-\d{8}-\d{6}-[a-f\d]{8}$/);
   const sharedCopy = resolve(exchangeRoot, `browser-roundtrip-${exported.directory}`);
-  await navigate(page, "班级管理");
+  await go(page, "班级管理");
   await page
     .getByRole("button", { name: "创建班级", exact: true })
     .first()
@@ -268,9 +265,9 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await expect(
     page.getByText("课程包已导入，班级课程已更新。", { exact: true }),
   ).toBeVisible();
-  await navigate(page, "班级管理");
+  await go(page, "班级管理");
   await page.getByRole("row").filter({ hasText: `导入验收 ${stamp}` }).getByRole("button", { name: "进入班级" }).click();
-  await navigate(page, "课程结构");
+  await go(page, "章节");
   await expect(
     page.getByRole("cell", { name: "验收第一章", exact: true }),
   ).toBeVisible();
@@ -289,7 +286,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     page.getByRole("cell", { name: "仅导入班修改", exact: true }),
   ).toHaveCount(0);
   await chooseOption(page, page.getByLabel("当前班级"), `导入验收 ${stamp}`);
-  await navigate(page, "学生账号");
+  await go(page, "学生账号");
   await expect(
     page.getByText("没有匹配的学生", { exact: false }),
   ).toBeVisible();

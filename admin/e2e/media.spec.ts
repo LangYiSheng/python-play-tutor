@@ -5,7 +5,7 @@ test("教师真实视频私有预览与播放", async ({ page, request }, info) 
   await setup(page, request, "视频回归");
   // 14 self-authored 320×180 canvas frames with alternating colors and a counter, encoded as VP8.
   const bytes = await readFile(new URL("./fixtures/teacher-preview.webm", import.meta.url));
-  await go(page, "资料库");
+  await go(page, "资料");
   await page.getByRole("button", { name: "上传资料", exact: true }).click();
   await page.getByLabel("资料名称").fill("自制验收视频");
   await page
@@ -51,7 +51,7 @@ test("外部转换器配置后 PPTX 转换为私有 PDF", async ({ page, request
   );
   test.setTimeout(180000);
   await setup(page, request, "PPT回归");
-  await go(page, "资料库");
+  await go(page, "资料");
   await page.getByRole("button", { name: "上传资料", exact: true }).click();
   await page.getByLabel("资料名称").fill("自制演示文稿");
   await page

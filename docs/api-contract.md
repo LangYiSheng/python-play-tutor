@@ -58,6 +58,10 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 
 ## Teachers and authoring
 
+课程内容工作区的只读图谱入口为 `GET /teacher/course-graph?classroom_id=…`，返回课程名称、章节及资料摘要和章节关系。追加 `/materials/{id}` 查询资料的页码依据、讲解稿与音频数量，`/points/{id}` 返回知识点的可核对来源与关联题数，`/tasks` 读取本班运行中的课件任务。列表沿用教师目录接口；资料支持分页、搜索、类型与状态筛选，题目分页支持 `knowledge_point_id` 筛选。
+
+`GET /teacher/classrooms/{classroom_id}/content-review` 按 `page`、`size` 和可选的 `kind=question|narration` 返回真实草稿及审阅版本。`GET …/content-review/narrations/{id}` 返回逐页讲解草稿及来源详情。`POST …/content-review/decisions` 接收明确的对象清单（类型、标识、版本）、`accept` 或 `reject` 决定，以及单页讲解稿接受时的可选修订文本。服务端检查当前班级、所有权、草稿状态与版本，并在同一事务中完成整批操作。
+
 - GET /teacher/courses?classroom_id -> {chapters,knowledge_points,activities,npcs}, restricted to the selected authorized classroom CourseInstance. Passing view=chapters returns chapter metadata alone.
 - GET /teacher/questions with page returns {items,total,page}. Items contain id, title, kind, status, source_type and chapter_ids. Search matches title or prompt. The kind, status and source filters apply before pagination. GET /teacher/questions/{id} returns one authorized teacher detail. GET /teacher/chapters/{chapter_id}/question-candidates returns chapter-scoped selection metadata and public sample availability.
 - GET /teacher/knowledge-points accepts page, size, search and chapter_id and returns {items,total,page}. Both paginated lists default to 10 rows and accept up to 100. GET /teacher/knowledge-point-labels returns id, title and chapter_id for up to 65 selected IDs passed as repeated ids query parameters.

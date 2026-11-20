@@ -3,9 +3,9 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../src/App";
 import { setToken } from "../src/lib/api";
-vi.mock("../src/features/materials/materials-page", async () => {
+vi.mock("../src/pages/content-list", async () => {
   const { useDraft } = await import("../src/lib/drafts");
-  return { Materials: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
+  return { ContentListPage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
 });
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); setToken(null); history.replaceState({}, "", "/"); });
@@ -21,6 +21,7 @@ it("cancelling draft discard prevents class creation and keeps the current class
   const user = userEvent.setup();
   render(<App />);
   await screen.findByLabelText("未保存资料");
+  expect(location.pathname + location.search).toBe("/teacher/content-list?tab=materials");
   expect(screen.queryByRole("button", { name: "创建班级" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "班级管理" }));
   expect(window.confirm).toHaveBeenCalled();

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth import current_user, require_teacher
@@ -15,6 +15,7 @@ from app.materials.delivery import teacher_material_file as _teacher_material_fi
 from app.materials.service import delete_material as _delete_material
 from app.materials.service import teacher_material_preview as _teacher_material_preview
 from app.materials.service import teacher_materials as _teacher_materials
+from app.materials.service import material_page
 from app.materials.service import update_material as _update_material
 from app.materials.service import upload_material as _upload_material
 from app.models import User
@@ -38,7 +39,11 @@ async def upload_material(
 
 
 @router.get("/teacher/materials")
-def teacher_materials(user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None):
+def teacher_materials(user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None,
+                      page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
+                      kind: str | None = None, status: str | None = None):
+    if page is not None:
+        return material_page(db, user, classroom_id, page, size, search, kind, status)
     return _teacher_materials(user=user, db=db, classroom_id=classroom_id)
 
 

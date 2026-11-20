@@ -17,6 +17,7 @@ test("保留所选班级，取消资料编辑后可继续浏览分页目录", as
     let result: unknown = [];
     if (path.endsWith("/auth/me")) result = {id: 1, name: "教师", role: "teacher"};
     if (path.endsWith("/classrooms")) result = classes;
+    if (path.endsWith("/materials")) result = {page: pageNo, total: 0, items: []};
     if (path.endsWith("/courses")) result = {chapters: [{id: 1, title: "第一章", order_index: 1}]};
     if (path.endsWith("/questions")) result = {page: pageNo, total: 1000, items: [{
       id: "q" + pageNo, title: "题目页" + pageNo, chapter_ids: [1], status: "ready", source_type: "imported", kind: "fill",
@@ -38,12 +39,12 @@ test("保留所选班级，取消资料编辑后可继续浏览分页目录", as
   await page.getByRole("button", {name: "取消", exact: true}).click();
   await page.getByRole("link", {name: "班级管理"}).click();
   await expect(nav).toBeVisible();
-  await nav.getByRole("link", {name: "题库"}).click();
+  await nav.getByRole("link", {name: "内容列表"}).click();
+  await page.getByRole("tab", {name: "题目", exact: true}).click();
   await expect(page.getByLabel("当前班级")).toContainText("第二班");
   await expect(page.getByText("题目页1")).toBeVisible();
   await page.getByRole("button", {name: "下一页"}).click();
   await expect(page.getByText("题目页2")).toBeVisible();
-  await nav.getByRole("link", {name: "课程结构"}).click();
   await page.getByRole("tab", {name: "知识点", exact: true}).click();
   await expect(page.getByText("知识点页1")).toBeVisible();
   await page.getByRole("button", {name: "下一页"}).click();

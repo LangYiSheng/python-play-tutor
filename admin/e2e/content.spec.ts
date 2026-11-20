@@ -10,7 +10,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     "内容回归",
   );
   page.on("dialog", (d) => d.accept());
-  await go(page, "课程结构");
+  await go(page, "章节");
   await page.getByRole("tab", { name: "知识点", exact: true }).click();
   await page.getByRole("button", { name: "新增知识点", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill("变量概念");
@@ -30,7 +30,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   await expect(
     page.getByRole("cell", { name: "变量与名称", exact: true }),
   ).toBeVisible();
-  await go(page, "题库");
+  await go(page, "题目");
   await page.getByRole("button", { name: "新增题目", exact: true }).click();
   await page.getByLabel("题目名称").fill("同义答案");
   await chooseOption(page, page.getByRole("dialog").getByLabel("题型"), "填空题");
@@ -53,11 +53,11 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   await page.getByRole("tab",{name:"内容关联"}).click();
   await page
     .getByRole("dialog")
-    .getByLabel("关联回归章节", { exact: true })
+    .getByRole("checkbox", { name: "关联回归章节", exact: true })
     .check();
   await page
     .getByRole("dialog")
-    .getByLabel("变量与名称", { exact: true })
+    .getByRole("checkbox", { name: "变量与名称", exact: true })
     .check();
   await page.getByRole("tab",{name:"题目信息"}).click();
   await chooseOption(page, page.getByRole("dialog").getByLabel("状态", { exact: true }), "可用");
@@ -100,12 +100,12 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     await page.getByLabel(`选题复用活动${i}`).click();
     await page
       .getByRole("dialog")
-      .getByLabel("同义答案", { exact: true })
+      .getByRole("checkbox", { name: "同义答案", exact: true })
       .check();
     await page.getByRole("button",{name:/未关联本章知识点/}).click();
     await page
       .getByRole("dialog")
-      .getByLabel("第二道题", { exact: true })
+      .getByRole("checkbox", { name: "第二道题", exact: true })
       .check();
     await page.getByRole("tab",{name:"题目顺序"}).click();
     await page.getByRole("button", {name: "按题目名称排序"}).click();
@@ -134,7 +134,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     headers,
     data: { id: `unused-${tag}`, title: "待删除的独立题目", kind: "boolean", prompt: "独立题目", answer: true, source_type: "imported", status: "draft" },
   }));
-  await go(page, "题库");
+  await go(page, "题目");
   await page.getByRole("checkbox", { name: "选择同义答案", exact: true }).click();
   await page.getByRole("checkbox", { name: "选择待删除的独立题目", exact: true }).click();
   await page.getByRole("button", { name: "批量删除", exact: true }).click();
@@ -150,7 +150,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   expect(remaining.some(item => item.id === unused.id || item.id === question.id)).toBe(false);
   const afterDelete = await json<{ activities: { question_ids: string[] }[] }>(await request.get(scoped("/teacher/courses"), { headers }));
   for (const activity of afterDelete.activities) expect(activity.question_ids).not.toContain(question.id);
-  await go(page, "资料库");
+  await go(page, "资料");
   async function upload(name: string, file: Buffer, fileName: string) {
     await page.getByRole("button", { name: "上传资料", exact: true }).click();
     await page.getByLabel("资料名称").fill(name);
@@ -161,7 +161,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     });
     await page
       .getByRole("dialog")
-      .getByLabel("回归章节", { exact: true })
+      .getByRole("checkbox", { name: "回归章节", exact: true })
       .check();
     await page.getByRole("button", { name: "保存资料", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

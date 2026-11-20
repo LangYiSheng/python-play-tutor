@@ -1,6 +1,7 @@
 """Read teacher chapter and knowledge-point catalogues."""
 
 from app.course_content.resources import resource_payload
+from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,13 @@ def visible_points(instance_id, user):
 
 def point_payload(point):
     return {"id": point.id, "chapter_id": point.chapter_id, "title": point.title, "content": point.content, "owner_id": point.owner_id}
+
+
+def point_detail(db, user, classroom_id, point_id):
+    point = db.scalar(visible_points(teacher_instance_id(db, user, classroom_id), user).where(KnowledgePoint.id == point_id))
+    if point is None:
+        raise HTTPException(404, "知识点不存在")
+    return point_payload(point)
 
 
 def selected_point_labels(db, user, classroom_id, ids):

@@ -2,7 +2,6 @@ import {
   Empty,
   ErrorNotice,
   Loading,
-  PageHeader,
   Pager,
 } from "@/components/common";
 import { SelectField } from "@/components/select-field";
@@ -24,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, errorMessage, scoped } from "@/lib/api";
-import type { Course, Material, Question } from "@/lib/types";
+import type { Course, Material, Point, Question } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -35,14 +34,18 @@ import { useCatalogPage } from "@/lib/use-catalog-page";
 
 type QuestionRow = Pick<Question, "id" | "title" | "kind" | "status" | "source_type" | "chapter_ids">;
 
-export function Questions({ classroomId }: { classroomId: number }) {
+export function Questions({ classroomId, pointId, clearPoint }: {
+  classroomId: number; pointId?: string; clearPoint?: () => void;
+}) {
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [sourceFilter, setSourceFilter] = useState("all"),
     [kindFilter, setKindFilter] = useState("all");
   const list = useCatalogPage<QuestionRow>("/teacher/questions", classroomId, query, {
-    status: filter, source: sourceFilter, kind: kindFilter,
+    status: filter, source: sourceFilter, kind: kindFilter, knowledge_point_id: pointId ?? "all",
   });
+  const point = useResource<Pick<Point, "id" | "title">[]>(pointId
+    ? scoped("/teacher/knowledge-point-labels?ids=" + encodeURIComponent(pointId), classroomId) : null);
   const editor = useQuestionEditor(classroomId, list.reload);
   const { open, error } = editor;
   const chapters = useResource<Pick<Course, "chapters">>(scoped("/teacher/courses?view=chapters", classroomId));
@@ -72,17 +75,15 @@ export function Questions({ classroomId }: { classroomId: number }) {
   );
   return (
     <>
-      <PageHeader title="题库" description="维护独立题目，再由练习与测验选用。">
-        <Button onClick={() => edit(null)}>
-          <Plus />
-          新增题目
-        </Button>
-      </PageHeader>
       <ErrorNotice
-        message={list.error || detailError || chapters.error || materials.error || (!open ? error : "")}
+        message={list.error || detailError || chapters.error || materials.error || point.error || (!open ? error : "")}
       />
       {!open && editor.savedWarning && <p role="status" className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{editor.savedWarning}</p>}
       <div className="surface">
+        {pointId && <div className="flex items-center gap-3 border-b px-4 py-2 text-sm">
+          <span>知识点 · {point.data?.[0]?.title ?? (point.loading ? "加载中…" : "当前知识点")}</span>
+          <Button size="sm" variant="ghost" onClick={clearPoint}>清除筛选</Button>
+        </div>}
         <div className="toolbar">
           <div className="search">
             <Search size={16} />
@@ -142,6 +143,7 @@ export function Questions({ classroomId }: { classroomId: number }) {
             <option value="imported">导入</option>
             <option value="ai_generated">AI 生成</option>
           </SelectField>
+          <div className="ml-auto"><Button onClick={() => edit(null)}><Plus />新增题目</Button></div>
         </div>
         <DeleteSelection actions={deletion} />
         {list.loading ? (

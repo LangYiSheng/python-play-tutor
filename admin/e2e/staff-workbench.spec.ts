@@ -57,12 +57,12 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     await expect(row).toContainText("验收教师");
     await row.getByRole("button", { name: "进入班级" }).click();
     await expect(page.getByLabel("当前班级")).toContainText(className);
-    await page.getByRole("link", { name: "课程结构" }).click();
+    await page.getByRole("link", { name: "内容列表" }).click();
     await page.getByRole("button", { name: "新增章节" }).click();
     await page.getByLabel("名称", { exact: true }).fill("管理员编写的章节");
     await page.getByRole("dialog").getByRole("button", { name: "保存", exact: true }).click();
     await expect(page.getByRole("cell", { name: "管理员编写的章节", exact: true })).toBeVisible();
-    await teacher.getByRole("link", { name: "课程结构" }).click();
+    await teacher.getByRole("link", { name: "内容列表" }).click();
     await expect(teacher.getByRole("cell", { name: "管理员编写的章节", exact: true })).toBeVisible();
     await teacher.getByRole("link", { name: "学生账号" }).click();
     await teacher.getByRole("button", { name: "添加学生" }).click();
