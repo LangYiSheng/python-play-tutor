@@ -230,6 +230,20 @@ def visible(db: Session, material: Material) -> list[PageNarration]:
 JOB_STALE_SECONDS = 300
 
 
+class CancellationRequested(Exception):
+    """The worker has reached the next safe stopping point."""
+
+
+def check_cancel(db: Session, material_id: int) -> None:
+    lease = db.info.get("narration_leases", {}).get(material_id)
+    if lease is None:
+        return
+    requested = db.scalar(select(NarrationRun.cancel_requested_at).where(
+        NarrationRun.material_id == material_id, NarrationRun.started_at == lease))
+    if requested is not None:
+        raise CancellationRequested
+
+
 class JobBusy(RuntimeError):
     """Another narration task is already running for this material."""
 
@@ -266,12 +280,9 @@ def enqueue(db: Session, material: Material, kind: str, user: User | None = None
     from fastapi import HTTPException
 
     try:
-        job = acquire(db, material, kind, user, request=request)
+        return acquire(db, material, kind, user, request=request, queued=True)
     except JobBusy as exc:
         raise HTTPException(409, str(exc)) from exc
-    job.progress = {**(job.progress or {}), "queued": True, "done": 0, "total": 0}
-    db.commit()
-    return job
 
 
 def interrupt_running(db: Session | None = None) -> int:
@@ -284,9 +295,14 @@ def interrupt_running(db: Session | None = None) -> int:
     try:
         jobs = list(session.scalars(select(NarrationJob).where(NarrationJob.status == "running")))
         for job in jobs:
-            job.status = "interrupted"
+            run = session.scalar(select(NarrationRun).where(NarrationRun.material_id == job.material_id,
+                                                            NarrationRun.started_at == job.started_at))
+            progress = job.progress or {}
+            job.status = "cancelled" if run and run.cancel_requested_at else "interrupted"
             job.finished_at = now()
-            job.message = "服务重启，任务已中断；再次触发会从上次的窗口继续"
+            job.message = "服务重启，取消请求已生效" if job.status == "cancelled" else "服务重启，任务已中断"
+            if progress.get("queued") and progress.get("queued_fingerprint"):
+                job.progress = {**progress, "queued": False, "retry_fingerprint": progress["queued_fingerprint"], "never_started": True}
             sync_run(session, job)
         session.execute(update(NarrationRun).where(NarrationRun.status == "running").values(status="interrupted"))
         session.commit()
@@ -300,6 +316,8 @@ def job_running(job: NarrationJob | NarrationRun) -> bool:
     """活着的任务才算“正在运行”；心跳过期说明进程已经死了，可以接管。"""
     if job.status != "running":
         return False
+    if (job.progress or {}).get("queued"):
+        return True
     moment = job.heartbeat_at or job.started_at
     if moment is None:
         return False
@@ -312,8 +330,20 @@ def job_of(db: Session, material_id: int) -> NarrationJob | None:
     return db.scalar(select(NarrationJob).where(NarrationJob.material_id == material_id))
 
 
+def same_attempt(started: datetime | None, expected: str) -> bool:
+    if started is None:
+        return False
+    try:
+        supplied = datetime.fromisoformat(expected)
+    except ValueError:
+        return False
+    def utc(value: datetime) -> datetime:
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    return utc(started) == utc(supplied)
+
+
 def acquire(db: Session, material: Material, kind: str, user: User | None = None,
-            *, request: dict[str, Any] | None = None) -> NarrationJob:
+            *, request: dict[str, Any] | None = None, queued: bool = False) -> NarrationJob:
     """Take the material lock for one task. Raises JobBusy while another task is alive."""
     # A missing job row cannot be locked; serialize first acquisition on its parent.
     db.scalar(select(Material).where(Material.id == material.id).with_for_update())
@@ -322,9 +352,9 @@ def acquire(db: Session, material: Material, kind: str, user: User | None = None
     expected = db.info.pop("narration_retry_expected", None)
     if expected:
         from fastapi import HTTPException
-        if (job is None or job.status != "failed" or not job.started_at
-                or job.started_at.isoformat() != expected
-                or (job.progress or {}).get("retry_fingerprint") != retry_fingerprint(db, material)):
+        if (job is None or job.status not in {"failed", "cancelled", "interrupted"} or not job.started_at
+                or not same_attempt(job.started_at, expected)
+                or not retry_matches(db, material, (job.progress or {}).get("retry_fingerprint"))):
             raise HTTPException(409, "任务或资料已变化，请刷新并重新审校")
     if job is None:
         job = NarrationJob(material_id=material.id)
@@ -343,6 +373,9 @@ def acquire(db: Session, material: Material, kind: str, user: User | None = None
     job.heartbeat_at = job.started_at
     job.finished_at = None
     job.progress = {"request": request} if request else {}
+    if queued:
+        job.progress = {**job.progress, "queued": True, "done": 0, "total": 0,
+                        "queued_fingerprint": retry_fingerprint(db, material)}
     job.message = ""
     sync_run(db, job)
     db.commit()
@@ -388,13 +421,13 @@ def set_chain(db: Session, material_id: int, chain: list[str], stage: str) -> No
     if job is None or job.status != "running":
         return
     job.heartbeat_at = now()
-    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage}
+    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage, "done": 0, "total": 0}
     sync_run(db, job)
 
 
 def release(db: Session, material_id: int, *, status: str = "done", message: str = "",
             extra: dict[str, Any] | None = None) -> None:
-    if status == "failed":
+    if status in {"failed", "cancelled"}:
         db.rollback()
     job = owned_job(db, material_id)
     if job is None:
@@ -404,7 +437,7 @@ def release(db: Session, material_id: int, *, status: str = "done", message: str
     job.message = message[:200]
     if extra:
         job.progress = {**(job.progress or {}), **extra}
-    if status == "failed":
+    if status in {"failed", "cancelled"}:
         material = db.get(Material, material_id)
         if material:
             job.progress = {**(job.progress or {}), "retry_fingerprint": retry_fingerprint(db, material)}
@@ -424,12 +457,19 @@ def sync_run(db: Session, job: NarrationJob) -> None:
     record.progress = dict(job.progress or {})
 
 
-def retry_fingerprint(db: Session, material: Material) -> str:
+def retry_fingerprint(db: Session, material: Material, *, legacy: bool = False) -> str:
     """A retry must not overwrite a source or narration edited after the failure."""
     db.refresh(material)
-    return text_hash(json.dumps({"source": material.content, "file": material.storage_key,
-                                "narrations": [revision(item) for item in rows(db, material.id)]},
-                               ensure_ascii=False, sort_keys=True))
+    source = {"source": material.content, "file": material.storage_key,
+              "narrations": [revision(item) for item in rows(db, material.id)]}
+    if not legacy:
+        source["page_contents"] = [(row.page_no, row.title, row.topic, row.tags, row.text, row.status)
+                                   for row in content_rows(db, material.id)]
+    return ("" if legacy else "v2:") + text_hash(json.dumps(source, ensure_ascii=False, sort_keys=True))
+
+
+def retry_matches(db: Session, material: Material, signature: str | None) -> bool:
+    return bool(signature and signature == retry_fingerprint(db, material, legacy=not signature.startswith("v2:")))
 
 # ---------------------------------------------------------------------------
 # 整理稿（page_contents）与课程级 tag 字典

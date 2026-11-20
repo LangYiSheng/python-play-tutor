@@ -232,6 +232,7 @@ def generate_range(db: Session, material: Material, *, first: int, last: int, in
     repository.beat(db, material.id, done=0, total=len(groups))
     db.commit()
     for index, group in enumerate(groups, start=1):
+        repository.check_cancel(db, material.id)
         try:
             written, _usage = run_window(db, material, group, settings, seconds)
             results.extend({"page_no": no, "status": "draft", "reused": False, "model": settings["model"]}

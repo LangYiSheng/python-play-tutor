@@ -356,6 +356,7 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
         index = 0
     ran = 0
     while index < len(groups) and (ran == 0 or time.monotonic() < deadline):
+        repository.check_cancel(db, material.id)
         repository.ensure_lease(db, material.id)
         repository.beat(db, material.id, done=index, total=len(groups))
         db.commit()
@@ -365,6 +366,7 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
         try:
             reply = _call(material, payload, images, settings)
         except model_client.ModelFailed as exc:
+            repository.check_cancel(db, material.id)
             hint = getattr(exc, "hint", None)
             if hint == "output":
                 # 输出被截断：这一窗内容本身没问题，加大输出预算重试一次。
@@ -385,6 +387,7 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
         ran += 1
         state["next_index"] = index
         if index >= len(groups):
+            repository.check_cancel(db, material.id)
             _merge_tags(db, material, items, state, settings)
             state["complete"] = True
             state["generated_at"] = now().isoformat()

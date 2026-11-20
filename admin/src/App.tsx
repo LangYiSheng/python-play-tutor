@@ -430,7 +430,7 @@ function Workbench() {
             <ArrowUpRight />
           </Button>}
         </header>
-        <main className="main-content">
+        <main className={page === "content-graph" && classroom ? "main-content graph-main" : "main-content"}>
           <ErrorNotice message={error} />
           <Suspense key={`${user.id}:${classPage ? classroomId : "global"}:${page}`} fallback={<Loading />}>
             {renderPage(user)}

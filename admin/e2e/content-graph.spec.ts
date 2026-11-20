@@ -54,6 +54,11 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   const panel = page.getByRole("complementary", { name: "节点详情" });
   await expect(panel.getByText("暂无可核对的课件页与知识点关联")).toBeVisible();
   await expect(panel.getByRole("button", { name: /^第 11 章/ })).toBeVisible();
+  await expect.poll(async () => {
+    const [card, inspector] = await Promise.all([selected.boundingBox(), panel.boundingBox()]);
+    if (!card || !inspector) return false;
+    return card.x + card.width <= inspector.x || card.y + card.height <= inspector.y;
+  }).toBe(true);
   await panel.getByRole("button", { name: "编辑资料" }).click();
   const viewport = await page.locator(".react-flow__viewport").getAttribute("style");
   await page.getByLabel("资料名称").fill("第四章课件 Part 1（已校订）");
@@ -62,8 +67,12 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   await expect(page.locator(".react-flow__viewport")).toHaveAttribute("style", viewport!);
   expect(bankRequests).toEqual([]);
   await panel.getByRole("button", {name: /^第 4 章/}).click();
+  await expect(panel.getByRole("button", {name: "变量与数据类型"})).toBeVisible();
+  await expect(page.locator(".cg-node")).toHaveCount(26);
+  await expect(page.locator(".cg-point")).toHaveCount(0);
   await panel.getByRole("button", {name: "变量与数据类型"}).click();
   await expect(panel.getByText("暂无已确认的课件来源")).toBeVisible();
+  await expect(page.locator(".cg-point")).toHaveCount(1);
   await panel.getByRole("link", {name: "查看关联题目（1）"}).click();
   await expect(page.getByText("给变量赋值", {exact: true})).toBeVisible();
   expect(bankRequests.at(-1)?.searchParams.get("knowledge_point_id")).toBe(String(point.id));
@@ -73,4 +82,46 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   await expect(page.locator(".cg-node")).toHaveCount(26);
   await page.getByRole("button", { name: "任务队列" }).click();
   await expect(page.getByText("当前没有进行中的生成任务")).toBeVisible();
+});
+
+test("任务队列能定位到带百分比的运行节点，异常节点显示静态告警", async ({ page }) => {
+  await page.setViewportSize({ width: 810, height: 960 });
+  await page.addInitScript(() => {
+    sessionStorage.setItem("pythontopia-reborn-session", "graph-task-fixture");
+    sessionStorage.setItem("classroom:1", "9");
+  });
+  const materials = [31, 32].map(id => ({ id, kind: "pdf", title: `第 ${id} 份课件`, status: "ready", chapter_ids: [3] }));
+  const running = { id: 6, run_id: 21, material_id: 31, status: "running", queued: false, stage: "script",
+    kind: "generate", done: 2, total: 5, percent: 40, started_at: "2026-11-20T08:00:00Z" };
+  const jobs = [running, { ...running, id: 8, run_id: 22, material_id: 32, status: "interrupted", percent: 20 }];
+  await page.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    let response: unknown = [];
+    if (path.endsWith("/auth/me")) response = { id: 1, name: "教师", role: "teacher" };
+    if (path.endsWith("/classrooms")) response = [{ id: 9, name: "当前班级", teacher_id: 1 }];
+    if (path.endsWith("/course-graph")) response = { title: "测试课程", chapters: [{ id: 3, title: "计算思维" }], materials };
+    if (path.endsWith("/course-graph/tasks")) response = jobs;
+    if (path.includes("/course-graph/materials/")) response = { points: [], pages: 5, narrations: 0, audio: 0, drafts: 0 };
+    await route.fulfill({ json: response });
+  });
+  await page.goto("/teacher/content-graph");
+  await expect(page.locator('.react-flow__node[data-id="material-31"]')).toHaveAccessibleName(/执行中.*40%/);
+  await expect(page.locator('.react-flow__node[data-id="material-32"] .cg-task-error')).toBeVisible();
+  await expect(page.locator(".cg-node.cg-task")).toHaveCount(0);
+  const queue = page.getByRole("button", { name: /^任务队列/ });
+  await queue.click();
+  await page.getByRole("button", { name: /讲稿生成.*第 31 份课件/ }).click();
+  const active = page.locator('.react-flow__node[data-id="task-21"]');
+  await expect(active).toHaveAccessibleName(/执行中.*40%/);
+  await expect(page.locator(".react-flow__edge.animated")).toHaveCount(1);
+  await queue.click();
+  await page.getByRole("button", { name: /讲稿生成.*第 32 份课件/ }).click();
+  const error = page.locator('.react-flow__node[data-id="task-22"]');
+  await expect(error).toHaveAccessibleName(/已中断.*20%/);
+  await expect(error.locator(".cg-task-error")).toBeVisible();
+  await expect(page.locator(".react-flow__edge.animated")).toHaveCount(0);
+  await expect.poll(async () => {
+    const [node, drawer] = await Promise.all([error.boundingBox(), page.locator(".cg-inspector").boundingBox()]);
+    return !!(node && drawer && (node.x + node.width <= drawer.x || node.y + node.height <= drawer.y));
+  }).toBe(true);
 });

@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import JSON, String, case, cast, func, literal, select, type_coerce
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.auth import require_teacher
 from app.course_content.catalog import visible_points
@@ -14,7 +14,8 @@ from app.materials.access import teacher_material
 from app.models import Chapter, CourseInstance, KnowledgePoint, Material, MaterialChapter, Question, QuestionKnowledgePoint, User
 from app.narration import repository
 from app.narration.jobs import state as job_state
-from app.narration.models import NarrationJob, PageContent, PageNarration
+from app.narration.management import run_state, snapshot
+from app.narration.models import NarrationJob, NarrationRun, PageContent, PageNarration
 from app.teacher_scope import teacher_instance_id
 
 router = APIRouter(prefix="/course-graph")
@@ -47,9 +48,25 @@ def overview(classroom_id: int, db: Db, user: Teacher):
 @router.get("/tasks")
 def active_tasks(classroom_id: int, db: Db, user: Teacher):
     materials = visible(Material, teacher_instance_id(db, user, classroom_id), user).with_only_columns(Material.id)
-    jobs = db.scalars(select(NarrationJob).where(NarrationJob.material_id.in_(materials),
-                      NarrationJob.status == "running").order_by(NarrationJob.started_at))
-    return [job_state(job.material_id, job) for job in jobs if repository.job_running(job)]
+    query = (select(NarrationJob, Material, NarrationRun.id, NarrationRun.cancel_requested_at)
+             .join(Material, Material.id == NarrationJob.material_id)
+             .outerjoin(NarrationRun, (NarrationRun.material_id == Material.id) & (NarrationRun.started_at == NarrationJob.started_at))
+             .options(load_only(Material.id, Material.title, Material.kind)).where(Material.id.in_(materials)))
+    status = run_state(NarrationJob)
+    active = query.where(status == "running").order_by(NarrationJob.started_at, NarrationJob.id)
+    recent = query.where(status.in_(("failed", "interrupted", "cancelled"))).order_by(
+        NarrationJob.started_at.desc(), NarrationJob.id.desc()).limit(30)
+    items = []
+    for job, material, run_id, requested in [*db.execute(active), *db.execute(recent)]:
+        item = {**job_state(material.id, job), **snapshot(material, job, cancel_requested=requested is not None)}
+        item["run_id"] = run_id
+        item["cancellable"] = bool(run_id and item["cancellable"])
+        item["percent"] = (min(100, max(0, round(100 * item["done"] / item["total"]))) if item["total"] else
+                           0 if item["queued"] else None)
+        if item["status"] == "cancelling":
+            item["message"] = "已请求取消，等待当前步骤结束"
+        items.append(item)
+    return items
 
 
 def array_rows(db, column, *, text=False):

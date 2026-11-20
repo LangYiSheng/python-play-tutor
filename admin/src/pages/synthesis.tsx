@@ -22,9 +22,9 @@ type Task = {
   failed: { page_no: number; error?: string }[]; retryable: boolean; retry_note: string;
 };
 type Overview = { items: Task[]; total: number; counts: Record<string, number> };
-const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '待核查' };
+const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '已中断', cancelled: '已取消', cancelling: '正在取消' };
 const kinds: Record<string, string> = { generate: '讲稿生成', calibrate: '讲稿校准', audio: '语音合成' };
-const tones: Record<string, string> = { running: 'text-blue-700', done: 'text-emerald-700', failed: 'text-red-700', interrupted: 'text-amber-700' };
+const tones: Record<string, string> = { running: 'text-blue-700', done: 'text-emerald-700', failed: 'text-red-700', interrupted: 'text-red-700' };
 
 export function Synthesis({ actionsTarget, classroomId }: { actionsTarget?: HTMLDivElement | null; classroomId?: number }) {
   const [query, setQuery] = useState(''), [status, setStatus] = useState('all');
@@ -73,7 +73,7 @@ export function Synthesis({ actionsTarget, classroomId }: { actionsTarget?: HTML
     <div className="mb-4 flex flex-wrap items-center gap-3">
       <Input className="max-w-sm" aria-label="搜索资料名称" placeholder="搜索资料名称" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
       {view === 'history' && <SelectField aria-label="任务状态" value={status} onValueChange={v => { setStatus(v); setPage(1); }}>
-        <option value="all">全部状态</option>{Object.entries(statuses).filter(([key]) => key !== 'running').map(([key, label]) => <option value={key} key={key}>{label}</option>)}
+        <option value="all">全部状态</option>{Object.entries(statuses).filter(([key]) => key !== 'running' && key !== 'cancelling').map(([key, label]) => <option value={key} key={key}>{label}</option>)}
       </SelectField>}
       {data && <span className="hint">处理中 {data.counts.running} · 失败 {data.counts.failed} · 待核查 {data.counts.interrupted}</span>}
     </div>
@@ -82,7 +82,7 @@ export function Synthesis({ actionsTarget, classroomId }: { actionsTarget?: HTML
         <TableBody>{data.items.map(item => <TableRow key={item.id}>
           <TableCell><span className="font-medium">{item.title}</span><div className="hint">{item.material_kind === 'pdf' ? 'PDF' : '演示文稿'}{classroomId === undefined && item.classroom_name && ` · ${item.classroom_name}`}</div></TableCell>
           <TableCell>{kinds[item.kind] || '—'}<div className="hint">{item.scope}</div><div className="hint">任务 #{item.id} · {item.requested_by}</div></TableCell>
-          <TableCell><span className={tones[item.status]}>{statuses[item.status] || item.status}</span>{item.total > 0 && <div className="hint">已处理 {item.done} / {item.total} 页</div>}</TableCell>
+          <TableCell><span className={tones[item.status]}>{statuses[item.status] || item.status}</span>{item.total > 0 && <div className="hint">{Math.min(100, Math.round(100 * item.done / item.total))}% · {item.done} / {item.total}</div>}</TableCell>
           <TableCell className="max-w-sm whitespace-normal"><span>{item.message || '尚无任务记录'}</span>
             {item.failed.length > 0 && <details className="mt-1 text-xs"><summary>查看失败页（{item.failed.length}）</summary><ul className="mt-2 space-y-1">{item.failed.map(f => <li key={f.page_no}>第 {f.page_no} 页：{f.error || '生成失败'}</li>)}</ul></details>}
             {item.retry_note && <p className="hint">{item.retry_note}</p>}</TableCell>

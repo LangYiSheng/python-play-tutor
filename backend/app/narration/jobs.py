@@ -62,6 +62,7 @@ def claim(db: Session, material_id: int) -> NarrationJob | None:
     job.progress = {**(job.progress or {}), "queued": False}
     # 租约属于这个 session：之后所有 beat/release 都要用它确认自己仍是执行者。
     db.info.setdefault("narration_leases", {})[material_id] = job.started_at
+    repository.sync_run(db, job)
     db.commit()
     return job
 
@@ -75,6 +76,7 @@ def run(db: Session, material_id: int) -> bool:
     operation = request.get("operation")
     material = db.get(Material, material_id)
     try:
+        repository.check_cancel(db, material_id)
         if material is None:
             raise LookupError("资料已删除")
         if operation == "calibrate":
@@ -89,6 +91,8 @@ def run(db: Session, material_id: int) -> bool:
             task_commands.run_pipeline(db, material, request)
         else:
             raise ValueError("未知的后台任务类型")
+    except repository.CancellationRequested:
+        repository.release(db, material_id, status="cancelled", message="任务已取消，已保存的结果可继续使用")
     except BaseException as exc:  # noqa: BLE001 -- 一个任务失败不能拖垮 worker
         db.rollback()
         message = str(exc) if isinstance(exc, (LookupError, ValueError, RuntimeError)) else "任务未完成，请查看错误后重试"

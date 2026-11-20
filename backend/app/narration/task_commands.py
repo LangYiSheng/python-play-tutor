@@ -154,6 +154,7 @@ def run_digest(db: Session, material: Material, request: dict[str, Any], *,
     written: list[int] = []
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0, "cache_miss_tokens": 0}
     for index, group in enumerate(groups, start=1):
+        repository.check_cancel(db, material.id)
         repository.ensure_lease(db, material.id)
         try:
             pages, spent = digest.run_window(db, material, group, settings, effort)
@@ -277,8 +278,10 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
         repository.release(db, material.id, status="failed", message="资料还没有可整理的页面")
         return
     while chain:
+        repository.check_cancel(db, material.id)
         stage = chain[0]
         remaining = {"chain": chain, "stage": stage, "failed_stage": stage}
+        repository.set_chain(db, material.id, chain, stage)
         repository.beat(db, material.id, message=f"{STAGE_LABELS.get(stage, stage)}…")
         db.commit()
         if stage == "digest":
@@ -371,6 +374,7 @@ def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) ->
             continue
         if item.status != "accepted" or not item.text.strip():
             continue
+        repository.check_cancel(db, material.id)
         try:
             result = audio.synthesize_page(db, material, item.page_no)
             (reused if result["reused"] else made).append(item.page_no)

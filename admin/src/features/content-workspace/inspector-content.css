@@ -1,0 +1,61 @@
+.inspector-section {
+  margin-block: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.inspector-section h3 {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.inspector-meta, .inspector-empty, .inspector-links small {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+.inspector-links { list-style: none; margin: 0; padding: 0; }
+.inspector-links li + li { border-top: 1px solid var(--border); }
+.inspector-links button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: 5px;
+  padding: 8px 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.inspector-links button:hover { background: var(--muted); }
+.inspector-links button:focus-visible { outline: 2px solid var(--ring); }
+.inspector-links button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.inspector-links button small { display: block; margin-top: 2px; }
+.inspector-links button svg { flex: none; color: var(--muted-foreground); }
+.inspector-task-list { display: grid; gap: 12px; padding: 0; list-style: none; }
+.inspector-task-list > li { padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.inspector-task { --task-color: var(--primary); }
+.inspector-task[data-failed="true"] { --task-color: #a53228; }
+.inspector-task[data-failed="true"] .inspector-status { background: #fdf0ec; }
+.inspector-task-focus { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; }
+.inspector-task-focus strong { display: block; font-size: 14px; }
+.inspector-task-focus small, .inspector-job-message, .inspector-feedback, .inspector-task details { font-size: 12px; overflow-wrap: anywhere; }
+.inspector-task-focus small { color: var(--muted-foreground); }
+.inspector-task-focus:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.inspector-task-line, .inspector-task h3 { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.inspector-task-line { margin-top: 10px; }
+.inspector-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; font-size: 11px; border-radius: 4px;
+  background: var(--muted); color: var(--task-color); font-weight: 550; }
+.inspector-task-progress { margin: 10px 0 4px; font-size: 12px; }
+.inspector-task-progress > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.inspector-task-progress strong { color: var(--task-color); font-variant-numeric: tabular-nums; }
+.inspector-task-progress progress { display: block; margin-top: 5px; width: 100%; height: 5px; appearance: none; border: none;
+  background: var(--muted); border-radius: 4px; accent-color: var(--task-color); }
+.inspector-task-progress progress::-webkit-progress-bar { background: var(--muted); border-radius: 4px; }
+.inspector-task-progress progress::-webkit-progress-value { background: var(--task-color); border-radius: 4px; }
+.inspector-task-progress progress::-moz-progress-bar { background: var(--task-color); border-radius: 4px; }
+.inspector-job-message, .inspector-task details { margin-block: 8px; color: var(--task-color); }
+.inspector-task-actions:not(:empty) { display: flex; gap: 6px; margin-top: 10px; }
+.inspector-feedback { padding: 8px; margin: 8px 0; border-radius: 5px; background: var(--muted); }

@@ -58,4 +58,5 @@ def test_graph_uses_current_audio_and_live_job_evidence(client, db, classroom, t
     job.started_at = now() - timedelta(days=1)
     db.commit()
     assert read("/materials/186")["audio"] == 0
-    assert read("/tasks") == []
+    interrupted, = read("/tasks")
+    assert interrupted["status"] == "interrupted" and not interrupted["retryable"]
