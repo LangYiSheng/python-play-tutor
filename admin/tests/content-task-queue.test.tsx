@@ -35,11 +35,23 @@ it("shows interrupted jobs and offers retry only for a retryable attempt", async
   const interrupted = {...job, status:"interrupted", percent:null, cancellable:false, retryable:false, retry_note:"需核查执行结果"};
   const view = render(<TaskDetail job={interrupted} material="判断语句" request={request}/>);
   expect(screen.getByText("已中断").closest(".inspector-task")).toHaveAttribute("data-failed", "true");
-  expect(screen.getByText("进度待更新")).toBeInTheDocument();
+  expect(screen.getByText("未记录百分比")).toBeInTheDocument();
   expect(screen.queryByRole("button", {name:"重试"})).not.toBeInTheDocument();
   expect(screen.getByText("需核查执行结果")).toBeInTheDocument();
   const failed = {...interrupted, status:"failed", retryable:true};
   view.rerender(<TaskDetail job={failed} material="判断语句" request={request}/>);
   await user.click(screen.getByRole("button", {name:"重试"}));
   expect(request).toHaveBeenCalledWith({command:"retry", job:failed, material:"判断语句"});
+});
+
+it("dismisses a failed task after confirmation and preserves its failed status", async () => {
+  const user = userEvent.setup(), reload = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({status:"failed", queue_dismissed:true})));
+  render(<Queue jobs={[{...job, status:"failed", retryable:true}]} reload={reload}/>);
+  await user.click(screen.getByRole("button", {name:"取消任务"}));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText(/失败记录将保留/)).toBeVisible();
+  await user.click(within(dialog).getByRole("button", {name:"确认取消任务"}));
+  expect(await screen.findByRole("status")).toHaveTextContent("失败任务已从队列移除");
+  expect(reload).toHaveBeenCalledOnce();
 });

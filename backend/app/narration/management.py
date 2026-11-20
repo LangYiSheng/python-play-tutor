@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy import ColumnElement, Row, Select, case, func, select
 from sqlalchemy.orm import Session, load_only
 
 from ..auth import require_admin, require_teacher
@@ -12,7 +12,7 @@ from ..db import get_db
 from ..materials.access import teacher_material as visible_material
 from ..models import Classroom, CourseInstance, Material, User, now
 from ..teacher_scope import teacher_instance_id
-from . import repository
+from . import repository, task_progress
 from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
 from .task_commands import (calibrate_deck, digest_deck, generate_narration, generate_range, pipeline_deck,
                             synthesize_audio, synthesize_audio_batch)
@@ -22,9 +22,11 @@ router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/synthesis", tags=[
 global_router = APIRouter(tags=["narration"], dependencies=[Depends(require_admin)])
 OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate", "digest", "pipeline"}
 WORKER_OPERATIONS = OPERATIONS - {"generate_page", "audio_page"}
+RunRow = tuple[NarrationRun, Material, str, int, str, int]
 
 
-def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, cancel_requested: bool = False) -> dict[str, Any]:
+def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, cancel_requested: bool = False,
+             latest_db: Session | None = None) -> dict[str, Any]:
     progress = (job.progress or {}) if job else {}
     request = progress.get("request") or {}
     running = bool(job and repository.job_running(job))
@@ -37,6 +39,9 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, can
     if status == "failed" and request.get("operation") in {"generate_range", "audio_batch"} and not progress.get("retry_pages"):
         retryable = False
     cancellable = bool(status == "running" and request.get("operation") in WORKER_OPERATIONS and job and job.started_at)
+    dismissed = bool(progress.get("queue_dismissed"))
+    if status == "failed" and job and job.started_at:
+        cancellable = not dismissed
     note = ""
     if status == "interrupted" and not retryable:
         note = "任务结果待核查，请打开资料确认"
@@ -46,18 +51,57 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, can
         note = "当前请求已执行，等待调用返回"
     return {"id": job.id if job else None, "material_id": material.id, "title": material.title, "material_kind": material.kind,
             "kind": job.kind if job else "", "status": status, "running": running,
-            "done": progress.get("done", 0), "total": progress.get("total", 0),
-            "message": job.message if job else "", "failed": progress.get("failed", []),
+            **task_progress.describe(job, status, latest_db), "queue_dismissed": dismissed,
             "started_at": job.started_at.isoformat() if job and job.started_at else None,
             "finished_at": job.finished_at.isoformat() if job and job.finished_at else None,
             "cancellable": cancellable, "retryable": retryable, "retry_note": note}
 
 
-def run_state(model=NarrationRun) -> ColumnElement[str]:
+def run_state(model: type[NarrationRun] | type[NarrationJob] = NarrationRun) -> ColumnElement[str]:
     cutoff = now() - timedelta(seconds=repository.JOB_STALE_SECONDS)
     moment = func.coalesce(model.heartbeat_at, model.started_at)
     unclaimed = func.coalesce(model.progress["queued"].as_boolean(), False)
     return case(((model.status == "running") & ~unclaimed & ((moment < cutoff) | moment.is_(None)), "interrupted"), else_=model.status)
+
+
+def visible_runs(db: Session, user: User, classroom_id: int | None) -> Select[*RunRow]:
+    statement = (select(NarrationRun, Material, User.name, Classroom.id, Classroom.name, NarrationJob.id)
+        .join(Material, NarrationRun.material_id == Material.id)
+        .join(CourseInstance, Material.course_instance_id == CourseInstance.id)
+        .join(Classroom, CourseInstance.classroom_id == Classroom.id)
+        .outerjoin(User, NarrationRun.requested_by == User.id)
+        .outerjoin(NarrationJob, (NarrationJob.material_id == Material.id) & (NarrationJob.started_at == NarrationRun.started_at))
+        .options(load_only(Material.id, Material.title, Material.kind, Material.deleted_at))
+        .execution_options(include_deleted=True))
+    if classroom_id is not None:
+        statement = statement.where(Material.course_instance_id == teacher_instance_id(db, user, classroom_id))
+    if user.role != "admin":
+        statement = statement.where(Material.owner_id.is_(None) | (Material.owner_id == user.id))
+    return statement
+
+
+def history_item(row: Row[*RunRow], db: Session, *, class_view: bool) -> dict[str, Any]:
+    record, material, name, class_id, class_name, current_job_id = row
+    item = snapshot(material, record, latest_db=db if current_job_id else None)
+    item.update(requested_by=name or "—", material_available=material.deleted_at is None,
+                classroom_id=class_id, classroom_name=class_name, run_id=record.id)
+    if not (class_view and current_job_id) or material.deleted_at is not None:
+        item.update(retryable=False, cancellable=False, retry_note="")
+    request = (record.progress or {}).get("request") or {}
+    body = request.get("body") or {}
+    item["scope"] = (f"第 {request['page_no']} 页" if request.get("page_no") else
+                     f"第 {body.get('first_page') or 1}–{body['last_page']} 页" if body.get("last_page") else "整份资料")
+    return item
+
+
+@global_router.get("/admin/synthesis/runs/{run_id}")
+@router.get("/runs/{run_id}")
+def get_task(run_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
+             classroom_id: int | None = None) -> dict[str, Any]:
+    row = db.execute(visible_runs(db, user, classroom_id).where(NarrationRun.id == run_id)).one_or_none()
+    if row is None:
+        raise HTTPException(404, "任务记录不存在")
+    return history_item(row, db, class_view=classroom_id is not None)
 
 
 @global_router.get("/admin/synthesis")
@@ -68,15 +112,7 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
                view: Literal["all", "running", "history"] = "all",
                page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=100)] = 20) -> dict[str, Any]:
     state = run_state()
-    statement = (select(NarrationRun, Material, User.name, Classroom.id, Classroom.name)
-        .join(Material, NarrationRun.material_id == Material.id)
-        .join(CourseInstance, Material.course_instance_id == CourseInstance.id)
-        .join(Classroom, CourseInstance.classroom_id == Classroom.id)
-        .outerjoin(User, NarrationRun.requested_by == User.id)
-        .options(load_only(Material.id, Material.title, Material.kind, Material.deleted_at))
-        .execution_options(include_deleted=True))
-    if classroom_id is not None:
-        statement = statement.where(Material.course_instance_id == teacher_instance_id(db, user, classroom_id))
+    statement = visible_runs(db, user, classroom_id)
     if query.strip():
         statement = statement.where(Material.title.icontains(query.strip(), autoescape=True))
     counts: dict[str, int] = dict(db.execute(statement.with_only_columns(state, func.count()).group_by(state)).all())
@@ -86,19 +122,8 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
         statement = statement.where(state == status)
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     items = []
-    for record, material, name, class_id, class_name in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
-        item = snapshot(material, record)
-        latest = repository.job_of(db, material.id) if classroom_id is not None else None
-        is_latest = bool(latest and latest.started_at == record.started_at)
-        item.update(requested_by=name or "—", material_available=material.deleted_at is None,
-                    classroom_id=class_id, classroom_name=class_name)
-        if not is_latest or material.deleted_at is not None:
-            item.update(retryable=False, cancellable=False, retry_note="")
-        request = (record.progress or {}).get("request") or {}
-        body = request.get("body") or {}
-        item["scope"] = (f"第 {request['page_no']} 页" if request.get("page_no") else
-                         f"第 {body.get('first_page') or 1}–{body['last_page']} 页" if body.get("last_page") else "整份资料")
-        items.append(item)
+    for row in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
+        items.append(history_item(row, db, class_view=classroom_id is not None))
     return {"items": items, "total": total,
             "counts": {key: counts.get(key, 0) for key in ("running", "done", "failed", "interrupted", "cancelled")}}
 
@@ -115,6 +140,17 @@ def cancel_task(classroom_id: int, material_id: int, body: RetryInput,
     job = repository.job_of(db, material_id)
     if not job or not repository.same_attempt(job.started_at, body.expected_started_at):
         raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
+    if job.status == "failed":
+        failed = db.scalar(select(NarrationJob).where(NarrationJob.id == job.id,
+            NarrationJob.started_at == job.started_at, NarrationJob.status == "failed")
+            .with_for_update().execution_options(populate_existing=True))
+        if not failed:
+            raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
+        if not (failed.progress or {}).get("queue_dismissed"):
+            failed.progress = {**(failed.progress or {}), "queue_dismissed": True}
+            repository.sync_run(db, failed)
+            db.commit()
+        return snapshot(material, failed)
     # Workers lock the job row while writing a window. Only take it without waiting
     # when we can remove an unclaimed request; an in-flight request uses the run row.
     pending = None
@@ -130,7 +166,7 @@ def cancel_task(classroom_id: int, material_id: int, body: RetryInput,
     current = snapshot(material, record)
     if current["status"] in {"cancelled", "cancelling"}:
         return current
-    if not current["cancellable"]:
+    if current["status"] != "running" or not current["cancellable"]:
         raise HTTPException(409, "任务已结束或不支持取消，请刷新队列")
     record.cancel_requested_at = now()
     if pending:

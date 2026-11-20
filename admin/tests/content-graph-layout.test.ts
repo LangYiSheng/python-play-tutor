@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { graphLayout, type GraphData, type Job, type MaterialDetail, type PointDetail } from "@/features/content-workspace/graph-layout";
+import { graphLayout, type GraphData, type GraphQuestion, type Job, type MaterialDetail, type PointDetail } from "@/features/content-workspace/graph-layout";
 
 const data: GraphData = {
   title: "计算思维",
@@ -35,5 +35,19 @@ describe("教师课程图谱", () => {
     expect(view.links.filter(l => l.active).map(l => l.to)).toEqual(["task-21"]);
     expect(view.links.filter(l => l.failed).map(l => l.to)).toEqual(["task-19", "task-17"]);
     expect(view.cards.find(c => c.key === "task-15")?.caption).not.toMatch(/%/);
+  });
+
+  it("按页展开关联题目，同一道跨知识点题目只有一个节点", () => {
+    const question: GraphQuestion = { id: "test-1", title: "变量操作", kind: "boolean", status: "draft", source_type: "imported",
+      prompt: "判断赋值表达式", chapter_ids: [3], points: [point, { id: 7, title: "表达式", chapter_id: 3 }], sources: [{ material_id: 4, pages: [2] }] };
+    const other = { ...question, id: "test-2" };
+    const page = graphLayout(data, null, null, [], point, [question, other], question);
+    expect(page.cards.filter(c => c.kind === "question")).toHaveLength(2);
+    expect(page.links.filter(l => l.to === "question-test-1").map(l => l.from).sort()).toEqual(["chapter-3", "material-4", "point-5", "point-7"]);
+    expect(page.links.filter(l => l.to === "question-test-2")).toEqual([{ from: "point-5", to: "question-test-2" }]);
+    expect(graphLayout(data, null, null, [], point, [other]).cards.some(c => c.key === "question-test-1")).toBe(false);
+    const orphan = { ...question, points: [], chapter_ids: [], sources: [] };
+    const located = graphLayout(data, null, null, [], undefined, [], orphan);
+    expect(located.links.filter(l => l.to === "question-test-1")).toEqual([{ from: "course-0", to: "question-test-1" }]);
   });
 });

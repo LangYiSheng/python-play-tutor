@@ -400,16 +400,17 @@ def ensure_lease(db: Session, material_id: int) -> None:
 
 
 def beat(db: Session, material_id: int, *, done: int | None = None, total: int | None = None,
-         message: str | None = None) -> None:
+         message: str | None = None, checkpoint: dict[str, Any] | None = None) -> None:
     """Refresh the heartbeat together with the page commit, so a live task never looks stale."""
     job = owned_job(db, material_id)
     if job is None or job.status != "running":
         return
     job.heartbeat_at = now()
-    if done is not None or total is not None:
+    if done is not None or total is not None or checkpoint is not None:
         job.progress = {**(job.progress or {}),
                         **({"done": done} if done is not None else {}),
-                        **({"total": total} if total is not None else {})}
+                        **({"total": total} if total is not None else {}),
+                        **({"checkpoint": checkpoint} if checkpoint is not None else {})}
     if message is not None:
         job.message = message[:200]
     sync_run(db, job)
@@ -421,7 +422,8 @@ def set_chain(db: Session, material_id: int, chain: list[str], stage: str) -> No
     if job is None or job.status != "running":
         return
     job.heartbeat_at = now()
-    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage, "done": 0, "total": 0}
+    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage,
+                    "done": 0, "total": 0, "checkpoint": {}}
     sync_run(db, job)
 
 
@@ -460,8 +462,8 @@ def sync_run(db: Session, job: NarrationJob) -> None:
 def retry_fingerprint(db: Session, material: Material, *, legacy: bool = False) -> str:
     """A retry must not overwrite a source or narration edited after the failure."""
     db.refresh(material)
-    source = {"source": material.content, "file": material.storage_key,
-              "narrations": [revision(item) for item in rows(db, material.id)]}
+    source: dict[str, Any] = {"source": material.content, "file": material.storage_key,
+                              "narrations": [revision(item) for item in rows(db, material.id)]}
     if not legacy:
         source["page_contents"] = [(row.page_no, row.title, row.topic, row.tags, row.text, row.status)
                                    for row in content_rows(db, material.id)]

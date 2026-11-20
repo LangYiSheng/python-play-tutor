@@ -56,6 +56,22 @@
 .inspector-task-progress progress::-webkit-progress-bar { background: var(--muted); border-radius: 4px; }
 .inspector-task-progress progress::-webkit-progress-value { background: var(--task-color); border-radius: 4px; }
 .inspector-task-progress progress::-moz-progress-bar { background: var(--task-color); border-radius: 4px; }
-.inspector-job-message, .inspector-task details { margin-block: 8px; color: var(--task-color); }
-.inspector-task-actions:not(:empty) { display: flex; gap: 6px; margin-top: 10px; }
+.inspector-job-message, .inspector-task details { margin-block: 8px; font-size: 12px; line-height: 1.55; color: var(--task-color); }
+.inspector-task details ul { margin: 6px 0; padding-inline-start: 1rem; list-style: disc; }
+.inspector-task details summary { cursor: pointer; }
+.inspector-task-actions:not(:empty) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.inspector-work { display: block; margin-top: 5px; font-size: 12px; color: var(--muted-foreground); }
+.inspector-stages { display: grid; gap: 3px; margin-block: 12px; padding: 0; font-size: 12px; list-style: none; }
+.inspector-stages li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 3px 8px; border-inline-start: 2px solid var(--border); }
+.inspector-stages small { font-size: 11px; color: var(--muted-foreground); }
+.inspector-stages li[aria-current="step"] { color: var(--task-color); font-weight: 600; border-color: currentColor; }
+.inspector-stages li[aria-current="step"] small { color: inherit; }
+.synthesis-diagnostic { margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; color: var(--muted-foreground); }
+.synthesis-detail { width: min(520px, calc(100vw - 2rem)); max-width: 520px; }
+.synthesis-detail-body { max-height: min(65dvh, 620px); overflow: auto; scrollbar-width: thin; }
+.synthesis-detail-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; font-size: 12px; }
+.synthesis-detail-facts dt { color: var(--muted-foreground); }
+.synthesis-detail-facts dd { margin-top: 2px; overflow-wrap: anywhere; }
 .inspector-feedback { padding: 8px; margin: 8px 0; border-radius: 5px; background: var(--muted); }

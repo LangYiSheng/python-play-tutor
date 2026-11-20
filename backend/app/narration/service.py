@@ -233,12 +233,14 @@ def generate_range(db: Session, material: Material, *, first: int, last: int, in
     db.commit()
     for index, group in enumerate(groups, start=1):
         repository.check_cancel(db, material.id)
+        repository.beat(db, material.id, checkpoint={"group": index, "pages": group})
+        db.commit()
         try:
             written, _usage = run_window(db, material, group, settings, seconds)
             results.extend({"page_no": no, "status": "draft", "reused": False, "model": settings["model"]}
                            for no in written)
             repository.beat(db, material.id, done=index, total=len(groups),
-                            message=f"第 {group[0]}–{group[-1]} 页")
+                            message=f"第 {group[0]}–{group[-1]} 页", checkpoint={})
             db.commit()
         except (NarrationUnavailable, LookupError):
             db.rollback()
@@ -248,7 +250,7 @@ def generate_range(db: Session, material: Material, *, first: int, last: int, in
             log.warning("narration window %s failed: %s", group, exc)
             results.extend({"page_no": no, "status": "failed", "error": str(exc)[:200]} for no in group)
             repository.ensure_lease(db, material.id)
-            repository.beat(db, material.id, done=index, total=len(groups))
+            repository.beat(db, material.id, done=index, total=len(groups), checkpoint={})
             db.commit()
     return results
 

@@ -18,16 +18,11 @@ class ModelUnavailable(RuntimeError):
 
 
 class ModelFailed(RuntimeError):
-    """The provider answered but the result cannot be used.
+    """A safe teacher-facing error; hints control bounded retries."""
 
-    `hint` 标记可重试的错误类别（目前只有“输入过长”）；`detail` 保留供应商原文，否则老师只看到
-    “返回 400”，无法判断是长度、鉴权还是模型名写错。
-    """
-
-    def __init__(self, message: str, *, hint: str | None = None, detail: str = "") -> None:
+    def __init__(self, message: str, *, hint: str | None = None) -> None:
         super().__init__(message)
         self.hint = hint
-        self.detail = detail
 
 
 # 供应商把多种问题都报成 400；只识别长度这一类，其余不自动重试。
@@ -35,17 +30,28 @@ LENGTH_HINTS = ("context length", "maximum context", "input is too long", "too l
                 "reduce the length", "length limit", "maximum number of tokens")
 
 
-def _provider_error(response: httpx.Response) -> tuple[str, str | None]:
-    """Return (bounded provider message, hint). Never echo request content or keys."""
+def _length_error(response: httpx.Response) -> bool:
+    """Only classify the provider's text. It may echo secrets or course content."""
     try:
         payload = response.json()
     except ValueError:
-        return "", None
+        return False
     error = payload.get("error") if isinstance(payload, dict) else None
     message = error.get("message") if isinstance(error, dict) else payload.get("message") if isinstance(payload, dict) else None
     text = str(message or "").strip()[:200]
     lowered = text.lower()
-    return text, "length" if any(token in lowered for token in LENGTH_HINTS) else None
+    return any(token in lowered for token in LENGTH_HINTS)
+
+
+def transport_reason(exc: httpx.HTTPError) -> str:
+    for kind, label in ((httpx.ConnectTimeout, "建立连接超时"), (httpx.ReadTimeout, "等待响应超时"),
+                        (httpx.WriteTimeout, "发送请求超时"), (httpx.PoolTimeout, "等待可用连接超时"),
+                        (httpx.TimeoutException, "请求超时"), (httpx.ProxyError, "代理连接失败"),
+                        (httpx.ConnectError, "无法建立网络连接"), (httpx.RemoteProtocolError, "远端响应协议异常"),
+                        (httpx.ReadError, "读取响应时连接中断"), (httpx.WriteError, "发送请求时连接中断")):
+        if isinstance(exc, kind):
+            return label
+    return "网络传输失败"
 
 
 def _usage(data: dict[str, Any]) -> dict[str, Any]:
@@ -79,26 +85,30 @@ def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: 
         with httpx.Client(base_url=settings["base_url"], timeout=settings["timeout"]) as client:
             response = client.post("/chat/completions",
                                    headers={"Authorization": f"Bearer {settings['api_key']}"}, json=body)
-    except httpx.TimeoutException as exc:
-        # 校准窗口带思考时可以跑很久，超时必须和“请求失败”分开说。
-        raise ModelFailed(f"作者期模型 {settings['timeout']} 秒内未返回，请稍后重试或调高超时",
-                          hint="timeout") from exc
     except httpx.HTTPError as exc:
-        raise ModelFailed("作者期模型请求失败，请稍后重试") from exc
+        raise ModelFailed(f"作者期模型{transport_reason(exc)}",
+                          hint="timeout" if isinstance(exc, httpx.TimeoutException) else None) from exc
     if response.status_code in {401, 403}:
-        raise ModelUnavailable("作者期模型鉴权失败")
+        raise ModelUnavailable(f"作者期模型鉴权失败（HTTP {response.status_code}）")
     if response.status_code != 200:
-        message, hint = _provider_error(response)
-        raise ModelFailed(f"作者期模型返回 {response.status_code}" + (f"：{message}" if message else ""),
-                          hint=hint, detail=message)
-    data = response.json()
-    choice = (data.get("choices") or [{}])[0]
+        length = _length_error(response)
+        reason = ("输入超过上下文限制" if length else "请求受到限流" if response.status_code == 429 else
+                  "服务端错误" if response.status_code >= 500 else "请求未成功")
+        raise ModelFailed(f"作者期模型{reason}（HTTP {response.status_code}）", hint="length" if length else None)
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ModelFailed("作者期模型响应无法解析为 JSON（HTTP 200）") from exc
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise ModelFailed("作者期模型响应缺少有效的结果（HTTP 200）")
+    choice = choices[0]
     answer = choice.get("message") or {}
-    content = answer.get("content") or ""
+    content = answer.get("content") if isinstance(answer, dict) else None
     if choice.get("finish_reason") == "length":
         # 输入太长与输出被截断要分开：前者靠缩窗重试，后者只能加大输出预算。
         raise ModelFailed("模型输出被截断，请重试或调高上限", hint="output")
-    if not content.strip():
+    if not isinstance(content, str) or not content.strip():
         raise ModelFailed("模型返回空内容，请重试")
     try:
         parsed = json.loads(content)

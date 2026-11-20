@@ -1,13 +1,13 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { Background, Handle, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps, type Viewport } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { AudioLines, BookOpen, CircleAlert, CircleOff, FileText, FolderOpen, GitBranch, LoaderCircle, NotebookText, Scan, ZoomIn, ZoomOut } from "lucide-react";
+import { AudioLines, BookOpen, CircleAlert, CircleOff, FileQuestion, FileText, FolderOpen, GitBranch, LoaderCircle, NotebookText, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Card, graphLayout } from "./graph-layout";
 import { taskFailed } from "./task-presentation";
 
 export const nodeIcons = { course: BookOpen, chapter: FolderOpen, material: FileText, point: GitBranch,
-  narration: NotebookText, audio: AudioLines, task: LoaderCircle };
+  narration: NotebookText, audio: AudioLines, task: LoaderCircle, question: FileQuestion };
 type CourseNode = Node<{ card: Card; active: boolean }, "content">;
 const CardView = memo(function CardView({ data }: NodeProps<CourseNode>) {
   const { card, active } = data;

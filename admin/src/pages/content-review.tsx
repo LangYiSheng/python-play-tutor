@@ -71,7 +71,7 @@ function DraftDialog({ row, classroomId, close, decide, edit, busy, error }: {
         {!!q.options?.length && <ul className="list-disc space-y-1 pl-5">{q.options.map((opt, i) => <li key={i}>{opt}</li>)}</ul>}
         {q.kind === "python"
           ? <p className="text-sm">公开样例 {q.samples.length} 个 · 私有用例 {q.hidden_cases.length} 个</p>
-          : <p className="break-words text-sm">正确答案　{answerLabel(q.answer)}</p>}
+          : <p className="break-words text-sm">正确答案&emsp;{answerLabel(q.answer)}</p>}
         <p className="text-sm text-muted-foreground">编辑时可核对完整答案与判定要求，将状态设为「可用」并保存即可通过。</p>
       </>}
     </div>

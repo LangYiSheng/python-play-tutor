@@ -8,7 +8,7 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   const chapterIds = [chapterId];
   for (let n = 2; n <= 11; n++) {
     const ch = await json<{ id: number }>(await request.post(scoped("/teacher/chapters"), {
-      headers, data: { title: `第 ${n} 章　计算思维与 Python 程序设计`, order_index: n },
+      headers, data: { title: `第 ${n} 章\u3000计算思维与 Python 程序设计`, order_index: n },
     }));
     chapterIds.push(ch.id);
   }
@@ -73,8 +73,16 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   await panel.getByRole("button", {name: "变量与数据类型"}).click();
   await expect(panel.getByText("暂无已确认的课件来源")).toBeVisible();
   await expect(page.locator(".cg-point")).toHaveCount(1);
+  await expect(page.locator(".cg-question")).toHaveCount(1);
+  await panel.getByRole("button", {name: /给变量赋值/}).click();
+  await expect(panel.getByText("变量可以保存一个整数")).toBeVisible();
+  await panel.getByRole("button", {name: "编辑题目"}).click();
+  await page.getByLabel("题目名称").fill("给变量重新赋值");
+  await page.getByRole("button", {name: "保存题目"}).click();
+  await expect(panel.getByRole("heading", {name: "给变量重新赋值"})).toBeVisible();
+  await panel.getByRole("button", {name: "变量与数据类型"}).click();
   await panel.getByRole("link", {name: "查看关联题目（1）"}).click();
-  await expect(page.getByText("给变量赋值", {exact: true})).toBeVisible();
+  await expect(page.getByText("给变量重新赋值", {exact: true})).toBeVisible();
   expect(bankRequests.at(-1)?.searchParams.get("knowledge_point_id")).toBe(String(point.id));
   await page.goBack();
   await expect(panel.getByRole("heading", {name: "变量与数据类型"})).toBeVisible();
@@ -82,6 +90,56 @@ test("十一章十四份课件的全貌、来源、原位编辑与知识点题�
   await expect(page.locator(".cg-node")).toHaveCount(26);
   await page.getByRole("button", { name: "任务队列" }).click();
   await expect(page.getByText("当前没有进行中的生成任务")).toBeVisible();
+});
+
+test("全课程搜索可定位未展开内容、分类型翻页，并展示知识点题目或未归章题", async ({ page, request }) => {
+  const { headers, scoped, chapterId, tag } = await setup(page, request, "课程搜索验收");
+  const point = await json<{ id: number }>(await request.post(scoped("/teacher/knowledge-points"), {
+    headers, data: { chapter_id: chapterId, title: "循环专题", content: {} },
+  }));
+  for (let i = 1; i <= 12; i++) {
+    await json(await request.post(scoped("/teacher/questions"), { headers, data: {
+      id: "graph-search-" + tag + "-" + i, title: "循环习题 " + String(i).padStart(2, "0"),
+      kind: "boolean", prompt: i === 12 ? "孤立记录仅能通过题干定位" : "判断命题", answer: true,
+      chapter_ids: i === 12 ? [] : [chapterId], knowledge_point_ids: i === 12 ? [] : [point.id], status: i === 12 ? "draft" : "ready",
+    }}));
+  }
+  const banks: URL[] = [];
+  page.on("request", req => {
+    const url = new URL(req.url());
+    if (url.pathname === "/api/teacher/questions") banks.push(url);
+  });
+  await page.getByRole("link", { name: "知识图谱" }).click();
+  await page.setViewportSize({ width: 430, height: 915 });
+  const search = page.getByRole("textbox", { name: "搜索图谱节点" });
+  const results = page.getByRole("region", { name: "课程搜索结果" });
+  const detail = page.getByRole("complementary", { name: "节点详情" });
+  await search.fill("循环");
+  await results.getByRole("button", {name: "题目", exact: true}).click();
+  await expect(results.locator(".cg-search-hit")).toHaveCount(10);
+  const bounds = await results.boundingBox();
+  expect(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 430).toBe(true);
+  await results.getByRole("button", {name: "下一页"}).click();
+  await expect(results.locator(".cg-search-hit")).toHaveCount(2);
+  await results.getByRole("button", {name: /题目\s*循环习题 12/}).click();
+  await expect(detail.getByText("尚未归章")).toBeVisible();
+  await expect(detail.getByText("尚未关联知识点")).toBeVisible();
+  await expect(page.locator(".cg-question.cg-selected")).toHaveText(/循环习题 12/);
+  expect(banks).toEqual([]);
+  await page.getByRole("button", { name: "课程全貌", exact: true }).click();
+  await search.fill("仅能通过题干定位");
+  await expect(results.locator(".cg-search-hit")).toHaveCount(1);
+  await search.press("Enter");
+  await expect(detail.getByRole("heading", {name: "循环习题 12"})).toBeVisible();
+  await search.fill("循环");
+  await results.getByRole("button", {name: "知识点", exact: true}).click();
+  await results.locator(".cg-search-hit").first().click();
+  await expect(detail.getByRole("heading", {name: "循环专题"})).toBeVisible();
+  await expect(page.locator(".cg-question")).toHaveCount(6);
+  await detail.getByRole("button", {name: "下一页"}).click();
+  await expect(page.locator(".cg-question")).toHaveCount(5);
+  expect(banks.length).toBeGreaterThanOrEqual(2);
+  expect(banks.every(u => u.searchParams.get("size") === "6" && u.searchParams.get("knowledge_point_id") === String(point.id))).toBe(true);
 });
 
 test("任务队列能定位到带百分比的运行节点，异常节点显示静态告警", async ({ page }) => {

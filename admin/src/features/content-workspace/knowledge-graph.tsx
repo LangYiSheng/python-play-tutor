@@ -1,49 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlowProvider, type Viewport } from "@xyflow/react";
-import { ChevronRight, Eye, Headphones, ListTodo, NotebookPen, Pencil, Plus, Search, X } from "lucide-react";
+import { ChevronRight, Eye, Headphones, ListTodo, NotebookPen, Pencil, Plus, X } from "lucide-react";
 import { ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { api, errorMessage, scoped } from "@/lib/api";
+import { kinds, statuses } from "@/features/questions/types";
+import { scoped } from "@/lib/api";
 import { ContentActionDialog, type ContentAction } from "./action-dialog";
 import { GraphCanvas, nodeIcons } from "./graph-canvas";
 import { graphLayout, jobTitle, materialKinds, nodeKey, pageRanges, taskNodeId, type Branch, type GraphData,
-  type MaterialDetail, type PointDetail, type PointNode, type Selection } from "./graph-layout";
+  type GraphQuestion, type MaterialDetail, type NumericKind, type PointDetail, type PointNode, type QuestionNode, type Selection } from "./graph-layout";
+import { GraphSearch } from "./graph-search";
+import { useGraphData } from "./use-graph-data";
 import { TaskDetail, TaskQueue, useTaskCommands } from "./task-queue";
 import { taskStatus, type TaskSnapshot } from "./task-presentation";
 import "./knowledge-graph.css";
 import "./inspector-content.css";
 
-// Keep the last successful snapshot while refreshing the same URL. Switching object or
-// classroom immediately invalidates it, including during the render before the new request.
-function useGraphData<T>(url: string | null, revision: number, poll = 0) {
-  const [result, setResult] = useState<{ url: string; data?: T; error?: string }>();
-  useEffect(() => {
-    if (!url) return;
-    const controller = new AbortController();
-    let timer: number;
-    async function load(path: string) {
-      try {
-        const data = await api.get<T>(path, controller.signal);
-        if (!controller.signal.aborted) setResult({ url: path, data });
-      } catch (error) {
-        if (!controller.signal.aborted) setResult({ url: path, error: errorMessage(error) });
-      } finally {
-        if (poll && !controller.signal.aborted) timer = window.setTimeout(() => void load(path), poll);
-      }
-    }
-    void load(url);
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [url, revision, poll]);
-  return result?.url === url ? result : undefined;
-}
-
-type GraphLocation = { classroomId: number; selection: Selection | null; branch: Branch | null; chapterPage: number; viewport?: Viewport };
+type GraphLocation = { classroomId: number; selection: Selection | null; branch: Branch | null; chapterPage: number;
+  questionPoint?: number | null; questionPage?: number; viewport?: Viewport };
+const pageSize = 6;
 const kindNames = { course: "课程", chapter: "章节", material: "教学资料", point: "知识点",
-  narration: "讲解稿", audio: "讲解音频", task: "生成任务" };
+  narration: "讲解稿", audio: "讲解音频", task: "生成任务", question: "题目" };
 
-function Relations({ title, rows, onSelect, empty }: {
-  title: string; rows: { id: number; title: string; note?: string }[]; onSelect: (id: number) => void; empty?: string;
+function Relations<T extends string | number>({ title, rows, onSelect, empty }: {
+  title: string; rows: { id: T; title: string; note?: string }[]; onSelect: (id: T) => void; empty?: string;
 }) {
   return <section className="inspector-section"><h3>{title}</h3>{rows.length ? <ul className="inspector-links">{rows.map(r => <li key={r.id}>
     <button onClick={() => onSelect(r.id)}><span>{r.title}{r.note && <small>{r.note}</small>}</span><ChevronRight size={14}/></button>
@@ -68,25 +48,34 @@ function GraphPage({ classroomId }: { classroomId: number }) {
   const [selection, setSelection] = useState<Selection | null>(saved.current?.selection ?? null);
   const [branch, setBranch] = useState<Branch | null>(saved.current?.branch ?? null);
   const [chapterPage, setChapterPage] = useState(saved.current?.chapterPage ?? 1);
+  const [questionPoint, setQuestionPoint] = useState(saved.current?.questionPoint ?? null);
+  const [questionPage, setQuestionPage] = useState(saved.current?.questionPage ?? 1);
   const [focus, setFocus] = useState<{ key: string; seq: number } | null>(null);
   const [queue, setQueue] = useState(false);
-  const [query, setQuery] = useState("");
   const [revision, setRevision] = useState(0);
   const [action, setAction] = useState<ContentAction | null>(null);
   const view = useRef(saved.current?.viewport);
+  const inspector = useRef<HTMLElement>(null);
+  const selectedKey = selection ? nodeKey(selection) : "";
+  useEffect(() => { inspector.current?.scrollTo(0, 0); }, [selectedKey, queue]);
   const refresh = () => setRevision(n => n + 1);
   const commands = useTaskCommands(classroomId, refresh);
   const endpoint = (suffix: string) => scoped("/teacher/course-graph" + suffix, classroomId);
   const catalog = useGraphData<GraphData>(endpoint(""), revision);
   const taskList = useGraphData<TaskSnapshot[]>(endpoint("/tasks"), revision, 4000);
   const material = useGraphData<MaterialDetail>(branch?.kind === "material" ? endpoint("/materials/" + branch.id) : null, revision);
-  const points = useGraphData<{ items: PointNode[]; total: number; page: number }>(branch?.kind === "chapter"
+  const points = useGraphData<{ items: PointNode[]; total: number; page: number }>(branch?.kind === "chapter" && selection?.kind === "chapter"
     ? scoped("/teacher/knowledge-points?chapter_id=" + branch.id + "&page=" + chapterPage + "&size=12", classroomId) : null, revision);
-  const point = useGraphData<PointDetail>(selection?.kind === "point" ? endpoint("/points/" + selection.id) : null, revision);
+  const contextPoint = selection?.kind === "point" ? selection.id : selection?.kind === "question" ? questionPoint : null;
+  const point = useGraphData<PointDetail>(contextPoint != null ? endpoint("/points/" + contextPoint) : null, revision);
+  const questions = useGraphData<{ items: QuestionNode[]; total: number; page: number }>(contextPoint != null ?
+    scoped("/teacher/questions?knowledge_point_id=" + contextPoint + "&page=" + questionPage + "&size=" + pageSize, classroomId) : null, revision);
+  const question = useGraphData<GraphQuestion>(selection?.kind === "question" ? endpoint("/questions/" + encodeURIComponent(selection.id)) : null, revision);
   const graph = catalog?.data;
   const jobs = taskList?.data;
-  const layout = useMemo(() => graph ? graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data) : null,
-    [graph, branch, material?.data, jobs, point?.data]);
+  const layout = useMemo(() => graph ? graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data,
+    point?.data ? questions?.data?.items : undefined, question?.data) : null,
+    [graph, branch, material?.data, jobs, point?.data, questions?.data, question?.data]);
   const previousJobs = useRef<number[]>([]);
   useEffect(() => {
     if (!jobs) return;
@@ -96,19 +85,32 @@ function GraphPage({ classroomId }: { classroomId: number }) {
   }, [jobs]);
   function persist(viewport = view.current) {
     view.current = viewport;
-    history.replaceState({ ...history.state, courseGraph: { classroomId, branch, selection, chapterPage, viewport } }, "");
+    history.replaceState({ ...history.state, courseGraph: { classroomId, branch, selection, chapterPage, questionPoint, questionPage, viewport } }, "");
   }
-  useEffect(() => { persist(); }, [classroomId, branch, selection, chapterPage]);
+  useEffect(() => { persist(); }, [classroomId, branch, selection, chapterPage, questionPoint, questionPage]);
   function focusOn(key: string) { setFocus(prev => ({ key, seq: (prev?.seq ?? 0) + 1 })); }
-  function choose(kind: Selection["kind"], id: number) {
-    setQuery(""); setQueue(false); setSelection({ kind, id });
+  function choose(kind: NumericKind, id: number) {
+    setQueue(false); setSelection({ kind, id });
+    if (kind !== "point" || questionPoint !== id) setQuestionPage(1);
+    setQuestionPoint(kind === "point" ? id : null);
     if (kind === "chapter" || kind === "material") {
       setBranch({ kind, id }); setChapterPage(1);
     } else if (kind === "course") setBranch(null);
     focusOn(nodeKey({ kind, id }));
   }
+  function chooseQuestion(id: string) {
+    setSelection({kind: "question", id}); setQueue(false); focusOn(nodeKey({kind: "question", id}));
+  }
+  function searchSelect(s: Selection, chapterId?: number | null) {
+    if (s.kind === "question") {
+      setBranch(null); setQuestionPoint(null); setQuestionPage(1); chooseQuestion(s.id);
+    } else {
+      if (s.kind === "point") setBranch(chapterId == null ? null : {kind: "chapter", id: chapterId});
+      choose(s.kind, s.id);
+    }
+  }
   function overview() {
-    setSelection(null); setBranch(null); setQueue(false); setQuery(""); focusOn("overview");
+    setSelection(null); setBranch(null); setQueue(false); setQuestionPoint(null); setQuestionPage(1); focusOn("overview");
   }
   function chooseTask(job: TaskSnapshot) {
     setBranch({kind: "material", id: job.material_id});
@@ -122,9 +124,7 @@ function GraphPage({ classroomId }: { classroomId: number }) {
   const selectedTitle = selection?.kind === "point" ? (point?.data?.title ?? currentCard?.title) : currentCard?.title;
   const deckTasks = deck ? jobs?.filter(j => j.material_id === deck.id) ?? [] : [];
   const task = selection?.kind === "task" ? deckTasks.find(j => taskNodeId(j) === selection.id) : undefined;
-  const searchText = query.trim().toLocaleLowerCase();
-  const matches = searchText ? layout.cards.filter(c => c.title.toLocaleLowerCase().includes(searchText)).slice(0, 12) : [];
-  function edit(kind: ContentAction["kind"], mode: ContentAction["mode"], id?: number, chapterId?: number) {
+  function edit(kind: ContentAction["kind"], mode: ContentAction["mode"], id?: number | string, chapterId?: number) {
     setAction({ kind, mode, id, chapterId });
   }
   const chapterLookup = (id: number) => graph.chapters.find(ch => ch.id === id)?.title ?? "所属章节";
@@ -163,14 +163,33 @@ function GraphPage({ classroomId }: { classroomId: number }) {
       <div className="inspector-actions"><a className={buttonVariants()} href={`/teacher/content-list?tab=questions&point=${p.id}&pointName=${encodeURIComponent(p.title)}`}>
         查看关联题目（{p.questions}）<ChevronRight size={15}/></a>
         <Button variant="outline" onClick={() => edit("point", "edit", p.id)}><Pencil/>编辑知识点</Button></div>
+      {questions?.data ? <><Relations title={`关联题目 · ${questions.data.total}`} rows={questions.data.items.map(q => ({ ...q, note: kinds[q.kind] }))}
+        onSelect={chooseQuestion} empty="暂无关联题目"/>
+        {questions.data.total > pageSize && <div className="cg-pagination" aria-label="关联题目翻页">
+          <Button size="xs" variant="outline" disabled={questions.data.page <= 1} onClick={() => setQuestionPage(questions.data!.page - 1)}>上一页</Button>
+          <span>{questions.data.page} / {Math.ceil(questions.data.total / pageSize)}</span>
+          <Button size="xs" variant="outline" disabled={questions.data.page * pageSize >= questions.data.total} onClick={() => setQuestionPage(questions.data!.page + 1)}>下一页</Button>
+        </div>}</> : questions?.error ? <ErrorNotice message={questions.error}/> : <Loading/>}
       <Relations title="课件来源" rows={p.sources.map(s => ({ id: s.material_id,
         title: graph.materials.find(m => m.id === s.material_id)?.title ?? "课件", note: "第 " + pageRanges(s.pages) + " 页" }))}
         onSelect={id => choose("material", id)} empty="暂无已确认的课件来源"/></> : point?.error ? <ErrorNotice message={point.error}/> : <Loading/>;
+  } else if (selection?.kind === "question") {
+    const q = question?.data;
+    details = q ? <><p className="inspector-meta">{kinds[q.kind]} · {statuses[q.status]} · {q.source_type === "ai_generated" ? "AI 生成" : "导入"}</p>
+      <div className="inspector-actions"><Button onClick={() => edit("question", "edit", q.id)}><Pencil/>编辑题目</Button></div>
+      <section className="inspector-section"><h3>题干</h3><p className="cg-question-prompt">{q.prompt}</p></section>
+      <Relations title="关联知识点" rows={q.points} onSelect={id => choose("point", id)} empty="尚未关联知识点"/>
+      <Relations title="所属章节" rows={graph.chapters.filter(ch => q.chapter_ids.includes(ch.id))}
+        onSelect={id => choose("chapter", id)} empty="尚未归章"/>
+      <Relations title="题目来源资料" rows={q.sources.map(s => ({ id: s.material_id,
+        title: graph.materials.find(m => m.id === s.material_id)?.title ?? "资料", note: s.pages.length ? "第 " + pageRanges(s.pages) + " 页" : undefined }))}
+        onSelect={id => choose("material", id)} empty="暂无已确认的题目来源资料"/></> : question?.error ? <ErrorNotice message={question.error}/> : <Loading/>;
   } else if (deck && selection?.kind === "task") {
+    const taskActions = <><Button size="sm" variant="outline" onClick={() => edit("material", "narration", deck.id)}><NotebookPen/>打开课件审校</Button>
+      <Button size="sm" variant="outline" onClick={() => edit("material", "preview", deck.id)}><Eye/>查看资料</Button></>;
     details = <><Relations title="任务课件" rows={[deck]} onSelect={id => choose("material", id)}/>
-      {task ? <TaskDetail job={task} material={deck.title} request={commands.request}/> : taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> : <p className="inspector-meta">任务已离开执行队列，可到课件审校中查看结果。</p>}
-      <div className="inspector-actions"><Button onClick={() => edit("material", "narration", deck.id)}><NotebookPen/>打开课件审校</Button>
-        <Button variant="outline" onClick={() => edit("material", "preview", deck.id)}><Eye/>查看资料</Button></div></>;
+      {task ? <TaskDetail job={task} material={deck.title} request={commands.request} actions={taskActions}/> : taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> :
+        <><p className="inspector-meta">任务已离开执行队列，可到课件审校中查看结果。</p><div className="inspector-task-actions">{taskActions}</div></>}</>;
   } else if (deck && selection && (selection.kind === "audio" || selection.kind === "narration")) {
     const audio = selection.kind === "audio";
     const count = material?.data && (audio ? material.data.audio : material.data.narrations);
@@ -186,17 +205,14 @@ function GraphPage({ classroomId }: { classroomId: number }) {
       <header className="cg-overlay-header">
         <div className="cg-heading"><h1>知识图谱</h1><p>{graph.title}</p>
           <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></div>
-        <div className="cg-bar"><div className="cg-search"><Search size={16}/><Input aria-label="搜索图谱节点" placeholder="查找章节或资料" value={query}
-        onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Escape") setQuery(""); if (e.key === "Enter" && matches[0]) choose(matches[0].kind, matches[0].id); }}/>
-        {searchText && <div className="cg-results">{matches.length ? matches.map(c => <button key={c.key} onClick={() => choose(c.kind, c.id)}>
-          <small>{kindNames[c.kind]}</small>{c.title}</button>) : <p>未找到匹配节点</p>}</div>}</div>
+        <div className="cg-bar"><GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>
         <Button variant={queue ? "secondary" : "outline"} size="sm" onClick={() => setQueue(!queue)}><ListTodo/>任务队列{jobs?.length ? `（${jobs.length}）` : ""}</Button>
         </div>
       </header>
       <div className={"cg-body" + (selection || queue ? " cg-inspecting" : "")}>
-        <ReactFlowProvider><GraphCanvas layout={layout} selected={selection ? nodeKey(selection) : ""} focus={focus}
-          onSelect={c => choose(c.kind, c.id)} initialViewport={view.current} onMove={persist} onOverview={overview}/></ReactFlowProvider>
-        {(selection || queue) && <aside className="cg-inspector" aria-label={queue ? "任务队列" : "节点详情"}>
+        <ReactFlowProvider><GraphCanvas layout={layout} selected={selectedKey} focus={selection?.kind === "question" && !question?.data ? null : focus}
+          onSelect={c => c.kind === "question" ? chooseQuestion(c.id) : choose(c.kind, c.id)} initialViewport={view.current} onMove={persist} onOverview={overview}/></ReactFlowProvider>
+        {(selection || queue) && <aside className="cg-inspector" ref={inspector} aria-label={queue ? "任务队列" : "节点详情"}>
           <div className="cg-inspector-top"><span>{queue ? <ListTodo size={16}/> : <Icon size={16}/>}
             {queue ? "生成任务" : kindNames[selection!.kind]}</span><Button aria-label="关闭详情栏" size="icon-xs" variant="ghost"
             onClick={() => {setQueue(false); setSelection(null);}}><X/></Button></div>

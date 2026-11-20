@@ -19,6 +19,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from .contracts import SpeechSettings
+from .client import transport_reason
 from .defaults import environment_protocol
 
 DEEPSEEK_FORMATS = {"wav", "pcm"}
@@ -108,15 +109,15 @@ def synthesize(text: str, *, settings_override: SpeechSettings | None = None) ->
         with httpx.Client(timeout=config["timeout"]) as client:
             response = client.post(endpoint(config["base_url"], path), headers=headers, json=body)
     except httpx.HTTPError as exc:
-        raise SpeechFailed("语音合成请求失败，请稍后重试") from exc
+        raise SpeechFailed(f"语音合成{transport_reason(exc)}") from exc
     if response.status_code in {401, 403}:
-        raise SpeechFailed("语音合成服务鉴权失败")
+        raise SpeechFailed(f"语音合成服务鉴权失败（HTTP {response.status_code}）")
     if response.status_code == 400:
-        raise SpeechFailed("语音合成被拒绝：文本为空或未通过内容审核")
+        raise SpeechFailed("语音合成服务拒绝了请求（HTTP 400），请核对参数及内容审核要求")
     if response.status_code == 429:
-        raise SpeechFailed("语音合成并发超限，请稍后重试")
+        raise SpeechFailed("语音合成受到限流（HTTP 429），请稍后重试或降低并发")
     if response.status_code in {503, 504}:
-        raise SpeechFailed("语音合成服务繁忙或超时，请稍后重试")
+        raise SpeechFailed(f"语音合成服务暂时无法完成请求（HTTP {response.status_code}），请检查服务是否繁忙")
     if response.status_code != 200:
         raise SpeechFailed(f"语音合成服务返回 {response.status_code}")
     if config.get("protocol", environment_protocol()) == "dashscope":
@@ -154,7 +155,7 @@ def _dashscope_audio(config: SpeechSettings, response: httpx.Response) -> bytes:
             with httpx.Client(timeout=config["timeout"]) as client:
                 download = client.get(url)
         except httpx.HTTPError as exc:
-            raise SpeechFailed("语音合成音频下载失败，请稍后重试") from exc
+            raise SpeechFailed(f"语音合成音频下载{transport_reason(exc)}") from exc
         if download.status_code != 200:
             raise SpeechFailed(f"语音合成音频下载失败（{download.status_code}）")
         audio = download.content

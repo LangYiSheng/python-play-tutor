@@ -1,4 +1,7 @@
-import { taskFailed, taskPercent, taskStatus } from "./task-presentation";
+import { kinds, statuses } from "@/features/questions/types";
+import type { Question } from "@/lib/types";
+import { taskFailed, taskPercent, taskStage, taskStatus, taskTitle } from "./task-presentation";
+export { taskStage as jobStage, taskTitle as jobTitle } from "./task-presentation";
 
 export type ChapterNode = { id: number; title: string };
 export type MaterialNode = { id: number; title: string; kind: string; status: string; chapter_ids: number[] };
@@ -6,21 +9,24 @@ export type PointNode = { id: number; chapter_id: number; title: string; pages?:
 export type GraphData = { title: string; chapters: ChapterNode[]; materials: MaterialNode[] };
 export type MaterialDetail = { points: PointNode[]; pages: number; narrations: number; drafts: number; audio: number };
 export type PointDetail = PointNode & { questions: number; sources: { material_id: number; pages: number[] }[] };
+export type QuestionNode = Pick<Question, "id" | "title" | "kind" | "status">;
+export type GraphQuestion = QuestionNode & Pick<Question, "prompt" | "chapter_ids" | "source_type"> & {
+  points: PointNode[]; sources: { material_id: number; pages: number[] }[];
+};
 export type Job = {
   material_id: number; kind: string; stage: string; queued: boolean; done: number; total: number;
   id?: number | null; run_id?: number | null; started_at?: string | null; percent?: number | null;
   status?: string; running?: boolean; failed?: { page_no?: number; error?: string }[];
   cancellable?: boolean; retryable?: boolean; retry_note?: string; message?: string;
+  progress_unit?: "groups" | "pages" | "steps" | null; position?: string; diagnostic?: string;
+  stage_index?: number | null; stage_total?: number | null; stages?: string[]; queue_dismissed?: boolean;
 };
 export type Branch = { kind: "chapter" | "material"; id: number };
-export type Selection = { kind: "course" | "chapter" | "material" | "point" | "narration" | "audio" | "task"; id: number };
+export type NumericKind = "course" | "chapter" | "material" | "point" | "narration" | "audio" | "task";
+export type Selection = { kind: NumericKind; id: number } | { kind: "question"; id: string };
 export type Card = Selection & { key: string; title: string; caption?: string; x: number; y: number; side: number; draft?: boolean; task?: Job };
 export const nodeKey = (selection: Selection) => selection.kind + "-" + selection.id;
 export const materialKinds: Record<string, string> = { presentation: "PPT", pdf: "PDF", text: "文本", video: "视频" };
-const jobKinds: Record<string, string> = {
-  pipeline: "课程生成", generate: "讲稿生成", calibrate: "讲稿校准", audio: "语音合成", digest: "原文梳理",
-};
-export const jobTitle = (job: Job) => jobKinds[job.kind] ?? "课件处理";
 // Old jobs without a run record have at most one row per material. A negative key
 // keeps those nodes distinct from durable (positive) run IDs.
 export const taskNodeId = (job: Job) => job.run_id ?? -job.material_id;
@@ -28,9 +34,6 @@ function taskCaption(job: Job) {
   const percent = taskPercent(job);
   return taskStatus(job) + (percent === null ? "" : " · " + percent + "%");
 }
-export const jobStage = (job: Job) => job.queued ? "等待执行" :
-  ({ digest: "梳理原文", calibrate: "校准", apply: "应用修正", script: "编写讲稿" }[job.stage] ?? "处理中");
-
 export function pageRanges(pages: number[]) {
   const ranges: [number, number][] = [];
   for (const page of [...new Set(pages)].sort((a, b) => a - b)) {
@@ -42,10 +45,11 @@ export function pageRanges(pages: number[]) {
 }
 
 export function graphLayout(graph: GraphData, branch: Branch | null,
-                            detail: MaterialDetail | null, jobs: Job[], point?: PointDetail) {
+                            detail: MaterialDetail | null, jobs: Job[], point?: PointDetail,
+                            questionPage: QuestionNode[] = [], question?: GraphQuestion) {
   const cards: Card[] = [];
   const links: { from: string; to: string; active?: boolean; failed?: boolean }[] = [];
-  function add(kind: Selection["kind"], id: number, title: string, caption: string, x: number, y: number, side: number) {
+  function add(kind: NumericKind, id: number, title: string, caption: string, x: number, y: number, side: number) {
     const key = nodeKey({ kind, id });
     const card: Card = { key, kind, id, title, caption, x, y, side };
     cards.push(card);
@@ -67,10 +71,12 @@ export function graphLayout(graph: GraphData, branch: Branch | null,
     const prior = latestJobs.get(job.material_id);
     if (!prior || (job.run_id ?? 0) > (prior.run_id ?? 0)) latestJobs.set(job.material_id, job);
   }
+  const expandedPoints = new Map((question?.points ?? []).map(p => [p.id, p]));
+  if (point) expandedPoints.set(point.id, point);
+  for (const p of detail?.points ?? []) expandedPoints.delete(p.id);
   const rows = groups.map(g => {
-    const selectedPoint = branch?.kind === "chapter" && branch.id === g.chapter?.id && point?.chapter_id === branch.id
-      ? point : undefined;
-    return { ...g, selectedPoint, height: Math.max(1, g.materials.length + (selectedPoint ? 1 : 0)) * 58 + 18 };
+    const chapterPoints = [...expandedPoints.values()].filter(p => p.chapter_id === g.chapter?.id);
+    return { ...g, chapterPoints, height: Math.max(1, g.materials.length + chapterPoints.length) * 58 + 18 };
   });
   const height = rows.reduce((sum, g) => sum + g.height, 0);
   let split = rows.length > 1 ? 1 : rows.length;
@@ -99,24 +105,24 @@ export function graphLayout(graph: GraphData, branch: Branch | null,
         } else links.push({ from: root.key, to: item.key });
         y += 58;
       }
-      if (group.selectedPoint) {
-        const p = group.selectedPoint;
+      for (const p of group.chapterPoints) {
         const item = add("point", p.id, p.title, "章节知识点", side * 455, y, side);
         links.push({ from: chapter!.key, to: item.key });
+        y += 58;
       }
       top += group.height;
     }
   }
   const parent = branch?.kind === "material" && cards.find(c => c.key === nodeKey(branch));
-  if (parent) {
-    const children: { kind: Selection["kind"]; id: number; title: string; caption: string; draft?: boolean; task?: Job }[] =
+  if (parent && parent.kind === "material") {
+    const children: { kind: NumericKind; id: number; title: string; caption: string; draft?: boolean; task?: Job }[] =
       (detail?.points ?? []).map(p => ({ kind: "point", id: p.id, title: p.title, caption: "知识点 · 第 " + pageRanges(p.pages ?? []) + " 页" }));
     if (detail?.narrations) children.push({ kind: "narration", id: parent.id, title: "逐页讲解稿", caption: detail.narrations + " 页" +
       (detail.drafts ? " · " + detail.drafts + " 页待审核" : ""), draft: detail.drafts > 0 });
     if (detail?.audio) children.push({ kind: "audio", id: parent.id, title: "讲解音频", caption: detail.audio + " 页已配音" });
     for (const job of jobs.filter(j => j.material_id === parent.id)) {
-      children.push({ kind: "task", id: taskNodeId(job), title: jobTitle(job),
-        caption: taskCaption(job), task: job });
+      children.push({ kind: "task", id: taskNodeId(job), title: taskTitle(job),
+        caption: [taskCaption(job), taskStage(job)].join(" · "), task: job });
     }
     children.forEach((child, i) => {
       const card = add(child.kind, child.id, child.title, child.caption, parent.x + parent.side * 234,
@@ -136,5 +142,23 @@ export function graphLayout(graph: GraphData, branch: Branch | null,
       if (!existing.has(from)) links.push({ from, to });
     }
   }
+  const questions = new Map(questionPage.map(q => [q.id, q]));
+  if (question) questions.set(question.id, question);
+  const byKey = new Map(cards.map(c => [c.key, c]));
+  const pointAnchor = point && byKey.get(nodeKey({ kind: "point", id: point.id }));
+  const relatedKeys = question ? [
+    ...question.points.map(p => "point-" + p.id),
+    ...question.sources.map(s => "material-" + s.material_id),
+    ...question.chapter_ids.map(id => "chapter-" + id),
+  ].filter(key => byKey.has(key)) : [];
+  const anchor = pointAnchor || byKey.get(relatedKeys[0]) || root;
+  const x = anchor.side * Math.max(690, Math.abs(anchor.x) + 240);
+  [...questions.values()].forEach((q, i) => {
+    const key = nodeKey({ kind: "question", id: q.id });
+    cards.push({ key, kind: "question", id: q.id, title: q.title, caption: kinds[q.kind] + " · " + statuses[q.status],
+      x, y: anchor.y + (i - (questions.size - 1) / 2) * 60, side: anchor.side, draft: q.status === "draft" });
+    const parents = question?.id === q.id ? relatedKeys : pointAnchor ? [pointAnchor.key] : [];
+    for (const from of new Set(parents.length ? parents : [root.key])) links.push({ from, to: key });
+  });
   return { cards, links };
 }

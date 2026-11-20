@@ -117,7 +117,7 @@ def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User
     return _list_questions(db=db, user=user, classroom_id=classroom_id)
 
 
-@router.get("/teacher/questions/{question_id}")
+@router.get("/teacher/questions/{question_id:path}")
 def get_question(question_id: str, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int):
     return question_detail(db, user, classroom_id, question_id)
 
@@ -127,7 +127,7 @@ def list_candidates(chapter_id: int, db: Annotated[Session, Depends(get_db)], us
     return chapter_candidates(db, user, classroom_id, chapter_id)
 
 
-@router.put("/teacher/questions/{question_id}")
+@router.put("/teacher/questions/{question_id:path}")
 def update_question(
     question_id: str,
     body: QuestionUpdate,
@@ -138,7 +138,7 @@ def update_question(
     return _update_question(question_id=question_id, body=body, db=db, user=user, classroom_id=classroom_id)
 
 
-@router.delete("/teacher/questions/{question_id}")
+@router.delete("/teacher/questions/{question_id:path}")
 def delete_question(
     question_id: str, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None
 ):

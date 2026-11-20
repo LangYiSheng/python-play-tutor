@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { Synthesis } from '../src/pages/synthesis';
 import { api } from '../src/lib/api';
@@ -21,7 +21,7 @@ it('shows global synthesis records with their class and keeps changes in class w
   expect(screen.queryByRole('button', { name: '重试' })).not.toBeInTheDocument();
 });
 it('loads class tasks without invoking services and requires confirmation before retry', async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...task, status: 'done' });
+  vi.mocked(api.post).mockResolvedValue({ ...task, status: 'running', queued: true });
   render(<Synthesis classroomId={7} />);
   await screen.findByText('变量讲义');
   expect(vi.mocked(api.get).mock.calls[0][0]).toContain('/classrooms/7/synthesis?');
@@ -32,10 +32,37 @@ it('loads class tasks without invoking services and requires confirmation before
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
   expect(api.post).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '确认重试' }));
-  await screen.findByText('重试已完成');
+  await screen.findByText(/已提交重试/);
   expect(api.post).toHaveBeenCalledWith('/teacher/classrooms/7/synthesis/11/retry', { expected_started_at: task.started_at });
   fireEvent.click(screen.getByRole('button', { name: '查看资料' }));
   expect(screen.getByText('审校对话框')).toBeInTheDocument();
+});
+it('explains the current stage and the real unit in the run detail, with audio actions only on audio runs', async () => {
+  const record = { ...task, id: 9, kind: 'pipeline', stage: 'calibrate', stage_index: 2, stage_total: 4,
+    stages: ['digest', 'calibrate', 'apply', 'script'],
+    done: 2, total: 13, progress_unit: 'groups', position: '第 3 个窗口，课件第 9–12 页',
+    diagnostic: '第 3 个窗口服务请求超时' };
+  const audio = { ...task, id: 10, kind: 'audio', title: '语音批次' };
+  vi.mocked(api.get).mockImplementation(async (url) => url.endsWith('/runs/9') ? record : {
+    items: [record, audio], total: 2, counts: { running: 0, failed: 2, interrupted: 0 }
+  });
+  render(<Synthesis classroomId={7} />);
+  const row = (await screen.findByText('变量讲义')).closest('tr')!;
+  expect(within(row).getByText('课程生成')).toBeVisible();
+  expect(within(row).getByText(/已处理 2 \/ 13 个文本窗口/)).toBeVisible();
+  expect(within(row).queryByRole('button', {name:'试听'})).toBeNull();
+  expect(screen.getAllByRole('button', {name:'试听'})).toHaveLength(1);
+  expect(within(row).getByRole('button', {name:'重试'}).className).toEqual(within(row).getByRole('button', {name:'查看资料'}).className);
+  fireEvent.click(within(row).getByRole('button', {name:'任务详情'}));
+  const popup = await screen.findByRole('dialog', {name:/任务详情 · 课程生成/});
+  expect(within(popup).getByText('阶段 2/4 · 校准整理稿')).toBeVisible();
+  const stages = within(popup).getByRole('list', {name: '本次任务阶段'});
+  expect(within(stages).getByText('1. 梳理原文').closest('li')).toHaveTextContent('已完成');
+  expect(within(stages).getByText('2. 校准整理稿').closest('li')).toHaveTextContent('执行失败');
+  expect(within(stages).getByText('3. 应用校准修正').closest('li')).toHaveTextContent('未执行');
+  expect(within(popup).getByText(/停止位置 · 第 3 个窗口/)).toBeVisible();
+  expect(within(popup).getByText(record.diagnostic)).toBeVisible();
+  expect(api.get).toHaveBeenCalledWith('/teacher/classrooms/7/synthesis/runs/9', expect.any(AbortSignal));
 });
 it('keeps refresh failures visible and aborts reads when leaving', async () => {
   const view = render(<Synthesis classroomId={7} />);

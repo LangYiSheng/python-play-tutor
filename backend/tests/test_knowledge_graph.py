@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.models import KnowledgePoint, Material, MaterialChapter, now
+from app.models import Chapter, KnowledgePoint, Material, MaterialChapter, Question, QuestionChapter, QuestionKnowledgePoint, now
 from app.narration import repository
 from app.narration.models import NarrationJob
 
@@ -60,3 +60,57 @@ def test_graph_uses_current_audio_and_live_job_evidence(client, db, classroom, t
     assert read("/materials/186")["audio"] == 0
     interrupted, = read("/tasks")
     assert interrupted["status"] == "interrupted" and not interrupted["retryable"]
+
+
+def test_search_finds_collapsed_content_and_question_evidence(client, db, classroom, teacher, student):
+    chapter = db.get(Chapter, 179)
+    deck = db.get(Material, 186)
+    point = db.scalars(select(KnowledgePoint).where(KnowledgePoint.chapter_id == chapter.id)).first()
+    chapter.title, deck.title, point.title = "100%_章", "100%_课件", "100%_"
+    deck.content = {"pages": [{"id": 70092, "page_no": 7}]}
+    question = Question(id="q/graph", title="仅题干命中", prompt="请解释 100%_ 的含义", kind="boolean",
+                        source={"material_id": deck.id, "page_no": 7}, course_instance_id=chapter.course_instance_id)
+    db.add(question)
+    db.flush()
+    db.add_all([QuestionChapter(question_id=question.id, chapter_id=chapter.id),
+                QuestionKnowledgePoint(question_id=question.id, knowledge_point_id=point.id)])
+    db.commit()
+    path, params, headers = "/api/teacher/course-graph", {"classroom_id": classroom["id"]}, teacher["headers"]
+
+    def search(**filters):
+        r = client.get(path + "/search", params={**params, "search": "100%_", **filters}, headers=headers)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    first = search(size=2)
+    assert first["total"] == 4 and first["items"][0] == {
+        "kind": "point", "id": point.id, "chapter_id": chapter.id, "title": point.title}
+    second = search(size=2, page=2)
+    assert {row["kind"] for row in first["items"] + second["items"]} == {"question", "material", "point", "chapter"}
+    assert second["items"][-1]["id"] == question.id
+    assert [r["id"] for r in search(kind="question")["items"]] == [question.id]
+    question_path = path + "/questions/q%2Fgraph"
+    def detail():
+        return client.get(question_path, params=params, headers=headers)
+    response = detail()
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["points"] == [{"id": point.id, "title": point.title, "chapter_id": chapter.id}]
+    assert result["chapter_ids"] == [chapter.id] and result["sources"] == [{"material_id": deck.id, "pages": [7]}]
+    assert client.get("/api/teacher/questions/q%2Fgraph", params=params, headers=headers).json()["id"] == question.id
+    assert not {"answer", "hidden_cases", "interactive", "options"} & result.keys()
+    question.source = {"page_ids": [70092]}
+    db.commit()
+    assert detail().json()["sources"] == result["sources"]
+
+    chapter.owner_id = student["id"]
+    deck.deleted_at = now()
+    db.commit()
+    assert search()["total"] == 1
+    restricted = detail().json()
+    assert restricted["points"] == restricted["sources"] == restricted["chapter_ids"] == []
+    question.owner_id = student["id"]
+    db.commit()
+    assert search()["total"] == 0 and detail().status_code == 404
+    assert client.get(path + "/search", params={**params, "search": "100"}, headers=student["headers"]).status_code == 403
+    assert client.get(question_path, params={"classroom_id": 99999}, headers=headers).status_code in (403, 404)

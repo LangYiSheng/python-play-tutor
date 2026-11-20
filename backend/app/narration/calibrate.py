@@ -358,9 +358,10 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
     while index < len(groups) and (ran == 0 or time.monotonic() < deadline):
         repository.check_cancel(db, material.id)
         repository.ensure_lease(db, material.id)
-        repository.beat(db, material.id, done=index, total=len(groups))
-        db.commit()
         group = groups[index]
+        repository.beat(db, material.id, done=index, total=len(groups),
+                        checkpoint={"group": index + 1, "pages": [page.page_no for page in group]})
+        db.commit()
         payload, images, shrunk = _window_payload(db, material, group, state, budget=WINDOW_TEXT_BUDGET,
                                                   image_limit=len(group))
         try:
@@ -386,19 +387,18 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
         index += 1
         ran += 1
         state["next_index"] = index
-        if index >= len(groups):
-            repository.check_cancel(db, material.id)
-            _merge_tags(db, material, items, state, settings)
-            state["complete"] = True
-            state["generated_at"] = now().isoformat()
         # 每次写入必须换一个新对象：重复赋同一个 dict，SQLAlchemy 认为没有变化，不会落库。
         row.report = dict(state)
         row.windows = len(groups)
         db.flush()
-        repository.beat(db, material.id, done=index, total=len(groups))
+        repository.beat(db, material.id, done=index, total=len(groups), checkpoint={})
         db.commit()
     state["next_index"] = index
     if index >= len(groups) and not state.get("complete"):
+        repository.check_cancel(db, material.id)
+        repository.beat(db, material.id, done=index, total=len(groups), checkpoint={"action": "merge_tags"})
+        db.commit()
+        _merge_tags(db, material, items, state, settings)
         state["complete"] = True
         state["generated_at"] = now().isoformat()
     row.report = dict(state)

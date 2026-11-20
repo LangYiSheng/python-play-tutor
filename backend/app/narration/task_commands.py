@@ -155,6 +155,9 @@ def run_digest(db: Session, material: Material, request: dict[str, Any], *,
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0, "cache_miss_tokens": 0}
     for index, group in enumerate(groups, start=1):
         repository.check_cancel(db, material.id)
+        repository.beat(db, material.id, done=index - 1, total=total,
+                        checkpoint={"group": index, "pages": group})
+        db.commit()
         repository.ensure_lease(db, material.id)
         try:
             pages, spent = digest.run_window(db, material, group, settings, effort)
@@ -167,7 +170,7 @@ def run_digest(db: Session, material: Material, request: dict[str, Any], *,
                 "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group],
                 **(extra or {})})
             return False
-        repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页")
+        repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页", checkpoint={})
         db.commit()
     if chained:
         repository.beat(db, material.id, done=total, total=total, message=f"已整理 {len(written)} 页")
@@ -207,7 +210,7 @@ def run_calibration(db: Session, material: Material, *,
             return False
         report = dict(row.report or {})
         repository.beat(db, material.id, done=report.get("windows_done", 0), total=report.get("windows", 0),
-                        message=f"第 {report.get('windows_done', 0)}/{report.get('windows', 0)} 个窗口")
+                        message=f"第 {report.get('windows_done', 0)}/{report.get('windows', 0)} 个窗口", checkpoint={})
         db.commit()
         if reused or report.get("complete"):
             if reused:
@@ -265,7 +268,7 @@ def _apply_latest(db: Session, material: Material, extra: dict[str, Any] | None)
         repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
         return False
     db.commit()
-    repository.beat(db, material.id, message=f"已应用 {len(applied['applied_fixes'])} 处修正")
+    repository.beat(db, material.id, done=1, total=1, message=f"已应用 {len(applied['applied_fixes'])} 处修正")
     db.commit()
     return True
 
@@ -282,7 +285,8 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
         stage = chain[0]
         remaining = {"chain": chain, "stage": stage, "failed_stage": stage}
         repository.set_chain(db, material.id, chain, stage)
-        repository.beat(db, material.id, message=f"{STAGE_LABELS.get(stage, stage)}…")
+        repository.beat(db, material.id, message=f"{STAGE_LABELS.get(stage, stage)}…",
+                        total=1 if stage == "apply" else 0)
         db.commit()
         if stage == "digest":
             ok = run_digest(db, material, request, chained=True, extra=remaining)
@@ -375,16 +379,18 @@ def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) ->
         if item.status != "accepted" or not item.text.strip():
             continue
         repository.check_cancel(db, material.id)
+        repository.beat(db, material.id, checkpoint={"pages": [item.page_no]})
+        db.commit()
         try:
             result = audio.synthesize_page(db, material, item.page_no)
             (reused if result["reused"] else made).append(item.page_no)
             repository.beat(db, material.id, done=len(made) + len(reused) + len(failed), total=len(wanted),
-                            message=f"音频第 {item.page_no} 页")
+                            message=f"音频第 {item.page_no} 页", checkpoint={})
             db.commit()
         except (tts.SpeechFailed, ValueError, LookupError) as exc:
             db.rollback()
             failed.append({"page_no": item.page_no, "error": str(exc)[:160]})
-            repository.beat(db, material.id, done=len(made) + len(reused) + len(failed), total=len(wanted))
+            repository.beat(db, material.id, done=len(made) + len(reused) + len(failed), total=len(wanted), checkpoint={})
             db.commit()
     repository.release(
         db,

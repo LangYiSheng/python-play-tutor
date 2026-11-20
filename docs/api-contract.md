@@ -58,7 +58,12 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 
 ## Teachers and authoring
 
-课程内容工作区的只读图谱入口为 `GET /teacher/course-graph?classroom_id=…`，返回课程名称、章节及资料摘要和章节关系。追加 `/materials/{id}` 查询资料的页码依据、讲解稿与音频数量，`/points/{id}` 返回知识点的可核对来源与关联题数，`/tasks` 读取本班正在执行的课件任务及各资料最近一次执行中至多 30 条失败、中断或取消记录，返回 run_id、阶段进度 percent（总量未知时为空）、状态及可执行操作。列表沿用教师目录接口；资料支持分页、搜索、类型与状态筛选，题目分页支持 `knowledge_point_id` 筛选。
+课程内容工作区的只读图谱入口为 `GET /teacher/course-graph?classroom_id=…`，返回课程名称、章节及资料摘要和章节关系。子路径同样校验当前班级可见性。
+
+- `/search?search=…&kind=all&page=1&size=10` 搜索章节、资料、知识点和题目，支持限定单一类型，匹配标题或题干。返回命中总数、当前页及轻量定位信息。
+- `/materials/{id}` 查询资料的页码依据、讲解稿与音频数量。 `/points/{id}` 返回知识点的可核对来源与关联题数。展开关联题目使用题库的 `knowledge_point_id` 分页筛选。
+- `/questions/{id}` 返回所选题目的名称、题干、状态、题型、所属章节、关联知识点与明确引用的可见资料。
+- `/tasks` 读取本班执行中的课件任务，另返回各资料最近一次执行中至多 30 条仍在队列里的失败、中断或取消记录。返回 run_id、当前阶段、进度和可用操作。
 
 `GET /teacher/classrooms/{classroom_id}/content-review` 按 `page`、`size` 和可选的 `kind=question|narration` 返回真实草稿及审阅版本。`GET …/content-review/narrations/{id}` 返回逐页讲解草稿及来源详情。`POST …/content-review/decisions` 接收明确的对象清单（类型、标识、版本）、`accept` 或 `reject` 决定，以及单页讲解稿接受时的可选修订文本。服务端检查当前班级、所有权、草稿状态与版本，并在同一事务中完成整批操作。
 
@@ -216,7 +221,8 @@ DELETE /teacher/classrooms/{id}/course/packages/{package_key}：仅管理员可�
 ### 资料合成管理
 
 - `GET /api/teacher/classrooms/{classroom_id}/synthesis`：教师本班/管理员可读，学生403。参数 `query/view/status/page/size`；view为all/running/history，status为all/running/done/failed/interrupted/cancelled，页大小1–100。按执行记录分页，不列未执行资料。返回items、筛选total和搜索范围counts。每项包含执行记录id、资料ID/标题/类型、kind/status、done/total、message、failed、started_at/finished_at、requested_by显示名、scope、material_available、retryable/retry_note；不返回凭据、正文或文件地址。已删除资料仍保留执行记录，关闭查看和重试。
-- `POST /api/teacher/classrooms/{classroom_id}/synthesis/{material_id}/cancel` 接收 `expected_started_at`。排队中的批量任务立即取消，已认领的任务记录取消请求并返回 cancelling，执行器在步骤边界停止后返回 cancelled。已保存结果保留。
+- `GET /api/teacher/classrooms/{classroom_id}/synthesis/runs/{run_id}` 按执行编号读取详情。全站管理员可用 `GET /api/admin/synthesis/runs/{run_id}`。进度包含本次请求的阶段、当前阶段及其百分比和单位；定位信息使用已记录的批次和页码，旧记录只在能核对时补充页码。
+- `POST /api/teacher/classrooms/{classroom_id}/synthesis/{material_id}/cancel` 接收 `expected_started_at`。排队中的批量任务立即取消，已认领的任务记录取消请求并返回 cancelling，执行器在步骤边界停止后返回 cancelled。对当前失败任务重复取消均返回 `queue_dismissed: true`；执行记录保留 failed 状态及失败原因，图谱队列移除该记录。
 - `POST /api/teacher/classrooms/{classroom_id}/synthesis/{material_id}/retry`：正文 `expected_started_at`，可重试有保存参数及指纹的明确失败、已取消或确定尚未执行即中断的任务。资料行锁内再次核对最新任务及失败时的资料/讲稿指纹；重复、内容变化、不支持或旧任务返回409。批次仅处理已记录失败页，返回新的任务状态；上游失败仍明确返回错误并保留已成功页。查询、筛选及打开页面零外部生成调用。
 
 `narration_jobs`继续作为资料级执行锁；`narration_runs`每次执行新增一行，心跳进度和最终结果同步到该次记录，重试不覆盖历史。b72c49e018a3只回填实际存在的最近任务，不能恢复已覆盖记录。已认领任务的心跳过期显示interrupted，执行结果待核查；新任务接管时旧次记录保留待核查，不捏造结束时间。

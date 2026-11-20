@@ -1,17 +1,17 @@
 """Read-only, classroom-scoped navigation. Page evidence is resolved only on selection."""
 
 from collections import defaultdict
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import JSON, String, case, cast, func, literal, select, type_coerce
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import JSON, Integer, String, case, cast, func, literal, select, type_coerce, union_all
 from sqlalchemy.orm import Session, load_only
 
 from app.auth import require_teacher
-from app.course_content.catalog import visible_points
+from app.course_content.catalog import page_window, visible_points
 from app.db import get_db
 from app.materials.access import teacher_material
-from app.models import Chapter, CourseInstance, KnowledgePoint, Material, MaterialChapter, Question, QuestionKnowledgePoint, User
+from app.models import Chapter, CourseInstance, KnowledgePoint, Material, MaterialChapter, Question, QuestionChapter, QuestionKnowledgePoint, User
 from app.narration import repository
 from app.narration.jobs import state as job_state
 from app.narration.management import run_state, snapshot
@@ -45,6 +45,75 @@ def overview(classroom_id: int, db: Db, user: Teacher):
             "materials": [dict(row, chapter_ids=links[row.id]) for row in db.execute(materials.order_by(Material.id)).mappings()]}
 
 
+@router.get("/search")
+def search_content(classroom_id: int, db: Db, user: Teacher, search: Annotated[str, Query(max_length=240)],
+                   kind: Literal["all", "chapter", "material", "point", "question"] = "all",
+                   page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=50)] = 10):
+    instance = teacher_instance_id(db, user, classroom_id)
+    term = search.strip()
+    if not term:
+        return {"page": 1, "total": 0, "items": []}
+
+    branches = []
+    for label, model in (("chapter", Chapter), ("material", Material), ("point", KnowledgePoint), ("question", Question)):
+        if kind not in ("all", label):
+            continue
+        title_match = model.title.icontains(term, autoescape=True)
+        match = title_match
+        chapter_id = literal(None, Integer)
+        query = visible(model, instance, user)
+        if model is KnowledgePoint:
+            query = visible_points(instance, user).where(KnowledgePoint.deleted_at.is_(None), Chapter.deleted_at.is_(None))
+            chapter_id = KnowledgePoint.chapter_id
+        elif model is Question:
+            match = title_match | Question.prompt.icontains(term, autoescape=True)
+        priority = case((func.lower(model.title) == term.lower(), 0), (title_match, 1), else_=2)
+        branches.append(query.where(match).with_only_columns(
+            literal(label).label("kind"), cast(model.id, String).label("id"), model.title.label("title"),
+            chapter_id.label("chapter_id"), priority.label("priority")))
+
+    matches = union_all(*branches).subquery()
+    rows = select(matches.c.kind, matches.c.id, matches.c.title, matches.c.chapter_id).order_by(
+        matches.c.priority, matches.c.title, matches.c.kind, matches.c.id)
+    meta, window = page_window(db, rows, page, size)
+    return {**meta, "items": [dict(row, id=row.id if row.kind == "question" else int(row.id))
+                              for row in db.execute(window).mappings()]}
+
+
+@router.get("/questions/{question_id:path}")
+def question_detail(question_id: str, classroom_id: int, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, classroom_id)
+    question = db.execute(visible(Question, instance, user).where(Question.id == question_id).with_only_columns(
+        Question.id, Question.title, Question.kind, Question.status, Question.source_type, Question.prompt,
+        Question.source)).mappings().one_or_none()
+    if question is None:
+        raise HTTPException(404, "题目不存在")
+    chapters = (visible(Chapter, instance, user).join(QuestionChapter, QuestionChapter.chapter_id == Chapter.id)
+                .where(QuestionChapter.question_id == question_id).with_only_columns(Chapter.id)
+                .order_by(Chapter.order_index, Chapter.id))
+    points = (visible_points(instance, user).join(QuestionKnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
+              .where(QuestionKnowledgePoint.question_id == question_id, Chapter.deleted_at.is_(None), KnowledgePoint.deleted_at.is_(None))
+              .with_only_columns(KnowledgePoint.id, KnowledgePoint.title, KnowledgePoint.chapter_id)
+              .order_by(Chapter.order_index, KnowledgePoint.title, KnowledgePoint.id))
+
+    evidence = defaultdict(set)
+    source = question.source or {}
+    material_id, page_no = source.get("material_id"), source.get("page_no")
+    if type(material_id) is int:
+        material = db.scalar(visible(Material, instance, user).where(Material.id == material_id)
+                             .options(load_only(Material.id, Material.content)))
+        if material is not None:
+            pages = evidence[material_id]
+            if type(page_no) is int and page_no in repository.page_map(material):
+                pages.add(page_no)
+    else:
+        for mid, number in source_pages(db, instance, user, page_refs(source.get("page_ids"))).values():
+            evidence[mid].add(number)
+    result = {key: question[key] for key in ("id", "title", "kind", "status", "source_type", "prompt")}
+    return {**result, "chapter_ids": list(db.scalars(chapters)), "points": list(db.execute(points).mappings()),
+            "sources": [{"material_id": mid, "pages": sorted(pages)} for mid, pages in evidence.items()]}
+
+
 @router.get("/tasks")
 def active_tasks(classroom_id: int, db: Db, user: Teacher):
     materials = visible(Material, teacher_instance_id(db, user, classroom_id), user).with_only_columns(Material.id)
@@ -54,15 +123,14 @@ def active_tasks(classroom_id: int, db: Db, user: Teacher):
              .options(load_only(Material.id, Material.title, Material.kind)).where(Material.id.in_(materials)))
     status = run_state(NarrationJob)
     active = query.where(status == "running").order_by(NarrationJob.started_at, NarrationJob.id)
-    recent = query.where(status.in_(("failed", "interrupted", "cancelled"))).order_by(
+    recent = query.where(status.in_(("failed", "interrupted", "cancelled")),
+                         ~func.coalesce(NarrationJob.progress["queue_dismissed"].as_boolean(), False)).order_by(
         NarrationJob.started_at.desc(), NarrationJob.id.desc()).limit(30)
     items = []
     for job, material, run_id, requested in [*db.execute(active), *db.execute(recent)]:
-        item = {**job_state(material.id, job), **snapshot(material, job, cancel_requested=requested is not None)}
+        item = {**job_state(material.id, job), **snapshot(material, job, cancel_requested=requested is not None, latest_db=db)}
         item["run_id"] = run_id
-        item["cancellable"] = bool(run_id and item["cancellable"])
-        item["percent"] = (min(100, max(0, round(100 * item["done"] / item["total"]))) if item["total"] else
-                           0 if item["queued"] else None)
+        item["cancellable"] = bool((run_id or item["status"] == "failed") and item["cancellable"])
         if item["status"] == "cancelling":
             item["message"] = "已请求取消，等待当前步骤结束"
         items.append(item)
