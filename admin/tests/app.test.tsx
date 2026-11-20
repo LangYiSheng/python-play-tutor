@@ -7,8 +7,26 @@ vi.mock("../src/pages/content-list", async () => {
   const { useDraft } = await import("../src/lib/drafts");
   return { ContentListPage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
 });
+vi.mock("../src/pages/content-review", () => ({
+  ContentReviewPage: ({ classroomId }: {classroomId: number}) => <h1>审批班级 {classroomId}</h1>,
+}));
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); setToken(null); history.replaceState({}, "", "/"); });
+it("保留待审批直达链接与班级切换，切班清除旧章节和资料筛选", async () => {
+  setToken("teacher-session");
+  history.replaceState({}, "", "/teacher/content-review?chapter_id=9&material_id=16");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => json(url.endsWith("/auth/me")
+    ? {id: 81, name: "教师", role: "teacher"} : [{id: 10, name: "甲班"}, {id: 12, name: "乙班"}])));
+  render(<App/>);
+  expect(await screen.findByRole("heading", {name: "审批班级 10"})).toBeVisible();
+  expect(screen.queryByRole("link", {name: "待审批"})).not.toBeInTheDocument();
+  expect(screen.getByRole("link", {name: "返回知识图谱"})).toHaveAttribute("href", "/teacher/content-graph");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", {name: "当前班级"}));
+  await user.click(await screen.findByRole("option", {name: "乙班"}));
+  expect(await screen.findByRole("heading", {name: "审批班级 12"})).toBeVisible();
+  expect(location.pathname + location.search).toBe("/teacher/content-review");
+});
 it("cancelling draft discard prevents class creation and keeps the current class and draft", async () => {
   setToken("test-session");
   history.replaceState({}, "", "/teacher/materials");

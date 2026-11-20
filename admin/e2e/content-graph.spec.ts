@@ -126,6 +126,31 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   await expect(detail.getByText("尚未关联知识点")).toBeVisible();
   await expect(page.locator(".cg-question.cg-selected")).toHaveText(/循环习题 12/);
   expect(banks).toEqual([]);
+  const approval = page.getByRole("link", {name: /待审批\s*1 项/});
+  const tasks = page.getByRole("button", {name: /^任务队列/});
+  await expect(approval).toBeInViewport();
+  await expect(tasks).toBeInViewport();
+  const [linkBox, taskBox] = await Promise.all([approval.boundingBox(), tasks.boundingBox()]);
+  expect(Math.abs(linkBox!.y - taskBox!.y)).toBeLessThan(1);
+  await expect(page.getByRole("navigation", {name: "班级导航"}).getByText("待审批")).toHaveCount(0);
+  // Wait for the user-controlled zoom to finish, then compare the exact restored transform.
+  const initial = await page.locator(".react-flow__viewport").getAttribute("style");
+  await page.getByRole("button", {name: "缩小图谱"}).click();
+  const map = page.locator(".react-flow__viewport");
+  await expect(map).not.toHaveAttribute("style", initial!);
+  await expect.poll(async () => {
+    const zoom = await page.evaluate(() => history.state?.courseGraph?.viewport?.zoom);
+    const scale = await map.evaluate(el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+    return typeof zoom === "number" && Math.abs(scale - zoom) < .00001;
+  }).toBe(true);
+  const viewport = await map.getAttribute("style");
+  await approval.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/teacher\/content-review$/);
+  await expect(page.getByLabel("当前班级")).toBeVisible();
+  await page.getByRole("link", {name: "返回知识图谱"}).click();
+  await expect(detail.getByRole("heading", {name: "循环习题 12"})).toBeVisible();
+  await expect(map).toHaveAttribute("style", viewport!);
   await page.getByRole("button", { name: "课程全貌", exact: true }).click();
   await search.fill("仅能通过题干定位");
   await expect(results.locator(".cg-search-hit")).toHaveCount(1);

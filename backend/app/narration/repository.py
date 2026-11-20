@@ -199,6 +199,13 @@ def decide(db: Session, material: Material, page_no: int, status: str, user: Use
     item = row(db, material.id, page_no)
     if item is None:
         raise LookupError("本页还没有讲解草稿")
+    review_narration(item, status, user)
+    db.flush()
+    return item
+
+
+def review_narration(item: PageNarration, status: str, user: User) -> None:
+    """Apply one teacher decision to the loaded row inside its caller's transaction."""
     if item.status == "stale":
         raise ValueError("本页原文已变化，请先重新生成或编辑后再审校")
     if not (item.text or "").strip() and status == "accepted":
@@ -207,8 +214,6 @@ def decide(db: Session, material: Material, page_no: int, status: str, user: Use
     item.reviewed_by = user.id
     item.reviewed_at = now()
     item.updated_at = now()
-    db.flush()
-    return item
 
 
 def remove(db: Session, material: Material, page_no: int) -> bool:
