@@ -38,7 +38,7 @@ def authoring_environment() -> AuthoringSettings:
 
 def environment_protocol() -> str:
     value = (os.getenv("REBORN_TTS_PROTOCOL") or "openai").strip().lower()
-    return "deepseek" if value == "deepseek" else "openai"
+    return value if value in {"deepseek", "dashscope"} else "openai"
 
 
 def speech_environment() -> SpeechSettings:

@@ -52,7 +52,7 @@ class AuthoringInput(ConnectionInput):
 
 
 class SpeechInput(ConnectionInput):
-    protocol: Literal["openai", "deepseek"] = "openai"
+    protocol: Literal["openai", "deepseek", "dashscope"] = "openai"
     model: str = Field(max_length=200)
     voice: str = Field(min_length=1, max_length=200)
     format: Literal["mp3", "wav", "pcm", "opus", "flac", "aac"] = "mp3"
@@ -64,6 +64,13 @@ class SpeechInput(ConnectionInput):
             raise ValueError("DeepSeek 语音使用 wav/pcm，合成语速固定为 1")
         if self.protocol == "openai" and not self.model.strip():
             raise ValueError("请填写语音模型")
+        if self.protocol == "dashscope":
+            if not self.model.strip():
+                raise ValueError("请填写阿里语音模型")
+            if self.format not in {"mp3", "wav", "pcm", "opus"}:
+                raise ValueError("阿里语音使用 mp3/wav/pcm/opus")
+            if not 0.5 <= self.speed <= 2:
+                raise ValueError("阿里语音语速只支持 0.5–2")
         return self
 
 

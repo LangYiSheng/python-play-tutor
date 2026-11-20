@@ -85,7 +85,7 @@ Paused policy denies new content/progress/assistant requests immediately and pre
 
 ### 全站讲稿与语音服务设置
 
-管理员 GET/PUT `/teacher/services/authoring` 与 `/teacher/services/speech`，普通教师/学生403。两者均含 expected_revision、base_url、api_key（空值保留）、clear_key、timeout；authoring 另含 model、vision_model、effort、max_tokens、daily_pages；speech 另含 protocol（openai/deepseek）、model、voice、format、speed。DeepSeek 语音限制 wav/pcm 与合成速度1。修订冲突409，验证失败422且不回显输入密钥。GET/PUT 响应含 revision、key_configured、source，无明文密钥。首次读取环境初始化，保存后独立覆盖；保存不产生外部调用，不影响学生模型与课程预算。
+管理员 GET/PUT `/teacher/services/authoring` 与 `/teacher/services/speech`，普通教师/学生403。两者均含 expected_revision、base_url、api_key（空值保留）、clear_key、timeout；authoring 另含 model、vision_model、effort、max_tokens、daily_pages；speech 另含 protocol（openai/deepseek/dashscope）、model、voice、format、speed。DeepSeek 语音限制 wav/pcm 与合成速度1；DashScope 走原生 `/api/v1/services/audio/tts/SpeechSynthesizer`，只支持 mp3/wav/pcm/opus 与 0.5–2 语速，服务端从返回 JSON 的音频 URL 下载。修订冲突409，验证失败422且不回显输入密钥。GET/PUT 响应含 revision、key_configured、source，无明文密钥。首次读取环境初始化，保存后独立覆盖；保存不产生外部调用，不影响学生模型与课程预算。
 
 ## 资料逐页讲解与音频
 
