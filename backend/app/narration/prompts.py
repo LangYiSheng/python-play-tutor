@@ -35,7 +35,7 @@ TEMPLATE = """讲课方式：
 
 anchors：只抄这页上最关键的 3 到 6 条原文（标题、小标题、函数名），供老师核对，不要编造；不要抄学校名、院系、姓名、邮箱、页码、页脚。封面页可以只给 1 到 2 条。
 
-只输出 JSON：{{"text": "...", "bridge_in": "...", "anchors": ["..."], "estimated_seconds": 85}}
+只输出 JSON：{{"text": "...", "anchors": ["..."], "estimated_seconds": 85}}
 """
 
 

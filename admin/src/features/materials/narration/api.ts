@@ -9,7 +9,6 @@ export type NarrationStatus =
 
 export interface Narration {
   text: string;
-  bridge_in: string;
   target_seconds: number;
   status: NarrationStatus;
   source: string;
@@ -111,6 +110,20 @@ export interface CalibrationReport {
 const base = (classroomId: number, materialId: number) =>
   `/teacher/classrooms/${classroomId}/materials/${materialId}/narrations`;
 
+export interface NarrationJobState {
+  id: number | null;
+  material_id: number;
+  kind: string;
+  status: string;
+  running: boolean;
+  queued: boolean;
+  done: number;
+  total: number;
+  message: string;
+  failed: { page_no: number; error?: string }[];
+  started_at: string | null;
+}
+
 export const narrationApi = {
   list: (classroomId: number, materialId: number) =>
     api.get<NarrationList>(base(classroomId, materialId)),
@@ -137,23 +150,17 @@ export const narrationApi = {
     firstPage: number,
     lastPage: number,
   ) =>
-    api.post<{
-      results: { page_no: number; status: string; error?: string }[];
-    }>(`${base(classroomId, materialId)}/generate`, {
-      first_page: firstPage,
-      last_page: lastPage,
-      // 串行：后面的页会读到前面已生成的讲解，过渡句不再凭空编。
-      mode: "serial",
-    }),
+    api.post<{ job: NarrationJobState }>(
+      `${base(classroomId, materialId)}/generate`,
+      {
+        first_page: firstPage,
+        last_page: lastPage,
+        // 串行：后面的页会读到前面已生成的讲解，过渡句不再凭空编。
+        mode: "serial",
+      },
+    ),
   job: (classroomId: number, materialId: number) =>
-    api.get<{
-      running: boolean;
-      kind: string;
-      status: string;
-      done: number;
-      total: number;
-      message: string;
-    }>(`${base(classroomId, materialId)}/job`),
+    api.get<NarrationJobState>(`${base(classroomId, materialId)}/job`),
   acceptBatch: (
     classroomId: number,
     materialId: number,
@@ -173,15 +180,13 @@ export const narrationApi = {
     firstPage: number,
     lastPage: number,
   ) =>
-    api.post<{
-      made: number[];
-      reused: number[];
-      failed: { page_no: number; error: string }[];
-      count: number;
-    }>(`${base(classroomId, materialId)}/audio-batch`, {
-      first_page: firstPage,
-      last_page: lastPage,
-    }),
+    api.post<{ job: NarrationJobState }>(
+      `${base(classroomId, materialId)}/audio-batch`,
+      {
+        first_page: firstPage,
+        last_page: lastPage,
+      },
+    ),
   save: (
     classroomId: number,
     materialId: number,
@@ -205,7 +210,7 @@ export const narrationApi = {
   remove: (classroomId: number, materialId: number, pageNo: number) =>
     api.delete(`${base(classroomId, materialId)}/${pageNo}`),
   calibrate: (classroomId: number, materialId: number) =>
-    api.post<CalibrationReport>(
+    api.post<{ job: NarrationJobState }>(
       `${base(classroomId, materialId)}/calibrate`,
       {},
     ),

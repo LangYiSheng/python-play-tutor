@@ -98,3 +98,34 @@ def test_failed_task_releases_the_lock(client, db, classroom, teacher, monkeypat
     assert failed.status_code == 502
     state = client.get(url(classroom, material, "/job"), headers=teacher["headers"]).json()
     assert state["running"] is False, "失败后必须放开锁，否则资料会被永久锁住"
+
+def test_a_queued_job_is_claimed_exactly_once(db, classroom):
+    """任务行同时是队列和执行锁：第二个执行者认领不到，不会两边一起跑。"""
+    from app.narration import jobs
+
+    material = doc_material(db, classroom, "一" * 300)
+    db.commit()
+    repository.enqueue(db, material, "calibrate", None, request={"operation": "calibrate"})
+    assert jobs.queued(db) == [material.id]
+    assert jobs.claim(db, material.id) is not None
+    assert jobs.claim(db, material.id) is None
+    assert jobs.queued(db) == []
+
+
+def test_drain_runs_every_queued_material(client, db, classroom, teacher, monkeypatch):
+    """不同资料可以排队，一次扫描把它们都跑完。"""
+    from app.narration import jobs
+
+    monkeypatch.setattr("app.narration.calibrate.model_client.chat",
+                        lambda messages, **kwargs: {"raw": {"summary": "摘要", "terms": [], "issues": []},
+                                                    "text": "", "bridge_in": "", "anchors": [], "usage": {},
+                                                    "model": kwargs.get("model")})
+    first = doc_material(db, classroom, "一" * 300)
+    second = doc_material(db, classroom, "二" * 300)
+    db.commit()
+    for material in (first, second):
+        repository.upsert_content(db, material, 1, title="主题", topic="", tags=["标签"], text="整理" * 20)
+        repository.enqueue(db, material, "calibrate", None, request={"operation": "calibrate"})
+    assert jobs.drain(db) == 2
+    assert jobs.queued(db) == []
+    assert [repository.job_of(db, item.id).status for item in (first, second)] == ["done", "done"]

@@ -2,6 +2,7 @@ import {
   narrationApi,
   type CalibrationReport,
   type NarrationAudioStatus,
+  type NarrationJobState,
   type NarrationList,
   type NarrationPage,
   type NarrationQuota,
@@ -21,13 +22,7 @@ export function useNarrationReview(classroomId: number, materialId: number) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [job, setJob] = useState<{
-    running: boolean;
-    kind: string;
-    done: number;
-    total: number;
-    message: string;
-  } | null>(null);
+  const [job, setJob] = useState<NarrationJobState | null>(null);
   const load = useCallback(async () => {
     setBusy("load");
     setError("");
@@ -110,31 +105,19 @@ export function useNarrationReview(classroomId: number, materialId: number) {
   async function generateWholeDeck() {
     if (!data) return;
     const total = data.coverage.pages;
-    const chunk = 4;
-    const failures: string[] = [];
     setBusy("all");
     setError("");
-    setMessage("");
+    setMessage("已提交整份生成，后台继续执行，可以切去别的资料");
     try {
-      for (let first = 1; first <= total; first += chunk) {
-        const last = Math.min(first + chunk - 1, total);
-        setMessage(`正在生成第 ${first}–${last} 页（共 ${total} 页）…`);
-        const { results } = await narrationApi.generateRange(
-          classroomId,
-          materialId,
-          first,
-          last,
-        );
-        for (const item of results) {
-          if (item.status === "failed")
-            failures.push(`第 ${item.page_no} 页：${item.error ?? "未知错误"}`);
-        }
-        await load();
-      }
+      await narrationApi.generateRange(classroomId, materialId, 1, total);
+      const state = await waitForJob();
+      const failures = (state.failed ?? []).map(
+        (item) => `第 ${item.page_no} 页：${item.error ?? "未知错误"}`,
+      );
       setMessage(
-        failures.length
-          ? `整份生成结束，${failures.length} 页失败，可重试`
-          : "整份生成已结束",
+        state.status === "done"
+          ? `整份生成已结束（${state.done}/${state.total} 页）`
+          : `整份生成结束于「${state.status}」：${state.message || "请检查失败页"}`,
       );
       if (failures.length) setError(failures.slice(0, 5).join("；"));
     } catch (e) {
@@ -145,26 +128,34 @@ export function useNarrationReview(classroomId: number, materialId: number) {
       await load().catch(() => {});
     }
   }
+  async function waitForJob(): Promise<NarrationJobState> {
+    const deadline = Date.now() + 30 * 60_000;
+    for (;;) {
+      const state = await narrationApi.job(classroomId, materialId);
+      setJob(state);
+      if (!state.running && !state.queued) return state;
+      if (state.message) setMessage(`正在后台处理：${state.message}`);
+      if (Date.now() > deadline)
+        throw new Error("任务仍在后台运行，可稍后刷新查看");
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+  }
   async function calibrateDeck() {
     setBusy("calibrate");
     setError("");
-    setMessage("");
+    setMessage("已提交整篇校准，后台继续执行，可以切去别的资料");
     try {
-      // 后端一次只走一个时间片；这里循环到 complete，游标在服务端，断了再点就能接着跑。
-      let advanced = -1;
-      for (;;) {
-        const next = await narrationApi.calibrate(classroomId, materialId);
-        setReport(next);
-        if (next.complete !== false) break;
-        const done = next.windows_done ?? 0;
-        if (done <= advanced)
-          throw new Error("校准没有前进，请刷新后重试");
-        advanced = done;
-        setMessage(
-          `正在校准：已检查 ${done}/${next.windows} 个窗口…`,
-        );
-      }
-      setMessage("校准报告已生成");
+      await narrationApi.calibrate(classroomId, materialId);
+      const state = await waitForJob();
+      const next = await narrationApi
+        .calibration(classroomId, materialId, true)
+        .catch(() => null);
+      if (next) setReport(next);
+      setMessage(
+        state.status === "done"
+          ? "校准报告已生成"
+          : `校准未完成：${state.message || state.status}`,
+      );
     } catch (e) {
       setError(errorMessage(e));
       setMessage("已完成的窗口已保存，可再次点击继续");
@@ -210,30 +201,25 @@ export function useNarrationReview(classroomId: number, materialId: number) {
     )
       return;
     const total = data.coverage.pages;
-    const chunk = 4;
     setBusy("audio-all");
     setError("");
+    setMessage("已提交整份音频合成，后台继续执行，可以切去别的资料");
     try {
-      for (let first = 1; first <= total; first += chunk) {
-        const last = Math.min(first + chunk - 1, total);
-        setMessage(`正在合成第 ${first}–${last} 页音频（共 ${total} 页）…`);
-        const result = await narrationApi.audioBatch(
-          classroomId,
-          materialId,
-          first,
-          last,
+      await narrationApi.audioBatch(classroomId, materialId, 1, total);
+      const state = await waitForJob();
+      setMessage(
+        state.status === "done"
+          ? `音频合成已结束（${state.done}/${state.total} 页）`
+          : `音频合成结束于「${state.status}」：${state.message || "请检查失败页"}`,
+      );
+      if (state.failed?.length) {
+        setError(
+          state.failed
+            .map((item) => `第 ${item.page_no} 页：${item.error ?? "未知错误"}`)
+            .slice(0, 5)
+            .join("；"),
         );
-        if (result.failed?.length) {
-          setError(
-            result.failed
-              .map((item) => `第 ${item.page_no} 页：${item.error}`)
-              .slice(0, 5)
-              .join("；"),
-          );
-        }
-        await load();
       }
-      setMessage("音频批量合成结束");
     } catch (e) {
       setError(errorMessage(e));
       setMessage("已合成的音频已保存，可直接重试");

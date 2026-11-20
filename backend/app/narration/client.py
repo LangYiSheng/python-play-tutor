@@ -96,7 +96,8 @@ def chat(messages: list[dict[str, Any]], *, settings: AuthoringSettings, model: 
     answer = choice.get("message") or {}
     content = answer.get("content") or ""
     if choice.get("finish_reason") == "length":
-        raise ModelFailed("模型输出被截断，请重试或调高上限")
+        # 输入太长与输出被截断要分开：前者靠缩窗重试，后者只能加大输出预算。
+        raise ModelFailed("模型输出被截断，请重试或调高上限", hint="output")
     if not content.strip():
         raise ModelFailed("模型返回空内容，请重试")
     try:

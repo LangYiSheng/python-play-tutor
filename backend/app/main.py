@@ -36,6 +36,7 @@ from app.teaching.world import router as world
 from . import assistant_settings, content_deletions, judge_management, narration, service_settings
 from .config import CORS_ORIGINS, dev_tools_enabled
 from .db import SessionLocal
+from .narration import jobs as narration_jobs
 from .narration import management as synthesis_management
 from .narration import repository as narration_repository
 
@@ -52,6 +53,8 @@ async def lifespan(app):
         asyncio.create_task(practice.judge_worker()),
         asyncio.create_task(materials_jobs.material_worker()),
         asyncio.create_task(cleanup_worker()),
+        # 整册生成/校准/音频在后台线程里跑，老师关掉页面也不中止。
+        asyncio.create_task(narration_jobs.worker()),
     ]
     yield
     for task in tasks:
