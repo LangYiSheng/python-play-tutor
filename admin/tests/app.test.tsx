@@ -86,6 +86,7 @@ it("counts the class teacher's practice pool when an administrator creates an ac
   await user.click(create);
   await user.click(screen.getByRole("combobox", { name: "类型" }));
   await user.click(await screen.findByRole("option", { name: "练习" }));
+  await user.click(screen.getByRole("tab", { name: "知识点目标" }));
   await user.click(screen.getByRole("checkbox", { name: "变量" }));
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveAccessibleName(/可用 2 题/);
 });

@@ -31,6 +31,7 @@ it('keeps selected answers when renaming options, removes deleted answers and sa
   const user = userEvent.setup();
   render(<Host />);
   await user.click(screen.getByText('打开'));
+  await user.click(screen.getByRole('tab',{name:'答案'}));
   expect(screen.getByLabelText('选项1为正确答案')).toBeChecked();
   expect(screen.getByLabelText('选项2为正确答案')).toBeChecked();
   await user.clear(screen.getByLabelText('选项1'));
@@ -41,6 +42,25 @@ it('keeps selected answers when renaming options, removes deleted answers and sa
   await user.click(screen.getByText('保存题目'));
   expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/questions/q'), expect.objectContaining({
     options: ['integer', 'str'], answer: ['integer'], kind: 'multiple_choice',
+  }));
+});
+
+it('preserves public and private cases independently across tabs', async () => {
+  const put = vi.spyOn(api, 'put').mockResolvedValue({});
+  const user = userEvent.setup();
+  render(<Host initial={{ ...question, kind: 'python', samples: [{input: '1', output: '2'}] }} />);
+  await user.click(screen.getByText('打开'));
+  await user.click(screen.getByRole('tab', {name: '测试用例'}));
+  await user.click(screen.getByRole('button', {name: '复制'}));
+  await user.type(screen.getByLabelText('标准输入'), '0');
+  await user.click(screen.getByRole('button', {name: /私有用例 · 0/}));
+  await user.click(screen.getByRole('button', {name: '添加用例'}));
+  await user.type(screen.getByLabelText('预期输出'), 'private');
+  await user.click(screen.getByRole('tab', {name: '内容关联'}));
+  await user.click(screen.getByText('保存题目'));
+  expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+    samples: [{input: '1', output: '2'}, {input: '10', output: '2'}],
+    hidden_cases: [{input: '', expected_output: 'private'}],
   }));
 });
 
@@ -60,11 +80,13 @@ it('restores structured private targets intact, rejects malformed JSON and saves
   const target = { value: [2, false] };
   render(<Host initial={{ ...question, kind: 'interactive', interactive: exampleSource, answer: target }} />);
   await user.click(screen.getByText('打开'));
-  const answer = screen.getByLabelText('私有正确提交值（JSON）');
-  expect(answer).toHaveValue(JSON.stringify(target, null, 2));
+  await user.click(screen.getByRole('tab',{name:'编写与试答'}));
   const html = screen.getByRole('textbox', { name: 'HTML 源码' });
   await user.clear(html);
   await user.type(html, '<p>新题面</p>');
+  await user.click(screen.getByRole('tab',{name:'私有判定'}));
+  const answer = screen.getByLabelText('私有正确提交值（JSON）');
+  expect(answer).toHaveValue(JSON.stringify(target,null,2));
   await user.clear(answer);
   await user.type(answer, 'bad');
   await user.click(screen.getByText('保存题目'));
@@ -84,15 +106,15 @@ it('applies a template only after confirmation and keeps source editable', async
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
   render(<Host initial={{ ...question, kind: 'interactive', interactive: exampleSource, answer: 1 }} />);
   await user.click(screen.getByText('打开'));
+  await user.click(screen.getByRole('tab',{name:'编写与试答'}));
+  await user.click(screen.getByText('从示例开始'));
   const template = interactiveExamples[1];
-  await user.click(screen.getByRole('combobox', { name: '练习模板' }));
+  await user.click(screen.getByRole('combobox', { name: '教学示例' }));
   await user.click(await screen.findByRole('option', { name: template.title }));
-  await user.click(screen.getByRole('button', { name: '套用模板' }));
-  expect(screen.getByLabelText('题目名称')).toHaveValue(question.title);
+  await user.click(screen.getByRole('button', { name: '用此示例编写' }));
   expect(screen.getByLabelText('HTML 源码')).toHaveValue(exampleSource.html);
-  await user.click(screen.getByRole('button', { name: '套用模板' }));
+  await user.click(screen.getByRole('button', { name: '用此示例编写' }));
   expect(confirm).toHaveBeenCalledTimes(2);
-  expect(screen.getByLabelText('题目名称')).toHaveValue(template.title);
   expect(screen.getByLabelText('HTML 源码')).toHaveValue(template.source.html);
   await user.click(screen.getByText('保存题目'));
   expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/questions/q'), expect.objectContaining({

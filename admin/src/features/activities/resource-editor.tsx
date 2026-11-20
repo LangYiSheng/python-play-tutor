@@ -14,14 +14,34 @@ export function ResourceEditor({ resources, materials, chapterId, classroomId, o
   onChange: (rows: ActivityResource[]) => void;
 }) {
   const [selected, setSelected] = useState("");
+  const [focused, setFocused] = useState<number>();
+  const index = Math.max(0,resources.findIndex(r => r.material_id === focused));
+  const row = resources[index];
   function update(index: number, row: ActivityResource) { onChange(resources.map((value, i) => i === index ? row : value)); }
   function move(index: number, delta: number) {
+    setFocused(resources[index].material_id);
     const next = [...resources]; [next[index], next[index + delta]] = [next[index + delta], next[index]]; onChange(next);
   }
   return <section className="space-y-3 mb-4" aria-label="活动资料与阅读要求">
     <Label className="flex gap-2 items-center"><FileText size={16} />活动资料</Label>
     <p className="hint">按顺序配置每份资料的要求。必读资料全部完成后才能完成活动，可选资料保留进度但不阻挡完成。</p>
-    {resources.map((row, index) => <section key={row.material_id} className="rounded-md border p-3 space-y-3">
+    <div className="editor-columns"><div className="space-y-3">
+      <strong>资料顺序 · {resources.length} 份</strong>
+      <div className="editor-list">{resources.map((r,i) =>
+        <button key={r.material_id} type="button" className="editor-list-item" aria-pressed={r.material_id === row?.material_id}
+          onClick={() => setFocused(r.material_id)}>{i+1}. {materials.find(m=>m.id===r.material_id)?.title ?? "不可用资料"}
+          <small>{r.required ? "必读" : "选读"} · {resourceSummary(r)}</small></button>)}</div>
+    <div className="flex gap-2">
+      <SelectField value={selected} onValueChange={setSelected} placeholder="选择要添加的资料" aria-label="添加活动资料">
+        {materials.filter(m => m.chapter_ids.includes(chapterId) && m.status === "ready" && !resources.some(row => row.material_id === m.id)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+      </SelectField>
+      <Button type="button" variant="outline" disabled={!selected || resources.length >= 64} onClick={() => {
+        const material = materials.find(m => m.id === Number(selected));
+        if (!material || !material.chapter_ids.includes(chapterId) || material.status !== "ready" || resources.some(row => row.material_id === material.id)) return;
+        onChange([...resources, { material_id: material.id, required: true, learning: material.kind === "video" ? { video: { minimum_seconds: 60 } } : { reading: { scope: "all" } } }]); setSelected(""); setFocused(material.id);
+      }}><Plus />添加资料</Button>
+    </div>
+    </div><div>{row ? <section key={row.material_id} className="space-y-3">
       <div className="flex items-center gap-2">
         <strong className="min-w-0 flex-1 truncate" title={materials.find(m => m.id === row.material_id)?.title}>{index + 1}. {materials.find(m => m.id === row.material_id)?.title ?? "资料不可用，请移除"}</strong>
         <label className="flex items-center gap-1 text-sm"><Checkbox checked={row.required} onCheckedChange={value => update(index, { ...row, required: value === true })} />必读</label>
@@ -30,18 +50,16 @@ export function ResourceEditor({ resources, materials, chapterId, classroomId, o
         <Button type="button" variant="ghost" size="icon" aria-label={`移除资料${index + 1}`} onClick={() => onChange(resources.filter((_, i) => i !== index))}><Trash2 /></Button>
       </div>
       <ResourceRules classroomId={classroomId} resource={row} kind={materials.find(m => m.id === row.material_id)?.kind} onChange={value => update(index, value)} />
-    </section>)}
-    <div className="flex gap-2">
-      <SelectField value={selected} onValueChange={setSelected} placeholder="选择要添加的资料" aria-label="添加活动资料">
-        {materials.filter(m => m.chapter_ids.includes(chapterId) && m.status === "ready" && !resources.some(row => row.material_id === m.id)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-      </SelectField>
-      <Button type="button" variant="outline" disabled={!selected || resources.length >= 64} onClick={() => {
-        const material = materials.find(m => m.id === Number(selected));
-        if (!material || !material.chapter_ids.includes(chapterId) || material.status !== "ready" || resources.some(row => row.material_id === material.id)) return;
-        onChange([...resources, { material_id: material.id, required: true, learning: material.kind === "video" ? { video: { minimum_seconds: 60 } } : { reading: { scope: "all" } } }]); setSelected("");
-      }}><Plus />添加资料</Button>
-    </div>
+    </section> : <p className="hint">添加资料后，在这里设置完成要求。</p>}</div></div>
   </section>;
+}
+
+function resourceSummary(row: ActivityResource) {
+  const {video,reading} = row.learning;
+  if (video) return [video.minimum_seconds && `观看 ${video.minimum_seconds} 秒`, video.segments?.length && `${video.segments.length} 个片段`].filter(Boolean).join(" · ") || "观看视频";
+  if (reading?.scope === "range") return `第 ${reading.start_page}–${reading.end_page} 页`;
+  if (reading?.scope === "pages") return `${reading.page_ids?.length ?? 0} 个关键页`;
+  return "全部页";
 }
 
 function ResourceRules({ resource, kind, classroomId, onChange }: { classroomId: number; resource: ActivityResource; kind?: string; onChange: (row: ActivityResource) => void }) {

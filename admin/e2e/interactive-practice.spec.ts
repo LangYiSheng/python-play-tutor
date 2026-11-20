@@ -19,7 +19,13 @@ test("教师在隔离预览内试答两种模板并检查脚本与私有答案�
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "题型" }).click();
   await page.getByRole("option", { name: "交互练习题" }).click();
-  await expect(dialog.getByLabel("题目名称")).toHaveValue("点亮小镇路灯");
+  await dialog.getByRole("tab", {name:"编写与试答"}).click();
+  await dialog.getByText("从示例开始").click();
+  await dialog.getByRole("button",{name:"试用示例"}).click();
+  await expect(dialog.frameLocator('iframe[title="教学示例试用区"]').getByLabel("起点 start")).toBeVisible();
+  page.once("dialog", confirmation=>confirmation.accept());
+  await dialog.getByRole("button",{name:"用此示例编写"}).click();
+  await dialog.getByText("从示例开始").click();
   await dialog.getByRole("button", { name: "运行预览", exact: true }).click();
   const frame = dialog.frameLocator('iframe[title="学生交互练习预览"]');
   const check = dialog.getByRole("button", { name: "检查预览作答" });
@@ -35,12 +41,14 @@ test("教师在隔离预览内试答两种模板并检查脚本与私有答案�
   await expect(dialog.getByText(/脚本判定正确/)).toBeVisible();
   await expect(dialog.getByText("本次脚本判定与私有答案一致。")).toBeVisible();
 
-  await dialog.getByRole("combobox", { name: "练习模板" }).click();
+  await dialog.getByText("从示例开始").click();
+  await dialog.getByRole("combobox", { name: "教学示例" }).click();
   await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["点亮小镇路灯", "整理采集背包"]);
   await page.getByRole("option", { name: "整理采集背包" }).click();
   page.once("dialog", confirmation => confirmation.accept());
-  await dialog.getByRole("button", { name: "套用模板" }).click();
-  await expect(dialog.getByLabel("题目名称")).toHaveValue("整理采集背包");
+  await dialog.getByRole("button", { name: "用此示例编写" }).click();
+  await dialog.getByText("从示例开始").click();
+  await dialog.getByRole("tab", {name:"私有判定"}).click();
   await dialog.getByLabel("私有正确提交值（JSON）").fill("false");
   await dialog.getByRole("button", { name: "重新运行预览" }).click();
   const pop = frame.getByRole("button", { name: /取出栈顶/ });
@@ -71,6 +79,7 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
   await page.goto("/teacher/questions");
   await page.getByRole("button", { name: "编辑已有交互题" }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", {name:"编写与试答"}).click();
   await dialog.getByRole("button", { name: "运行预览" }).click();
   await dialog.getByRole("button", { name: "查看助教收到的状态" }).click();
   await expect(dialog.getByRole("alert")).toContainText("onGetState");
@@ -82,6 +91,7 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
   await expect(dialog.getByRole("alert")).toContainText("读取助教初始状态");
   await expect(page.locator('iframe[title="交互题保存校验"]')).toHaveCount(0);
   expect(writes).toEqual([]);
+  await dialog.getByRole("tab", {name:"题目信息"}).click();
   await dialog.getByRole("combobox", { name: "状态" }).click();
   await page.getByRole("option", { name: "待审核" }).click();
   await save.click();
@@ -90,6 +100,7 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
   await page.getByRole("button", { name: "编辑已有交互题" }).click();
   await dialog.getByRole("combobox", { name: "状态" }).click();
   await page.getByRole("option", { name: "可用", exact: true }).click();
+  await dialog.getByRole("tab", {name:"编写与试答"}).click();
   await dialog.getByRole("tab", { name: "JavaScript" }).click();
   const code = dialog.getByRole("textbox", { name: "JavaScript 源码" });
   const snapshot = 'practice.onGetState(() => ({ selected: [] }));';

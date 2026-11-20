@@ -10,7 +10,6 @@ import type { InteractiveSource } from '../../../../shared/interactivePractice';
 import { InteractiveFields } from './interactive-fields';
 import { parseInteractiveTarget } from './interactive-target';
 import type { Question } from '@/lib/types';
-import { Cases } from './cases-editor';
 import type { Case } from './types';
 
 export type EditorAnswer = string | string[];
@@ -78,7 +77,7 @@ function FillFields({ answer, setAnswer }: Fields) {
     <Textarea id="q-answer" value={answer} onChange={event => setAnswer(event.target.value)} />
   </div>;
 }
-function PythonFields({ starterCode, setStarterCode, hints, setHints, samples, setSamples, cases, setCases, setDirty }: Fields) {
+function PythonFields({ starterCode, setStarterCode, hints, setHints, setDirty }: Fields) {
   return <>
     <div className="field"><Label htmlFor="q-starter">初始 Python 代码（标准输入输出）</Label>
       <Textarea id="q-starter" value={starterCode} maxLength={20000} onChange={event => { setStarterCode(event.target.value); setDirty(true); }} />
@@ -86,8 +85,6 @@ function PythonFields({ starterCode, setStarterCode, hints, setHints, samples, s
     <div className="field"><Label htmlFor="q-hints">分步提示（每行一条，最多10条）</Label>
       <Textarea id="q-hints" value={hints} onChange={event => { setHints(event.target.value); setDirty(true); }} />
     </div>
-    <Cases title="公开样例" rows={samples} setRows={value => { setSamples(value); setDirty(true); }} />
-    <Cases title="私有判题用例" rows={cases} setRows={value => { setCases(value); setDirty(true); }} />
   </>;
 }
 

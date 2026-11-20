@@ -20,7 +20,7 @@ const sourceFields = [
   { key: "js", label: "JavaScript", max: 32000 },
 ] as const;
 
-function Preview({ source, target }: { source: InteractiveSource; target: JsonValue }) {
+function Preview({ source, target, example = false }: { source: InteractiveSource; target: JsonValue; example?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const runner = useRef<ReturnType<typeof mountInteractivePractice> | null>(null);
   const [ready, setReady] = useState(false);
@@ -67,8 +67,8 @@ function Preview({ source, target }: { source: InteractiveSource; target: JsonVa
   }
   const matches = result && target !== null && equalInteractiveValues(result.value, target);
   return <div className="interactive-preview">
-    <iframe title="学生交互练习预览" ref={frame} />
-    <div className="p-3 space-y-2">
+    <iframe title={example ? "教学示例试用区" : "学生交互练习预览"} ref={frame} />
+    {example ? <ErrorNotice message={failure} /> : <div className="p-3 space-y-2">
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" disabled={!ready || !!operation} onClick={() => request("check")}>
           {operation === "check" ? "检查中…" : "检查预览作答"}
@@ -88,7 +88,7 @@ function Preview({ source, target }: { source: InteractiveSource; target: JsonVa
          matches !== result.correct ? <p className="text-destructive">脚本判定与私有答案不一致，请核对检查函数和正确提交值。</p> :
          <p>本次脚本判定与私有答案一致。</p>}
       </div>}
-    </div>
+    </div>}
   </div>;
 }
 
@@ -98,6 +98,8 @@ export function InteractiveFields({ interactive, setInteractive, answer, setAnsw
   applyInteractiveExample: (id: string) => void;
 }) {
   const [exampleId, setExampleId] = useState<string>(interactiveExamples[0].id);
+  const [showExample, setShowExample] = useState(false);
+  const example = interactiveExamples.find(item => item.id === exampleId)!;
   const [preview, setPreview] = useState<{ key: number; source: InteractiveSource; targetText: string; target: JsonValue } | null>(null);
   const [failure, setFailure] = useState("");
   const targetText = typeof answer === "string" ? answer : "";
@@ -113,24 +115,37 @@ export function InteractiveFields({ interactive, setInteractive, answer, setAnsw
   return <fieldset className="field space-y-3">
     <legend>交互内容</legend>
     <p className="hint">仅用于练习。HTML 编排操作区，CSS 调整样式，JavaScript 在学生点击提交时检查作答。题面代码对学生可见。</p>
-    <div>
-      <Label htmlFor="interactive-example">练习模板</Label>
+    <details onToggle={event => { if (!event.currentTarget.open) setShowExample(false); }}><summary className="cursor-pointer font-medium">从示例开始</summary>
+      <p className="hint my-2">第一次编写交互题？先试用一道完整例题，再复制到草稿中修改。</p>
+      <Label htmlFor="interactive-example">教学示例</Label>
       <div className="mt-1 flex flex-wrap items-center gap-2">
-        <SelectField id="interactive-example" value={exampleId} onValueChange={setExampleId}>
+        <SelectField id="interactive-example" value={exampleId} onValueChange={id => { setExampleId(id); setShowExample(false); }}>
           {interactiveExamples.map(example => <option key={example.id} value={example.id}>{example.title}</option>)}
         </SelectField>
-        <Button type="button" variant="outline" size="sm" onClick={() => applyInteractiveExample(exampleId)}>套用模板</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowExample(true)}>试用示例</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => { applyInteractiveExample(exampleId); }}>用此示例编写</Button>
       </div>
-    </div>
+      <p className="hint my-2">{example.prompt}</p>
+      {showExample && <Preview example key={example.id} source={example.source} target={example.target} />}
+    </details>
+    <div className="editor-columns editor-halves"><div className="min-w-0 space-y-3"><strong>题面编辑</strong>
     <Tabs defaultValue="html">
       <TabsList aria-label="题面源码">{sourceFields.map(({ key, label }) =>
-        <TabsTrigger type="button" value={key} key={key}>{label}</TabsTrigger>)}</TabsList>
+        <TabsTrigger type="button" value={key} key={key}>{label}</TabsTrigger>)}<TabsTrigger type="button" value="target">私有判定</TabsTrigger></TabsList>
       {sourceFields.map(({ key, label, max }) => <TabsContent key={key} value={key}>
         <Textarea aria-label={`${label} 源码`} rows={8} maxLength={max} spellCheck={false}
           className="font-mono text-sm" value={interactive[key]} onChange={event => {
             setInteractive({ ...interactive, [key]: event.target.value }); setFailure("");
           }} />
       </TabsContent>)}
+      <TabsContent value="target">
+    <div className="field">
+      <Label htmlFor="interactive-target">私有正确提交值（JSON）</Label>
+      <Textarea id="interactive-target" rows={2} className="font-mono" value={targetText} spellCheck={false}
+        onChange={event => { setAnswer(event.target.value); setFailure(""); }} />
+      <p className="hint">服务端用此值核验提交。例如数字写 1，文本写 "完成"，有序列表写 [0, 2]。设为可用前须填写。</p>
+    </div>
+      </TabsContent>
     </Tabs>
     <details className="text-sm">
       <summary className="cursor-pointer">题目脚本接口</summary>
@@ -141,15 +156,11 @@ export function InteractiveFields({ interactive, setInteractive, answer, setAnsw
         <p>有多种正确操作时，检查函数应将它们转换为相同的正确提交值。</p>
       </div>
     </details>
-    <div className="field">
-      <Label htmlFor="interactive-target">私有正确提交值（JSON）</Label>
-      <Textarea id="interactive-target" rows={2} className="font-mono" value={targetText} spellCheck={false}
-        onChange={event => { setAnswer(event.target.value); setFailure(""); }} />
-      <p className="hint">服务端用此值核验提交。例如数字写 1，文本写 "完成"，有序列表写 [0, 2]。设为可用前须填写。</p>
-    </div>
+    </div><div className="min-w-0 space-y-3"><strong className="mr-3">学生视角</strong>
     <Button type="button" variant="outline" size="sm" onClick={runPreview}>{preview ? "重新运行预览" : "运行预览"}</Button>
     <ErrorNotice message={failure} />
     {preview && preview.source === interactive && preview.targetText === targetText &&
       <Preview key={preview.key} source={preview.source} target={preview.target} />}
+    </div></div>
   </fieldset>;
 }

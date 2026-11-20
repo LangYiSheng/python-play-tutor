@@ -50,7 +50,8 @@ export function useActivityEditor(
   }
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (goalPractice && !questionMode) {
+    if (!title.trim()) { setError("请在「活动信息」中填写活动名称。"); return; }
+    if (goalPractice) {
       if (!rules.goals.length) {
         setError("请至少选择一个本章知识点。");
         return;
@@ -65,40 +66,33 @@ export function useActivityEditor(
     setBusy(true);
     setError("");
     try {
-      if (questionMode) {
+      const body = {
+        title,
+        npc_key: npc || null,
+        assistant_allowed: kind === "assessment" ? false : assistant,
+        resources,
+        ...((kind === "assessment" || (kind === "practice" && !goalPractice)) &&
+          (!editing || selected.length !== editing.question_ids.length || selected.some((id,i) => id !== editing.question_ids[i])) &&
+          { question_ids: selected }),
+        knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
+        ...(goalPractice && { practice_rules: rules, published }),
+        ...(kind === "practice" && practiceMode === "fixed" && { practice_rules: null }),
+      };
+      if (editing)
         await api.put(
           scoped(
-            `/teacher/activities/${encodeURIComponent(id)}/questions`,
+            `/teacher/activities/${encodeURIComponent(id)}`,
             classroomId,
           ),
-          { question_ids: selected },
+          body,
         );
-      } else {
-        const body = {
-          title,
-          npc_key: npc || null,
-          assistant_allowed: kind === "assessment" ? false : assistant,
-          resources,
-          knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
-          ...(goalPractice && { practice_rules: rules, published }),
-          ...(kind === "practice" && practiceMode === "fixed" && { practice_rules: null }),
-        };
-        if (editing)
-          await api.put(
-            scoped(
-              `/teacher/activities/${encodeURIComponent(id)}`,
-              classroomId,
-            ),
-            body,
-          );
-        else
-          await api.post(scoped("/teacher/activities", classroomId), {
-            id,
-            chapter_id: chapter,
-            kind,
-            ...body,
-          });
-      }
+      else
+        await api.post(scoped("/teacher/activities", classroomId), {
+          id,
+          chapter_id: chapter,
+          kind,
+          ...body,
+        });
       setOpen(false);
       setDirty(false);
       onSaved();
@@ -107,12 +101,6 @@ export function useActivityEditor(
     } finally {
       setBusy(false);
     }
-  }
-  function move(i: number, delta: number) {
-    const next = [...selected];
-    [next[i], next[i + delta]] = [next[i + delta], next[i]];
-    setSelected(next);
-    setDirty(true);
   }
   return {
     classroomId,
@@ -155,6 +143,5 @@ export function useActivityEditor(
     setDirty,
     edit,
     save,
-    move,
   };
 }

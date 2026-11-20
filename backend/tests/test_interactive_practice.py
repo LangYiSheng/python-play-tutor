@@ -13,7 +13,7 @@ from app.course_packages.reader import load_bundle
 from app.course_packages.validation import validate_bundle
 from app.course_packages.writer import write_package
 from app.interactive_practice import validate_json_value
-from app.models import Classroom, CourseInstance, Question, QuestionSecret
+from app.models import Activity, Classroom, CourseInstance, Question, QuestionSecret
 
 
 CONTENT = {"html": "<button>入栈</button>", "css": "button{color:green}", "js": "practice.onCheck(() => practice.correct('完成'))"}
@@ -51,10 +51,10 @@ def test_author_and_submit_interactive_with_private_verification(client, db, tea
     assert created.status_code == 201, created.text
     question = created.json()
     assert question["interactive"] == CONTENT and question["answer"] == TARGET
-    activity_id = client.post(teacher_api + "/activities", **opts,
-                              json={"id": "stack-practice", "chapter_id": 179, "title": "背包练习", "kind": "practice"}).json()["id"]
-    link = client.put(f"{teacher_api}/activities/{activity_id}/questions", **opts, json={"question_ids": [question["id"]]})
-    assert link.status_code == 200, link.text
+    activity = client.post(teacher_api + "/activities", **opts, json={
+        "id": "stack-practice", "chapter_id": 179, "title": "背包练习", "kind": "practice", "question_ids": [question["id"]]})
+    assert activity.status_code == 201, activity.text
+    activity_id = activity.json()["id"]
     practice = f"/api/activities/{activity_id}"
     response = client.get(practice, **learner)
     assert response.json()["questions"][0]["interactive"] == CONTENT and "private-gem" not in response.text
@@ -91,7 +91,16 @@ def test_interactive_excluded_from_assessment_and_course_exchange(client, db, te
     assert client.put(binding, **opts, json={"question_ids": [question_id]}).status_code == 422
     existing = client.post("/api/teacher/questions", **opts, json={**DEFINITION, "id": "assessed", "kind": "fill",
                                                                     "interactive": None, "answer": "answer"}).json()["id"]
-    assert client.put(binding, **opts, json={"question_ids": [existing]}).status_code == 200
+    activity_url = f"/api/teacher/activities/{exam_id}"
+    assert client.put(activity_url, **opts, json={"title": "第一场测验", "question_ids": [existing]}).status_code == 200
+    paper = client.put(f"/api/activities/{exam_id}/assessment", headers=student["headers"], json={
+        "classroom_id": classroom["id"], "revision": 0, "answers": [{"question_id": existing, "answer": "草稿"}]})
+    assert paper.status_code == 200, paper.text
+    rejected = client.put(activity_url, **opts, json={"title": "另一个标题", "question_ids": []})
+    assert rejected.status_code == 409, rejected.text
+    # The fixture shares a session across requests. End it as the production dependency does.
+    db.rollback()
+    assert db.get(Activity, exam_id).title == "第一场测验"
     change = client.put("/api/teacher/questions/" + existing, **opts, json={"kind": "interactive", "interactive": CONTENT, "answer": TARGET})
     assert change.status_code == 409
 

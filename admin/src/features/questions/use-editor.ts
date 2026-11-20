@@ -9,7 +9,6 @@ import { interactiveExamples } from "../../../../shared/interactiveExamples";
 import { isInteractiveValue } from "../../../../shared/interactiveValues";
 import { validateInteractiveSource } from "./validate-interactive";
 
-const firstExample = interactiveExamples[0];
 const emptyInteractiveSource = { html: "", css: "", js: "" };
 export function useQuestionEditor(classroomId: number, onSaved: () => void) {
   const [editing, setEditing] = useState<Question | null>(null),
@@ -23,8 +22,8 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     [status, setStatus] = useState<Question["status"]>("draft"),
     [options, setOptions] = useState<string[]>(["", ""]),
     [answer, setAnswer] = useState<EditorAnswer>(""),
-    [interactive, setInteractive] = useState(firstExample.source),
-    [interactiveAnswer, setInteractiveAnswer] = useState<EditorAnswer>(JSON.stringify(firstExample.target)),
+    [interactive, setInteractive] = useState(emptyInteractiveSource),
+    [interactiveAnswer, setInteractiveAnswer] = useState<EditorAnswer>(""),
     [chapterIds, setChapterIds] = useState<number[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
     [referenceMaterial, setReferenceMaterial] = useState<number | null>(null),
@@ -50,8 +49,8 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     setKind(q?.kind ?? "single_choice");
     setStatus(q?.status ?? "draft");
     setOptions(q?.options?.length ? q.options : ["", ""]);
-    setInteractive(q?.kind === "interactive" ? q.interactive ?? emptyInteractiveSource : firstExample.source);
-    setInteractiveAnswer(q?.kind === "interactive" ? questionEditors.interactive.restore(q.answer) : JSON.stringify(firstExample.target));
+    setInteractive(q?.kind === "interactive" ? q.interactive ?? emptyInteractiveSource : emptyInteractiveSource);
+    setInteractiveAnswer(q?.kind === "interactive" ? questionEditors.interactive.restore(q.answer) : "");
     const value =
       q?.answer &&
       typeof q.answer === "object" &&
@@ -88,6 +87,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
   async function save(e: FormEvent) {
     e.preventDefault();
     if (activeSave.current) return;
+    if (!title.trim() || !prompt.trim()) { setError("请在「题目信息」中填写题目名称和题干。"); return; }
     const saving = new AbortController();
     activeSave.current = saving;
     setError("");
@@ -169,10 +169,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     setKind: (value: Question["kind"]) => {
       if (value === kind) return;
       setKind(value);
-      if (value === "interactive" && !editing && interactive === firstExample.source) {
-        if (!title.trim()) setTitle(firstExample.title);
-        if (!prompt.trim()) setPrompt(firstExample.prompt);
-      } else if (value !== "interactive") setAnswer(questionEditors[value].restore(null));
+      if (value !== "interactive") setAnswer(questionEditors[value].restore(null));
     },
     status,
     setStatus,

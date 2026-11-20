@@ -1,9 +1,9 @@
 """Manage ordered activities and their shared question associations."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,6 +12,20 @@ from app.content_relations import activity_questions, question_chapter_ids, set_
 from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
 from app.practice_rules import PracticeRules, allocate_initial, candidate_pool, without_legacy_retry_interval
 from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
+
+
+def unique_questions(value: list[str]) -> list[str]:
+    if any(not key or len(key) > 100 for key in value) or len(set(value)) != len(value):
+        raise ValueError("题目ID必须有效且不能重复")
+    return value
+
+
+QuestionIds = Annotated[list[str], Field(max_length=5000), AfterValidator(unique_questions)]
+
+
+class ActivityQuestionsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question_ids: QuestionIds
 
 
 class ActivityInput(BaseModel):
@@ -24,6 +38,7 @@ class ActivityInput(BaseModel):
     npc_key: str | None = None
     assistant_allowed: bool = True
     knowledge_point_ids: list[int] = Field(default_factory=list, max_length=65)
+    question_ids: QuestionIds | None = None
     practice_rules: PracticeRules | None = None
     published: bool = True
 
@@ -48,7 +63,7 @@ def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: 
         raise HTTPException(422, "NPC不存在")
     content = {"published": True, "knowledge_point_ids": body.knowledge_point_ids}
     item = Activity(
-        **body.model_dump(exclude={"id", "knowledge_point_ids", "resources", "practice_rules", "published"}),
+        **body.model_dump(exclude={"id", "knowledge_point_ids", "resources", "question_ids", "practice_rules", "published"}),
         id=runtime_id,
         stable_id=body.id,
         course_instance_id=instance_id,
@@ -66,6 +81,8 @@ def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: 
         set_resources(db, item, body.resources)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if body.question_ids is not None:
+        assign_activity_questions(db, item, body.question_ids, instance_id)
     commit_content(db, instance_id)
     return {"id": item.id}
 
@@ -77,6 +94,7 @@ class ActivityUpdate(BaseModel):
     assistant_allowed: bool | None = None
     resources: list[dict] | None = Field(default=None, max_length=64)
     knowledge_point_ids: list[int] | None = Field(default=None, max_length=65)
+    question_ids: QuestionIds | None = None
     practice_rules: PracticeRules | None = None
     published: bool | None = None
 
@@ -118,6 +136,7 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     if item.owner_id != user.id and user.role != "admin":
         raise HTTPException(403, "共享种子不可覆盖，请创建教师自己的活动并绑定任务")
     changes = body.model_dump(exclude_unset=True)
+    question_ids = changes.pop("question_ids", None)
     resources = changes.pop("resources", None)
     content = dict(item.content)
     new_points = changes.pop("knowledge_point_ids", None)
@@ -168,6 +187,8 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     if new_points is not None:
         content["knowledge_point_ids"] = new_points
     item.content = content
+    if question_ids is not None:
+        assign_activity_questions(db, item, question_ids, instance_id)
     commit_content(db, instance_id)
     return {"id": item.id}
 
@@ -180,36 +201,34 @@ def delete_activity(activity_id: str, db: Session, user: User, classroom_id: int
     raise HTTPException(409, "请先预览删除影响并完成二次确认")
 
 
-class ActivityQuestionsInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    question_ids: list[str] = Field(max_length=5000)
-
-    @field_validator("question_ids")
-    @classmethod
-    def unique_questions(cls, value):
-        if any(not key or len(key) > 100 for key in value) or len(set(value)) != len(value):
-            raise ValueError("题目ID必须有效且不能重复")
-        return value
-
-
 def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db: Session, user: User, classroom_id: int | None = None):
     instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
     from app.curriculum import editable
 
     activity = editable(db.scalar(select(Activity).where(Activity.id == activity_id).with_for_update()), user, instance_id)
+    try:
+        assign_activity_questions(db, activity, body.question_ids, instance_id)
+        commit_content(db, instance_id)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "内容同时更新，请刷新后重试") from exc
+    return {"id": activity.id, "question_ids": [q.id for q in activity_questions(db, activity)]}
+
+
+def assign_activity_questions(db, activity, question_ids, instance_id):
     if activity.content.get("practice_rules") is not None:
         raise HTTPException(422, "知识点练习按目标抽题，不能设置固定题单")
     if activity.kind not in {"practice", "assessment"}:
         raise HTTPException(422, "只有练习与测验活动可以选题")
-    if activity.kind == "assessment" and len(body.question_ids) > 100:
+    if activity.kind == "assessment" and len(question_ids) > 100:
         raise HTTPException(422, "章节测验最多选择100道题")
     if (
         activity.kind == "assessment"
-        and body.question_ids != [q.id for q in activity_questions(db, activity)]
+        and question_ids != [q.id for q in activity_questions(db, activity)]
         and db.scalar(select(AssessmentAttempt.id).where(AssessmentAttempt.activity_id == activity.id).limit(1)) is not None
     ):
         raise HTTPException(409, "测验已有试卷记录，不能更换题集或顺序；请新建测验活动")
-    for question_id in sorted(body.question_ids):
+    for question_id in sorted(question_ids):
         question = db.scalar(select(Question).where(Question.id == question_id).with_for_update())
         if not question:
             raise HTTPException(422, "选中的题目不存在")
@@ -222,10 +241,4 @@ def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db
             raise HTTPException(422, "只有已就绪题目可以用于活动")
         if activity.chapter_id not in question_chapter_ids(db, question.id):
             raise HTTPException(422, "题目必须关联活动所在章节")
-    try:
-        set_activity_questions(db, activity, body.question_ids)
-        commit_content(db, instance_id)
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(409, "内容同时更新，请刷新后重试") from exc
-    return {"id": activity.id, "question_ids": [q.id for q in activity_questions(db, activity)]}
+    set_activity_questions(db, activity, question_ids)

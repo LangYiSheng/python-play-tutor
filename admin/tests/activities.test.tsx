@@ -37,6 +37,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   await user.click(screen.getByRole("combobox", { name: "类型" }));
   await user.click(await screen.findByRole("option", { name: "练习" }));
   expect(screen.getByRole("radio", { name: "按知识点出题" })).toBeChecked();
+  await user.click(screen.getByRole("tab", { name: "知识点目标" }));
   expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("checkbox", { name: "变量" }));
   await user.clear(screen.getByRole("spinbutton", { name: /答对总数/ }));
@@ -65,6 +66,41 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   await user.click(await screen.findByRole("button", { name: "选题章节测验" }));
   expect(await screen.findByRole("checkbox", { name: "仅私有用例" })).toBeEnabled();
   expect(screen.queryByRole("checkbox", { name: "水果索引" })).not.toBeInTheDocument();
+});
+
+it("selects shared and untagged questions once and saves their final positions with the activity", async () => {
+  const update = vi.fn();
+  const course = {
+    chapters: [{id: 1, title: "第一章"}],
+    knowledge_points: [{id: 11, title: "变量", chapter_id: 1}, {id: 12, title: "表达式", chapter_id: 1}],
+    npcs: [], activities: [{id: "paper", title: "固定题单", kind: "practice", chapter_id: 1, question_ids: []}],
+  };
+  const questions = [
+    {id: "both", title: "B 变量题", knowledge_point_ids: [11, 12]},
+    {id: "expression", title: "A 表达式题", knowledge_point_ids: [12]},
+    {id: "untagged", title: "C 综合题", knowledge_point_ids: []},
+  ].map(q => ({...q, chapter_ids: [1], owner_id: null, kind: "fill", status: "ready"}));
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (init.method === "PUT") { update(url, JSON.parse(String(init.body))); return json({}); }
+    return json(url.includes("/teacher/courses") ? course : url.includes("/teacher/questions") ? questions : []);
+  }));
+  const user = userEvent.setup();
+  render(<Activities classroomId={7} teacherId={9} />);
+  await user.click(await screen.findByRole("button", {name: "选题固定题单"}));
+  await user.click(screen.getByRole("checkbox", {name: "B 变量题"}));
+  await user.click(screen.getByRole("button", {name: /表达式/}));
+  expect(screen.getByRole("checkbox", {name: "B 变量题"})).toBeChecked();
+  await user.click(screen.getByRole("checkbox", {name: /全选当前/}));
+  await user.click(screen.getByRole("button", {name: /未关联本章知识点/}));
+  await user.click(screen.getByRole("checkbox", {name: "C 综合题"}));
+  await user.click(screen.getByRole("tab", {name: "题目顺序"}));
+  await user.click(screen.getByRole("button", {name: "按题目名称排序"}));
+  expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("A 表达式题");
+  await user.click(screen.getByRole("button", {name: "按知识点排序"}));
+  expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("B 变量题");
+  await user.click(screen.getByRole("button", {name: "保存"}));
+  await waitFor(() => expect(update).toHaveBeenCalledWith(expect.stringContaining("/teacher/activities/paper?"),
+    expect.objectContaining({title: "固定题单", question_ids: ["both", "expression", "untagged"]})));
 });
 
 it("previews cascading impact, requires two confirmations, and refreshes after deletion", async () => {
@@ -118,16 +154,15 @@ it("selects knowledge points by chapter and preserves the other chapter's select
   render(<Activities classroomId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "编辑综合复习" }));
   expect(screen.getByRole("radio", { name: "固定题单" })).toBeChecked();
+  await user.click(screen.getByRole("tab", { name: "内容关联" }));
   expect(screen.getByRole("checkbox", { name: "变量" })).toBeChecked();
   expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("combobox", { name: "知识点所属章节" }));
-  await user.click(await screen.findByRole("option", { name: "第二章" }));
+  await user.click(screen.getByRole("button", { name: "第二章" }));
   expect(screen.getAllByRole("checkbox", { name: "循环" })).toHaveLength(1);
   await user.click(screen.getByRole("checkbox", { name: "循环" }));
   expect(within(screen.getByRole("group", { name: "已选知识点" })).getByText("变量")).toBeInTheDocument();
   expect(screen.getByText("已选 2 / 65")).toBeInTheDocument();
-  await user.click(screen.getByRole("combobox", { name: "知识点所属章节" }));
-  await user.click(await screen.findByRole("option", { name: "第三章" }));
+  await user.click(screen.getByRole("button", { name: "第三章" }));
   expect(screen.getByText("本章暂无知识点，可选择其他章节。")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "保存" }));
   await waitFor(() => expect(update).toHaveBeenCalledWith("/api/teacher/activities/review?classroom_id=7", expect.objectContaining({ knowledge_point_ids: [11, 22] })));
