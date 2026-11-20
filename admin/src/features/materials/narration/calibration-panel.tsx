@@ -55,7 +55,7 @@ export function CalibrationPanel({
     .map(([page, items]) => [Number(page), items] as const)
     .sort(([left], [right]) => left - right);
   return (
-    <section className="surface space-y-2 p-4 text-sm">
+    <section className="surface space-y-4 p-4 text-sm">
       <p className="font-medium">
         校准报告 · {report.windows} 个窗口 · {report.pages} 页
       </p>
@@ -132,16 +132,17 @@ export function CalibrationPanel({
         </details>
       )}
       {tagRows.length > 0 && (
-        <div className="space-y-1">
-          <p className="font-medium">
+        <details className="border-t pt-3">
+          <summary className="cursor-pointer font-medium">
             标签合并（{tagRows.length} 个标准名，{aliasCount} 个别名）
-          </p>
-          {report.tag_stats && (
-            <p className="hint">
-              标签 {report.tag_stats.before} → {report.tag_stats.after}，合并 {report.tag_stats.merged} 组
-            </p>
-          )}
-          <div className="overflow-x-auto">
+          </summary>
+          <div className="mt-2 space-y-1">
+            {report.tag_stats && (
+              <p className="hint">
+                标签 {report.tag_stats.before} → {report.tag_stats.after}，合并 {report.tag_stats.merged} 组
+              </p>
+            )}
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b">
@@ -159,19 +160,22 @@ export function CalibrationPanel({
               </tbody>
             </table>
           </div>
-        </div>
-      )}      {report.issues_truncated && (
-        <p className="hint" role="note">问题过多，只保留前 120 条。</p>
+          </div>
+        </details>
       )}
       {(report.issues ?? []).length === 0 ? (
         <p className="hint">没有发现问题。</p>
       ) : (
-        <div className="space-y-1">
-          <p className="font-medium">
+        <details open className="border-t pt-3">
+          <summary className="cursor-pointer font-medium">
             需核对的问题（{report.issues?.length ?? 0} 条）
-          </p>
-          <p className="hint">这些是原文或跨页的疑点，校准只记录、未改整理稿。</p>
-          <ul className="space-y-2">
+          </summary>
+          <div className="mt-2 space-y-1">
+            <p className="hint">这些是原文或跨页的疑点，校准只记录、未改整理稿。</p>
+            {report.issues_truncated && (
+              <p className="hint" role="note">问题过多，只保留前 120 条。</p>
+            )}
+            <ul className="space-y-2">
             {issueRows.map(([pageNo, items]) => (
               <li key={pageNo} className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -201,8 +205,9 @@ export function CalibrationPanel({
                 </ul>
               </li>
             ))}
-          </ul>
-        </div>
+            </ul>
+          </div>
+        </details>
       )}
     </section>
   );
