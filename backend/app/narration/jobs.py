@@ -32,6 +32,7 @@ POLL_SECONDS = 2
 def state(material_id: int, job: NarrationJob | None) -> dict[str, Any]:
     """前端轮询用的任务快照；入队与 `GET /job` 共用这一份形状。"""
     progress = (job.progress or {}) if job else {}
+    request = progress.get("request") or {}
     return {
         "id": job.id if job else None,
         "material_id": material_id,
@@ -44,6 +45,8 @@ def state(material_id: int, job: NarrationJob | None) -> dict[str, Any]:
         "total": progress.get("total", 0),
         "message": job.message if job else "",
         "failed": progress.get("failed", []),
+        "stage": progress.get("stage", ""),
+        "chain": progress.get("chain") or request.get("chain") or [],
         "started_at": job.started_at.isoformat() if job and job.started_at else None,
     }
 
@@ -82,6 +85,8 @@ def run(db: Session, material_id: int) -> bool:
             task_commands.run_generate_range(db, material, request)
         elif operation == "audio_batch":
             task_commands.run_audio_batch(db, material, request)
+        elif operation == "pipeline":
+            task_commands.run_pipeline(db, material, request)
         else:
             raise ValueError("未知的后台任务类型")
     except BaseException as exc:  # noqa: BLE001 -- 一个任务失败不能拖垮 worker

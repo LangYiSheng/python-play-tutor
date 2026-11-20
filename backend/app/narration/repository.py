@@ -373,6 +373,16 @@ def beat(db: Session, material_id: int, *, done: int | None = None, total: int |
     sync_run(db, job)
 
 
+def set_chain(db: Session, material_id: int, chain: list[str], stage: str) -> None:
+    """记录链上还剩哪几段；重启或重试从这里继续。"""
+    job = owned_job(db, material_id)
+    if job is None or job.status != "running":
+        return
+    job.heartbeat_at = now()
+    job.progress = {**(job.progress or {}), "chain": list(chain), "stage": stage}
+    sync_run(db, job)
+
+
 def release(db: Session, material_id: int, *, status: str = "done", message: str = "",
             extra: dict[str, Any] | None = None) -> None:
     if status == "failed":

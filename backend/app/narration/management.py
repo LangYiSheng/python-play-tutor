@@ -14,12 +14,13 @@ from ..teacher_scope import teacher_instance_id
 from . import repository
 from .access import teacher_material
 from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
-from .task_commands import (calibrate_deck, generate_narration, generate_range, synthesize_audio, synthesize_audio_batch)
+from .task_commands import (calibrate_deck, digest_deck, generate_narration, generate_range, pipeline_deck,
+                            synthesize_audio, synthesize_audio_batch)
 from .models import NarrationJob, NarrationRun
 
 router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/synthesis", tags=["narration"])
 global_router = APIRouter(tags=["narration"], dependencies=[Depends(require_admin)])
-OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate"}
+OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate", "digest", "pipeline"}
 
 
 def snapshot(material: Material, job: NarrationJob | NarrationRun | None) -> dict[str, Any]:
@@ -120,6 +121,10 @@ def retry_task(classroom_id: int, material_id: int, body: RetryInput,
             synthesize_audio(page_no=request["page_no"], **args)
         elif operation == "audio_batch":
             synthesize_audio_batch(body=RangeInput(**request["body"]), **args)
+        elif operation == "pipeline":
+            pipeline_deck(resume={"chain": progress.get("chain"), "body": request.get("body")}, **args)
+        elif operation == "digest":
+            digest_deck(**args)
         else:
             calibrate_deck(**args)
         return snapshot(material, repository.job_of(db, material_id))

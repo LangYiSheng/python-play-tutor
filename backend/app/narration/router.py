@@ -56,6 +56,14 @@ def generate_range(classroom_id: int, material_id: int, body: GenerateInput,
     return {"job": jobs.state(material_id, job)}
 
 
+@router.post("/pipeline", status_code=202)
+def pipeline_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+                  user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+    """一键梳理：整理原文 → 校准 → 应用修正 → 生成讲解稿，后台逐段跑。"""
+    job = task_commands.pipeline_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    return {"job": jobs.state(material_id, job)}
+
+
 @router.post("/digest", status_code=202)
 def digest_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                 user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
