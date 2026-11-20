@@ -1,7 +1,7 @@
 """Validate and manage reusable questions while preserving private answer data."""
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,8 @@ from app.models import (
     CourseInstance,
     KnowledgePoint,
     Question,
+    QuestionChapter,
+    QuestionKnowledgePoint,
     QuestionSecret,
     Submission,
     User,
@@ -153,6 +155,8 @@ def _save_question(db, user, question, body):
     ).all()
     if bound and body.status != "ready":
         raise HTTPException(409, "题目仍被活动引用，请先从活动移除再改为草稿或停用")
+    if body.kind == "interactive" and any(activity.kind != "practice" for activity in bound):
+        raise HTTPException(409, "交互练习题只能用于练习活动，请先从其他活动移除此题")
     if any(activity.chapter_id not in body.chapter_ids for activity in bound):
         raise HTTPException(409, "题目仍被活动引用，不能移除所用章节")
     validate_practice_question_edit(db, question, body)
@@ -187,12 +191,75 @@ def create_question(body: QuestionInput, db: Session, user: User, classroom_id: 
     return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=classroom.teacher_id), body)
 
 
-def list_questions(db: Session, user: User, classroom_id: int | None = None):
+def visible_questions(db, user, classroom_id):
     instance_id = teacher_instance_id(db, user, classroom_id)
     query = select(Question).where(Question.course_instance_id == instance_id)
     if user.role != "admin":
         query = query.where(Question.owner_id.is_(None) | (Question.owner_id == user.id))
+    return query
+
+
+def list_questions(db: Session, user: User, classroom_id: int | None = None):
+    query = visible_questions(db, user, classroom_id)
     return [teacher_question_payload(db, item, user) for item in db.scalars(query.order_by(Question.id))]
+
+
+def question_page(db, user, classroom_id, page, size, search, kind, status, source):
+    from app.course_content.catalog import page_window
+
+    query = visible_questions(db, user, classroom_id).with_only_columns(
+        Question.id, Question.title, Question.kind, Question.source_type, Question.status)
+    if search.strip():
+        term = search.strip()
+        query = query.where(Question.title.icontains(term, autoescape=True) | Question.prompt.icontains(term, autoescape=True))
+    for column, value in ((Question.kind, kind), (Question.status, status), (Question.source_type, source)):
+        if value is not None:
+            query = query.where(column == value)
+    meta, window = page_window(db, query.order_by(Question.id), page, size)
+    items = [dict(row, chapter_ids=[]) for row in db.execute(window).mappings()]
+    by_id = {item["id"]: item for item in items}
+    if by_id:
+        chapters = select(QuestionChapter.question_id, Chapter.id).join(Chapter, Chapter.id == QuestionChapter.chapter_id).where(
+            QuestionChapter.question_id.in_(by_id))
+        if user.role != "admin":
+            chapters = chapters.where(Chapter.owner_id.is_(None) | (Chapter.owner_id == user.id))
+        for question_id, chapter_id in db.execute(chapters.order_by(Chapter.id)):
+            by_id[question_id]["chapter_ids"].append(chapter_id)
+    return {**meta, "items": items}
+
+
+def question_detail(db, user, classroom_id, question_id):
+    question = db.scalar(visible_questions(db, user, classroom_id).where(Question.id == question_id))
+    if question is None:
+        raise HTTPException(404, "题目不存在")
+    return teacher_question_payload(db, question, user)
+
+
+def chapter_candidates(db, user, classroom_id, chapter_id):
+    from app.course_content.catalog import visible_points
+
+    instance_id = teacher_instance_id(db, user, classroom_id)
+    query = select(Question).join(QuestionChapter, QuestionChapter.question_id == Question.id).join(
+        Chapter, Chapter.id == QuestionChapter.chapter_id).where(
+        Question.course_instance_id == instance_id, Chapter.course_instance_id == instance_id, Chapter.id == chapter_id)
+    if user.role != "admin":
+        query = query.where((Question.owner_id.is_(None) | (Question.owner_id == user.id))
+                            & (Chapter.owner_id.is_(None) | (Chapter.owner_id == user.id)))
+    query = query.with_only_columns(
+            Question.id, Question.title, Question.kind, Question.status, Question.owner_id,
+            (func.json_array_length(Question.samples) > 0).label("has_samples"))
+    points = visible_points(instance_id, user).where(KnowledgePoint.chapter_id == chapter_id).with_only_columns(KnowledgePoint.id)
+    links = query.outerjoin(QuestionKnowledgePoint, (QuestionKnowledgePoint.question_id == Question.id)
+                            & QuestionKnowledgePoint.knowledge_point_id.in_(points.correlate(None))).add_columns(QuestionKnowledgePoint.knowledge_point_id)
+    by_id = {}
+    for row in db.execute(links.order_by(Question.id, QuestionKnowledgePoint.knowledge_point_id)).mappings():
+        if row.id not in by_id:
+            candidate = dict(row)
+            del candidate["knowledge_point_id"]
+            by_id[row.id] = dict(candidate, knowledge_point_ids=[])
+        if row.knowledge_point_id is not None:
+            by_id[row.id]["knowledge_point_ids"].append(row.knowledge_point_id)
+    return list(by_id.values())
 
 
 def update_question(question_id: str, body: QuestionUpdate, db: Session, user: User, classroom_id: int | None = None):

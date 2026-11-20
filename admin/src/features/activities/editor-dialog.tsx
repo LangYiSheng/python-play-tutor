@@ -12,8 +12,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KnowledgePointPicker } from "@/features/curriculum/knowledge-point-picker";
-import type { Activity, Course, Material, Question } from "@/lib/types";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import type { Activity, Course, Material, QuestionCandidate } from "@/lib/types";
+import { PaperEditor } from "./paper-editor";
+import { EditorTabs } from "@/components/editor-tabs";
 import { ResourceEditor } from "./resource-editor";
 import { PracticeGoalsEditor } from "./practice-goals-editor";
 import type { useActivityEditor } from "./use-editor";
@@ -27,8 +28,8 @@ export function ActivityDialog({
   editor: ReturnType<typeof useActivityEditor>;
   course: { data: Course | null };
   materials: { data: Material[] | null };
-  questions: { data: Question[] | null };
-  candidates: Question[];
+  questions: { data: QuestionCandidate[] | null };
+  candidates: QuestionCandidate[];
 }) {
   const {
     editing,
@@ -56,7 +57,6 @@ export function ActivityDialog({
     busy,
     setDirty,
     save,
-    move,
   } = editor;
   return (
     <Dialog
@@ -65,19 +65,13 @@ export function ActivityDialog({
         if (!busy) setOpen(v);
       }}
     >
-      <DialogContent className="editor-dialog">
+      <DialogContent className="editor-dialog tabbed-editor activity-editor">
         <DialogHeader>
           <DialogTitle>
-            {questionMode
-              ? `活动选题：${title}`
-              : editing
-                ? "编辑活动"
-                : "新增活动"}
+            {editing ? "编辑活动" : "新增活动"}
           </DialogTitle>
           <DialogDescription>
-            {questionMode
-              ? "只可选用当前章节的可用题目，顺序决定学生看到的题目顺序。"
-              : "完成条件由服务端依据真实学习记录判定。"}
+            完成条件由服务端依据真实学习记录判定。
           </DialogDescription>
         </DialogHeader>
         <form
@@ -88,82 +82,8 @@ export function ActivityDialog({
         >
           <div className="dialog-scroll">
             <ErrorNotice message={error} />
-            {questionMode ? (
-              <>
-                <div className="field">
-                  <Label>题库</Label>
-                  <div className="check-list">
-                    {candidates.map((q) => (
-                      <label key={q.id}>
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(q.id)}
-                          disabled={
-                            !selected.includes(q.id) &&
-                            selected.length >=
-                              (kind === "assessment" ? 100 : 5000)
-                          }
-                          onChange={() =>
-                            setSelected((v) =>
-                              v.includes(q.id)
-                                ? v.filter((id) => id !== q.id)
-                                : [...v, q.id],
-                            )
-                          }
-                        />
-                        {q.title}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="field">
-                  <Label>题目顺序 · {selected.length} 题</Label>
-                  {selected.map((key, i) => (
-                    <div className="list-row border rounded-md" key={key}>
-                      <span>
-                        {i + 1}.{" "}
-                        {questions.data?.find((q) => q.id === key)?.title ??
-                          "题目已不可用，请移除"}
-                      </span>
-                      <div className="flex">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`上移第${i + 1}题`}
-                          disabled={i === 0}
-                          onClick={() => move(i, -1)}
-                        >
-                          <ArrowUp />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`下移第${i + 1}题`}
-                          disabled={i === selected.length - 1}
-                          onClick={() => move(i, 1)}
-                        >
-                          <ArrowDown />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelected((v) => v.filter((k) => k !== key));
-                            setDirty(true);
-                          }}
-                        >
-                          移除
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <>
+            <EditorTabs initial={questionMode ? "按知识点选题" : "活动信息"} pages={[
+              { label: "活动信息", content: <>
                 <div className="field">
                   <Label htmlFor="a-title">活动名称</Label>
                   <Input
@@ -182,6 +102,7 @@ export function ActivityDialog({
                       value={chapter}
                       onValueChange={(value) => {
                         setChapter(Number(value));
+                        setSelected([]);
                         setResources([]);
                         editor.setRules({ ...editor.rules, goals: [] });
                         setDirty(true);
@@ -202,6 +123,7 @@ export function ActivityDialog({
                       value={kind}
                       onValueChange={(value) => {
                         setKind(value as Activity["kind"]);
+                        if (value === "assessment") setSelected(ids => ids.filter(id => questions.data?.find(q => q.id === id)?.kind !== "interactive"));
                         setResources([]);
                         setDirty(true);
                       }}
@@ -215,6 +137,48 @@ export function ActivityDialog({
                     </SelectField>
                   </div>
                 </div>
+                {kind === "practice" && (
+                  <fieldset className="field">
+                    <legend>出题方式</legend>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="practice-mode" value="fixed"
+                          checked={editor.practiceMode === "fixed"} onChange={() => editor.setPracticeMode("fixed")} />
+                        固定题单
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="practice-mode" value="goals"
+                          checked={editor.practiceMode === "goals"} onChange={() => editor.setPracticeMode("goals")} />
+                        按知识点出题
+                      </label>
+                    </div>
+                    {editor.goalPractice && editing && editing.question_ids.length > 0 && !editing.practice_rules &&
+                      <p className="hint">保存后会移除原固定题单，按知识点目标分配题目。</p>}
+                  </fieldset>
+                )}
+              </> },
+              ...(kind === "reading" || kind === "lesson" ? [{label: "资料与阅读要求", content: <ResourceEditor classroomId={editor.classroomId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
+                    onChange={(value) => { setResources(value); setDirty(true); }} />}] : []),
+              ...(editor.goalPractice ? [{label: "知识点目标", content: <>
+                    <PracticeGoalsEditor rules={editor.rules}
+                      points={(course.data?.knowledge_points ?? []).filter(point => point.chapter_id === chapter)}
+                      candidates={questions.data ? candidates : null}
+                      onChange={value => { editor.setRules(value); setDirty(true); }} />
+                    <div className="field">
+                      <Label htmlFor="practice-status">发布状态</Label>
+                      <SelectField id="practice-status" value={editor.published ? "published" : "draft"}
+                        onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
+                        <option value="published">已发布</option>
+                        <option value="draft">草稿</option>
+                      </SelectField>
+                      <p className="hint">发布时会按整场练习检查题量，多个知识点共享的题目只分配一次。</p>
+                    </div>
+              </>}] : []),
+              ...(kind === "assessment" || (kind === "practice" && !editor.goalPractice) ?
+                ["按知识点选题", "题目顺序"].map(label => ({ label, content: <PaperEditor order={label === "题目顺序"} assessment={kind === "assessment"}
+                  candidates={candidates} questions={questions.data ?? []} points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
+                  selected={selected} onChange={ids => { setSelected(ids); setDirty(true); }} /> })) : []),
+              ...(kind !== "assessment" ? [{ label: "答疑设置", content: <>
                 <div className="field">
                   <Label htmlFor="a-npc">答疑角色</Label>
                   <SelectField
@@ -234,30 +198,18 @@ export function ActivityDialog({
                     ))}
                   </SelectField>
                 </div>
-                {editing?.kind === "practice" && !editing.practice_rules && (
-                  <label className="mb-4 flex items-center gap-2">
-                    <input type="checkbox" checked={editor.convertPractice}
-                      onChange={event => editor.setConvertPractice(event.target.checked)} />
-                    将固定题单转换为知识点练习
+                  <label className="flex items-center gap-2 mb-4">
+                    <input
+                      type="checkbox"
+                      checked={assistant}
+                      onChange={(e) => setAssistant(e.target.checked)}
+                    />
+                    允许学生主动向助教提问
                   </label>
-                )}
-                {editor.goalPractice ? (
-                  <>
-                    <PracticeGoalsEditor rules={editor.rules}
-                      points={(course.data?.knowledge_points ?? []).filter(point => point.chapter_id === chapter)}
-                      candidates={questions.data ? candidates : null}
-                      onChange={value => { editor.setRules(value); setDirty(true); }} />
-                    <div className="field">
-                      <Label htmlFor="practice-status">发布状态</Label>
-                      <SelectField id="practice-status" value={editor.published ? "published" : "draft"}
-                        onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
-                        <option value="published">已发布</option>
-                        <option value="draft">草稿</option>
-                      </SelectField>
-                      <p className="hint">发布时会按整场练习检查题量，多个知识点共享的题目只分配一次。</p>
-                    </div>
-                  </>
-                ) : <KnowledgePointPicker
+              </> }] : []),
+              { label: "内容关联", content: editor.goalPractice ? <div className="space-y-2"><strong>关联知识点</strong>
+                <p>{editor.rules.goals.map(g => course.data?.knowledge_points.find(p => p.id === g.knowledge_point_id)?.title).join("、") || "尚未选择"}</p>
+                <p className="hint">在「知识点目标」中调整本章练习范围。</p></div> : <KnowledgePointPicker
                   key={id}
                   chapters={course.data?.chapters ?? []}
                   points={course.data?.knowledge_points ?? []}
@@ -267,25 +219,8 @@ export function ActivityDialog({
                     setPointIds(ids);
                     setDirty(true);
                   }}
-                />}
-                {kind === "lesson" || kind === "reading" ? (
-                  <ResourceEditor classroomId={editor.classroomId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
-                    onChange={(value) => { setResources(value); setDirty(true); }} />
-                ) : null}
-                {kind !== "assessment" ? (
-                  <label className="flex items-center gap-2 mb-4">
-                    <input
-                      type="checkbox"
-                      checked={assistant}
-                      onChange={(e) => setAssistant(e.target.checked)}
-                    />
-                    允许学生主动向助教提问
-                  </label>
-                ) : (
-                  <p className="hint">测验不开放助教。</p>
-                )}
-              </>
-            )}
+                /> },
+            ]} />
           </div>
           <DialogFooter>
             <Button

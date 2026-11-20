@@ -381,6 +381,7 @@ npm run test:e2e -- --project=desktop --workers=1
 | --- | --- |
 | 唯一主线、刷新续玩、账号隔离 | `npx playwright test rebornJourney.spec.ts storyChapter.spec.ts --project=desktop --workers=1` |
 | 练习与不可重复整卷交卷 | `npx playwright test assessmentPaper.spec.ts --project=desktop --workers=1` |
+| 交互练习题模板、草稿、重置、助教快照及保存校验 | `E2E_VITE_URL` 指向本地学生端 Vite 服务，在 frontend 运行 `npx playwright test interactivePractice.spec.ts --project=desktop --workers=1`。教师端在 admin 运行 `npx playwright test interactive-practice.spec.ts`。学生题卡与发送流程由 `frontend/tests/interactivePracticeWorkspace.spec.ts` 覆盖，授权、快照及模型工具由 `backend/tests/test_assistant_interactive_state.py` 覆盖。 |
 | 地图、工作区、焦点、200%字号 | `npx playwright test worldConfiguration.spec.ts uiUsability.spec.ts --project=desktop --workers=1` |
 | 真实课程媒体、学习规则、页面样式 | REBORN_E2E_COURSE_PACKAGE本身含真实PDF/视频，显式设置`E2E_COURSE_MEDIA_IMPORTED=1`；运行 `npx playwright test courseMediaPack.spec.ts learningRules.spec.ts gameDesign.spec.ts townWorkspaces.spec.ts --project=desktop --workers=1` |
 | 所有原始视频首帧 | 在媒体前置条件上额外设置 `E2E_ALL_COURSE_VIDEOS=1`，运行 `courseMediaPack.spec.ts`；首帧不代表完整逐段播放 |

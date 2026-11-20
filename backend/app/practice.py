@@ -21,6 +21,7 @@ from .models import Classroom, QuestionSecret, Submission, User, now
 from .browser_practice import BrowserCase, stage_browser_submission
 from .practice_sessions import lock_learner, record_attempt, require_attempt
 from .question_types import grade_answer, question_type
+from .interactive_practice import interactive_feedback, same_json, validate_receipt
 
 router = APIRouter(tags=["practice"])
 
@@ -56,7 +57,20 @@ def stage_submission(db, user, classroom_id, activity, question, answer, code, k
         raise HTTPException(503, "题目尚未配置评分规则")
     row = Submission(user_id=user.id, classroom_id=classroom_id, activity_id=activity.id,
         question_id=question.id, idempotency_key=key, mode=mode, answer=answer, code=code)
-    if question_type(question.kind).execution == "python":
+    if question.kind == "interactive":
+        if activity.kind != "practice":
+            raise HTTPException(409, "交互练习题只能用于练习活动")
+        if code:
+            raise HTTPException(422, "交互练习题不接收代码提交")
+        try:
+            validate_receipt(answer)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if secret.answer is None:
+            raise HTTPException(503, "交互练习题尚未配置私有目标")
+        row.status, detail = interactive_feedback(answer, secret.answer)
+        row.feedback = {"source": "interactive_practice", "status": row.status, "detail": detail}
+    elif question_type(question.kind).execution == "python":
         if not code or not code.strip():
             raise HTTPException(422, "请填写代码")
         cases = list(question.samples)
@@ -92,11 +106,10 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
         lock_learner(db, user.id)
     existing = db.scalar(query)
     if existing:
-        if (existing.activity_id, existing.question_id, existing.mode, existing.answer, existing.code) != (
+        if not same_json(existing.answer, submitted_answer) or (existing.activity_id, existing.question_id, existing.mode, existing.code) != (
             body.activity_id,
             body.question_id,
             body.mode,
-            submitted_answer,
             body.code,
         ):
             raise HTTPException(409, "幂等键已用于不同提交")
@@ -129,11 +142,10 @@ def create_submission(body: SubmissionInput, user: Annotated[User, Depends(curre
         existing = db.scalar(query)
         if not existing:
             raise
-        if (existing.activity_id, existing.question_id, existing.mode, existing.answer, existing.code) != (
+        if not same_json(existing.answer, submitted_answer) or (existing.activity_id, existing.question_id, existing.mode, existing.code) != (
             body.activity_id,
             body.question_id,
             body.mode,
-            submitted_answer,
             body.code,
         ):
             raise HTTPException(409, "幂等键已用于不同提交")

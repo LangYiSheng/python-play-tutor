@@ -1,0 +1,12 @@
+<figure class="scene">
+  <canvas id="town" width="384" height="112" aria-hidden="true"></canvas>
+  <div class="indices" id="indices" aria-hidden="true"></div>
+  <figcaption id="lit" aria-live="polite"></figcaption>
+</figure>
+<div class="range-editor">
+  <div class="code-line">
+    <span><b class="keyword">for</b> i <b class="keyword">in</b> range(</span><span class="args"><select id="start" aria-label="起点 start"></select>, <select id="stop" aria-label="终点 stop"></select>, <select id="step" aria-label="步长 step"></select></span><span>):</span>
+  </div>
+  <code class="statement">light(i)</code>
+  <p class="arg-note">依次调整起点、终点和步长，查看街道上亮起的路灯。</p>
+</div>

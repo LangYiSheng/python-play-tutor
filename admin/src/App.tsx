@@ -332,7 +332,7 @@ function Workbench() {
           <nav aria-label="工作台导航">
             {globalNav.filter(item => !item.adminOnly || isAdmin).map(link)}
           </nav>
-          {classPage && classroom && <nav aria-label="班级导航">
+          {classroom && <nav aria-label="班级导航">
             {classNav.map(item => (
               <div key={item.key}>
                 {item.key === "classroom" && <p className="nav-label">班级教学</p>}

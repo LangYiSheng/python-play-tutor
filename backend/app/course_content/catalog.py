@@ -1,42 +1,74 @@
 """Read teacher chapter and knowledge-point catalogues."""
 
 from app.course_content.resources import resource_payload
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.content_relations import activity_questions
 from app.practice_rules import without_legacy_retry_interval
-from app.models import Activity, Chapter, KnowledgePoint, Npc, User
+from app.models import Activity, ActivityQuestion, Chapter, KnowledgePoint, Npc, Question, User
 from app.teacher_scope import teacher_instance_id
 
 
-def teacher_courses(db: Session, user: User, classroom_id: int | None = None):
+def visible_points(instance_id, user):
+    query = select(KnowledgePoint).join(Chapter, Chapter.id == KnowledgePoint.chapter_id).where(
+        KnowledgePoint.course_instance_id == instance_id, Chapter.course_instance_id == instance_id)
+    if user.role != "admin":
+        query = query.where((KnowledgePoint.owner_id.is_(None) | (KnowledgePoint.owner_id == user.id))
+                            & (Chapter.owner_id.is_(None) | (Chapter.owner_id == user.id)))
+    return query
+
+
+def point_payload(point):
+    return {"id": point.id, "chapter_id": point.chapter_id, "title": point.title, "content": point.content, "owner_id": point.owner_id}
+
+
+def selected_point_labels(db, user, classroom_id, ids):
+    query = visible_points(teacher_instance_id(db, user, classroom_id), user).where(KnowledgePoint.id.in_(ids)).with_only_columns(
+        KnowledgePoint.id, KnowledgePoint.chapter_id, KnowledgePoint.title)
+    return [dict(row) for row in db.execute(query).mappings()]
+
+
+def page_window(db, query, page, size):
+    total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery()))
+    current = min(page, max(1, (total + size - 1) // size))
+    return {"page": current, "total": total}, query.limit(size).offset((current - 1) * size)
+
+
+def point_page(db, user, classroom_id, page, size, search, chapter_id):
+    query = visible_points(teacher_instance_id(db, user, classroom_id), user)
+    if search.strip():
+        query = query.where(KnowledgePoint.title.icontains(search.strip(), autoescape=True))
+    if chapter_id is not None:
+        query = query.where(KnowledgePoint.chapter_id == chapter_id)
+    meta, window = page_window(db, query.order_by(KnowledgePoint.id), page, size)
+    return {**meta, "items": [point_payload(point) for point in db.scalars(window)]}
+
+
+def teacher_courses(db: Session, user: User, classroom_id: int | None = None, view="full"):
     instance_id = teacher_instance_id(db, user, classroom_id)
+    chapters = [
+        {"id": c.id, "title": c.title, "order_index": c.order_index, "owner_id": c.owner_id}
+        for c in db.scalars(
+            select(Chapter)
+            .where(Chapter.course_instance_id == instance_id)
+            .where(True if user.role == "admin" else (Chapter.owner_id.is_(None)) | (Chapter.owner_id == user.id))
+            .order_by(Chapter.order_index)
+        )
+    ]
+    if view == "chapters":
+        return {"chapters": chapters}
+    points = [point_payload(point) for point in db.scalars(visible_points(instance_id, user).order_by(KnowledgePoint.id))]
+    activities = select(Activity).where(Activity.course_instance_id == instance_id)
+    if user.role != "admin":
+        activities = activities.where(Activity.owner_id.is_(None) | (Activity.owner_id == user.id))
+    links = select(ActivityQuestion.activity_id, Question.id).join(Question, Question.id == ActivityQuestion.question_id).where(
+        ActivityQuestion.activity_id.in_(activities.with_only_columns(Activity.id))).order_by(ActivityQuestion.activity_id, ActivityQuestion.order_index, Question.id)
+    by_activity = {}
+    for activity_id, question_id in db.execute(links):
+        by_activity.setdefault(activity_id, []).append(question_id)
     return {
-        "chapters": [
-            {"id": c.id, "title": c.title, "order_index": c.order_index, "owner_id": c.owner_id}
-            for c in db.scalars(
-                select(Chapter)
-                .where(Chapter.course_instance_id == instance_id)
-                .where(True if user.role == "admin" else (Chapter.owner_id.is_(None)) | (Chapter.owner_id == user.id))
-                .order_by(Chapter.order_index)
-            )
-        ],
-        "knowledge_points": [
-            {"id": k.id, "chapter_id": k.chapter_id, "title": k.title, "content": k.content, "owner_id": k.owner_id}
-            for k in db.scalars(
-                select(KnowledgePoint)
-                .where(KnowledgePoint.course_instance_id == instance_id)
-                .join(Chapter, Chapter.id == KnowledgePoint.chapter_id)
-                .where(
-                    True
-                    if user.role == "admin"
-                    else ((KnowledgePoint.owner_id.is_(None)) | (KnowledgePoint.owner_id == user.id))
-                    & ((Chapter.owner_id.is_(None)) | (Chapter.owner_id == user.id))
-                )
-                .order_by(KnowledgePoint.id)
-            )
-        ],
+        "chapters": chapters,
+        "knowledge_points": points,
         "activities": [
             {
                 "id": a.id,
@@ -50,13 +82,9 @@ def teacher_courses(db: Session, user: User, classroom_id: int | None = None):
                 "knowledge_point_ids": a.content.get("knowledge_point_ids", []),
                 "practice_rules": without_legacy_retry_interval(a.content.get("practice_rules")),
                 "published": a.content.get("published", True),
-                "question_ids": [q.id for q in activity_questions(db, a)],
+                "question_ids": by_activity.get(a.id, []),
             }
-            for a in db.scalars(
-                select(Activity)
-                .where(Activity.course_instance_id == instance_id)
-                .where(True if user.role == "admin" else (Activity.owner_id.is_(None)) | (Activity.owner_id == user.id))
-            )
+            for a in db.scalars(activities)
         ],
         "npcs": [
             {"key": n.key, "name": n.name, "map_key": n.map_key, "tile_x": n.tile_x, "tile_y": n.tile_y}

@@ -1,5 +1,7 @@
-/** Public answer policies only. Correct answers and grading stay on the server. */
-export type AnswerValue = string | boolean | string[] | null;
+import { isInteractiveValue, type JsonValue } from './interactiveValues';
+
+export interface InteractiveDraft { interactiveDraft: JsonValue }
+export type AnswerValue = string | boolean | string[] | InteractiveDraft | null;
 export interface QuestionDraft { answer: AnswerValue; code: string }
 export interface QuestionShape { kind: QuestionKind; options?: string[] }
 interface AnswerPolicy {
@@ -40,6 +42,14 @@ export const questionTypes = {
       .map((label, index) => ({ label, value: index === 0 ? 'true' : 'false' })),
   },
   fill: textPolicy,
+  interactive: {
+    label: '交互练习题', execution: 'answer',
+    restore: value => value && typeof value === 'object' && 'interactiveDraft' in value && isInteractiveValue(value.interactiveDraft)
+      ? { interactiveDraft: value.interactiveDraft } : null,
+    // The host obtains grading evidence from check() only on an explicit practice submission.
+    serialize: () => null,
+    complete: draft => draft.answer !== null && typeof draft.answer === 'object' && 'interactiveDraft' in draft.answer,
+  },
   python: {
     ...textPolicy, label: '编程题', execution: 'python',
     complete: draft => Boolean(draft.code.trim()),

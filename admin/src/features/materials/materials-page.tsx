@@ -46,7 +46,7 @@ export function Materials({ classroomId }: { classroomId: number }) {
   const list = useResource<Material[]>(
     scoped("/teacher/materials", classroomId),
   );
-  const course = useResource<Course>(scoped("/teacher/courses", classroomId));
+  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
   const editor = useMaterialEditor(classroomId, list.reload);
   const { open, error, setError, busy, setBusy, edit } = editor;
 

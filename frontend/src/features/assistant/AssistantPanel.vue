@@ -83,7 +83,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api, notify } from "../../shared/api";
 import "./assistantUi.css";
 import { randomUUID } from "../../shared/uuid";
-import type { AssistantState } from "../../shared/assistantState";
+import type { AssistantState, ReadInteractiveState } from "../../shared/assistantState";
 import { useSession } from "../../shared/session";
 const props = defineProps<{
   activityId?: string;
@@ -94,6 +94,7 @@ const props = defineProps<{
   videoTime?: number;
   code?: string;
   state?: AssistantState;
+  readInteractiveState?: ReadInteractiveState;
   roleName: string;
   portraitUrl?: string;
   sprite?: Npc["sprite"];
@@ -214,6 +215,16 @@ async function send() {
   messages.value.push({ role: "user", text }, { role: "assistant", text: "" });
   const reply = messages.value[messages.value.length - 1]!;
   try {
+    if (props.readInteractiveState && state.question_id) {
+      try {
+        const value = await props.readInteractiveState(state.question_id);
+        state.interactive_state = { available: true, value: structuredClone(value) };
+      } catch {
+        state.interactive_state = { available: false };
+      }
+      if (current !== generation) return;
+      activeController.signal.throwIfAborted();
+    }
     if (!sessionId) {
       const s = await api.post<{ id: string }>("/assistant/sessions", {
         classroom_id: session.classroomId,

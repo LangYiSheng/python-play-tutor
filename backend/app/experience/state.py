@@ -39,7 +39,8 @@ def definition_hash(db, classroom_id):
     for model in (Chapter, Material, Activity, Question, QuestDefinition, StoryDefinition, Npc):
         result[model.__tablename__] = sorted(
             [
-                dict((c.name, getattr(row, c.name)) for c in model.__table__.columns)
+                {c.name: getattr(row, c.name) for c in model.__table__.columns
+                 if not (model is Question and c.name == "interactive" and row.interactive is None)}
                 for row in db.scalars(select(model).where(course_clause(db, model, classroom_id)))
             ],
             key=lambda row: str(row.get("id", row.get("key"))),

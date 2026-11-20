@@ -7,8 +7,9 @@ to equality grading.
 
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
+from .interactive_practice import validate_json_value
 
-QuestionKind = Literal["single_choice", "multiple_choice", "boolean", "fill", "python"]
+QuestionKind = Literal["single_choice", "multiple_choice", "boolean", "fill", "python", "interactive"]
 
 
 def answer_value(value):
@@ -55,6 +56,13 @@ def _python_definition(question):
         raise ValueError("就绪编程题必须设置私有用例")
 
 
+def _interactive_definition(question: Any) -> None:
+    if question.status == "ready" and (not question.interactive or not question.interactive.html.strip()
+                                      or not question.interactive.js.strip() or question.answer is None):
+        raise ValueError("就绪交互练习题必须设置 HTML、JavaScript 和私有目标答案")
+    validate_json_value(question.answer)
+
+
 def _equal(answer, expected):
     return type(answer) is type(expected) and answer == expected
 
@@ -74,7 +82,7 @@ class QuestionType:
     validate_definition: Callable[[Any], None]
     complete: Callable[[Any, Any, str | None], bool]
     grade: Callable[[Any, Any], bool] | None
-    execution: Literal["answer", "python"] = "answer"
+    execution: Literal["answer", "python", "interactive"] = "answer"
 
 
 QUESTION_TYPES: dict[QuestionKind, QuestionType] = {
@@ -88,6 +96,7 @@ QUESTION_TYPES: dict[QuestionKind, QuestionType] = {
         lambda q, a, c: isinstance(a, str) and bool(a.strip()), _fill_grade),
     "python": QuestionType(_python_definition,
         lambda q, a, c: isinstance(c, str) and bool(c.strip()), None, "python"),
+    "interactive": QuestionType(_interactive_definition, lambda q, a, c: isinstance(a, dict), None, "interactive"),
 }
 
 

@@ -23,12 +23,14 @@ it("configures independent required resources, key pages and video requirements 
     await user.click(await screen.findByRole("option", { name }));
     await user.click(screen.getByRole("button", { name: "添加资料" }));
   }
+  await user.click(screen.getByRole("button", { name: /1. 课件/ }));
   await user.click(screen.getByRole("combobox", { name: "资料阅读要求" }));
   await user.click(await screen.findByRole("option", { name: "阅读关键页" }));
   await user.click(await screen.findByRole("checkbox", { name: "1. 重点概念" }));
+  await user.click(screen.getByRole("button", { name: /2. 演示视频/ }));
   await user.clear(screen.getByRole("spinbutton", { name: "最低有效观看秒数" }));
   await user.type(screen.getByRole("spinbutton", { name: "最低有效观看秒数" }), "15");
-  await user.click(screen.getAllByRole("checkbox", { name: "必读" })[1]);
+  await user.click(screen.getByRole("checkbox", { name: "必读" }));
   await user.click(screen.getByRole("button", { name: "上移资料2" }));
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith([
     { material_id: 12, required: false, learning: { video: { minimum_seconds: 15 } } },

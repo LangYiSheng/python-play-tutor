@@ -12,7 +12,7 @@ from app.models import (
 )
 
 
-def public_question(question: Question):
+def public_question(question: Question, *, include_interactive: bool = True):
     return {
         "id": question.id,
         "title": question.title,
@@ -23,6 +23,7 @@ def public_question(question: Question):
                     for sample in question.samples],
         "hints": question.hints,
         "starter_code": question.starter_code,
+        **({"interactive": question.interactive} if include_interactive and question.kind == "interactive" else {}),
         "source": question.source,
     }
 

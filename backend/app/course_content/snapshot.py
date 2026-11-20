@@ -32,7 +32,7 @@ FIELDS = {
     Chapter: ("title", "order_index"),
     KnowledgePoint: ("chapter_id", "title", "content"),
     Material: ("title", "kind", "content", "status", "error"),
-    Question: ("title", "kind", "prompt", "options", "samples", "hints", "starter_code", "source", "source_type", "status"),
+    Question: ("title", "kind", "prompt", "options", "samples", "hints", "starter_code", "source", "source_type", "status", "interactive"),
     Npc: ("name", "portrait", "sprite", "persona", "placement", "appearance_condition"),
     Activity: ("chapter_id", "title", "kind", "npc_key", "assistant_allowed", "content"),
     QuestDefinition: ("chapter_id", "title", "definition"),

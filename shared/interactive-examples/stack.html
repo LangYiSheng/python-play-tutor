@@ -1,0 +1,16 @@
+<div class="pack-lab">
+  <p class="pack-goal"><strong>目标顺序</strong><i>栈底</i> 药草 → 蘑菇 → 水晶 <i>栈顶</i></p>
+  <div class="pack-bench">
+    <section class="pack-panel" aria-label="采集背包">
+      <h4>背包 <span>上方为栈顶</span></h4>
+      <div id="pack-slots" class="pack-slots"></div>
+      <button type="button" id="pack-pop" class="pack-pop">取出栈顶 ↑</button>
+    </section>
+    <section class="pack-panel" aria-label="物架">
+      <h4>物架 <span id="pack-count"></span></h4>
+      <div id="pack-shelf" class="pack-shelf"></div>
+      <p class="pack-note">点击架上的物品，将它放到背包最上层。</p>
+    </section>
+  </div>
+  <div id="pack-live" class="pack-live" role="status"></div>
+</div>

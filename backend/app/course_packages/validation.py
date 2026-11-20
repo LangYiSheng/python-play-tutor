@@ -198,6 +198,8 @@ def validate_bundle(bundle, root):
                 raise PackageError("活动题目重复")
             for question_id in row["question_ids"]:
                 question = indexed["question"][question_id]
+                if question["kind"] == "interactive" and row["kind"] != "practice":
+                    raise PackageError("交互练习题只能用于练习活动")
                 if row["chapter_id"] not in question["chapter_ids"] or question["status"] != "ready":
                     raise PackageError("活动题目必须已就绪并属于当前章节")
         for key, row in converted["quest"].items():

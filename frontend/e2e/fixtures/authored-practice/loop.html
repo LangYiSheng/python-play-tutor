@@ -1,0 +1,9 @@
+<section class="bench">
+  <code>total = 0<br>for coins in [2, 5, 3]:<br>　　total += coins</code>
+  <p id="turn"></p>
+  <div class="controls">
+    <label>本轮结束的 total <input type="number" id="total" min="0" max="99" step="1"></label>
+    <button id="record" type="button">记入本轮</button><button id="undo" type="button">撤回一轮</button>
+  </div>
+  <p class="readout" id="ledger" aria-live="polite"></p>
+</section>

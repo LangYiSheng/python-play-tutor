@@ -35,6 +35,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   await page.getByLabel("题目名称").fill("同义答案");
   await chooseOption(page, page.getByRole("dialog").getByLabel("题型"), "填空题");
   await page.getByLabel("题干").fill("填写概念名称");
+  await page.getByRole("tab",{name:"答案",exact:true}).click();
   await page.getByLabel("可接受答案（每行一个）").fill("变量\n可变名称");
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -45,17 +46,20 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   expect(question.answer).toEqual(["变量", "可变名称"]);
   expect(question.status).toBe("draft");
   await page.getByLabel("编辑同义答案").click();
+  await page.getByRole("tab",{name:"答案",exact:true}).click();
   await expect(page.getByLabel("可接受答案（每行一个）")).toHaveValue(
     "变量\n可变名称",
   );
+  await page.getByRole("tab",{name:"内容关联"}).click();
   await page
     .getByRole("dialog")
-    .getByLabel("回归章节", { exact: true })
+    .getByLabel("关联回归章节", { exact: true })
     .check();
   await page
     .getByRole("dialog")
     .getByLabel("变量与名称", { exact: true })
     .check();
+  await page.getByRole("tab",{name:"题目信息"}).click();
   await chooseOption(page, page.getByRole("dialog").getByLabel("状态", { exact: true }), "可用");
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -98,11 +102,13 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
       .getByRole("dialog")
       .getByLabel("同义答案", { exact: true })
       .check();
+    await page.getByRole("button",{name:/未关联本章知识点/}).click();
     await page
       .getByRole("dialog")
       .getByLabel("第二道题", { exact: true })
       .check();
-    await page.getByLabel("上移第2题").click();
+    await page.getByRole("tab",{name:"题目顺序"}).click();
+    await page.getByRole("button", {name: "按题目名称排序"}).click();
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "保存", exact: true })

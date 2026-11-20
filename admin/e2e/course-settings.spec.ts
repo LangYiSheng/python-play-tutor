@@ -25,6 +25,7 @@ test("课程默认角色、活动覆盖与修订冲突草稿", async ({ page, re
   await page.getByRole("button", { name: "取消编辑" }).click();
   await go(page, "学习活动");
   await page.getByRole("button", { name: "新增活动", exact: true }).click();
+  await page.getByRole("tab", { name: "答疑设置", exact: true }).click();
   await expect(page.getByLabel("答疑角色", { exact: true })).toContainText("使用课程默认角色");
   await chooseOption(page, page.getByLabel("答疑角色", { exact: true }), "回归向导");
   await expect(page.getByLabel("答疑角色", { exact: true })).toContainText("回归向导");

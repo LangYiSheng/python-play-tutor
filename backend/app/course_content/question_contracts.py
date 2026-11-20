@@ -3,9 +3,10 @@
 import json
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator, model_validator
 
 from app.question_types import QuestionKind, question_type
+from app.interactive_practice import InteractiveContent
 
 
 class QuestionInput(BaseModel):
@@ -22,7 +23,8 @@ class QuestionInput(BaseModel):
     samples: list = Field(default_factory=list, max_length=20)
     hints: list[str] = Field(default_factory=list, max_length=10)
     starter_code: str = Field(default="", max_length=20000)
-    answer: dict | list | str | bool | None = None
+    interactive: InteractiveContent | None = None
+    answer: dict | list | str | bool | StrictInt | StrictFloat | None = None
     hidden_cases: list = Field(default_factory=list, max_length=20)
     source: dict = Field(default_factory=dict)
 
@@ -66,6 +68,8 @@ class QuestionInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_question_type(self):
+        if self.kind != "interactive" and self.interactive is not None:
+            raise ValueError("只有交互练习题可以配置 HTML、CSS 和 JavaScript")
         if self.status == "ready" and not self.chapter_ids:
             raise ValueError("就绪题目必须关联章节")
         question_type(self.kind).validate_definition(self)
@@ -85,6 +89,7 @@ class QuestionUpdate(BaseModel):
     samples: list | None = None
     hints: list[str] | None = None
     starter_code: str | None = None
-    answer: dict | list | str | bool | None = None
+    interactive: InteractiveContent | None = None
+    answer: dict | list | str | bool | StrictInt | StrictFloat | None = None
     hidden_cases: list | None = None
     source: dict | None = None

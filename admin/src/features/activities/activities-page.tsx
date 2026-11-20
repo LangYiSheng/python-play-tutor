@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { scoped } from "@/lib/api";
-import type { Activity, Course, Material, Question } from "@/lib/types";
+import type { Activity, Course, Material, QuestionCandidate } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 import { ListPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -26,15 +26,12 @@ import { ActivityDialog } from "./editor-dialog";
 import { kindName } from "./types";
 import { useActivityEditor } from "./use-editor";
 export function Activities({ classroomId, teacherId }: { classroomId: number; teacherId: number }) {
-  const course = useResource<Course>(scoped("/teacher/courses", classroomId)),
-    materials = useResource<Material[]>(
-      scoped("/teacher/materials", classroomId),
-    ),
-    questions = useResource<Question[]>(
-      scoped("/teacher/questions", classroomId),
-    );
+  const course = useResource<Course>(scoped("/teacher/courses", classroomId));
   const editor = useActivityEditor(classroomId, course.reload, course.data);
   const { open, chapter, error, edit } = editor;
+  const reading = editor.kind === "reading" || editor.kind === "lesson";
+  const materials = useResource<Material[]>(open && reading ? scoped("/teacher/materials", classroomId) : null);
+  const questions = useResource<QuestionCandidate[]>(open && !reading && chapter ? scoped(`/teacher/chapters/${chapter}/question-candidates`, classroomId) : null);
 
   const [query, setQuery] = useState(""),
     [chapterFilter, setChapterFilter] = useState("all"),
@@ -46,7 +43,8 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
     { classroomId, kind: () => "activity" },
   );
   const candidates = (questions.data ?? []).filter(
-    (q) => q.chapter_ids.includes(chapter) && q.status === "ready",
+    (q) => q.status === "ready" &&
+      (q.kind !== "interactive" || editor.kind === "practice"),
   );
   const practiceOwner = editor.editing ? editor.editing.owner_id : teacherId;
   const activities = (course.data?.activities ?? []).filter(
@@ -141,7 +139,7 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
                     }
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{kindName[a.kind]}</Badge>
+                    <Badge variant="outline">{kindName[a.kind]}{a.kind === "practice" && (a.practice_rules ? " · 按知识点出题" : " · 固定题单")}</Badge>
                   </TableCell>
                   <TableCell>
                     {a.kind === "lesson" || a.kind === "reading"
@@ -157,6 +155,7 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
                           variant="ghost"
                           size="icon"
                           aria-label={`选题${a.title}`}
+                          title="选题"
                           onClick={() => edit(a, true)}
                         >
                           <ListPlus />
@@ -196,7 +195,7 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
         candidates={editor.goalPractice
           ? candidates.filter(q =>
               (q.owner_id === null || q.owner_id === practiceOwner) &&
-              (q.kind !== "python" || q.samples.length > 0))
+              (q.kind !== "python" || q.has_samples))
           : candidates}
       />
     </>

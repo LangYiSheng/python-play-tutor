@@ -100,7 +100,7 @@ def get_activity(
         if attempt and attempt.state in {"submitted", "legacy"}:
             historical = {q.id: q for q in db.scalars(select(Question).where(Question.id.in_(attempt.question_ids),
                 Question.course_instance_id == activity.course_instance_id).execution_options(include_deleted=True))}
-            questions = [historical[key] for key in attempt.question_ids if key in historical]
+            questions = [historical[key] for key in attempt.question_ids if key in historical and historical[key].kind != "interactive"]
     payload = {
         "id": activity.id,
         "chapter_id": activity.chapter_id,

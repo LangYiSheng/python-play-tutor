@@ -18,7 +18,7 @@ export function useActivityEditor(
     [resources, setResources] = useState<ActivityResource[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
     [rules, setRules] = useState<PracticeRules>({ goals: [] }),
-    [convertPractice, setConvertPractice] = useState(false),
+    [practiceMode, setPracticeMode] = useState<"fixed" | "goals">("goals"),
     [published, setPublished] = useState(true),
     [npc, setNpc] = useState(""),
     [assistant, setAssistant] = useState(true),
@@ -26,10 +26,9 @@ export function useActivityEditor(
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
-  useDraft(dirty);
-  const goalPractice = kind === "practice" && (!editing || !!editing.practice_rules || convertPractice);
+  useDraft(open && dirty);
+  const goalPractice = kind === "practice" && practiceMode === "goals";
   function edit(a: Activity | null, pick = false) {
-    if (dirty && !window.confirm("放弃当前活动的未保存修改？")) return;
     setEditing(a);
     setId(a?.id ?? newId("activity"));
     setTitle(a?.title ?? "");
@@ -38,7 +37,7 @@ export function useActivityEditor(
     setResources(structuredClone(a?.resources ?? []));
     setPointIds(a?.knowledge_point_ids ?? []);
     setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
-    setConvertPractice(false);
+    setPracticeMode(a?.kind === "practice" && !a.practice_rules ? "fixed" : "goals");
     setPublished(a?.published ?? true);
     setNpc(a?.npc_key ?? "");
     setAssistant(a?.assistant_allowed ?? true);
@@ -50,7 +49,8 @@ export function useActivityEditor(
   }
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (goalPractice && !questionMode) {
+    if (!title.trim()) { setError("请在「活动信息」中填写活动名称。"); return; }
+    if (goalPractice) {
       if (!rules.goals.length) {
         setError("请至少选择一个本章知识点。");
         return;
@@ -65,39 +65,33 @@ export function useActivityEditor(
     setBusy(true);
     setError("");
     try {
-      if (questionMode) {
+      const body = {
+        title,
+        npc_key: npc || null,
+        assistant_allowed: kind === "assessment" ? false : assistant,
+        resources,
+        ...((kind === "assessment" || (kind === "practice" && !goalPractice)) &&
+          (!editing || selected.length !== editing.question_ids.length || selected.some((id,i) => id !== editing.question_ids[i])) &&
+          { question_ids: selected }),
+        knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
+        ...(goalPractice && { practice_rules: rules, published }),
+        ...(kind === "practice" && practiceMode === "fixed" && { practice_rules: null }),
+      };
+      if (editing)
         await api.put(
           scoped(
-            `/teacher/activities/${encodeURIComponent(id)}/questions`,
+            `/teacher/activities/${encodeURIComponent(id)}`,
             classroomId,
           ),
-          { question_ids: selected },
+          body,
         );
-      } else {
-        const body = {
-          title,
-          npc_key: npc || null,
-          assistant_allowed: kind === "assessment" ? false : assistant,
-          resources,
-          knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
-          ...(goalPractice && { practice_rules: rules, published }),
-        };
-        if (editing)
-          await api.put(
-            scoped(
-              `/teacher/activities/${encodeURIComponent(id)}`,
-              classroomId,
-            ),
-            body,
-          );
-        else
-          await api.post(scoped("/teacher/activities", classroomId), {
-            id,
-            chapter_id: chapter,
-            kind,
-            ...body,
-          });
-      }
+      else
+        await api.post(scoped("/teacher/activities", classroomId), {
+          id,
+          chapter_id: chapter,
+          kind,
+          ...body,
+        });
       setOpen(false);
       setDirty(false);
       onSaved();
@@ -106,12 +100,6 @@ export function useActivityEditor(
     } finally {
       setBusy(false);
     }
-  }
-  function move(i: number, delta: number) {
-    const next = [...selected];
-    [next[i], next[i + delta]] = [next[i + delta], next[i]];
-    setSelected(next);
-    setDirty(true);
   }
   return {
     classroomId,
@@ -134,8 +122,8 @@ export function useActivityEditor(
     pointIds,
     setPointIds,
     goalPractice,
-    convertPractice,
-    setConvertPractice,
+    practiceMode,
+    setPracticeMode,
     rules,
     setRules,
     published,
@@ -154,6 +142,5 @@ export function useActivityEditor(
     setDirty,
     edit,
     save,
-    move,
   };
 }

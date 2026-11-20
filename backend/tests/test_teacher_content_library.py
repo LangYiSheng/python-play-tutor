@@ -163,6 +163,11 @@ def test_shared_library_payload_hides_other_teacher_activity_and_chapter_metadat
     assert "PRIVATE_ACTIVITY_TITLE" not in materials.text and "PRIVATE_ACTIVITY_TITLE" not in questions.text
     assert next(m for m in materials.json() if m["id"] == 186)["chapter_ids"] == [179]
     assert next(q for q in questions.json() if q["id"] == question.id)["chapter_ids"] == [179]
+    scope = {"classroom_id": classroom["id"]}
+    page = client.get("/api/teacher/questions", headers=teacher["headers"], params={**scope, "page": 1, "search": question.title})
+    assert next(q for q in page.json()["items"] if q["id"] == question.id)["chapter_ids"] == [179]
+    private_pool = client.get(f"/api/teacher/chapters/{chapter.id}/question-candidates", headers=teacher["headers"], params=scope)
+    assert private_pool.json() == []
     assert client.get("/api/teacher/materials/186", headers=teacher["headers"], params={"classroom_id": classroom["id"]}).json()["chapter_ids"] == [179]
 
 

@@ -1,3 +1,6 @@
+import { EditorTabs } from "@/components/editor-tabs";
+import { KnowledgePointPicker } from "@/features/curriculum/knowledge-point-picker";
+import { Cases } from "./cases-editor";
 import { ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
@@ -18,11 +21,13 @@ import { kinds, statuses } from "./types";
 import type { useQuestionEditor } from "./use-editor";
 export function QuestionDialog({
   editor,
+  classroomId,
   course,
   materials,
 }: {
   editor: ReturnType<typeof useQuestionEditor>;
-  course: { data: Course | null };
+  classroomId: number;
+  course: { data: Pick<Course, "chapters"> | null };
   materials: { data: Material[] | null };
 }) {
   const {
@@ -58,7 +63,7 @@ export function QuestionDialog({
         if (!busy) setOpen(v);
       }}
     >
-      <DialogContent className="editor-dialog">
+      <DialogContent className="editor-dialog tabbed-editor">
         <DialogHeader>
           <DialogTitle>{editing ? "编辑题目" : "新增题目"}</DialogTitle>
           <DialogDescription>
@@ -73,6 +78,8 @@ export function QuestionDialog({
         >
           <div className="dialog-scroll">
             <ErrorNotice message={error} />
+            <EditorTabs pages={[
+              { label: "题目信息", content: <>
             <div className="field">
               <Label htmlFor="q-title">题目名称</Label>
               <Input
@@ -130,7 +137,16 @@ export function QuestionDialog({
                 maxLength={30000}
               />
             </div>
-            <TypeFields {...editor} />
+              </> },
+              { label: kind === "interactive" ? "编写与试答" : kind === "python" ? "初始代码与提示" : "答案", content: <TypeFields {...editor} /> },
+              ...(kind === "python" ? [{ label: "测试用例", content: <Cases samples={editor.samples} hidden={editor.cases}
+                onSamples={value => { editor.setSamples(value); setDirty(true); }}
+                onHidden={value => { editor.setCases(value); setDirty(true); }} /> }] : []),
+              { label: "内容关联", content: <>
+                <KnowledgePointPicker chapters={course.data?.chapters ?? []} classroomId={classroomId}
+                  initialChapterId={chapterIds[0] ?? course.data?.chapters[0]?.id ?? 0} selected={pointIds}
+                  chapterSelection={{ ids: chapterIds, change: ids => { setChapterIds(ids); setDirty(true); } }}
+                  onChange={ids => { setPointIds(ids); setDirty(true); }} />
             <div className="field">
               <Label htmlFor="question-source">参考资料（可选）</Label>
               <SelectField
@@ -166,58 +182,8 @@ export function QuestionDialog({
                 </p>
               </div>
             )}
-            <fieldset className="field">
-              <legend>关联章节</legend>
-              <div className="check-list">
-                {course.data?.chapters.map((c) => (
-                  <label key={c.id}>
-                    <input
-                      type="checkbox"
-                      checked={chapterIds.includes(c.id)}
-                      onChange={() => {
-                        setChapterIds((v) =>
-                          v.includes(c.id)
-                            ? v.filter((id) => id !== c.id)
-                            : [...v, c.id],
-                        );
-                        setPointIds((v) =>
-                          v.filter(
-                            (id) =>
-                              course.data?.knowledge_points.find(
-                                (p) => p.id === id,
-                              )?.chapter_id !== c.id,
-                          ),
-                        );
-                      }}
-                    />
-                    {c.title}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset className="field">
-              <legend>知识点（可选）</legend>
-              <div className="check-list">
-                {course.data?.knowledge_points
-                  .filter((p) => chapterIds.includes(p.chapter_id))
-                  .map((p) => (
-                    <label key={p.id}>
-                      <input
-                        type="checkbox"
-                        checked={pointIds.includes(p.id)}
-                        onChange={() =>
-                          setPointIds((v) =>
-                            v.includes(p.id)
-                              ? v.filter((id) => id !== p.id)
-                              : [...v, p.id],
-                          )
-                        }
-                      />
-                      {p.title}
-                    </label>
-                  ))}
-              </div>
-            </fieldset>
+              </> },
+            ]} />
           </div>
           <DialogFooter>
             <Button

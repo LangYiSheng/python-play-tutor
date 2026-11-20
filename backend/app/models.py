@@ -331,6 +331,7 @@ class Question(RetirableContent, CourseContent, Base):
     samples: Mapped[list] = mapped_column(JSON, default=list)
     hints: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'"))
     starter_code: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    interactive: Mapped[dict[str, str] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     source: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
@@ -357,7 +358,7 @@ class ActivityQuestion(Base):
 class QuestionSecret(Base):
     __tablename__ = "question_secrets"
     question_id: Mapped[str] = mapped_column(ForeignKey("questions.id"), primary_key=True)
-    answer: Mapped[dict | list | str | bool | None] = mapped_column(JSON, nullable=True)
+    answer: Mapped[dict | list | str | bool | int | float | None] = mapped_column(JSON, nullable=True)
     hidden_cases: Mapped[list] = mapped_column(JSON, default=list)
 
 

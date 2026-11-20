@@ -71,6 +71,9 @@ def load_bundle(root):
     for model, path in JSONL_FILES.items():
         if model is Question:
             data["question"] = [row for file in sorted((root / "content/questions").glob("*.jsonl")) for row in _load(file, json_lines=True)]
+            for question in data["question"]:
+                if isinstance(question, dict):
+                    question.setdefault("interactive", None)  # Format 3 packages predate this optional field.
         else:
             data[MODEL_NAMES[model]] = _load(root / path, json_lines=True)
     secrets = _load(root / "content/secrets/answers.jsonl", json_lines=True)
