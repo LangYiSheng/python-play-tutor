@@ -216,6 +216,26 @@ export function ActivityDialog({
                     </SelectField>
                   </div>
                 </div>
+                {kind === "practice" && (
+                  <fieldset className="field">
+                    <legend>出题方式</legend>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="practice-mode" value="fixed"
+                          checked={editor.practiceMode === "fixed"} onChange={() => editor.setPracticeMode("fixed")} />
+                        固定题单
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" name="practice-mode" value="goals"
+                          checked={editor.practiceMode === "goals"} onChange={() => editor.setPracticeMode("goals")} />
+                        按知识点出题
+                      </label>
+                    </div>
+                    {editor.practiceMode === "fixed" && <p className="hint">保存后，通过活动列表的「选题」选择题目并调整顺序。</p>}
+                    {editor.goalPractice && editing && editing.question_ids.length > 0 && !editing.practice_rules &&
+                      <p className="hint">保存后会移除原固定题单，按知识点目标分配题目。</p>}
+                  </fieldset>
+                )}
                 <div className="field">
                   <Label htmlFor="a-npc">答疑角色</Label>
                   <SelectField
@@ -235,13 +255,6 @@ export function ActivityDialog({
                     ))}
                   </SelectField>
                 </div>
-                {editing?.kind === "practice" && !editing.practice_rules && (
-                  <label className="mb-4 flex items-center gap-2">
-                    <input type="checkbox" checked={editor.convertPractice}
-                      onChange={event => editor.setConvertPractice(event.target.checked)} />
-                    将固定题单转换为知识点练习
-                  </label>
-                )}
                 {editor.goalPractice ? (
                   <>
                     <PracticeGoalsEditor rules={editor.rules}

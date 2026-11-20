@@ -18,7 +18,7 @@ export function useActivityEditor(
     [resources, setResources] = useState<ActivityResource[]>([]),
     [pointIds, setPointIds] = useState<number[]>([]),
     [rules, setRules] = useState<PracticeRules>({ goals: [] }),
-    [convertPractice, setConvertPractice] = useState(false),
+    [practiceMode, setPracticeMode] = useState<"fixed" | "goals">("goals"),
     [published, setPublished] = useState(true),
     [npc, setNpc] = useState(""),
     [assistant, setAssistant] = useState(true),
@@ -27,7 +27,7 @@ export function useActivityEditor(
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
   useDraft(dirty);
-  const goalPractice = kind === "practice" && (!editing || !!editing.practice_rules || convertPractice);
+  const goalPractice = kind === "practice" && practiceMode === "goals";
   function edit(a: Activity | null, pick = false) {
     if (dirty && !window.confirm("放弃当前活动的未保存修改？")) return;
     setEditing(a);
@@ -38,7 +38,7 @@ export function useActivityEditor(
     setResources(structuredClone(a?.resources ?? []));
     setPointIds(a?.knowledge_point_ids ?? []);
     setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
-    setConvertPractice(false);
+    setPracticeMode(a?.kind === "practice" && !a.practice_rules ? "fixed" : "goals");
     setPublished(a?.published ?? true);
     setNpc(a?.npc_key ?? "");
     setAssistant(a?.assistant_allowed ?? true);
@@ -81,6 +81,7 @@ export function useActivityEditor(
           resources,
           knowledge_point_ids: goalPractice ? rules.goals.map(goal => goal.knowledge_point_id) : pointIds,
           ...(goalPractice && { practice_rules: rules, published }),
+          ...(kind === "practice" && practiceMode === "fixed" && { practice_rules: null }),
         };
         if (editing)
           await api.put(
@@ -134,8 +135,8 @@ export function useActivityEditor(
     pointIds,
     setPointIds,
     goalPractice,
-    convertPractice,
-    setConvertPractice,
+    practiceMode,
+    setPracticeMode,
     rules,
     setRules,
     published,

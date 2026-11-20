@@ -142,7 +142,7 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
                     }
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{kindName[a.kind]}</Badge>
+                    <Badge variant="outline">{kindName[a.kind]}{a.kind === "practice" && (a.practice_rules ? " · 按知识点出题" : " · 固定题单")}</Badge>
                   </TableCell>
                   <TableCell>
                     {a.kind === "lesson" || a.kind === "reading"
@@ -158,6 +158,7 @@ export function Activities({ classroomId, teacherId }: { classroomId: number; te
                           variant="ghost"
                           size="icon"
                           aria-label={`选题${a.title}`}
+                          title="选题"
                           onClick={() => edit(a, true)}
                         >
                           <ListPlus />

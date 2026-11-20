@@ -132,11 +132,19 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
 
             if any(db.scalar(select(model.activity_id).where(model.activity_id == item.id).limit(1)) is not None
                    for model in (PracticeSession, Submission, ActivityProgress)):
-                raise HTTPException(409, "练习已有个人题单或学习记录，修改目标请新建练习")
-        configure_practice(db, item, user, rules, published, new_points)
-        if not content.get("practice_rules"):
-            set_activity_questions(db, item, [])
-        content, new_points = dict(item.content), None
+                raise HTTPException(409, "练习已有个人题单或学习记录，修改出题方式或目标请新建练习")
+        if rules is not None:
+            configure_practice(db, item, user, rules, published, new_points)
+            if previous_rules is None:
+                set_activity_questions(db, item, [])
+            content, new_points = dict(item.content), None
+        elif item.kind == "practice" and "practice_rules" in body.model_fields_set:
+            if "published" in body.model_fields_set and published is not True:
+                raise HTTPException(422, "只有知识点练习可以保存为草稿")
+            content.pop("practice_rules", None)
+            content["published"] = True
+        else:
+            raise HTTPException(422, "知识点练习需要有效的目标与发布状态")
     if new_points is not None:
         from app.curriculum import validate_activity_points
 

@@ -49,6 +49,11 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
         "chapter_ids": [179], "knowledge_point_ids": [point], "status": "ready"})
     assert question.status_code == 201, question.text
     question_id = question.json()["id"]
+    assert client.put(edit + scope, headers=headers, json={"practice_rules": None}).status_code == 200
+    assert client.put(edit + "/questions" + scope, headers=headers, json={"question_ids": [question_id]}).status_code == 200
+    fixed = client.get(f"/api/activities/{activity_id}" + scope, headers=student["headers"])
+    assert fixed.status_code == 200, fixed.text
+    assert [q["id"] for q in fixed.json()["questions"]] == [question_id]
     assert client.put(edit + scope, headers=headers, json={"practice_rules": rules, "published": True}).status_code == 200
     assert client.put("/api/teacher/questions/" + question_id + scope, headers=headers, json={"status": "disabled"}).status_code == 409
 
@@ -71,6 +76,7 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
     db.commit()
     assert client.put(edit + scope, headers=headers, json={"practice_rules": {**rules, "retry_interval": 2}}).status_code == 200
     more = {"goals": [{**rules["goals"][0], "total": 2}]}
+    assert client.put(edit + scope, headers=headers, json={"practice_rules": None}).status_code == 409
     assert client.put(edit + scope, headers=headers, json={"practice_rules": more}).status_code == 409
     changed = deepcopy(bundle)
     next(row for row in changed["data"]["activity"] if row["id"] == "adaptive")["content"]["practice_rules"]["retry_interval"] = 2
