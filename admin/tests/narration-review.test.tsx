@@ -168,9 +168,9 @@ it("queues the one-click pipeline and shows which stage is running", async () =>
   await waitFor(() => expect(screen.getByRole("button", { name: /一键梳理文本/ })).toBeTruthy());
   await user.click(screen.getByRole("button", { name: /一键梳理文本/ }));
   await waitFor(() => expect(calls.some((call) => call.url.endsWith("/pipeline"))).toBe(true));
-  expect(screen.getByText(/整理原文/)).toBeTruthy();
-  expect(screen.getByText(/整册校准/)).toBeTruthy();
-  expect(screen.getByText(/生成讲解稿/)).toBeTruthy();
+  await waitFor(() => expect(screen.getAllByText(/整理原文/).length).toBeGreaterThan(0));
+  expect(screen.getAllByText(/整册校准/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/生成讲解稿/).length).toBeGreaterThan(0);
 });
 
 it("lists calibration fixes and tag merges, and says the fixes were applied", async () => {
@@ -189,7 +189,10 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
       tag_stats: { before: 2, after: 1, merged: 1 },
     },
   });
+  const user = userEvent.setup();
   render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByRole("tab", { name: /校准/ })).toBeTruthy());
+  await user.click(screen.getByRole("tab", { name: /校准/ }));
   await waitFor(() => expect(screen.getByText(/校准修正已自动应用/)).toBeTruthy());
   expect(screen.getByText(/原文修正（1 处，已自动应用）/)).toBeTruthy();
   expect(screen.getByText("补上漏掉的冒号")).toBeTruthy();
