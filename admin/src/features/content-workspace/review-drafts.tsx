@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ErrorNotice, Loading } from "@/components/common";
-import { Badge } from "@/components/ui/badge";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 import { Textarea } from "@/components/ui/textarea";
 import { scoped } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
@@ -84,24 +84,28 @@ export function DraftDialog({ row, classroomId, close, decide, edit, busy, error
   </Dialog>;
 }
 
-export function DraftTable({ rows, selected, toggle, review }: {
+export function DraftList({ rows, selected, toggle, review }: {
   rows: Row[]; selected: Row[]; toggle: (rows: Row[], checked: boolean) => void; review: (row: Row) => void;
 }) {
   const ids = new Set(selected.map(key));
   const eligible = rows.filter(row => row.question_kind !== "interactive");
   const checked = eligible.filter(row => ids.has(key(row))).length;
-  return <Table><TableHeader><TableRow><TableHead className="w-10">
-    <Checkbox aria-label="选择本页可批量通过的草稿" disabled={!eligible.length}
-      checked={checked > 0 && checked === eligible.length} indeterminate={checked > 0 && checked < eligible.length}
-      onCheckedChange={on => toggle(eligible, on)} />
-  </TableHead><TableHead>待审内容</TableHead><TableHead>类型</TableHead><TableHead>来源</TableHead><TableHead className="text-right">操作</TableHead>
-  </TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={key(row)}>
-    <TableCell><Checkbox aria-label={`选择${title(row)}`} checked={ids.has(key(row))} disabled={row.question_kind === "interactive"}
-      onCheckedChange={on => toggle([row], on)} /></TableCell>
-    <TableCell className="max-w-96 whitespace-normal"><p className="font-medium">{title(row)}</p>
-      {row.question_kind === "interactive" && <p className="mt-1 text-xs text-muted-foreground">需在题目编辑器中试答后通过</p>}
-    </TableCell><TableCell><Badge variant="secondary">{types[row.kind]}</Badge></TableCell>
-    <TableCell className="max-w-60 whitespace-normal">{sourceLabel(row)}</TableCell>
-    <TableCell className="text-right"><Button variant="outline" size="sm" onClick={() => review(row)}>审阅</Button></TableCell>
-  </TableRow>)}</TableBody></Table>;
+  return <>
+    <label className="review-select-page">
+      <Checkbox aria-label="选择本页可批量通过的草稿" disabled={!eligible.length}
+        checked={checked > 0 && checked === eligible.length} indeterminate={checked > 0 && checked < eligible.length}
+        onCheckedChange={on => toggle(eligible, on)} />选择本页
+    </label>
+    <ul aria-label="待审草稿" className="review-list">{rows.map(row => <li key={key(row)} className="review-item review-draft">
+      <Checkbox aria-label={`选择${title(row)}`} checked={ids.has(key(row))} disabled={row.question_kind === "interactive"}
+        onCheckedChange={on => toggle([row], on)} />
+      <button type="button" className="review-drill" aria-label={`审阅${title(row)}`} onClick={() => review(row)}>
+        <span className="review-item-copy"><strong>{row.kind === "narration" ? `第 ${row.page_no} 页讲解稿` : row.title}</strong>
+          <small>{row.kind === "question" && "题目 · "}{sourceLabels[row.source] ?? row.source}
+            {row.kind === "question" && !!row.page_no && ` · 第 ${row.page_no} 页`}
+            {row.question_kind === "interactive" && " · 需试答后通过"}</small>
+        </span><ChevronRight size={14} aria-hidden />
+      </button>
+    </li>)}</ul>
+  </>;
 }

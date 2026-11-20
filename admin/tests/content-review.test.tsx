@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ContentReviewPage } from "../src/pages/content-review";
+import { ContentReviewPanel } from "../src/pages/content-review";
 
 const base = "/api/teacher/classrooms/7/content-review";
 const chapter = { chapter_id: 5, chapter_title: "第二章 变量", count: 114, eligible_count: 113, question_count: 3, narration_count: 111 };
@@ -19,11 +19,12 @@ function mockApi(respond: (url: URL, init: RequestInit) => unknown) {
   return fetch;
 }
 
-beforeEach(() => history.replaceState({}, "", "/teacher/content-review"));
+beforeEach(() => history.replaceState({}, "", "/teacher/content-graph"));
 afterEach(() => { vi.unstubAllGlobals(); history.replaceState({}, "", "/"); });
 
 it("loads chapter summaries first and keeps selected drafts across detail pages", async () => {
   const user = userEvent.setup(), decisions: unknown[] = [];
+  const changed = vi.fn();
   const fetch = mockApi((url, init) => {
     if (url.pathname === base + "/groups") return { ...pageOf([chapter]), item_total: 114 };
     if (url.pathname === base + "/groups/5/materials") return { ...pageOf([material]), chapter_title: chapter.chapter_title };
@@ -39,17 +40,19 @@ it("loads chapter summaries first and keeps selected drafts across detail pages"
     }
     throw Error("Unexpected request: " + url);
   });
-  history.replaceState({ courseGraph: {classroomId: 7} }, "", "/teacher/content-review");
-  render(<ContentReviewPage classroomId={7} />);
+  history.replaceState({ courseGraph: {classroomId: 7} }, "", "/teacher/content-graph");
+  render(<ContentReviewPanel classroomId={7} onChanged={changed}/>);
   expect(await screen.findByText("3 题")).toBeInTheDocument();
-  expect(screen.getByText("111 页")).toBeInTheDocument();
+  expect(screen.getByText("讲解稿 111 页")).toBeInTheDocument();
+  expect(screen.getByRole("list", {name:"待审章节"})).toBeInTheDocument();
+  expect(screen.queryByRole("table")).not.toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole("button", { name: /查看第二章 变量的待审资料/ }));
   expect(await screen.findByText(material.material_title)).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(2);
   await user.click(screen.getByRole("button", { name: /查看变量课件 Part 1的待审明细/ }));
   expect(history.state.courseGraph).toEqual({classroomId: 7});
-  expect(location.search).toBe("?chapter_id=5&material_id=9");
+  expect(location.pathname + location.search).toBe("/teacher/content-graph");
   await user.click(await screen.findByRole("checkbox", { name: "选择变量命名" }));
   expect(screen.getByRole("checkbox", {name: "选择变量游戏"})).toHaveAttribute("aria-disabled", "true");
   await user.click(screen.getByRole("button", { name: "下一页" }));
@@ -62,6 +65,7 @@ it("loads chapter summaries first and keeps selected drafts across detail pages"
   expect(decisions).toHaveLength(0);
   await user.click(within(dialog).getByRole("button", {name: "确认通过 2 项"}));
   expect(await screen.findByText("已通过 2 项")).toBeInTheDocument();
+  expect(changed).toHaveBeenCalledOnce();
   expect(decisions).toEqual([{decision:"accept", items:[
     {kind:"question",id:"q7",revision:"4"},{kind:"narration",id:"19",revision:"abc"},
   ]}]);
@@ -83,7 +87,7 @@ it("requires a current chapter-wide preview before accepting all eligible drafts
     }
     throw Error("Unexpected request: " + url);
   });
-  const ui = render(<ContentReviewPage classroomId={7}/>);
+  const ui = render(<ContentReviewPanel classroomId={7}/>);
   await user.click(await screen.findByRole("button", {name:"批量通过第二章 变量的草稿"}));
   let dialog = within(screen.getByRole("dialog"));
   expect(await dialog.findByText("题目 2 道 · 讲解稿 111 页")).toBeInTheDocument();
@@ -99,12 +103,12 @@ it("requires a current chapter-wide preview before accepting all eligible drafts
     expect(url.pathname).toBe("/api/teacher/classrooms/8/content-review/groups");
     return {...pageOf([]),item_total:0};
   });
-  ui.rerender(<ContentReviewPage classroomId={8}/>);
+  ui.rerender(<ContentReviewPanel classroomId={8}/>);
   expect(await screen.findByText("当前班级没有待审批内容")).toBeInTheDocument();
 });
 
 it("opens an unassigned source directly and preserves a narration's revision when accepting edited text", async () => {
-  history.replaceState({}, "", "/teacher/content-review?chapter_id=0&material_id=9");
+  history.replaceState({}, "", "/teacher/content-graph");
   const user = userEvent.setup(), decisions: unknown[] = [];
   mockApi((url, init) => {
     if (url.pathname.endsWith("/decisions")) {
@@ -117,8 +121,8 @@ it("opens an unassigned source directly and preserves a narration's revision whe
     expect(url.searchParams.get("chapter_id")).toBe("0");
     return { ...pageOf(decisions.length ? [] : [narration]), chapter_title:"未归章", material_title: material.material_title };
   });
-  render(<ContentReviewPage classroomId={7}/>);
-  await user.click(await screen.findByRole("button", {name:"审阅"}));
+  render(<ContentReviewPanel classroomId={7} initialChapterId={0} initialMaterialId={9}/>);
+  await user.click(await screen.findByRole("button", {name:"审阅变量课件 Part 1 · 第 12 页"}));
   const dialog = within(screen.getByRole("dialog"));
   const field = await dialog.findByRole("textbox", {name:"讲解稿"});
   await user.clear(field); await user.type(field, "已核对的讲稿");
@@ -141,7 +145,7 @@ it("applies the selected content type to both the chapter preview and its confir
     }
     throw Error("Unexpected request: " + url);
   });
-  render(<ContentReviewPage classroomId={7}/>);
+  render(<ContentReviewPanel classroomId={7}/>);
   await user.click(screen.getByRole("combobox", {name:"待审内容类型"}));
   await user.click(await screen.findByRole("option", {name:"题目"}));
   await user.click(await screen.findByRole("button", {name:"批量通过第二章 变量的草稿"}));
@@ -150,4 +154,30 @@ it("applies the selected content type to both the chapter preview and its confir
   await user.click(dialog.getByRole("button", {name:"确认通过 2 项"}));
   expect(await screen.findByText("已通过 2 项")).toBeInTheDocument();
   expect(accepted).toEqual([{kind:"question", expected_count:2, token:"q"}]);
+});
+
+it("prevents another chapter approval while saving, notifies the graph after closing, and reloads when reopened", async () => {
+  const user = userEvent.setup(), changed = vi.fn();
+  let accepted = false, finish!: () => void;
+  const submit = vi.fn(() => new Promise<Response>(resolve => {
+    finish = () => { accepted = true; resolve(Response.json({ count: 1 })); };
+  }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/accept")) return submit();
+    if (url.endsWith("/preview")) return Response.json({chapter_title:chapter.chapter_title, count:1, question_count:1,
+      narration_count:0, excluded_count:0, token:"scope"});
+    return Response.json(accepted ? pageOf([]) : pageOf([{...chapter,count:1,eligible_count:1,question_count:1,narration_count:0}]));
+  }));
+  const panel = () => <ContentReviewPanel classroomId={7} onChanged={changed}/>;
+  const first = render(panel());
+  await user.click(await screen.findByRole("button", {name:"批量通过第二章 变量的草稿"}));
+  const confirm = await screen.findByRole("button", {name:"确认通过 1 项"});
+  await user.dblClick(confirm);
+  expect(confirm).toBeDisabled();
+  expect(submit).toHaveBeenCalledOnce();
+  first.unmount();
+  finish();
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  render(panel());
+  expect(await screen.findByText("当前班级没有待审批内容")).toBeInTheDocument();
 });

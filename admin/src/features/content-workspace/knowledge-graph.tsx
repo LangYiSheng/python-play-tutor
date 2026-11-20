@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ReactFlowProvider, type Viewport } from "@xyflow/react";
 import { ChevronRight, ClipboardCheck, Eye, Headphones, ListTodo, NotebookPen, Pencil, Plus, Upload, X, type LucideIcon } from "lucide-react";
-import { ErrorNotice, Loading, PageHeader } from "@/components/common";
+import { ErrorNotice, Loading } from "@/components/common";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { kinds, statuses } from "@/features/questions/types";
 import { scoped } from "@/lib/api";
@@ -16,6 +16,8 @@ import { taskStatus, type TaskSnapshot } from "./task-presentation";
 import "./knowledge-graph.css";
 import "./inspector-content.css";
 
+const ContentReviewPanel = lazy(() => import("@/pages/content-review").then(module => ({ default: module.ContentReviewPanel })));
+const emptyGraph: GraphData = { title: "", chapters: [], materials: [] };
 type GraphLocation = { classroomId: number; selection: Selection | null; branch: Branch | null; chapterPage: number;
   questionPoint?: number | null; questionPage?: number; viewport?: Viewport };
 const pageSize = 6;
@@ -45,11 +47,12 @@ function MaterialOutputs({ detail, open }: { detail: MaterialDetail; open: (mode
   </ul></section>;
 }
 
-type GraphProps = { classroomId: number; onReview: () => void };
+type GraphProps = { classroomId: number; initialReview?: { chapterId?: number; materialId?: number } };
+type Panel = "node" | "review" | "tasks" | null;
 export function KnowledgeGraph(props: GraphProps) {
   return <GraphPage key={props.classroomId} {...props}/>;
 }
-function GraphPage({ classroomId, onReview }: GraphProps) {
+function GraphPage({ classroomId, initialReview }: GraphProps) {
   const saved = useRef<GraphLocation | undefined>(history.state?.courseGraph?.classroomId === classroomId ? history.state.courseGraph : undefined);
   const [selection, setSelection] = useState<Selection | null>(saved.current?.selection ?? null);
   const [branch, setBranch] = useState<Branch | null>(saved.current?.branch ?? null);
@@ -57,18 +60,22 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
   const [questionPoint, setQuestionPoint] = useState(saved.current?.questionPoint ?? null);
   const [questionPage, setQuestionPage] = useState(saved.current?.questionPage ?? 1);
   const [focus, setFocus] = useState<{ key: string; seq: number } | null>(null);
-  const [queue, setQueue] = useState(false);
+  const [panel, setPanel] = useState<Panel>(initialReview ? "review" : saved.current?.selection ? "node" : null);
+  const [reviewScope, setReviewScope] = useState(initialReview);
   const [revision, setRevision] = useState(0);
   const [reviewRevision, setReviewRevision] = useState(0);
   const [action, setAction] = useState<ContentAction | null>(null);
   const view = useRef(saved.current?.viewport);
   const inspector = useRef<HTMLElement>(null);
+  const inspectorId = useId();
+  const reviewButton = useRef<HTMLButtonElement>(null);
+  const taskButton = useRef<HTMLButtonElement>(null);
   const selectedKey = selection ? nodeKey(selection) : "";
-  useEffect(() => { inspector.current?.scrollTo(0, 0); }, [selectedKey, queue]);
+  useEffect(() => { inspector.current?.scrollTo(0, 0); }, [selectedKey, panel]);
   const refresh = () => setRevision(n => n + 1);
   const commands = useTaskCommands(classroomId, refresh);
   useEffect(() => {
-    // Reviews may also be opened in another tab via the ordinary link.
+    // Another teacher or browser tab may have reviewed drafts while this tab was idle.
     const updateCount = () => setReviewRevision(n => n + 1);
     window.addEventListener("focus", updateCount);
     return () => window.removeEventListener("focus", updateCount);
@@ -85,10 +92,10 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
   const questions = useGraphData<{ items: QuestionNode[]; total: number; page: number }>(contextPoint != null ?
     scoped("/teacher/questions?knowledge_point_id=" + contextPoint + "&page=" + questionPage + "&size=" + pageSize, classroomId) : null, revision);
   const question = useGraphData<GraphQuestion>(selection?.kind === "question" ? endpoint("/questions/" + encodeURIComponent(selection.id)) : null, revision);
-  const graph = catalog?.data;
+  const graph = catalog?.data ?? emptyGraph;
   const jobs = taskList?.data;
-  const layout = useMemo(() => graph ? graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data,
-    point?.data ? questions?.data?.items : undefined, question?.data) : null,
+  const layout = useMemo(() => graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data,
+    point?.data ? questions?.data?.items : undefined, question?.data),
     [graph, branch, material?.data, jobs, point?.data, questions?.data, question?.data]);
   const previousJobs = useRef<number[]>([]);
   useEffect(() => {
@@ -103,8 +110,28 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
   }
   useEffect(() => { persist(); }, [classroomId, branch, selection, chapterPage, questionPoint, questionPage]);
   function focusOn(key: string) { setFocus(prev => ({ key, seq: (prev?.seq ?? 0) + 1 })); }
+  function showPanel(next: Panel) {
+    if (next !== "review" && reviewScope) {
+      setReviewScope(undefined);
+      const state = { ...history.state };
+      delete state.initialReview;
+      history.replaceState(state, "");
+    }
+    setPanel(next);
+  }
+  function closePanel() {
+    if (panel === "node") setSelection(null);
+    if (panel === "review") reviewButton.current?.focus();
+    if (panel === "tasks") taskButton.current?.focus();
+    showPanel(panel !== "node" && selection ? "node" : null);
+  }
+  function togglePanel(next: "tasks" | "review", keyboard: boolean) {
+    if (panel === next) { closePanel(); return; }
+    showPanel(next);
+    if (keyboard) requestAnimationFrame(() => inspector.current?.focus({preventScroll: true}));
+  }
   function choose(kind: NumericKind, id: number) {
-    setQueue(false); setSelection({ kind, id });
+    showPanel("node"); setSelection({ kind, id });
     if (kind !== "point" || questionPoint !== id) setQuestionPage(1);
     setQuestionPoint(kind === "point" ? id : null);
     if (kind === "chapter" || kind === "material") {
@@ -113,7 +140,7 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
     focusOn(nodeKey({ kind, id }));
   }
   function chooseQuestion(id: string) {
-    setSelection({kind: "question", id}); setQueue(false); focusOn(nodeKey({kind: "question", id}));
+    setSelection({kind: "question", id}); showPanel("node"); focusOn(nodeKey({kind: "question", id}));
   }
   function searchSelect(s: Selection, chapterId?: number | null) {
     if (s.kind === "question") {
@@ -124,18 +151,12 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
     }
   }
   function overview() {
-    setSelection(null); setBranch(null); setQueue(false); setQuestionPoint(null); setQuestionPage(1); focusOn("overview");
+    setSelection(null); setBranch(null); showPanel(null); setQuestionPoint(null); setQuestionPage(1); focusOn("overview");
   }
   function chooseTask(job: TaskSnapshot) {
     setBranch({kind: "material", id: job.material_id});
     choose("task", taskNodeId(job));
   }
-  const reviewLink = <ButtonLink variant="outline" size="sm" href="/teacher/content-review"
-    onClick={e => {
-      if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) { e.preventDefault(); persist(); onReview(); }
-    }}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pending?.data?.total}/></ButtonLink>;
-  if (!graph || !layout) return <><PageHeader title="知识图谱"/>{catalog?.error
-    ? <><ErrorNotice message={catalog.error}/><div className="flex gap-2"><Button variant="outline" onClick={refresh}>重新加载</Button>{reviewLink}</div></> : <Loading/>}</>;
   const deck = branch?.kind === "material" ? graph.materials.find(m => m.id === branch.id) : null;
   const chapter = branch?.kind === "chapter" ? graph.chapters.find(ch => ch.id === branch.id) : null;
   const currentCard = selection && layout.cards.find(c => c.key === nodeKey(selection));
@@ -218,28 +239,36 @@ function GraphPage({ classroomId, onReview }: GraphProps) {
           {audio ? <Headphones/> : <NotebookPen/>}{audio ? "试听讲解音频" : "查看讲解与审校"}</Button></div></>
         : material?.error ? <ErrorNotice message={material.error}/> : material?.data ? <p className="inspector-empty">当前课件暂无该内容。</p> : <Loading/>}</>;
   }
-  const Icon = selection ? nodeIcons[selection.kind] : ListTodo;
+  const panelName = panel === "review" ? "待审批" : panel === "tasks" ? "任务队列" : "节点详情";
+  const Icon = panel === "review" ? ClipboardCheck : panel === "node" && selection ? nodeIcons[selection.kind] : ListTodo;
   return <><section className="cg-workspace" aria-label="课程知识图谱">
       <header className="cg-overlay-header">
-        <div className="cg-heading"><h1>知识图谱</h1><p>{graph.title}</p>
-          <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></div>
-        <div className="cg-bar"><GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>
-        {reviewLink}
-        <Button variant="outline" size="sm" aria-expanded={queue} onClick={() => setQueue(!queue)}>
+        <div className="cg-heading"><h1>知识图谱</h1>{catalog?.data && <><p>{graph.title}</p>
+          <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></>}</div>
+        <div className="cg-bar">{catalog?.data && <GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>}
+        <Button ref={reviewButton} variant="outline" size="sm" aria-expanded={panel === "review"} aria-controls={panel === "review" ? inspectorId : undefined}
+          onClick={e => togglePanel("review", e.detail === 0)}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pending?.data?.total}/></Button>
+        <Button ref={taskButton} variant="outline" size="sm" aria-expanded={panel === "tasks"} aria-controls={panel === "tasks" ? inspectorId : undefined}
+          onClick={e => togglePanel("tasks", e.detail === 0)}>
           <ToolbarLabel icon={ListTodo} label="任务队列" count={jobs?.length}/></Button>
         </div>
       </header>
-      <div className={"cg-body" + (selection || queue ? " cg-inspecting" : "")}>
-        <ReactFlowProvider><GraphCanvas layout={layout} selected={selectedKey} focus={selection?.kind === "question" && !question?.data ? null : focus}
+      <div className={"cg-body" + (panel ? " cg-inspecting" : "")}>
+        {catalog?.data ? <ReactFlowProvider><GraphCanvas layout={layout} selected={selectedKey} focus={selection?.kind === "question" && !question?.data ? null : focus}
           onSelect={c => c.kind === "question" ? chooseQuestion(c.id) : choose(c.kind, c.id)} initialViewport={view.current} onMove={persist} onOverview={overview}/></ReactFlowProvider>
-        {(selection || queue) && <aside className="cg-inspector" ref={inspector} aria-label={queue ? "任务队列" : "节点详情"}>
-          <div className="cg-inspector-top"><span>{queue ? <ListTodo size={16}/> : <Icon size={16}/>}
-            {queue ? "生成任务" : kindNames[selection!.kind]}</span><Button aria-label="关闭详情栏" size="icon-xs" variant="ghost"
-            onClick={() => {setQueue(false); setSelection(null);}}><X/></Button></div>
-          <h2>{queue ? "任务队列" : selectedTitle ?? kindNames[selection!.kind]}</h2>
-          {commands.feedback}
-          {queue ? taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> :
-            <TaskQueue jobs={jobs} titleOf={id => graph.materials.find(m => m.id === id)?.title ?? "课件"} onSelect={chooseTask} request={commands.request}/> : details}
+          : <div className="cg-catalog-status">{catalog?.error ? <><ErrorNotice message={catalog.error}/><Button variant="outline" onClick={refresh}>重新加载</Button></> : <Loading/>}</div>}
+        {panel && <aside id={inspectorId} className="cg-inspector" ref={inspector} tabIndex={-1} aria-label={panelName}
+          onKeyDown={e => { if (e.key === "Escape" && !e.defaultPrevented && e.currentTarget.contains(e.target as Node)) { e.preventDefault(); closePanel(); } }}>
+          <div className="cg-inspector-top"><span><Icon size={16}/>
+            {panel === "node" && selection ? kindNames[selection.kind] : panel === "tasks" ? "生成任务" : "课程草稿"}</span>
+            <Button aria-label="关闭详情栏" size="icon-xs" variant="ghost" onClick={closePanel}><X/></Button></div>
+          <h2>{panel === "node" && selection ? selectedTitle ?? kindNames[selection.kind] : panelName}</h2>
+          {panel !== "review" && commands.feedback}
+          {panel === "node" && details}
+          {panel === "tasks" && (taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> :
+            <TaskQueue jobs={jobs} titleOf={id => graph.materials.find(m => m.id === id)?.title ?? "课件"} onSelect={chooseTask} request={commands.request}/>)}
+          {panel === "review" && <Suspense fallback={<Loading/>}><ContentReviewPanel classroomId={classroomId}
+            initialChapterId={reviewScope?.chapterId} initialMaterialId={reviewScope?.materialId} onChanged={refresh}/></Suspense>}
         </aside>}
       </div>
     </section>

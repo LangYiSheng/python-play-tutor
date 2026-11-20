@@ -55,7 +55,6 @@ import { Students } from "@/pages/students";
 import { ClassOverview } from "@/pages/class-overview";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
 const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
-const ContentReview = lazy(() => import("@/pages/content-review").then(module => ({ default: module.ContentReviewPage })));
 import { Activities } from "@/features/activities/activities-page";
 import { CourseSettings } from "@/pages/course-settings";
 import { Packages } from "@/pages/packages";
@@ -89,16 +88,27 @@ const classNav = [
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
-const pages = [...globalNav, ...classNav, { key: "content-review", title: "待审批" }] as const;
+const pages = [...globalNav, ...classNav] as const;
 type Page = (typeof pages)[number]["key"];
 const classroomScreens = {
   packages: Packages, students: Students, teaching: Teaching, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
-  "content-list": ContentList, "content-review": ContentReview,
+  "content-list": ContentList,
   "quick-orchestration": QuickOrchestration,
 };
 const legacyContentTabs = new Map([["curriculum", "chapters"], ["materials", "materials"], ["questions", "questions"]]);
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
+  if (part === "content-review") {
+    const params = new URLSearchParams(location.search);
+    const readId = (name: string) => {
+      const value = params.get(name);
+      return value !== null && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
+    };
+    const chapterId = readId("chapter_id");
+    const initialReview = { chapterId, materialId: chapterId === undefined ? undefined : readId("material_id") };
+    history.replaceState({ ...history.state, initialReview }, "", "/teacher/content-graph");
+    return "content-graph";
+  }
   const legacyTab = legacyContentTabs.get(part);
   if (legacyTab) {
     const url = new URL(location.href);
@@ -199,20 +209,18 @@ function Workbench() {
   function navigate(next: Page) {
     if (next === page) return;
     if (!canLeave()) return;
-    if (page === "content-review" && next === "content-graph" && classroomId && history.state?.fromCourseGraph === classroomId) {
-      history.back();
-      return;
-    }
-    const state = page === "content-graph" && next === "content-review" ? {fromCourseGraph: classroomId} : {};
-    history.pushState(state, "", `/teacher/${next}`);
+    history.pushState({}, "", `/teacher/${next}`);
     setPage(next);
   }
   function changeClass(id: number) {
     if (id === classroomId || !canLeave()) return;
-    if (page === "content-list" || page === "content-review") {
+    if (page === "content-list") {
       const url = new URL(location.href);
-      for (const filter of page === "content-list" ? ["point", "pointName"] : ["chapter_id", "material_id"]) url.searchParams.delete(filter);
+      for (const filter of ["point", "pointName"]) url.searchParams.delete(filter);
       history.replaceState(history.state, "", url);
+    }
+    if (page === "content-graph" && history.state?.initialReview) {
+      history.replaceState({ ...history.state, initialReview: {} }, "");
     }
     setClassroomId(id);
     if (user) sessionStorage.setItem(`classroom:${user.id}`, String(id));
@@ -312,8 +320,7 @@ function Workbench() {
     setPage("classroom");
   }
   function link({ key, title, icon: Icon }: (typeof globalNav | typeof classNav)[number]) {
-    const parent = page === "content-review" && key === "content-graph";
-    return <a key={key} href={`/teacher/${key}`} aria-current={page === key ? "page" : parent ? "location" : undefined}
+    return <a key={key} href={`/teacher/${key}`} aria-current={page === key ? "page" : undefined}
       onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} aria-hidden />{title}</a>;
   }
   function renderPage(currentUser: User) {
@@ -338,7 +345,12 @@ function Workbench() {
       onRenamed={name => setClasses(rows => rows.map(row => row.id === classroom.id ? { ...row, name } : row))}
       onContent={() => navigate("content-graph")} onImport={() => navigate("packages")} />;
     if (page === "judge") return <Judge classroomId={classroom.id} canManage={false} />;
-    if (page === "content-graph") return <KnowledgeGraph classroomId={classroom.id} onReview={() => navigate("content-review")} />;
+    if (page === "content-graph") {
+      const entry = history.state;
+      const initialReview = entry?.initialReview && entry.courseGraph && entry.courseGraph.classroomId !== classroom.id
+        ? {} : entry?.initialReview;
+      return <KnowledgeGraph classroomId={classroom.id} initialReview={initialReview} />;
+    }
     if (page === "activities") return <Activities classroomId={classroom.id} teacherId={classroom.teacher_id} />;
     const Screen = classroomScreens[page];
     return <Screen classroomId={classroom.id} />;
@@ -414,10 +426,6 @@ function Workbench() {
           </Button>
           <span className="text-muted-foreground">教学工作台</span>
           <span className="text-border">/</span>
-          {page === "content-review" && <><a className="hover:underline" href="/teacher/content-graph" aria-label="返回知识图谱"
-            onClick={e => {
-              if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.button === 0) { e.preventDefault(); navigate("content-graph"); }
-            }}>知识图谱</a><span className="text-border">/</span></>}
           <span>{pages.find((n) => n.key === page)?.title}</span>
           {classPage && <div className="class-picker">
             <label className="class-picker-label" htmlFor="active-class">当前班级</label>

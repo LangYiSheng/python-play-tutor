@@ -1,0 +1,76 @@
+.review-panel {
+  container: course-review / inline-size;
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  font-size: 13px;
+}
+.review-panel .empty { padding: 18px 6px; }
+.review-scope, .review-toolbar, .review-selection, .review-pagination, .review-page-buttons, .review-select-page {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.review-scope { font-size: 12px; }
+.review-scope > svg { flex: none; color: var(--muted-foreground); }
+.review-scope button, .review-scope strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.review-scope button { color: var(--muted-foreground); text-decoration: underline; text-underline-offset: 3px; }
+.review-scope strong, .review-item-copy strong { font-weight: 550; }
+.review-toolbar [data-slot="select-trigger"], .review-pagination [data-slot="select-trigger"] {
+  height: 28px;
+  width: auto;
+  font-size: 12px;
+}
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-block: 1px solid var(--border);
+}
+.review-item { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.review-item + .review-item { border-top: 1px solid var(--border); }
+.review-drill {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 2px;
+  border-radius: 4px;
+  text-align: left;
+}
+.review-drill:hover { background: var(--muted); }
+.review-drill:focus-visible, .review-scope:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.review-drill > svg { flex: none; color: var(--muted-foreground); }
+.review-item-copy { flex: 1; min-width: 0; }
+.review-item-copy strong, .review-item-copy small { display: block; overflow-wrap: anywhere; line-height: 1.45; }
+.review-item-copy small, .review-pagination small, .review-select-page { font-size: 12px; color: var(--muted-foreground); }
+.review-item-copy small { margin-top: 2px; }
+.review-item-copy small > span + span::before { content: " · "; }
+.review-select-page { width: fit-content; cursor: pointer; }
+.review-draft, .review-select-page { padding-left: 2px; }
+.review-selection { padding: 6px 8px; border-radius: 6px; background: var(--muted); font-size: 12px; }
+.review-feedback { margin: 0; font-size: 12px; }
+.review-pagination { justify-content: space-between; }
+.review-page-buttons { flex-wrap: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+@container course-review (max-width: 240px) {
+  .review-item:has(> [data-slot="button"]) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 0;
+    padding-bottom: 6px;
+  }
+  .review-item:has(> [data-slot="button"]) > .review-drill { flex: 0 0 100%; }
+  .review-drill > svg:last-child { display: none; }
+}

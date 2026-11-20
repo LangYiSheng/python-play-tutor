@@ -126,7 +126,7 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   await expect(detail.getByText("尚未关联知识点")).toBeVisible();
   await expect(page.locator(".cg-question.cg-selected")).toHaveText(/循环习题 12/);
   expect(banks).toEqual([]);
-  const approval = page.getByRole("link", {name: /待审批\s*1 项/});
+  const approval = page.getByRole("button", {name: /待审批\s*1 项/});
   const tasks = page.getByRole("button", {name: /^任务队列/});
   await expect(approval).toBeInViewport();
   await expect(tasks).toBeInViewport();
@@ -146,9 +146,17 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   const viewport = await map.getAttribute("style");
   await approval.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/teacher\/content-review$/);
-  await expect(page.getByLabel("当前班级")).toBeVisible();
-  await page.getByRole("link", {name: "返回知识图谱"}).click();
+  await expect(page).toHaveURL(/\/teacher\/content-graph$/);
+  const review = page.getByRole("complementary", {name: "待审批"});
+  await expect(review.getByText("未归章", {exact: true})).toBeVisible();
+  await expect(detail).toHaveCount(0);
+  await expect(approval).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".cg-question.cg-selected")).toHaveText(/循环习题 12/);
+  await tasks.click();
+  await expect(review).toHaveCount(0);
+  await expect(tasks).toHaveAttribute("aria-expanded", "true");
+  await expect(approval).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("complementary", {name: "任务队列"}).getByRole("button", {name: "关闭详情栏"}).click();
   await expect(detail.getByRole("heading", {name: "循环习题 12"})).toBeVisible();
   await expect(map).toHaveAttribute("style", viewport!);
   await page.getByRole("button", { name: "课程全貌", exact: true }).click();
@@ -167,7 +175,7 @@ test("全课程搜索可定位未展开内容、分类型翻页，并展示知�
   expect(banks.every(u => u.searchParams.get("size") === "6" && u.searchParams.get("knowledge_point_id") === String(point.id))).toBe(true);
 });
 
-test("图谱工具栏保持链接与按钮一致，任务队列可定位运行与异常节点", async ({ page }, info) => {
+test("图谱工具栏同页切换审批与队列，支持键盘和旧审批书签", async ({ page }, info) => {
   await page.addInitScript(() => {
     sessionStorage.setItem("pythontopia-reborn-session", "graph-task-fixture");
     sessionStorage.setItem("classroom:1", "9");
@@ -185,6 +193,7 @@ test("图谱工具栏保持链接与按钮一致，任务队列可定位运行�
     if (path.endsWith("/course-graph/tasks")) response = jobs;
     if (path.endsWith("/content-review/summary")) response = { total: 0 };
     if (path.includes("/content-review/groups")) response = { items: [], total: 0, page: 1, item_total: 0 };
+    if (path.endsWith("/content-review")) response = { items: [], total: 0, page: 1, chapter_title: "计算思维", material_title: "第 31 份课件" };
     if (path.includes("/course-graph/materials/")) response = { points: [], pages: 5, narrations: 0, audio: 0, drafts: 0 };
     await route.fulfill({ json: response });
   });
@@ -192,9 +201,9 @@ test("图谱工具栏保持链接与按钮一致，任务队列可定位运行�
   await expect(page.locator('.react-flow__node[data-id="material-31"]')).toHaveAccessibleName(/执行中.*40%/);
   await expect(page.locator('.react-flow__node[data-id="material-32"] .cg-task-error')).toBeVisible();
   await expect(page.locator(".cg-node.cg-task")).toHaveCount(0);
-  const approval = page.getByRole("link", { name: /待审批\s*0 项/ });
+  const approval = page.getByRole("button", { name: /待审批\s*0 项/ });
   const queue = page.getByRole("button", { name: /任务队列\s*2 项/ });
-  await expect(approval).toHaveAttribute("href", "/teacher/content-review");
+  await expect(approval).toHaveAttribute("aria-expanded", "false");
   for (const [width, height] of [[1396, 1000], [430, 915], [885, 871]]) {
     await page.setViewportSize({ width, height });
     await page.mouse.move(0, 0);
@@ -224,13 +233,13 @@ test("图谱工具栏保持链接与按钮一致，任务队列可定位运行�
   await page.keyboard.press("Tab");
   await expect(approval).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/teacher\/content-review$/);
-  await page.getByRole("link", {name: "返回知识图谱"}).click();
-  const [newTab] = await Promise.all([page.context().waitForEvent("page"), approval.click({ modifiers: ["ControlOrMeta"] })]);
-  await expect(newTab).toHaveURL(/\/teacher\/content-review$/);
-  await newTab.close();
   await expect(page).toHaveURL(/\/teacher\/content-graph$/);
-  await approval.focus();
+  const review = page.getByRole("complementary", {name: "待审批"});
+  await expect(review).toBeFocused();
+  await expect(review.getByText("当前班级没有待审批内容")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(approval).toBeFocused();
+  await expect(review).toHaveCount(0);
   await page.keyboard.press("Tab");
   await expect(queue).toBeFocused();
   await page.keyboard.press("Enter");
@@ -249,4 +258,29 @@ test("图谱工具栏保持链接与按钮一致，任务队列可定位运行�
     const [node, drawer] = await Promise.all([error.boundingBox(), page.locator(".cg-inspector").boundingBox()]);
     return !!(node && drawer && (node.x + node.width <= drawer.x || node.y + node.height <= drawer.y));
   }).toBe(true);
+  const nodeDetails = page.getByRole("complementary", { name: "节点详情" });
+  await nodeDetails.getByRole("button", { name: "关闭详情栏" }).click();
+  await expect(page.locator(".cg-selected")).toHaveCount(0);
+  await queue.click();
+  await queue.click();
+  await approval.click();
+  await review.getByRole("button", { name: "关闭详情栏" }).click();
+  await expect(nodeDetails).toHaveCount(0);
+  await page.reload();
+  await expect(queue).toBeVisible();
+  await expect(nodeDetails).toHaveCount(0);
+  await expect(page.locator(".cg-selected")).toHaveCount(0);
+  const [scopedDrafts] = await Promise.all([
+    page.waitForRequest(r => /\/content-review\?/.test(r.url())),
+    page.goto("/teacher/content-review?chapter_id=3&material_id=31"),
+  ]);
+  const filters = new URL(scopedDrafts.url()).searchParams;
+  expect(filters.get("chapter_id")).toBe("3");
+  expect(filters.get("material_id")).toBe("31");
+  await expect(page).toHaveURL(/\/teacher\/content-graph$/);
+  await expect(review).toBeVisible();
+  await queue.click();
+  await page.reload();
+  await expect(approval).toHaveAttribute("aria-expanded", "false");
+  await expect(review).toHaveCount(0);
 });

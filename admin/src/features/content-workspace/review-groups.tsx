@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BookOpen, ChevronRight, Files } from "lucide-react";
 import { ErrorNotice, Loading } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 
@@ -15,27 +15,26 @@ export type Chapter = Counts & { chapter_id: number; chapter_title: string };
 export type Material = Counts & { material_id: number; material_title: string };
 type GroupRow = Group & Counts;
 
-export function GroupTable({ rows, level, open, approve }: {
+export function GroupList({ rows, level, open, approve }: {
   rows: GroupRow[]; level: "章节" | "资料"; open: (row: Group) => void; approve?: (row: Group) => void;
 }) {
   const Icon = level === "章节" ? BookOpen : Files;
-  return <Table><TableHeader><TableRow><TableHead>{level}</TableHead>
-    <TableHead className="w-24 text-right">待审题目</TableHead><TableHead className="w-28 text-right">待审讲解稿</TableHead>
-    {approve && <TableHead className="w-28 text-right">操作</TableHead>}
-  </TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={row.id}>
-    <TableCell className="whitespace-normal"><button type="button"
-      className="flex w-full items-center gap-3 rounded-sm py-1 text-left hover:underline focus-visible:outline-ring"
-      aria-label={`查看${row.name}的${level === "章节" ? "待审资料" : "待审明细"}`} onClick={() => open(row)}>
-      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" /><span className="break-words font-medium">{row.name}</span>
-      <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-    </button></TableCell>
-    <TableCell className="text-right tabular-nums">{row.question_count} 题</TableCell>
-    <TableCell className="text-right tabular-nums">{row.narration_count} 页</TableCell>
-    {approve && <TableCell className="text-right"><Button size="sm" variant="outline" disabled={!row.eligible_count}
-      aria-label={`批量通过${row.name}的草稿`} onClick={() => approve(row)}>按章通过</Button></TableCell>}
-  </TableRow>)}</TableBody></Table>;
+  return <ul aria-label={`待审${level}`} className="review-list">
+    {rows.map(row => <li key={row.id} className="review-item">
+      <button type="button" className="review-drill"
+        aria-label={`查看${row.name}的${level === "章节" ? "待审资料" : "待审明细"}`} onClick={() => open(row)}>
+        <Icon size={16} aria-hidden />
+        <span className="review-item-copy">
+          <strong>{row.name}</strong>
+          <small><span>{row.question_count} 题</span><span>讲解稿 {row.narration_count} 页</span></small>
+        </span>
+        <ChevronRight size={14} aria-hidden />
+      </button>
+      {approve && <Button size="xs" variant="outline" disabled={!row.eligible_count}
+        aria-label={`批量通过${row.name}的草稿`} onClick={() => approve(row)}>按章通过</Button>}
+    </li>)}
+  </ul>;
 }
-
 type Preview = {
   chapter_title: string; count: number; question_count: number; narration_count: number; excluded_count: number; token: string;
 };
@@ -45,9 +44,11 @@ export function ChapterApproval({ base, chapter, kind, close, applied }: {
   const route = `${base}/groups/${chapter.id}`;
   const preview = useResource<Preview>(route + "/preview" + (kind === "all" ? "" : "?kind=" + kind));
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [stale, setStale] = useState(false);
+  const inFlight = useRef(false);
   const scope = preview.data;
   async function confirm() {
-    if (busy || !scope?.count || stale) return;
+    if (inFlight.current || !scope?.count || stale) return;
+    inFlight.current = true;
     setBusy(true); setError("");
     try {
       const result = await api.post<{count: number}>(route + "/accept", {
@@ -57,7 +58,7 @@ export function ChapterApproval({ base, chapter, kind, close, applied }: {
     } catch (e) {
       setStale(e instanceof ApiError && e.status === 409);
       setError(errorMessage(e));
-    } finally { setBusy(false); }
+    } finally { inFlight.current = false; setBusy(false); }
   }
   return <Dialog open onOpenChange={open => { if (!open && !busy) close(); }}><DialogContent>
     <DialogHeader><DialogTitle>按章批量通过</DialogTitle>
