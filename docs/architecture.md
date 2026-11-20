@@ -138,7 +138,7 @@ ContentDeletionPreview保存教师/班级/课程归属、修订、目标、影�
 
 讲解分三层：解析原文（`materials.content`，永不改写）、整理稿（`page_contents`，轻优化 + title/topic/tags，供 RAG 与讲解使用）、讲解稿（`page_narrations`，口播台词）。整理稿单独成表，避免重传覆盖已整理内容，也避免原文指纹自指；`material_tag_dicts` 按课程实例保存「别名 → 标准名」，供后续知识图谱和检索过滤。整理原文本阶段发图阈值最宽（文本不足 600 字附页图），渲染失败按页失败，页级 `image_state` 记录是否带图。
 
-讲解有效性包含页内容、上传文件摘要、存储键和预览键；图片页替换也会使审校失效。长任务以资料行串行获取租约，心跳与释放校验本次所有者；生成完成以资料指纹和讲解修订检查防止覆盖教师修改。批量生成、全篇校准与音频批量由 `narration/jobs.py` 的后台 worker 在线程里执行（网络等待不占事件循环），请求只入队并返回 202，前端轮询 `GET .../narrations/job`；同一资料仍由 `narration_jobs` 的唯一行串行，最多三份不同资料并行。进程重启把仍在跑的任务标为中断，游标与已合并结果留在报告行，再次触发从断点继续。校准校对整理稿与原文（附真实原文、前后页或必要页图），逐窗提交并保存 fixes/issues，最后整册归并标签写入课程级字典；整册输入未变时复用上次完整报告，应用前再次验证修正仍然适用。两条迁移链由 a52e901c7d41 合并。
+讲解有效性包含页内容、上传文件摘要、存储键和预览键；图片页替换也会使审校失效。长任务以资料行串行获取租约，心跳与释放校验本次所有者；生成完成以资料指纹和讲解修订检查防止覆盖教师修改。批量生成、全篇校准与音频批量由 `narration/jobs.py` 的后台 worker 在线程里执行（网络等待不占事件循环），请求只入队并返回 202，前端轮询 `GET .../narrations/job`；同一资料仍由 `narration_jobs` 的唯一行串行，最多三份不同资料并行。进程重启把仍在跑的任务标为中断，游标与已合并结果留在报告行，再次触发从断点继续。校准校对整理稿与原文（附真实原文、前后页或必要页图），逐窗提交并保存 fixes/issues，最后整册归并标签写入课程级字典；整册输入未变时复用上次完整报告，应用前再次验证修正仍然适用。迁移链已合并为单一 head；当前合并节点为 `b7e4c2a9f1d3`，包含 page_contents、交互练习与主链，历史已发布迁移不改写。
 
 讲解稿与整理同口径：每 4 页一窗、从整理稿生成、一次写 4 页，窗口内页号必须与输入一致，缺页整窗失败；只写 draft，教师已接受的页不覆盖。`POST .../narrations/pipeline` 把「梳理原文 → 整册校准 → 应用修正 → 生成讲解稿」串成一条后台链，`progress.chain` 记录剩余段，失败停在当前段、重试从该段继续，已完成的阶段不重复计费；校准修正由链自动应用，整理稿保持 draft、原始文本不动。
 
@@ -155,11 +155,31 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | 模块 | 职责与边界 |
 | --- | --- |
 | `frontend/src/shared/session/` | `index.ts` 是唯一身份、班级和世界快照所有者；navigation、position、story、reading、experience 分别处理工作区导航、实时位置、对白幂等请求、串行阅读保存和恢复前准备。子模块显式接收引用与回调，不自行创建相互依赖的 store。 |
+| `frontend/src/shared/mediaCache.ts`、`pdfCache.ts`、`mediaMaintenance.ts` | 学生端有界内存媒体缓存：音频与页面图共 50 MB、PDF 文档 40 MB，保留最近使用项并做 LRU；15 分钟空闲淘汰未引用项，标签页隐藏 30 分钟清理未引用项，登录、切班、退出登录全部销毁。鉴权媒体仍由 HTTP `private, no-store` 交付，缓存只在内存中，不写入浏览器磁盘。 |
 | `frontend/src/features/developer/` | DeveloperWorkspace 组装账户概要、内容定位、任务阶段、体验检查点四个图标侧标签。模块内 API 和请求协调器负责权限范围、并发动作与迟到结果；重置指向当前学生在当前班级的进度。 |
 | `frontend/src/features/learning/` | LessonWorkspace 组装阅读与支持侧栏；LessonMaterial 负责 PDF、文本、视频展示；source、reading evidence、video、completion、goals 分别管理资料生命周期、阅读证据、播放采样、显式完成和目标展示。旧资料的迟到响应不能覆盖新资料，离开释放媒体 URL。 |
 | `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
 | `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境、输入、场景生命周期；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。 |
+
+### 学生端媒体缓存
+
+鉴权媒体由后端以 `Cache-Control: private, no-store` 交付，浏览器不落盘；前端只在内存中缓存，按需填充，不为了填满预算而预取整份资料。默认总预算约 100 MB：
+
+| 内容 | 预算 | 保留方式 | 清理 |
+| --- | --- | --- | --- |
+| 讲解音频 | 30 MB | 按班级、资料、页码做 LRU | 离开资料时清空该资料；超过预算淘汰最久未用且未被当前页引用的条目 |
+| PDF / PPT 文档 | 40 MB | 最多 2 份 pdf.js 文档，关闭后保留 15 分钟 | 重开同一资料直接复用；过期、切班、退出登录或重置时销毁 |
+| 页面图 | 20 MB | 预算保留；学生端当前不请求页面图，教师审校仍用当前页加后 4 页窗口 | 窗口滑出或离开审校时 revoke |
+| 余量 | 10 MB | 渲染与临时 Blob | — |
+
+清理规则：
+
+- 未被引用的条目 15 分钟空闲后由每分钟一次的维护扫描淘汰；标签页隐藏 30 分钟后清理未引用项。
+- 当前正在播放的音频或阅读中的 PDF 会被 pin，不会被 LRU 或空闲扫描误删；因此单个活动文档可以让缓存暂时超过预算，release 后再按 LRU 回收。
+- 退出登录、切换班级、开发重置会立即清空全部媒体缓存并销毁 PDF 文档；音频在离开资料时释放，PDF 文档为快速重开保留最多 15 分钟。
+- 视频不进入缓存，只保留当前播放的一份 Blob，离开资料即释放。
+- 缓存 key 目前是资料/页码；资料替换或音频重新生成后的 15 分钟内可能复用旧内容，后续如需严格失效应由后端提供媒体版本号并加入 key。
 
 ### 教师端
 
@@ -172,7 +192,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `course_packages/` | manifest/reader/writer/validation 负责格式与读写，catalog/paths/cleanup 负责目录生命周期，impact/apply/service 负责影响、事务应用及预览回执；narration_contract/narrations 负责可移植讲稿、媒体指纹、状态校验与目标关联，复用 narration 的运行时有效性判定；router 仅装配接口。 |
 | `course_content/` | snapshot 保存当前定义快照供比较和交换；access/learning/evidence/presentation 共用授权、学习规则、证据与公开响应；activities/questions/releases/progress 维护活动、题库、发布和统计。定义快照不是学生可切换的课程版本。 |
 | `classrooms/` | 班级、成员、教师独立体验身份；课程内容不再混入班级接口文件。 |
-| `materials/` | storage 是本地/S3存储适配，uploads/conversion/jobs 负责上传解析与后台转换，delivery 负责私有文件与 Range 交付，access/presentation/service/router 维护授权、响应和接口。 |
+| `materials/` | storage 是本地/S3存储适配，uploads/conversion/jobs 负责上传解析与后台转换，delivery 负责私有文件与 Range 交付；用户媒体统一 no-store，学生 PDF/PPT 阅读器按 Range 取块，不整份下载。access/presentation/service/router 维护授权、响应和接口。 |
 | `teaching/` | authoring、story、quests、world、conditions 分开定义校验、编写、运行状态、证据处理与 HTTP 装配。定义校验不依赖 HTTP 路由或应用编排，运行规则不反向调用教师编辑服务。quick_template 把教师的模板和内容选择编译为相同的活动、任务、地图角色及对白。模板目录为教师后台提供环节和地点，学生端直接执行生成的定义。 |
 | `experience/` | navigation/stages/checkpoints 分别拥有内容定位、任务阶段预览应用和检查点；access/state/contracts/router 共享本人作用域、状态快照和接口。 |
 | `narration/` | 保留已有讲稿、校准、TTS与仓储边界。请求契约、资料授权、任务命令和环境默认值独立维护，HTTP路由与失败重试管理共用任务命令，不互调路由函数。 |

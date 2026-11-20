@@ -274,7 +274,7 @@ def read_page_image(page_no: int, classroom_id: int, material_id: int, db: Annot
     if image is None:
         raise HTTPException(404, "本页没有可预览的页面图像")
     return Response(content=image, media_type="image/jpeg",
-                    headers={"Cache-Control": "private, max-age=300"})
+                    headers={"Cache-Control": "private, no-store"})
 
 @router.post("/audio-batch", status_code=202)
 def synthesize_audio_batch(classroom_id: int, material_id: int,
@@ -301,7 +301,7 @@ def stream_teacher_audio(page_no: int, classroom_id: int, material_id: int, db: 
     _, path = found
     return FileResponse(path, media_type=audio.media_type(path.name),
                         filename=audio.download_name(material.id, page_no, path.name),
-                        headers={"Cache-Control": "private, max-age=60"})
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/audio")
@@ -357,7 +357,7 @@ def read_student_page_image(page_no: int, material_id: int, classroom_id: int,
     if image is None:
         raise HTTPException(404, "本页没有可预览的页面图像")
     return Response(content=image, media_type="image/jpeg",
-                    headers={"Cache-Control": "private, max-age=300"})
+                    headers={"Cache-Control": "private, no-store"})
 
 
 @student_router.get("/{page_no}/audio")
@@ -377,4 +377,4 @@ def stream_narration_audio(page_no: int, material_id: int, classroom_id: int,
     item, path = found
     return FileResponse(path, media_type=audio.media_type(path.name),
                         filename=audio.download_name(material.id, page_no, path.name),
-                        headers={"Cache-Control": "private, max-age=600"})
+                        headers={"Cache-Control": "private, no-store"})

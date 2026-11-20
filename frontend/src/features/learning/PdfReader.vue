@@ -50,6 +50,7 @@ import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../shared/api";
+import { pdfCache } from "../../shared/pdfCache";
 import { fitPdfPage } from "../../shared/pdfPageLayout";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import "./pdfReader.css";
@@ -66,9 +67,9 @@ const props = defineProps<{ url: string; page: number; title?: string; kind?: st
   rendering = ref(false),
   rendered = ref(false);
 let doc: PDFDocumentProxy | undefined,
+  docUrl = "",
   documentTask: PDFDocumentLoadingTask | undefined,
   task: RenderTask | undefined,
-  controller: AbortController | undefined,
   resizeObserver: ResizeObserver | undefined,
   resizeFrame = 0,
   lastSize = "",
@@ -79,17 +80,26 @@ let doc: PDFDocumentProxy | undefined,
 function ignoreCancellation(error: unknown) {
   return error instanceof Error && ["AbortError", "RenderingCancelledException"].includes(error.name);
 }
+async function fileSize(url: string, headers: Record<string, string>) {
+  try {
+    const response = await fetch(url, { headers: { ...headers, Range: "bytes=0-0" } });
+    const total = Number(response.headers.get("content-range")?.split("/").pop());
+    void response.body?.cancel().catch(() => undefined);
+    return Number.isFinite(total) && total > 0 ? total : Number(response.headers.get("content-length")) || 0;
+  } catch {
+    return 0;
+  }
+}
 async function load() {
   const generation = ++loadGeneration;
   ++renderGeneration;
-  controller?.abort();
-  controller = new AbortController();
-  const signal = controller.signal;
   task?.cancel();
   task = undefined;
+  const previousUrl = docUrl;
   const previous = doc;
   doc = undefined;
-  void previous?.destroy().catch(() => undefined);
+  docUrl = "";
+  if (previous) pdfCache.release(previousUrl);
   void documentTask?.destroy().catch(() => undefined);
   documentTask = undefined;
   loading.value = true;
@@ -98,24 +108,38 @@ async function load() {
   error.value = "";
   const current = () => !disposed && generation === loadGeneration;
   try {
-    const [{ getDocument, GlobalWorkerOptions }, worker, blob] = await Promise.all([
+    const [{ getDocument, GlobalWorkerOptions }, worker] = await Promise.all([
       import("pdfjs-dist"),
       import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-      api.blob(props.url, signal),
     ]);
     if (!current()) return;
     GlobalWorkerOptions.workerSrc = worker.default;
-    const data = await blob.arrayBuffer();
-    if (!current()) return;
-    const pending = getDocument({ data, isEvalSupported: false });
-    documentTask = pending;
-    const loaded = await pending.promise;
+    const token = api.token();
+    const url = props.url.startsWith("/api") ? props.url : `/api${props.url}`;
+    const httpHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const total = pdfCache.has(url) ? 0 : await fileSize(url, httpHeaders ?? {});
+    const loaded = await pdfCache.acquire(url, () => {
+      const pending = getDocument({
+        url,
+        length: total || undefined,
+        isEvalSupported: false,
+        httpHeaders,
+        // PDF.js 的说明：关闭流式读取后，disableAutoFetch 才会真正按需取 Range。
+        // 首屏只拉当前页所需的 256 KiB 区块，不再整份下载后交给 pdf.js。
+        disableAutoFetch: true,
+        disableStream: true,
+        rangeChunkSize: 256 * 1024,
+      });
+      documentTask = pending;
+      return pending.promise;
+    }, total);
+    documentTask = undefined;
     if (!current()) {
-      void loaded.destroy().catch(() => undefined);
+      pdfCache.release(url);
       return;
     }
-    documentTask = undefined;
     doc = loaded;
+    docUrl = url;
     count.value = loaded.numPages;
     const valid = Math.min(count.value, Math.max(1, props.page));
     if (valid !== props.page) emit("page", valid);
@@ -190,11 +214,12 @@ onBeforeUnmount(() => {
   disposed = true;
   ++loadGeneration;
   ++renderGeneration;
-  controller?.abort();
+  if (doc && docUrl) pdfCache.release(docUrl);
+  doc = undefined;
+  docUrl = "";
   task?.cancel();
   resizeObserver?.disconnect();
   cancelAnimationFrame(resizeFrame);
   void documentTask?.destroy().catch(() => undefined);
-  void doc?.destroy().catch(() => undefined);
 });
 </script>

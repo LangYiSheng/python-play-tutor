@@ -48,12 +48,14 @@ def test_wav_format_drives_key_suffix_content_type_and_duration(client, db, clas
     teacher_stream = client.get(url(classroom, material, "/1/audio/file"), headers=teacher["headers"])
     assert teacher_stream.status_code == 200
     assert teacher_stream.headers["content-type"] == "audio/wav"
+    assert teacher_stream.headers["cache-control"] == "private, no-store"
     assert teacher_stream.content[:4] == b"RIFF"
 
     student_stream = client.get(f"/api/materials/{material.id}/narrations/1/audio?classroom_id={classroom['id']}",
                                headers=student["headers"])
     assert student_stream.status_code == 200
     assert student_stream.headers["content-type"] == "audio/wav"
+    assert student_stream.headers["cache-control"] == "private, no-store"
     assert "narration-" in student_stream.headers["content-disposition"]
     assert student_stream.headers["content-disposition"].endswith('.wav"') or ".wav" in student_stream.headers["content-disposition"]
 

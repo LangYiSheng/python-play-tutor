@@ -460,7 +460,7 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 排查删除失败先查看预览blockers、过期和课程修订；确认冲突应重新预览，禁止绕过为直接SQL删除。历史评测已使用include_deleted读取；其他默认ORM查询只读当前内容，显式历史查询必须另行校验用户与班级。历史私有文件和已移除稳定ID继续保留，不能按“当前页面看不到”当作无用数据清理。删除预览和成功回执持久保存，本版未加入自动回收、恢复或永久清除入口。
 
-迁移链合并节点为 `a52e901c7d41`，合并 `f942bc358da1` 与 `f2a7c5d81b34` 两条已发布迁移链，不改写历史迁移。任一分支数据库升级前备份，然后执行 `alembic upgrade head` 与 `alembic check`。旧讲解因缺少新资料指纹会失效，保留正文、审校记录与学生历史，需教师重新核对；不会自动重生成或消耗模型额度。
+迁移链当前 head 为 `b7e4c2a9f1d3`，合并 page_contents、交互练习与主链；更早的 `a52e901c7d41` 合并仍保留，不改写历史迁移。任一分支数据库升级前备份，然后执行 `alembic upgrade head` 与 `alembic check`。没有 `alembic_version` 的既有库不要直接 upgrade（会因表已存在失败），先按实际 schema stamp 到对应 head 再升级。旧讲解因缺少新资料指纹会失效，保留正文、审校记录与学生历史，需教师重新核对；不会自动重生成或消耗模型额度。
 
 
 ### 语音配置示例与任务排查

@@ -5,4 +5,6 @@ import { router } from "./app/router";
 import "./app/styles/base.css";
 import "./features/world/worldUi.css";
 import "./app/styles/credits.css";
+import { startMediaMaintenance } from "./shared/mediaMaintenance";
+startMediaMaintenance();
 createApp(App).use(createPinia()).use(router).mount("#app");
