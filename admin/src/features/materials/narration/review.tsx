@@ -69,7 +69,7 @@ export function NarrationReview({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-6xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>讲义生成 · {title}</DialogTitle>
+          <DialogTitle>课程生成 · {title}</DialogTitle>
           <DialogDescription>
             一键完成原文整理、整册校准与讲解稿；草稿需要老师逐页接受才会出现在学生端。
           </DialogDescription>
