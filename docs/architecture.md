@@ -162,6 +162,25 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
 | `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境、输入、场景生命周期；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。 |
 
+### 学生端媒体缓存
+
+鉴权媒体由后端以 `Cache-Control: private, no-store` 交付，浏览器不落盘；前端只在内存中缓存，按需填充，不为了填满预算而预取整份资料。默认总预算约 100 MB：
+
+| 内容 | 预算 | 保留方式 | 清理 |
+| --- | --- | --- | --- |
+| 讲解音频 | 30 MB | 按班级、资料、页码做 LRU | 离开资料时清空该资料；超过预算淘汰最久未用且未被当前页引用的条目 |
+| PDF / PPT 文档 | 40 MB | 最多 2 份 pdf.js 文档，关闭后保留 15 分钟 | 重开同一资料直接复用；过期、切班、退出登录或重置时销毁 |
+| 页面图 | 20 MB | 预算保留；学生端当前不请求页面图，教师审校仍用当前页加后 4 页窗口 | 窗口滑出或离开审校时 revoke |
+| 余量 | 10 MB | 渲染与临时 Blob | — |
+
+清理规则：
+
+- 未被引用的条目 15 分钟空闲后由每分钟一次的维护扫描淘汰；标签页隐藏 30 分钟后清理未引用项。
+- 当前正在播放的音频或阅读中的 PDF 会被 pin，不会被 LRU 或空闲扫描误删；因此单个活动文档可以让缓存暂时超过预算，release 后再按 LRU 回收。
+- 退出登录、切换班级、开发重置会立即清空全部媒体缓存并销毁 PDF 文档；音频在离开资料时释放，PDF 文档为快速重开保留最多 15 分钟。
+- 视频不进入缓存，只保留当前播放的一份 Blob，离开资料即释放。
+- 缓存 key 目前是资料/页码；资料替换或音频重新生成后的 15 分钟内可能复用旧内容，后续如需严格失效应由后端提供媒体版本号并加入 key。
+
 ### 教师端
 
 `admin/src/App.tsx` 直接装配功能入口。教学流程放入 `features/authoring/`：页面只组装，草稿/保存校验、流程操作、预览独立；graph、flows/nodes、quests、map、characters、conditions 各拥有对应模型、状态与视图。资料、题库、活动分别归入 `features/materials/`、`questions/`、`activities/`；逐页讲解审校在资料模块内区分请求、审校状态、媒体生命周期、页面预览与编辑。通用控件留在 `components/ui/`，不反向依赖业务页面。不为保持旧路径新建空路由页面或 re-export。
