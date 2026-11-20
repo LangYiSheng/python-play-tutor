@@ -6,7 +6,7 @@ from app.models import Classroom, PlayerQuest, QuestDefinition
 from app.teaching.world.runtime import require_interaction
 
 
-def record_interaction(db, user, classroom_id, interaction_id, session):
+def record_interaction(db, user, classroom_id, interaction_id, session, *, opened_workspace=None):
     """An actual public interaction can satisfy an explicitly authored task goal."""
     from app.course_content.access import chapter_available
     from app.course_scope import course_clause
@@ -22,7 +22,9 @@ def record_interaction(db, user, classroom_id, interaction_id, session):
     ensure_quests(db, user, classroom_id, commit=False)
     classroom = db.get(Classroom, classroom_id)
     for definition in db.scalars(select(QuestDefinition).where(course_clause(db, QuestDefinition, classroom_id))):
-        if not quest_visible(definition, user, classroom, db) or not chapter_available(db, user, classroom_id, definition.chapter_id):
+        if not quest_visible(definition, user, classroom, db):
+            continue
+        if definition.chapter_id is not None and not chapter_available(db, user, classroom_id, definition.chapter_id):
             continue
         player = db.scalar(
             select(PlayerQuest).where(PlayerQuest.user_id == user.id, PlayerQuest.classroom_id == classroom_id, PlayerQuest.quest_id == definition.id)
@@ -32,6 +34,8 @@ def record_interaction(db, user, classroom_id, interaction_id, session):
         states = {state.node_id: state for state in db.scalars(select(NodeState).where(NodeState.player_quest_id == player.id))}
         statuses = node_statuses(definition.definition, states)
         for node in definition.definition["nodes"]:
+            if node.get("workspace") != opened_workspace:
+                continue
             if node["type"] in {"INTERACT_OBJECT", "REACH_LOCATION"} and node.get("target") in targets and statuses[node["id"]] == "ready":
                 import hashlib
 
@@ -46,4 +50,5 @@ def record_interaction(db, user, classroom_id, interaction_id, session):
                         event_id=event_id,
                         evidence={"object_id": node["target"]} if node["type"] == "INTERACT_OBJECT" else {},
                     ),
+                    opened_workspace=opened_workspace,
                 )

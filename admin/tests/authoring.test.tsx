@@ -28,7 +28,7 @@ const base: Document & { students: { id: number; name: string }[] } = {
       { id: "library", label: "图书馆", map_key: "town", has_interior: true },
     ],
     chapters: [{ id: "ch1", title: "第一章" }],
-    activities: [{ id: "a1", title: "阅读资料", kind: "lesson" }],
+    activities: [{ id: "a1", title: "阅读资料", kind: "lesson", chapter_id: "ch1", published: true }],
     npcs: [{ id: "guide", name: "向导" }],
     quests: [],
   },
@@ -251,6 +251,8 @@ it("edits quest dependencies as typed ALL and ANY data", async () => {
   render(<Authoring classroomId={12} />);
   await user.click(await screen.findByRole("tab", { name: "任务目标与依赖" }));
   await user.click(screen.getByRole("button", { name: "新建任务" }));
+  expect(screen.getByRole("combobox", { name: "任务归属" })).toHaveTextContent("全镇");
+  await selectOption(user, "出现时机", "第一章 · 完成《阅读资料》后");
   await user.click(await screen.findByRole("button", { name: "关闭属性" }));
   await user.click(screen.getByRole("button", { name: "与角色交谈" }));
   await user.click(screen.getByRole("button", { name: "完成阅读活动" }));
@@ -268,7 +270,38 @@ it("edits quest dependencies as typed ALL and ANY data", async () => {
   ]);
   expect(q.definition.nodes[1].aggregation).toBe("ANY");
   expect(q.definition.nodes[1].activity_id).toBe("a1");
-  expect(q.definition.chapter_id).toBe(q.chapter_id);
+  expect(q.chapter_id).toBeNull();
+  expect(q.definition.chapter_id).toBeNull();
+  expect(q.definition.when).toEqual({ activity_completed: "a1" });
+});
+it("moves a chapter side quest and its linked conversation into the town while keeping its trigger", async () => {
+  const document = structuredClone(base);
+  document.quests.push({ id: "shelf", title: "找书", chapter_id: "ch1", definition: {
+    id: "shelf", title: "找书", chapter_id: "ch1", kind: "side", when: { activity_completed: "a1" },
+    nodes: [{ id: "open", title: "打开书架", type: "INTERACT_OBJECT", target: "shelf", dependencies: [] }], effects: [],
+  } });
+  document.flows[0] = { ...document.flows[0], quest_id: "shelf", chapter_id: "ch1",
+    content: { ...document.flows[0].content, mode: "task" } };
+  let saved: Document | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/validate")) return json({ valid: true, diagnostics: [] });
+    if (init.method === "PUT") {
+      saved = JSON.parse(init.body as string);
+      return json({ revision: 8 });
+    }
+    return json(document);
+  }));
+  const user = userEvent.setup();
+  render(<Authoring classroomId={12} />);
+  await user.click(await screen.findByRole("tab", { name: "任务目标与依赖" }));
+  await user.click(screen.getByRole("button", { name: "任务设置" }));
+  await selectOption(user, "任务归属", "全镇");
+  expect(screen.getByRole("combobox", { name: "出现时机" })).toHaveTextContent("完成《阅读资料》后");
+  await user.click(screen.getByRole("button", { name: "关闭属性" }));
+  await user.click(screen.getByRole("button", { name: "保存课程" }));
+  await waitFor(() => expect(saved).toBeDefined());
+  expect(saved!.quests[0]).toMatchObject({ chapter_id: null, definition: { chapter_id: null, when: { activity_completed: "a1" } } });
+  expect(saved!.flows[0]).toMatchObject({ chapter_id: null, quest_id: "shelf" });
 });
 it("previews using an authorized real student selection without saving", async () => {
   const requests: { url: string; body: unknown }[] = [];

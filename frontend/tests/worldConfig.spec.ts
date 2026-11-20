@@ -29,13 +29,17 @@ describe("configured world places and portals", () => {
     expect(worldTargetHint(entrance, [], courseAccess(false))).toBe("");
     expect(worldTargetHint(entrance, [], courseAccess(true))).toBe("进入");
     expect(resolveWorldTarget("practice_plaza", [])).toEqual(expect.objectContaining({ x: 38, y: 24, kind: "object" }));
-    expect(worldTargetHint(resolveWorldTarget("mayor_hall", [])!, [])).toBe("");
+    expect(worldTargetHint(resolveWorldTarget("mayor_hall", [])!, [], courseAccess(false))).toBe("");
   });
   it("plans both directions through configured portals and honors entry requirements", () => {
     expect(portalRoute("town_hub", "library", [], worldConfig, courseAccess(false))).toBeNull();
     expect(portalRoute("town_hub", "library", [], worldConfig, courseAccess(true))?.map(item => item.id)).toEqual(["library_door"]);
     expect(portalRoute("library", "town_hub", [])?.map(item => item.id)).toEqual(["library_exit"]);
     expect(portalRoute("library", "library", [])).toEqual([]);
+    const open = { enabled: true, unlocked: true, can_enter: true, blocked_message: "" };
+    const town = { building_access: { library: open, mayor_hall: open, arena: open } };
+    expect(portalRoute("mayor_hall", "library", [], worldConfig, town)?.map(item => item.id)).toEqual(["mayor_hall_exit", "library_door"]);
+    expect(portalRoute("library", "arena", [], worldConfig, town)?.map(item => item.id)).toEqual(["library_exit", "arena_door"]);
   });
   it("routes through several arbitrary maps without special map-name branches", () => {
     const base = worldConfig.portals[0]!;

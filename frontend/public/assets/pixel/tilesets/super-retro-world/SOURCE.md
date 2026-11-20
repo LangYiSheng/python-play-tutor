@@ -10,6 +10,15 @@ and could be used in this project. This records that user confirmation; no
 original receipt or source-package license file was found locally or invented.
 
 Author/product reference: [Gif — Super Retro World: Farming](https://store.godotengine.org/asset/gif/super-retro-world/).
+
+The town hall and the practice hall use crops from this atlas. The room modules in
+`scripts/rooms/` record the source rectangles for their furnishings. The desks
+combine the original tabletops with books from the supplied `Props/Books` set.
+The waiting bench extends the middle slats of the atlas bench at (1552, 456).
+The slate uses the frame at (1584, 644). The council runner and the coach's mat
+extend the borders and patterns of the atlas rugs.
+The timber cross-sections in `props/super-retro-world/teaching-rooms/` use the
+cedar panel at (1184, 112), its original colour ramp and the floorboards at (16, 688).
 The store links its [current custom license](https://storage.rpgpowerforge.com/super-retro-world.license).
 These current pages identify the source; they are not a claim about which terms
 accompanied the user's earlier download. Existing root attribution records remain applicable.

@@ -61,12 +61,45 @@ def ambient_content(*, when=None, nodes=None):
     }
 
 
+def test_dialogue_fields_keep_braces_in_course_examples_and_student_names():
+    from app.teaching.story.dialogue import render_dialogue
+
+    text = "{name}，欢迎来学《{course_name}》的{chapter_name}。{unknown} / {1, 2} / {name!r}"
+    assert render_dialogue(text, name="李{course_name}", course_name="音乐欣赏", chapter_name="初识节拍") == (
+        "李{course_name}，欢迎来学《音乐欣赏》的初识节拍。{unknown} / {1, 2} / {name!r}"
+    )
+
+
 def install_story(db, content, *, story_id="test-enrichment", quest=None, chapter_id=179):
     validate_story(content, db, quest, story_id=story_id)
     item = StoryDefinition(id=story_id, chapter_id=chapter_id, quest_id=quest["id"] if quest else None, content=content)
     db.add(item)
     db.commit()
     return item
+
+
+def test_same_dialogue_addresses_each_signed_in_student(client, db, student, classroom, story_space):
+    welcome = {"id": "start", "type": "dialogue", "text": "欢迎，{name}！", "choices": [
+        {"id": "leave", "label": "{name}准备好了", "next": "end"},
+    ]}
+    install_story(db, ambient_content(nodes=[welcome, {"id": "end", "type": "end"}]), chapter_id=None)
+    response = client.post("/api/auth/register", json={"student_id": "566372481025", "name": "小禾", "password": "sample-student-password"})
+    assert response.status_code == 201
+    other = {"headers": {"Authorization": "Bearer " + response.json()["access_token"]}}
+    assert client.post("/api/classrooms/join", headers=other["headers"], json={"join_code": classroom["join_code"]}).is_success
+    move_player(client, other["headers"], story_space, "town_hub", 22, 34)
+    for account, name in [(other, "小禾"), (student, "学生")]:
+        view = interact(client, account, story_space)
+        assert "chapter_id" not in view
+        assert view["node"]["text"] == f"欢迎，{name}！"
+        assert view["node"]["choices"] == [{"id": "leave", "label": f"{name}准备好了"}]
+        template = client.get("/api/story/current", params={"classroom_id": story_space},
+                              headers={**account["headers"], "X-Dialogue-Format": "template"}).json()
+        assert template["id"] == view["id"] and template["revision"] == view["revision"]
+        assert template["chapter_id"] is None and template["node"]["text"] == welcome["text"]
+        assert template["node"]["choices"] == [{"id": "leave", "label": "{name}准备好了"}]
+        assert client.get("/api/auth/me", headers=account["headers"]).json()["name"] == name
+    assert client.get("/api/story/current", params={"classroom_id": story_space}, headers=other["headers"]).json()["node"]["text"] == "欢迎，小禾！"
 
 
 def install_task(db, *, npc="mayor_py", checkpoint=False, content=None):
@@ -193,7 +226,9 @@ def test_conditional_choices_are_hidden_revalidated_and_cannot_be_forged(client,
     ])
     scene = install_story(db, content)
     client.get(f"/api/world?classroom_id={story_space}", headers=student["headers"])
+    student = {**student, "headers": {**student["headers"], "X-Dialogue-Format": "template"}}
     hidden = interact(client, student, story_space)
+    assert hidden["chapter_id"] == 179
     assert [choice["id"] for choice in hidden["node"]["choices"]] == ["public"]
     assert "when" not in hidden["node"]["choices"][0]
     advance(client, student, story_space, hidden, choice="private", expected=422)
@@ -227,7 +262,7 @@ def test_random_scene_is_drawn_once_and_survives_restore_and_request_retry(clien
         {"id": "start", "type": "dialogue", "text": "Say hello", "next": "random"},
         {"id": "random", "type": "random", "next": ["one", "two"]},
         {"id": "one", "type": "dialogue", "text": "First greeting", "next": "end"},
-        {"id": "two", "type": "dialogue", "text": "Second greeting", "next": "end"},
+        {"id": "two", "type": "dialogue", "text": "再见，{name}！ {{name}}", "next": "end"},
         {"id": "end", "type": "end"},
     ])
     install_story(db, content)
@@ -235,10 +270,13 @@ def test_random_scene_is_drawn_once_and_survives_restore_and_request_retry(clien
     event_id = str(uuid4())
     selected = advance(client, student, story_space, start, event_id=event_id)
     assert selected["node"]["id"] == "two" and draws == [("one", "two")]
+    assert selected["node"]["text"] == "再见，学生！ {{name}}"
     db.expire_all()
     restored = client.get(f"/api/story/current?classroom_id={story_space}", headers=student["headers"]).json()
     resumed = interact(client, student, story_space)
-    repeated = advance(client, student, story_space, start, event_id=event_id)
+    browser = {**student, "headers": {**student["headers"], "X-Dialogue-Format": "template"}}
+    repeated = advance(client, browser, story_space, start, event_id=event_id)
+    assert repeated["node"]["text"] == "再见，{name}！ {{name}}" and repeated["chapter_id"] == 179
     assert {view["node"]["id"] for view in (restored, resumed, repeated)} == {"two"}
     assert all(view["revision"] == selected["revision"] for view in (restored, resumed, repeated))
     assert draws == [("one", "two")]

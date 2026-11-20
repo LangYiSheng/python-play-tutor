@@ -5,6 +5,12 @@ Source layout and atlas logic: scripts/generate-maps.mjs and build_srw_assets.py
 Generate explicitly with node scripts/generate-maps.mjs; it is not a build hook.
 The library is library.json (18 x 14), authored by scripts/generate-library.mjs.
 Use node scripts/generate-library.mjs --check to verify its reproducible layout.
+The mayor's hall has a central reception desk, a waiting bench by the west window
+and a writing station beside the archives. In the practice hall, two student
+workstations face the coach, with an open aisle from the entrance to the demonstration mat.
+Their layouts live in `scripts/rooms/mayor-hall.mjs` and `scripts/rooms/practice-hall.mjs`.
+Run `node scripts/generate-teaching-rooms.mjs --check` to verify both maps.
+Each has its own door and exit. Course building policies control student entry.
 Run node scripts/validate-world.mjs and node scripts/audit-assets.mjs after edits.
 
 The original town terrain/building/decoration/collision layers are retained.

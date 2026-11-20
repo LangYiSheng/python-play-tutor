@@ -169,7 +169,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `course_content/` | snapshot 保存当前定义快照供比较和交换；access/learning/evidence/presentation 共用授权、学习规则、证据与公开响应；activities/questions/releases/progress 维护活动、题库、发布和统计。定义快照不是学生可切换的课程版本。 |
 | `classrooms/` | 班级、成员、教师独立体验身份；课程内容不再混入班级接口文件。 |
 | `materials/` | storage 是本地/S3存储适配，uploads/conversion/jobs 负责上传解析与后台转换，delivery 负责私有文件与 Range 交付，access/presentation/service/router 维护授权、响应和接口。 |
-| `teaching/` | authoring、story、quests、world、conditions 分开定义校验、编写、运行状态、证据处理与 HTTP 装配。定义校验不依赖 HTTP 路由或应用编排，运行规则不反向调用教师编辑服务。 |
+| `teaching/` | authoring、story、quests、world、conditions 分开定义校验、编写、运行状态、证据处理与 HTTP 装配。定义校验不依赖 HTTP 路由或应用编排，运行规则不反向调用教师编辑服务。quick_template 把教师的模板和内容选择编译为相同的活动、任务、地图角色及对白。模板目录为教师后台提供环节和地点，学生端直接执行生成的定义。 |
 | `experience/` | navigation/stages/checkpoints 分别拥有内容定位、任务阶段预览应用和检查点；access/state/contracts/router 共享本人作用域、状态快照和接口。 |
 | `narration/` | 保留已有讲稿、校准、TTS与仓储边界。请求契约、资料授权、任务命令和环境默认值独立维护，HTTP路由与失败重试管理共用任务命令，不互调路由函数。 |
 

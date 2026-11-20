@@ -17,6 +17,7 @@ import {
   ArrowUpRight,
   ShieldCheck,
   FileAudio,
+  ListPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,7 @@ import { Packages } from "@/pages/packages";
 import { Teaching } from "@/pages/teaching";
 const Synthesis = lazy(() => import("@/pages/synthesis").then(module => ({ default: module.Synthesis })));
 const Judge = lazy(() => import("@/pages/judge").then(module => ({ default: module.Judge })));
+const QuickOrchestration = lazy(() => import("@/features/quick-orchestration/page").then(module => ({ default: module.QuickOrchestration })));
 const Authoring = lazy(() =>
   import("@/features/authoring/authoring-page").then((module) => ({ default: module.Authoring })),
 );
@@ -72,6 +74,7 @@ const classNav = [
   { key: "curriculum", title: "课程结构", icon: Layers3 },
   { key: "materials", title: "资料库", icon: LibraryBig },
   { key: "questions", title: "题库", icon: ListChecks },
+  { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
   { key: "activities", title: "学习活动", icon: BookOpen },
   { key: "authoring", title: "教学流程", icon: Layers3 },
   { key: "packages", title: "课程包", icon: Package },
@@ -84,6 +87,7 @@ type Page = (typeof nav)[number]["key"];
 const classroomScreens = {
   packages: Packages, students: Students, teaching: Teaching, curriculum: Curriculum, materials: Materials,
   questions: Questions, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
+  "quick-orchestration": QuickOrchestration,
 };
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
@@ -337,7 +341,7 @@ function Workbench() {
               <div key={item.key}>
                 {item.key === "classroom" && <p className="nav-label">班级教学</p>}
                 {item.key === "curriculum" && <p className="nav-label">课程内容</p>}
-                {item.key === "activities" && <p className="nav-label">课程编排</p>}
+                {item.key === "quick-orchestration" && <p className="nav-label">课程编排</p>}
                 {item.key === "settings" && <p className="nav-label">任务与设置</p>}
                 {link(item)}
               </div>

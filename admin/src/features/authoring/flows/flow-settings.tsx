@@ -10,11 +10,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConditionEditor } from "@/features/authoring/conditions/condition-editor";
-import type { Catalog, Flow } from "@/features/authoring/model";
+import type { Catalog, Flow, Quest } from "@/features/authoring/model";
 
 export function FlowSettings({
   flow,
   catalog,
+  quests,
   entries,
   onChange,
   onClose,
@@ -22,6 +23,7 @@ export function FlowSettings({
 }: {
   flow: Flow;
   catalog: Catalog;
+  quests: Quest[];
   entries: PickerGroup[];
   onChange: (flow: Flow) => void;
   onClose: () => void;
@@ -59,9 +61,10 @@ export function FlowSettings({
             <Label htmlFor="flow-chapter">所属章节</Label>
             <SelectField
               id="flow-chapter"
+              placeholder="公共流程"
               value={flow.chapter_id ?? ""}
               onValueChange={(value) =>
-                onChange({ ...flow, chapter_id: value || null })
+                onChange({ ...flow, chapter_id: value || null, quest_id: null })
               }
             >
               <option value="">公共流程</option>
@@ -101,7 +104,7 @@ export function FlowSettings({
                 }
               >
                 <option value="">选择任务</option>
-                {catalog.quests.map((quest) => (
+                {quests.filter(quest => quest.chapter_id === flow.chapter_id).map((quest) => (
                   <option key={quest.id} value={quest.id}>
                     {quest.title}
                   </option>

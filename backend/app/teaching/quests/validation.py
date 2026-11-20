@@ -27,16 +27,28 @@ DIALOGUE_EVIDENCE_ID_MAX_LENGTH = 207
 def validate_definition(definition: dict, db: Session | None = None, *, objects=None) -> dict:
     if not isinstance(definition, dict):
         raise ValueError("任务定义必须为对象")
-    if set(definition) - {"id", "title", "chapter_id", "nodes", "effects", "kind"}:
+    if set(definition) - {"id", "title", "chapter_id", "nodes", "effects", "kind", "when"}:
         raise ValueError("未知任务字段")
     if not isinstance(definition.get("id"), str) or not definition["id"].strip() or len(definition["id"]) > 100:
         raise ValueError("任务id必须为非空短字符串")
     if not isinstance(definition.get("title"), str) or not definition["title"].strip() or len(definition["title"]) > 200:
         raise ValueError("任务标题必须为非空短字符串")
-    if type(definition.get("chapter_id")) is not int or definition["chapter_id"] < 1:
-        raise ValueError("章节id必须为正整数")
+    chapter_id = definition.get("chapter_id")
+    if "chapter_id" not in definition or not (chapter_id is None and definition.get("kind") == "side" or type(chapter_id) is int and chapter_id > 0):
+        raise ValueError("请选择任务所属章节，全镇支线的章节可为空")
     if definition.get("kind", "main") not in ("main", "side"):
         raise ValueError("任务kind只能为main或side")
+    if "when" in definition:
+        gate = definition["when"]
+        if (definition.get("kind") != "side" or not isinstance(gate, dict) or set(gate) != {"activity_completed"}
+                or not isinstance(gate["activity_completed"], str) or not 1 <= len(gate["activity_completed"]) <= 100):
+            raise ValueError("支线开放条件必须指定已完成的活动")
+        if db:
+            activity = db.get(Activity, gate["activity_completed"])
+            if not activity or activity.content.get("published") is False:
+                raise ValueError("支线开放条件必须绑定已发布的活动")
+            if chapter_id is not None and activity.chapter_id != chapter_id:
+                raise ValueError("章节支线开放条件必须绑定本章已发布的活动")
     nodes = definition.get("nodes", [])
     if not isinstance(nodes, list) or not 1 <= len(nodes) <= 100 or any(not isinstance(node, dict) for node in nodes):
         raise ValueError("任务需要1至100个对象节点")
@@ -61,6 +73,7 @@ def validate_definition(definition: dict, db: Session | None = None, *, objects=
                 "choices",
                 "dialogue_id",
                 "navigation_target",
+                "workspace",
             }:
                 raise ValueError("未知节点字段")
             if (
@@ -72,6 +85,8 @@ def validate_definition(definition: dict, db: Session | None = None, *, objects=
                 raise ValueError("节点类型或标题无效")
             if "optional" in node and type(node["optional"]) is not bool:
                 raise ValueError("optional必须为布尔值")
+            if "workspace" in node and (node["type"] != "INTERACT_OBJECT" or node["workspace"] not in ("library", "journal", "classroom")):
+                raise ValueError("地图交互目标只能指定可打开的工作区")
             for field in ("target", "activity_id", "dialogue_id", "navigation_target"):
                 limit = DIALOGUE_EVIDENCE_ID_MAX_LENGTH if field == "dialogue_id" else 100
                 if field in node and (not isinstance(node[field], str) or not node[field].strip() or len(node[field]) > limit):
@@ -122,6 +137,8 @@ def validate_definition(definition: dict, db: Session | None = None, *, objects=
                     activity = db.get(Activity, node["activity_id"])
                     if not activity:
                         raise ValueError("活动不存在")
+                    if chapter_id is not None and activity.chapter_id != chapter_id:
+                        raise ValueError("章节任务的学习目标必须绑定本章活动")
                     if activity.content.get("published") is False:
                         raise ValueError("活动尚未发布")
                     expected = {"STUDY_LESSON": {"lesson", "reading"}, "COMPLETE_PRACTICE": {"practice"}, "PASS_ASSESSMENT": {"assessment"}}[
@@ -158,7 +175,7 @@ def validate_definition(definition: dict, db: Session | None = None, *, objects=
 
     for node_id in mapping:
         visit(node_id)
-    if db and not db.get(Chapter, definition["chapter_id"]):
+    if db and chapter_id is not None and not db.get(Chapter, chapter_id):
         raise ValueError("章节不存在")
     effects = definition.get("effects", [])
     if not isinstance(effects, list):

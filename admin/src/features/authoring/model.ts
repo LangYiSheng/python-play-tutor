@@ -96,12 +96,13 @@ export interface QuestNode {
 export interface Quest {
   id: string;
   title: string;
-  chapter_id: string;
+  chapter_id: string | null;
   definition: {
     id: string;
     title: string;
-    chapter_id: string;
+    chapter_id: string | null;
     kind?: "main" | "side";
+    when?: { activity_completed: string };
     nodes: QuestNode[];
     effects: Record<string, unknown>[];
   };
@@ -142,7 +143,7 @@ export interface Catalog {
     has_interior: boolean;
   }[];
   chapters: { id: string; title: string }[];
-  activities: { id: string; title: string; kind?: string }[];
+  activities: { id: string; title: string; kind?: string; chapter_id?: string; published?: boolean }[];
   npcs: { id: string; name: string; map_key?: string | null }[];
   quests: {
     id: string;

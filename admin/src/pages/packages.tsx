@@ -74,6 +74,7 @@ const labels: Record<string, string> = {
   npcs: "角色",
   examples: "示例",
   configuration: "课程配置",
+  quick_orchestration: "快速编排设置",
   releases: "发布安排",
   assets: "资源文件",
   narrations: "逐页讲稿与配音",

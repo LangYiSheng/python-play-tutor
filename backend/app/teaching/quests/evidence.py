@@ -8,7 +8,7 @@ from app.models import Npc, WorldFlag
 from app.teaching.world.proximity import check_near
 
 
-def validate_evidence(db, user, classroom_id, node, evidence):
+def validate_evidence(db, user, classroom_id, node, evidence, *, opened_workspace=None):
     kind = node["type"]
     target = node.get("target")
     if kind in {"TALK_TO_NPC", "PLAY_DIALOGUE", "REPORT_BACK"}:
@@ -28,6 +28,8 @@ def validate_evidence(db, user, classroom_id, node, evidence):
     elif kind in {"REACH_LOCATION", "INTERACT_OBJECT"}:
         if kind == "INTERACT_OBJECT" and evidence.get("object_id") != target:
             raise HTTPException(422, "互动对象不匹配")
+        if node.get("workspace") and node["workspace"] != opened_workspace:
+            raise HTTPException(422, "请通过该地图对象打开指定工作区")
         from app.teaching.world.runtime import course_object_points
 
         points = course_object_points(db, user, classroom_id, target)

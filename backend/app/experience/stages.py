@@ -83,7 +83,8 @@ def prepare_stage(body, db, user):
     definition = db.scalar(select(QuestDefinition).where(QuestDefinition.id == body.quest_id, course_clause(db, QuestDefinition, body.classroom_id)))
     if not definition:
         raise HTTPException(404, "本班任务不存在")
-    authorize_chapter(db, user, body.classroom_id, definition.chapter_id)
+    if definition.chapter_id is not None:
+        authorize_chapter(db, user, body.classroom_id, definition.chapter_id)
     return definition, stage_plan(definition.definition, body.node_id, body.choices, body.any_dependencies)
 
 

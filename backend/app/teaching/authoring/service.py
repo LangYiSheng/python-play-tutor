@@ -62,7 +62,8 @@ def _catalog(data):
             for b in area["buildings"]
         ],
         "chapters": [{"id": row["id"], "title": row["title"]} for row in data["chapter"]],
-        "activities": [{"id": row["id"], "title": row["title"], "kind": row["kind"]} for row in data["activity"]],
+        "activities": [{**{key: row[key] for key in ("id", "title", "kind", "chapter_id")},
+                        "published": row["content"].get("published") is not False} for row in data["activity"]],
         "npcs": [{"id": row["id"], "name": row["name"], "map_key": row["placement"]["map_key"] if row["placement"] else None} for row in data["npc"]],
         "quests": [
             {

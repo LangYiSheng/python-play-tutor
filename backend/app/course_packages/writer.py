@@ -49,7 +49,11 @@ def write_package(db, instance, root):
     if any(material.kind == "video" for material in rows[Material]):
         manifest["requires"]["capabilities"].append("video")
     _write_yaml(root / "manifest.yaml", manifest)
-    _write_yaml(root / "curriculum/course.yaml", {"schema_version": 1, "title": instance.name, "releases": releases})
+    course = {"schema_version": 1, "title": instance.name, "releases": releases}
+    recipe = config.get("_quick_orchestration", {}).get("recipe")
+    if recipe is not None:
+        course["quick_orchestration"] = recipe
+    _write_yaml(root / "curriculum/course.yaml", course)
     chapter_paths = {
         row["id"]: f"curriculum/chapters/{index:04d}" for index, row in enumerate(sorted(data["chapter"], key=lambda r: r["order_index"]))
     }
@@ -62,7 +66,8 @@ def write_package(db, instance, root):
     for index, row in enumerate(data["activity"]):
         _write_yaml(root / f"content/activities/{index:06d}.yaml", row)
     for index, row in enumerate(data["quest"]):
-        _write_yaml(root / chapter_paths[row["chapter_id"]] / f"quests/{index:06d}.yaml", row)
+        parent = "world" if row["chapter_id"] is None else chapter_paths[row["chapter_id"]]
+        _write_yaml(root / parent / "quests" / f"{index:06d}.yaml", row)
     for index, row in enumerate(data["story"]):
         prefix = chapter_paths[row["chapter_id"]] + "/flows" if row["chapter_id"] else "world/flows"
         _write_yaml(root / prefix / f"{index:06d}.yaml", row)

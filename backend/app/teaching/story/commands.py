@@ -208,6 +208,10 @@ def advance(session_id: str, body: AdvanceInput, db: Session, user: User):
     selected = next((choice for choice in choices if choice["id"] == body.choice), None)
     if choices and not selected or body.choice and not choices:
         raise HTTPException(422, "请选择当前对白选项")
+    if node["type"] == "action" and node["action"] == "open_workspace" and session.interaction_id:
+        from app.teaching.quests.interactions import record_interaction
+
+        record_interaction(db, user, session.classroom_id, session.interaction_id, session, opened_workspace=node["workspace"])
     checkpoint = node.get("checkpoint")
     if checkpoint:
         if instance is None:

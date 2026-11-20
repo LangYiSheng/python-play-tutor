@@ -13,6 +13,12 @@ Count = Annotated[int, Field(strict=True, ge=0, le=500)]
 KIND_LABELS = {"single_choice": "单选", "multiple_choice": "多选", "boolean": "判断", "fill": "填空", "python": "编程"}
 
 
+class QuestionShortages(ValueError):
+    def __init__(self, messages):
+        self.messages = list(messages)
+        super().__init__("\n".join(self.messages))
+
+
 class PracticeGoal(BaseModel):
     model_config = ConfigDict(extra="forbid")
     knowledge_point_id: int = Field(strict=True, gt=0)
@@ -95,8 +101,8 @@ def _augment(group, candidates, assigned):
     return False
 
 
-def allocate_initial(rules, pool, *, shuffle=True, point_titles=None):
-    """Simultaneously satisfy typed minima and remaining unrestricted slots with distinct questions."""
+def allocate_initial(rules, pool, *, shuffle=True, point_titles=None, exact_kinds=False):
+    """Match distinct questions across goals; fixed papers can reserve exact kind counts."""
     quotas, candidates = {}, {}
     rng = SystemRandom()
     result = {}
@@ -110,11 +116,15 @@ def allocate_initial(rules, pool, *, shuffle=True, point_titles=None):
             if count:
                 group = (point, kind)
                 quotas[group] = count
-                candidates[group] = [key for key, actual in choices.items() if kind is None or actual == kind]
+                if kind is None:
+                    candidates[group] = [key for key, actual in choices.items() if not exact_kinds or actual not in minima]
+                else:
+                    candidates[group] = [key for key, actual in choices.items() if actual == kind]
                 if shuffle:
                     rng.shuffle(candidates[group])
 
     assigned = {}
+    shortages = []
     for group in sorted(quotas, key=lambda g: len(candidates[g]) - quotas[g]):
         needed = quotas[group]
         for question in candidates[group]:
@@ -127,8 +137,15 @@ def allocate_initial(rules, pool, *, shuffle=True, point_titles=None):
             if not _augment(group, candidates, assigned):
                 point, kind = group
                 title = (point_titles or {}).get(point, str(point))
-                label = KIND_LABELS.get(kind, "任意题型")
-                raise ValueError(f"知识点「{title}」的{label}目标缺少 {remaining} 道可分配题目（已按各知识点去重）")
+                has_typed_quota = any(goal["knowledge_point_id"] == point and goal.get("by_kind") for goal in rules["goals"])
+                label = KIND_LABELS.get(kind, "其余题型" if exact_kinds and has_typed_quota else "任意题型")
+                message = f"知识点「{title}」的{label}目标缺少 {remaining} 道可分配题目（已按各知识点去重）"
+                if not exact_kinds:
+                    raise ValueError(message)
+                shortages.append(message)
+                break
+    if shortages:
+        raise QuestionShortages(shortages)
     for question, (point, _) in assigned.items():
         result[point].append(question)
     if shuffle:

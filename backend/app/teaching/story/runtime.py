@@ -105,6 +105,7 @@ def _view(db, user, session):
         "mode": story.content.get("mode", "task"),
         "npc_key": session.npc_key,
         "interaction_id": session.interaction_id,
+        **({"chapter_id": story.chapter_id} if node and node["type"] == "dialogue" else {}),
         "node": node,
         "activity": activity,
     }

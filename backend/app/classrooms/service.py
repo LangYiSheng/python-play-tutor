@@ -11,23 +11,27 @@ from app.auth import hash_password, issue, preview_classroom, token_hash
 from app.classrooms.access import classroom_payload, own_classroom
 from app.classrooms.contracts import ClassroomInput, JoinInput
 from app.course_scope import lock_course
-from app.models import Classroom, Membership, TownPreviewStudent, User
+from app.models import Classroom, CourseInstance, Membership, TownPreviewStudent, User
 from app.teacher_scope import teacher_instance_id
 
 
 def list_classrooms(db: Session, user: User):
+    query = (
+        select(Classroom, User.name, CourseInstance.name)
+        .join(User, User.id == Classroom.teacher_id)
+        .outerjoin(CourseInstance, CourseInstance.classroom_id == Classroom.id)
+        .where(Classroom.status == "active")
+    )
     preview = db.get(TownPreviewStudent, user.id)
     if preview:
         classroom = preview_classroom(db, preview)
-        return [classroom_payload(classroom, user, db.get(User, classroom.teacher_id).name)]
-    memberships = select(Membership.classroom_id).where(Membership.user_id == user.id)
-    query = select(Classroom, User.name).join(User, User.id == Classroom.teacher_id)
-    query = query.where(Classroom.status == "active")
-    if user.role == "teacher":
+        query = query.where(Classroom.id == classroom.id)
+    elif user.role == "teacher":
         query = query.where(Classroom.teacher_id == user.id)
     elif user.role != "admin":
+        memberships = select(Membership.classroom_id).where(Membership.user_id == user.id)
         query = query.where(Classroom.id.in_(memberships))
-    return [classroom_payload(item, user, name) for item, name in db.execute(query)]
+    return [{**classroom_payload(item, user, name), "course_name": course_name} for item, name, course_name in db.execute(query)]
 
 
 def create_classroom(body: ClassroomInput, db: Session, user: User):

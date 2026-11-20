@@ -195,7 +195,7 @@ class Npc(CourseContent, Base):
 class QuestDefinition(RetirableContent, CourseContent, Base):
     __tablename__ = "quest_definitions"
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id"), index=True)
+    chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     definition: Mapped[dict] = mapped_column(JSON)
