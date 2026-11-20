@@ -94,22 +94,20 @@ export function NarrationPagePreview({
           />
         )}
       </div>
-      <details className="text-sm" open>
-        <summary className="cursor-pointer">
-          整理稿（{digest?.text.length ?? 0} 字）
-        </summary>
-        <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded border p-2 text-xs">
-          {digest?.text || "（这页还没有整理稿）"}
-        </pre>
-      </details>
-      <details className="text-sm">
-        <summary className="cursor-pointer">
-          查看原始文本（{page.source_chars} 字）
-        </summary>
-        <pre className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded border p-2 text-xs">
-          {page.raw_text || page.source_text || "（无文本层，内容在页面图像里）"}
-        </pre>
-      </details>
+      <div className="grid gap-2 text-sm sm:grid-cols-2">
+        <section className="min-w-0 space-y-1 rounded border p-2">
+          <p className="font-medium">整理稿（{digest?.text.length ?? 0} 字）</p>
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs">
+            {digest?.text || "（这页还没有整理稿）"}
+          </pre>
+        </section>
+        <section className="min-w-0 space-y-1 rounded border p-2">
+          <p className="font-medium">原始文本（{page.source_chars} 字）</p>
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs">
+            {page.raw_text || page.source_text || "（无文本层，内容在页面图像里）"}
+          </pre>
+        </section>
+      </div>
     </div>
   );
 }

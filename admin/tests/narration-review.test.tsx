@@ -215,7 +215,7 @@ it("shows the digest read-only and folds the raw text", async () => {
   expect(screen.getByText("监督学习")).toBeTruthy();
   expect(screen.getByText("这一页讲监督学习的定义")).toBeTruthy();
   expect(screen.getByText("标签：监督学习")).toBeTruthy();
-  expect(screen.getByText(/查看原始文本（12 字）/)).toBeTruthy();
+  expect(screen.getByText(/原始文本（12 字）/)).toBeTruthy();
   expect(screen.queryByLabelText("本页标题")).toBeNull();
   expect(screen.queryByRole("button", { name: /保存标题与标签/ })).toBeNull();
 });
