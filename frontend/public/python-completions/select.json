@@ -1,0 +1,1 @@
+{"name":"select","members":[{"name":"error","kind":"class","signature":"","doc":"Base class for I/O related errors."},{"name":"select","kind":"function","signature":"(rlist, wlist, xlist, timeout=None, /)","doc":"Wait until one or more file descriptors are ready for some kind of I/O. The first three arguments are iterables of file descriptors to be waited for: rlist -- w"}]}

@@ -1,0 +1,1 @@
+{"name":"keyword","members":[{"name":"iskeyword","kind":"function","signature":"","doc":"x.__contains__(y) <==> y in x."},{"name":"issoftkeyword","kind":"function","signature":"","doc":"x.__contains__(y) <==> y in x."},{"name":"kwlist","kind":"constant","signature":"","doc":""},{"name":"softkwlist","kind":"constant","signature":"","doc":""}]}

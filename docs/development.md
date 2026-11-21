@@ -23,6 +23,10 @@
 
 学生端 `npm run dev` / `npm run build` 的前置脚本从锁定的 `pyodide@0.27.7` 复制核心运行文件及许可到忽略的 `frontend/public/python-runtime/0.27.7/`，构建后随 Web 分发。浏览器无需访问外部 CDN；Nginx/Vite 仅为该公开静态路径提供跨源读取。不要给 `/api` 放开此设置。运行器实测使用独立 Vite 测试地址设置 `PYTHON_RUNNER_DEV_URL`，再执行 `frontend/e2e/pythonRunner.spec.ts`；本地静态文件准备并不代表所有第三方 Python 包已安装。
 
+### Python 补全数据
+
+`frontend/public/python-completions/` 由 `frontend/scripts/generate-python-completions.py` 用 Python 3.12 生成：模块名来自 `sys.stdlib_module_names`，成员、签名和首行说明来自 `inspect`，前端在输入 `模块.` 时按模块懒加载，不手改生成的 JSON。脚本跳过 Windows-only 模块；优先在与 Pyodide 一致的 Linux 3.12 环境重跑并提交生成物，Windows 3.12 可用于常规标准库。升级 Pyodide 或 Python 后重跑；该数据只服务编辑器提示，不改变沙箱、判题或第三方包安装限制。
+
 ### 首次启动
 
 首次创建 `deploy/.env` 时，从 `deploy/.env.example` 复制，已有文件则保留。设置两个独立随机值 `REBORN_DB_PASSWORD` 和 `REBORN_GO_JUDGE_AUTH_TOKEN`；推荐分别使用32字节的十六进制随机值，避免数据库 URL 中的特殊字符。首次管理员按下文配置。AI和可选转换器未配置时保留空值。

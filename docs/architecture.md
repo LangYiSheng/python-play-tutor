@@ -159,6 +159,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `frontend/src/features/developer/` | DeveloperWorkspace 组装账户概要、内容定位、任务阶段、体验检查点四个图标侧标签。模块内 API 和请求协调器负责权限范围、并发动作与迟到结果；重置指向当前学生在当前班级的进度。 |
 | `frontend/src/features/learning/` | LessonWorkspace 组装阅读与支持侧栏；LessonMaterial 负责 PDF、文本、视频展示；source、reading evidence、video、completion、goals 分别管理资料生命周期、阅读证据、播放采样、显式完成和目标展示。旧资料的迟到响应不能覆盖新资料，离开释放媒体 URL。 |
 | `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |
+| `frontend/scripts/generate-python-completions.py`、`frontend/public/python-completions/` | 维护期从 Python 标准库生成 manifest 和按模块 JSON（成员、签名、首行说明），编辑器输入 `模块.` 时懒加载；不手写成员表，不执行学生代码，不引入语言服务器。 |
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
 | `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境、输入、场景生命周期；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。 |
 

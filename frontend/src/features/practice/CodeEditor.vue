@@ -31,6 +31,10 @@ onMounted(async () => {
       minimap: { enabled: false }, glyphMargin: false, folding: false,
       wordWrap: "on", lineNumbersMinChars: 3, scrollBeyondLastLine: false,
       padding: { top: 12, bottom: 12 }, tabSize: 4, overviewRulerLanes: 0,
+      quickSuggestions: { other: true, comments: false, strings: false },
+      suggestOnTriggerCharacters: true,
+      wordBasedSuggestions: "currentDocument",
+      snippetSuggestions: "inline",
       scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
       unicodeHighlight: { ambiguousCharacters: false, nonBasicASCII: false },
     });
