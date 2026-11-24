@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type APIResponse, type ElementHandle, type Locator, type Page, type Response, type TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -44,11 +45,8 @@ async function prepare(request: APIRequestContext) {
   await json(await request.put(`/api/teacher/classrooms/${classroom.id}/releases/${ids.chapter["179"]}`, {
     headers: teacher, data: { status: "published" },
   }));
-  const identity = await json<Identity>(await request.post("/api/auth/register", {
-    data: { name: "游戏界面验收居民", student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Resident-${randomUUID()}` },
-  }));
+  const { identity } = await provisionStudent(request, teacher, classroom.id, "游戏界面验收居民");
   const student: Headers = { Authorization: `Bearer ${identity.access_token}` };
-  await json(await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } }));
   const readWorld = () => request.get(`/api/world?classroom_id=${classroom.id}`, { headers: student }).then(json<World>);
   const mayor = (await readWorld()).npcs.find(npc => npc.key === ids.npc.mayor_py)!;
   await json(await request.put("/api/world/position", { headers: student, data: {

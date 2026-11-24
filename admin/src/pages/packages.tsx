@@ -17,6 +17,7 @@ import { PageHeader, ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { errorMessage, request, token } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
+import { toast } from "@/components/ui/toast";
 import { type TransferBytes } from "@/lib/package-transfer";
 import { formatTimestamp } from "@/lib/time";
 import { useResource } from "@/lib/use-resource";
@@ -154,7 +155,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
   const [preview, setPreview] = useState<Preview | null>(null),
     [requestKey, setRequestKey] = useState(""),
     [error, setError] = useState<{ phase: Phase; message: string } | null>(null),
-    [message, setMessage] = useState(""),
+    [exportPath, setExportPath] = useState(""),
     [operation, setOperation] = useState<Operation | null>(null),
     [confirmed, setConfirmed] = useState(false),
     [search, setSearch] = useState(""),
@@ -175,7 +176,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
     const isCurrent = () => !controller.signal.aborted && captured === token();
     setOperation({ phase });
     setError(null);
-    setMessage("");
+    setExportPath("");
     try {
       const result = await execute(controller.signal, (progress) => {
         if (isCurrent()) setOperation(progress);
@@ -195,7 +196,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
       setDeleting(null);
       setPreview(null);
       setConfirmed(false);
-      setMessage("导出的课程包已删除，班级课程和学生记录不受影响。");
+      toast.add({ title: "共享课程包已删除", type: "success" });
       available.reload();
     });
   }
@@ -235,7 +236,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
         setPreview(null);
         setConfirmed(false);
         available.reload();
-        setMessage("课程包已导入，班级课程已更新。");
+        toast.add({ title: "课程包已导入", type: "success" });
       },
     );
   }
@@ -245,7 +246,8 @@ export function Packages({ classroomId }: { classroomId: number }) {
       "packaging",
       (signal) => request<{ path: string }>(`${base}/export`, { signal }),
       (result) => {
-        setMessage(`课程已导出到 ${result.path}`);
+        setExportPath(result.path);
+        toast.add({ title: "课程包已导出", type: "success" });
         available.reload();
       },
     );
@@ -288,11 +290,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
       <OperationProgress
         operation={operation?.phase === "packaging" || operation?.phase === "downloading" ? operation : null}
       />
-      {message ? (
-        <div role="status" className="notice-success">
-          {message}
-        </div>
-      ) : null}
+      {exportPath && <p className="hint break-all">课程已导出到 <code>{exportPath}</code></p>}
       <section className="surface p-6 mt-4">
         <div className="flex gap-3 items-center mb-5">
           <div className="icon-box">

@@ -27,7 +27,7 @@ export function AuthoringActions({
   onDiscard: () => void;
   onValidate: (save?: boolean) => void;
 }) {
-  const { busy, assetBusy, dirty, message } = draft;
+  const { busy, assetBusy, dirty } = draft;
   return (
     <PageHeader
       title="教学流程"
@@ -85,11 +85,6 @@ export function AuthoringActions({
               className="size-1.5 rounded-full bg-amber-500"
             />
             未保存
-          </Badge>
-        ) : message === "课程已保存。" ? (
-          <Badge variant="secondary" className="gap-1.5">
-            <CheckCheck />
-            {message}
           </Badge>
         ) : null}
       </span>

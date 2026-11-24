@@ -152,8 +152,9 @@ def test_session_idempotency_revision_choice_and_account_isolation(client, db, s
     body["event_id"] = str(uuid4())
     assert client.post(path, json=body, headers=student["headers"]).status_code == 409
     assert client.post(path, json=body, headers=teacher["headers"]).status_code == 403
-    stranger = client.post("/api/auth/register", json={"student_id": "181721318161492", "name": "Stranger", "password": "long-enough-password"}).json()
-    stranger_headers = {"Authorization": "Bearer " + stranger["access_token"]}
+    from conftest import make_student_account
+
+    stranger_headers = make_student_account(db, "181721318161492", "Stranger")["headers"]
     assert client.post(path, json=body, headers=stranger_headers).status_code == 403
     assert db.scalar(select(func.count()).select_from(StorySession).where(StorySession.status.in_(["active", "waiting"]))) == 0
 

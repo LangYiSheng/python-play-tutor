@@ -1,5 +1,6 @@
 import { it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { render } from "./render-with-toasts";
 import userEvent from "@testing-library/user-event";
 import { Students } from "../src/pages/students";
 import { Login } from "../src/pages/login";
@@ -10,11 +11,13 @@ function json(data: unknown, status = 200) {
     headers: { "Content-Type": "application/json" },
   });
 }
-it("keeps leading-zero IDs when creating students in the selected class", async () => {
+it("previews a roster without creating accounts and preserves leading zeroes on confirmation", async () => {
   const calls: { url: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith("/import-preview"))
+        return json({ students: [{ student_id: "00123456", name: "测试学生", action: "create" }] });
       if (init.method === "POST") {
         calls.push({ url, body: JSON.parse(init.body as string) });
         return json({ created: 1, bound: 0, existing: 0 });
@@ -24,15 +27,17 @@ it("keeps leading-zero IDs when creating students in the selected class", async 
   );
   const user = userEvent.setup();
   render(<Students classroomId={31} />);
-  await user.click(screen.getByRole("button", { name: "添加学生" }));
-  await user.type(screen.getByLabelText("学号"), "001234");
-  await user.type(screen.getByLabelText("姓名"), "测试学生");
-  await user.click(screen.getByRole("button", { name: "确认添加" }));
-  await screen.findByRole("status");
+  await user.click(screen.getByRole("button", { name: "导入学生" }));
+  await user.upload(screen.getByLabelText("CSV 或 XLSX 文件"),
+    new File(["学号,姓名\n00123456,测试学生"], "students.csv", { type: "text/csv" }));
+  await screen.findByText(/将新建 1 人/);
+  expect(calls).toEqual([]);
+  await user.click(screen.getByRole("button", { name: "确认导入" }));
+  await screen.findByText("名册已导入");
   expect(calls).toEqual([
     {
       url: "/api/teacher/classrooms/31/students",
-      body: { students: [{ student_id: "001234", name: "测试学生" }] },
+      body: { students: [{ student_id: "00123456", name: "测试学生" }] },
     },
   ]);
 });
@@ -85,32 +90,6 @@ it("requires explicit confirmation and sends only selected students for removal"
     }),
   );
 });
-it("previews student tables without creating accounts automatically", async () => {
-  const mutations: string[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init: RequestInit) => {
-      if (init.method === "POST") {
-        mutations.push(url);
-        return json({
-          students: [{ student_id: "001", name: "新学生", action: "create" }],
-        });
-      }
-      return json([]);
-    }),
-  );
-  const user = userEvent.setup();
-  render(<Students classroomId={31} />);
-  await user.click(screen.getByRole("button", { name: "导入学生" }));
-  await user.upload(
-    screen.getByLabelText("CSV 或 XLSX 文件"),
-    new File(["学号,姓名\n001,新学生"], "students.csv", { type: "text/csv" }),
-  );
-  await screen.findByText(/将新建 1 人/);
-  expect(mutations).toEqual([
-    "/api/teacher/classrooms/31/students/import-preview",
-  ]);
-});
 it("does not grant a student access to the teacher app", async () => {
   vi.stubGlobal(
     "fetch",
@@ -124,7 +103,7 @@ it("does not grant a student access to the teacher app", async () => {
   const logged = vi.fn(),
     user = userEvent.setup();
   render(<Login onLogin={logged} />);
-  await user.type(screen.getByLabelText("学号"), "001");
+  await user.type(screen.getByLabelText("工号"), "001");
   await user.type(screen.getByLabelText("密码"), "password");
   await user.click(screen.getByRole("button", { name: "进入工作台" }));
   await screen.findByRole("alert");

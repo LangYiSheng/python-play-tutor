@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render } from "./render-with-toasts";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClassroomManagement } from "@/features/management/classrooms";
@@ -36,18 +37,30 @@ it("keeps classes with learning records available for archiving while limiting f
   expect(fetch.mock.calls.filter(([path, init]) => init.method === "DELETE" && path === "/api/teacher/classrooms/7")).toHaveLength(1);
 });
 
-it("lets administrators reset an unbound student's password without creating or deleting an account", async () => {
-  const student = { id: 5, name: "小林", student_id: "0005", role: "student", classrooms: [], must_change_password: false };
+it("lets administrators reset an unbound legacy student's password using a valid temporary password", async () => {
+  const student = { id: 5, name: "小林", student_id: "0005", role: "student", classrooms: [], must_change_password: false, disabled: false };
   const fetch = vi.fn(async (url: string, init: RequestInit) => Response.json(url.endsWith("/classrooms/management") ? [row] : init.method === "POST" ? { ok: true } : { items: [student], total: 1 }));
   vi.stubGlobal("fetch", fetch);
   const user = userEvent.setup();
   render(<Accounts role="student" />);
   await screen.findByText("未关联班级");
-  expect(screen.queryByRole("button", { name: /删除/ })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "重置密码" }));
-  expect(await screen.findByRole("dialog")).toHaveTextContent("学号 0005");
-  await user.click(screen.getByRole("button", { name: "确认重置" }));
-  expect(await screen.findByText("已重置 小林 的密码。")).toBeVisible();
+  expect(screen.getByRole("button", { name: "修改姓名" })).toBeVisible();
+  const reset = screen.getByRole("button", { name: "重置密码" });
+  expect(reset).toBeVisible();
+  screen.getByRole("button", { name: "管理 小林" }).focus();
+  await user.keyboard("{Enter}");
+  expect(await screen.findByRole("menuitem", { name: "删除账号" })).toBeVisible();
+  expect(screen.getByRole("menuitem", { name: "停用账号" })).toBeVisible();
+  await user.keyboard("{Escape}");
+  await user.click(reset);
+  expect(await screen.findByRole("dialog")).toHaveTextContent("学号不足 8 位");
+  const confirm = screen.getByRole("button", { name: "确认重置密码" });
+  await user.type(screen.getByLabelText("临时密码"), "1234567");
+  expect(screen.getByText("密码至少需要 8 位")).toBeVisible();
+  expect(confirm).toBeDisabled();
+  await user.type(screen.getByLabelText("临时密码"), "8");
+  await user.click(confirm);
+  expect(await screen.findByText("已重置密码 · 小林")).toBeVisible();
   expect(fetch.mock.calls.filter(([url, init]) => url === "/api/admin/accounts/5/reset-password" && init.method === "POST")).toHaveLength(1);
 });
 

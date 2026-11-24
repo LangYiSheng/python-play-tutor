@@ -137,13 +137,17 @@ def run_jobs(db):
     return drive
 
 
-@pytest.fixture
-def student(db):
-    row = User(student_id="72953879102235", name="学生", role="student", password_hash=hash_password("student-password-123"))
+def make_student_account(db, student_id, name):
+    row = User(student_id=student_id, name=name, role="student", password_hash=hash_password("student-password-123"))
     db.add(row)
     db.commit()
     token = issue(db, row)["access_token"]
     return {"id": row.id, "student_id": row.student_id, "headers": {"Authorization": "Bearer " + token}}
+
+
+@pytest.fixture
+def student(db):
+    return make_student_account(db, "72953879102235", "学生")
 
 
 @pytest.fixture

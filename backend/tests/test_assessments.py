@@ -190,8 +190,9 @@ def test_python_whole_paper_uses_existing_judge_and_unknown_is_never_resubmitted
 
 def test_paper_is_private_to_authenticated_student_and_joined_class(client, db, student, teacher, classroom):
     paper = hand_in(client, db, student, classroom).json()
-    other = client.post("/api/auth/register", json={"student_id": "150856393061526", "name": "Other", "password": "other-password-123"}).json()
-    headers = {"Authorization": "Bearer " + other["access_token"]}
+    from conftest import make_student_account
+
+    headers = make_student_account(db, "150856393061526", "Other")["headers"]
     assert client.get(url(classroom) + f"?classroom_id={classroom['id']}", headers=headers).status_code == 403
     client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=headers)
     other_paper = client.get(url(classroom) + f"?classroom_id={classroom['id']}", headers=headers).json()

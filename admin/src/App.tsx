@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ErrorNotice, Loading, Empty } from "@/components/common";
 import { PasswordDialog } from "@/components/password-dialog";
+import { toast } from "@/components/ui/toast";
 import { api, errorMessage, setToken, token } from "@/lib/api";
 import { DraftProvider, useCanLeave } from "@/lib/drafts";
 import { openTownPreview } from "@/lib/town-preview";
@@ -116,6 +117,10 @@ function currentPage(): Page {
   }
   return pages.some((n) => n.key === part) ? (part as Page) : "classes";
 }
+function replaceWithClasses() {
+  history.replaceState({}, "", "/teacher/classes");
+  return "classes" as const;
+}
 export default function App() {
   return (
     <DraftProvider>
@@ -150,7 +155,11 @@ function Workbench() {
             if (u.role === "student") {
               setToken(null);
               setError("请使用教师账号登录");
-            } else setUser(u);
+            } else {
+              if (u.role !== "admin" && globalNav.some(item => item.key === location.pathname.split("/")[2] && item.adminOnly))
+                setPage(replaceWithClasses());
+              setUser(u);
+            }
           }
         })
         .catch((e) => {
@@ -165,12 +174,14 @@ function Workbench() {
   }, []);
   useEffect(() => {
     const expire = () => {
+      toast.close();
       setUser(null);
       setClasses([]);
       setClassroomId(null);
       setPasswordOpen(false);
       setNewClass(false);
       setClassName("");
+      setPage(replaceWithClasses());
       setError("登录已失效，请重新登录。");
     };
     window.addEventListener("session-expired", expire);
@@ -197,12 +208,15 @@ function Workbench() {
   }, [user?.id, user?.must_change_password, classListRevision]);
   useEffect(() => {
     const pop = () => {
-      if (canLeave()) setPage(currentPage());
+      if (canLeave()) {
+        const next = currentPage();
+        setPage(user?.role !== "admin" && globalNav.some(item => item.key === next && item.adminOnly) ? replaceWithClasses() : next);
+      }
       else history.pushState({}, "", `/teacher/${page}`);
     };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
-  }, [canLeave, page]);
+  }, [canLeave, page, user?.role]);
   function navigate(next: Page) {
     if (next === page) return;
     if (!canLeave()) return;
@@ -258,19 +272,23 @@ function Workbench() {
     }
   }
   async function logout() {
-    if (!canLeave()) return;
+    if (busy || !canLeave()) return;
     setBusy(true);
     try {
       await api.post("/auth/logout", {});
       setToken(null);
+      toast.close();
+      if (user) sessionStorage.removeItem(`classroom:${user.id}`);
       setUser(null);
       setClasses([]);
       setClassroomId(null);
       setPasswordOpen(false);
       setNewClass(false);
       setClassName("");
+      setError("");
+      setPage(replaceWithClasses());
     } catch (e) {
-      setError(errorMessage(e));
+      if (token()) toast.add({ title: errorMessage(e), type: "error" });
     } finally {
       setBusy(false);
     }
@@ -295,13 +313,14 @@ function Workbench() {
         <Login
           onLogin={(u) => {
             setError("");
+            setPage(replaceWithClasses());
             setUser(u);
           }}
         />
       </>
     );
   if (user.must_change_password) {
-    return <PasswordDialog open required onClose={() => {}} onUser={setUser} />;
+    return <PasswordDialog open required onClose={() => {}} onUser={setUser} user={user} onLogout={logout} />;
   }
   const classroom = classes.find((c) => c.id === classroomId);
   const isAdmin = user.role === "admin";
@@ -328,7 +347,7 @@ function Workbench() {
           onCreate={() => setNewClass(true)} onChanged={() => setClassListRevision(value => value + 1)} />;
       case "teachers":
       case "accounts":
-        return <Accounts role={page === "teachers" ? "teacher" : "student"} />;
+        return <Accounts role={page === "teachers" ? "teacher" : "student"} onChanged={() => setClassListRevision(value => value + 1)} />;
       case "overview":
         return <GlobalOverview onOpen={openClass} />;
       case "system":
@@ -461,11 +480,12 @@ function Workbench() {
           </Suspense>
         </main>
       </div>
-      <PasswordDialog
+      {passwordOpen && <PasswordDialog
         open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
         onUser={setUser}
-      />
+        user={user}
+      />}
       <Dialog
         open={newClass}
         onOpenChange={(v) => {

@@ -8,6 +8,7 @@ import {
   type Response,
 } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { provisionStudent, signInStudent } from "./studentAccount";
 
 interface StoryWorld {
   player: { map_key: string; tile_x: number; tile_y: number };
@@ -55,16 +56,8 @@ async function dismissArrival(page: Page) {
   await expect(page.locator(".world-canvas canvas")).toHaveCount(1);
 }
 
-async function registerStudent(page: Page, joinCode: string, name: string) {
-  await page.getByRole("button", { name: "初次到访？注册居民证" }).click();
-  await page.getByLabel("名字", { exact: true }).fill(name);
-  await page
-    .getByLabel("学号", { exact: true })
-    .fill(BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString());
-  await page.getByLabel("密码", { exact: true }).fill(`Story-${randomUUID()}`);
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-  await page.getByLabel("班级加入码").fill(joinCode);
-  await page.getByRole("button", { name: "加入班级", exact: true }).click();
+async function enterStudent(page: Page, credentials: { student_id: string; password: string }) {
+  await signInStudent(page, credentials);
   await dismissArrival(page);
   const token = await page.evaluate(() =>
     sessionStorage.getItem("pythontopia-reborn-session"),
@@ -266,11 +259,7 @@ for (const viewport of [
       expect(release.ok(), await release.text()).toBeTruthy();
 
       await page.goto("/");
-      const student = await registerStudent(
-        page,
-        classroom.join_code,
-        `剧情新居民-${viewport.name}`,
-      );
+      const student = await enterStudent(page, (await provisionStudent(request, teacher, classroom.id, `剧情新居民-${viewport.name}`)).credentials);
       const readWorld = () =>
         readJson<StoryWorld>(
           request,
@@ -457,11 +446,7 @@ for (const viewport of [
 
       await page.getByRole("button", { name: "打开设置" }).click();
       await page.getByRole("button", { name: "退出账号", exact: true }).click();
-      const other = await registerStudent(
-        page,
-        classroom.join_code,
-        `另一位居民-${viewport.name}`,
-      );
+      const other = await enterStudent(page, (await provisionStudent(request, teacher, classroom.id, `另一位居民-${viewport.name}`)).credentials);
       const otherWorld = await readJson<StoryWorld>(
         request,
         `/api/world?classroom_id=${classroom.id}`,

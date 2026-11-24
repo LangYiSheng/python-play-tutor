@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { ChevronRight, CircleAlert, RotateCcw, Square } from "lucide-react";
-import { Empty, ErrorNotice } from "@/components/common";
+import { Empty } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, token } from "@/lib/api";
 import { taskNodeId } from "./graph-layout";
 import { stageTitle, taskFailed, taskPercent, taskStage, taskStatus, taskTitle, taskWork, type TaskSnapshot } from "./task-presentation";
 
@@ -13,28 +14,30 @@ type Controls = { request: (target: Pending) => void };
 
 export function useTaskCommands(classroomId: number | undefined, refresh: () => void) {
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false);
-  const [error, setError] = useState(""), [notice, setNotice] = useState("");
   function request(target: Pending) {
-    setError(""); setNotice(""); setPending(target);
+    setPending(target);
   }
   async function submit() {
     if (!pending?.job.started_at || busy || classroomId === undefined) return;
-    setBusy(true); setError("");
+    setBusy(true);
+    const captured = token();
     const { job, command, material } = pending;
     try {
       const result = await api.post<{status: string; queue_dismissed?: boolean}>(`/teacher/classrooms/${classroomId}/synthesis/${job.material_id}/${command}`,
         { expected_started_at: job.started_at });
       const label = command === "cancel" ? (result.queue_dismissed ? "失败任务已从队列移除" : result.status === "cancelled" ? "任务已取消" : "已请求取消")
         : result.status === "failed" ? "重试仍有失败" : result.status === "done" ? "重试已完成" : "已提交重试";
-      setNotice(`${material} · ${label}`); setPending(null);
+      if (captured === token()) toast.add({ title: label, description: material,
+        type: command === "retry" && result.status === "failed" ? "warning" : "success" });
+      setPending(null);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (captured === token()) toast.add({ title: errorMessage(cause), type: "error" });
       // A stale run cannot be resubmitted through this confirmation.
       setPending(null);
     } finally { setBusy(false); refresh(); }
   }
   const retry = pending?.command === "retry";
-  const feedback = <><ErrorNotice message={error}/>{notice && <p role="status" className="inspector-feedback">{notice}</p>}
+  const feedback = <>
     {pending && <Dialog open onOpenChange={open => {if (!open && !busy) setPending(null);}}>
       <DialogContent><DialogHeader><DialogTitle>{retry ? "重试" : "取消"}{taskTitle(pending.job)}？</DialogTitle>
         <DialogDescription>{pending.material} · {taskStatus(pending.job)}</DialogDescription></DialogHeader>

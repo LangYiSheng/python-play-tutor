@@ -6,6 +6,7 @@ from .models import User
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from .account_ids import normalize_student_id
+from .password_policy import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 
 
 def main():
@@ -14,7 +15,7 @@ def main():
     create = sub.add_parser("provision-user")
     create.add_argument("--student-id", required=True)
     create.add_argument("--name", default="教师")
-    create.add_argument("--role", choices=["teacher", "admin", "student"], default="teacher")
+    create.add_argument("--role", choices=["teacher", "admin"], default="teacher")
     create.add_argument("--password-env", required=True)
     assign = sub.add_parser("assign-student-id")
     assign.add_argument("--user-id", type=int, required=True)
@@ -40,8 +41,8 @@ def main():
             print(f"Assigned student ID to user #{user.id}")
         return
     password = os.environ.get(args.password_env, "")
-    if len(password) < 12:
-        parser.error("Password environment variable must contain at least 12 characters")
+    if not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH:
+        parser.error(f"Password environment variable must contain {MIN_PASSWORD_LENGTH}–{MAX_PASSWORD_LENGTH} characters")
     with SessionLocal() as db:
         if db.scalar(select(User).where(User.student_id == student_id)):
             parser.error("Account already exists")

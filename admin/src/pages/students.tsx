@@ -1,7 +1,6 @@
 import { SelectField } from "@/components/select-field";
 import { useState, type FormEvent } from "react";
 import {
-  Plus,
   Upload,
   RefreshCw,
   Search,
@@ -13,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/ui/toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -58,20 +58,17 @@ export function Students({ classroomId }: { classroomId: number }) {
     [selected, setSelected] = useState<string[]>([]),
     [targets, setTargets] = useState<string[]>([]),
     [modal, setModal] = useState<
-      "create" | "import" | "reset-password" | "remove" | null
+      "import" | "reset-password" | "remove" | null
     >(null),
-    [id, setId] = useState(""),
-    [name, setName] = useState(""),
     [preview, setPreview] = useState<StudentPreview[]>([]),
     [error, setError] = useState(""),
-    [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  useDraft(modal !== null && Boolean(id || name || preview.length));
+  useDraft(modal !== null && (busy || preview.length > 0));
   const rows = (list.data ?? [])
     .filter(
       (s) =>
         (s.name.toLowerCase().includes(query.trim().toLowerCase()) || s.student_id.includes(query.trim())) &&
-        (status === "all" || (status === "pending") === s.must_change_password),
+        (status === "all" || (status === "disabled" ? s.disabled : !s.disabled && (status === "pending") === s.must_change_password)),
     )
     .sort((a, b) =>
       (sort === "name" ? a.name : a.student_id).localeCompare(
@@ -93,8 +90,6 @@ export function Students({ classroomId }: { classroomId: number }) {
   }
   function open(value: typeof modal) {
     setError("");
-    setId("");
-    setName("");
     setPreview([]);
     setModal(value);
   }
@@ -102,25 +97,19 @@ export function Students({ classroomId }: { classroomId: number }) {
     setTargets(ids);
     open(action);
   }
-  async function create(e: FormEvent) {
+  async function confirmImport(e: FormEvent) {
     e.preventDefault();
+    if (busy || !preview.length) return;
     setBusy(true);
     setError("");
     try {
-      const students =
-        modal === "import"
-          ? preview.map(({ student_id, name }) => ({ student_id, name }))
-          : [{ student_id: id, name }];
+      const students = preview.map(({ student_id, name }) => ({ student_id, name }));
       const result = await api.post<{ created: number; existing: number; bound: number }>(
         base,
         { students },
       );
-      setMessage(
-        `已创建 ${result.created} 名学生，加入 ${result.bound} 名已有学生，${result.existing} 名已在本班。`,
-      );
+      toast.add({ title: "名册已导入", description: `新建 ${result.created} 人，加入 ${result.bound} 人，${result.existing} 人已在本班。`, type: "success" });
       setModal(null);
-      setId("");
-      setName("");
       setPreview([]);
       list.reload();
     } catch (e) {
@@ -157,7 +146,7 @@ export function Students({ classroomId }: { classroomId: number }) {
         student_ids: targets,
         action: modal,
       });
-      setMessage(`已处理 ${result.affected} 名学生。`);
+      toast.add({ title: `已处理 ${result.affected} 名学生。`, type: "success" });
       setSelected((ids) => ids.filter((id) => !targets.includes(id)));
       setModal(null);
       list.reload();
@@ -173,13 +162,9 @@ export function Students({ classroomId }: { classroomId: number }) {
         title="学生账号"
         description="管理当前班级的学生，保留他们的学习记录。"
       >
-        <Button variant="outline" onClick={() => open("import")}>
+        <Button onClick={() => open("import")}>
           <Upload />
           导入学生
-        </Button>
-        <Button onClick={() => open("create")}>
-          <Plus />
-          添加学生
         </Button>
       </PageHeader>
       <div className="surface">
@@ -194,13 +179,14 @@ export function Students({ classroomId }: { classroomId: number }) {
             />
           </div>
           <SelectField
-            aria-label="密码状态"
+            aria-label="账号状态"
             value={status}
             onValueChange={(value) => filter("status", value)}
           >
             <option value="all">全部状态</option>
             <option value="pending">待修改初始密码</option>
             <option value="ready">已设置密码</option>
+            <option value="disabled">已停用</option>
           </SelectField>
           <SelectField
             aria-label="学生排序"
@@ -256,17 +242,12 @@ export function Students({ classroomId }: { classroomId: number }) {
           </div>
         ) : null}
         <ErrorNotice message={list.error || (!modal ? error : "")} />
-        {message ? (
-          <p role="status" className="notice-success">
-            {message}
-          </p>
-        ) : null}
         {list.loading ? (
           <Loading />
         ) : rows.length === 0 ? (
           <Empty
             title="没有匹配的学生"
-            description="添加学生或调整搜索条件。"
+            description="导入学生或调整搜索条件。"
           />
         ) : (
           <Table>
@@ -323,9 +304,9 @@ export function Students({ classroomId }: { classroomId: number }) {
                   <TableCell>{s.name}</TableCell>
                   <TableCell>
                     <Badge
-                      variant={s.must_change_password ? "secondary" : "outline"}
+                      variant={s.disabled || s.must_change_password ? "secondary" : "outline"}
                     >
-                      {s.must_change_password ? "待修改初始密码" : "已设置"}
+                      {s.disabled ? "已停用" : s.must_change_password ? "待修改初始密码" : "已设置"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -368,16 +349,14 @@ export function Students({ classroomId }: { classroomId: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {modal === "create"
-                ? "添加学生"
-                : modal === "import"
+              {modal === "import"
                   ? "导入学生"
                   : modal === "remove"
                     ? "移出学生"
                     : "重置学生密码"}
             </DialogTitle>
             <DialogDescription>
-              {modal === "create" || modal === "import"
+              {modal === "import"
                 ? "已有账号按学号、姓名加入本班，沿用原密码。新账号以学号为初始密码，首次登录须修改。"
                 : modal === "remove"
                   ? `将${targets.length === 1 ? `学号 ${targets[0]} 的学生` : ` ${targets.length} 名学生`}移出当前班级，账号及学习记录保留。`
@@ -385,67 +364,39 @@ export function Students({ classroomId }: { classroomId: number }) {
             </DialogDescription>
           </DialogHeader>
           <ErrorNotice message={error} />
-          {modal === "create" || modal === "import" ? (
-            <form inert={busy} aria-busy={busy} onSubmit={create}>
-              {modal === "create" ? (
-                <>
-                  <div className="field">
-                    <Label htmlFor="student-id">学号</Label>
-                    <Input
-                      id="student-id"
-                      inputMode="numeric"
-                      pattern="[0-9]{1,32}"
-                      value={id}
-                      onChange={(e) => setId(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="field">
-                    <Label htmlFor="student-name">姓名</Label>
-                    <Input
-                      id="student-name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      maxLength={80}
-                      required
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="field">
-                    <Label htmlFor="roster-file">CSV 或 XLSX 文件</Label>
-                    <Input
-                      id="roster-file"
-                      type="file"
-                      accept=".csv,.xlsx"
-                      disabled={busy}
-                      onChange={(e) => void importFile(e.target.files?.[0])}
-                    />
-                    <p className="hint">
-                      首行依次为「学号」「姓名」，学号使用文本格式；最多 500
-                      人，2 MB。
+          {modal === "import" ? (
+            <form inert={busy} aria-busy={busy} onSubmit={confirmImport}>
+              <div className="field">
+                <Label htmlFor="roster-file">CSV 或 XLSX 文件</Label>
+                <Input
+                  id="roster-file"
+                  type="file"
+                  accept=".csv,.xlsx"
+                  disabled={busy}
+                  onChange={(e) => void importFile(e.target.files?.[0])}
+                />
+                <p className="hint">
+                  首行依次为「学号」「姓名」，学号使用文本格式；最多 500
+                  人，2 MB。
+                </p>
+              </div>
+              {preview.length ? (
+                <div className="preview-list">
+                  <p>
+                    将新建{" "}
+                    {preview.filter((s) => s.action === "create").length}{" "}
+                    人，加入已有账号 {preview.filter((s) => s.action === "bind").length} 人，已在本班{" "}
+                    {preview.filter((s) => s.action === "existing").length}{" "}
+                    人。
+                  </p>
+                  {preview.map((s) => (
+                    <p key={s.student_id}>
+                      {s.student_id} · {s.name} ·{" "}
+                      {s.action === "create" ? "新建" : s.action === "bind" ? "加入本班" : "已在本班"}
                     </p>
-                  </div>
-                  {preview.length ? (
-                    <div className="preview-list">
-                      <p>
-                        将新建{" "}
-                        {preview.filter((s) => s.action === "create").length}{" "}
-                        人，加入已有账号 {preview.filter((s) => s.action === "bind").length} 人，已在本班{" "}
-                        {preview.filter((s) => s.action === "existing").length}{" "}
-                        人。
-                      </p>
-                      {preview.map((s) => (
-                        <p key={s.student_id}>
-                          {s.student_id} · {s.name} ·{" "}
-                          {s.action === "create" ? "新建" : s.action === "bind" ? "加入本班" : "已在本班"}
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              )}
+                  ))}
+                </div>
+              ) : null}
               <DialogFooter>
                 <Button
                   type="button"
@@ -457,13 +408,9 @@ export function Students({ classroomId }: { classroomId: number }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={busy || (modal === "import" && !preview.length)}
+                  disabled={busy || !preview.length}
                 >
-                  {busy
-                    ? "处理中…"
-                    : modal === "import"
-                      ? "确认导入"
-                      : "确认添加"}
+                  {busy ? "处理中…" : "确认导入"}
                 </Button>
               </DialogFooter>
             </form>

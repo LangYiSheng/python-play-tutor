@@ -48,11 +48,9 @@ export function NarrationReview({
     setPageNo,
     busy,
     error,
-    message,
     job,
     page,
     saved,
-    dirty,
     runPipeline,
     acceptAllDrafts,
     synthesizeAllAudio,
@@ -77,11 +75,6 @@ export function NarrationReview({
           </DialogDescription>
         </DialogHeader>
         <ErrorNotice message={error} />
-        {message && !dirty && (
-          <p role="status" className="hint">
-            {message}
-          </p>
-        )}
         {!data || busy === "load" ? (
           <Loading />
         ) : (

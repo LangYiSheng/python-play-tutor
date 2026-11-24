@@ -58,15 +58,17 @@ it("ignores an old account's class list even when its fetch resolves after cance
     if (url.endsWith("/auth/me")) return json({ id: 1, name: "旧教师", role: "teacher" });
     if (url.endsWith("/auth/login")) return json({ access_token: "new-session", user: { id: 2, name: "新教师", role: "teacher" } });
     if (new Headers(init.headers).get("Authorization") === "Bearer old-session") return new Promise<Response>((resolve) => { finishOld = resolve; });
-    return json([{ id: 22, name: "新班级" }]);
+    return json([{ id: 22, name: "新班级", teacher_id: 2, teacher_name: "新教师", status: "active", student_count: 0 }]);
   }));
   const user = userEvent.setup();
   render(<App />);
   await waitFor(() => expect(finishOld).toBeDefined());
   act(() => { setToken(null); window.dispatchEvent(new Event("session-expired")); });
-  await user.type(screen.getByLabelText("学号", { exact: true }), "9999");
+  await user.type(screen.getByLabelText("工号", { exact: true }), "9999");
   await user.type(screen.getByLabelText("密码", { exact: true }), "test-password");
   await user.click(screen.getByRole("button", { name: "进入工作台" }));
+  expect(location.pathname).toBe("/teacher/classes");
+  await user.click(await screen.findByRole("button", { name: "进入班级" }));
   await waitFor(() => expect(screen.getByLabelText("当前班级")).toHaveTextContent("新班级"));
   await act(async () => { finishOld(json([{ id: 11, name: "旧班级" }])); });
   expect(screen.getByLabelText("当前班级")).toHaveTextContent("新班级");
@@ -140,14 +142,15 @@ it("counts the class teacher's practice pool when an administrator creates an ac
   await user.click(screen.getByRole("checkbox", { name: "变量" }));
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveAccessibleName(/可用 2 题/);
 });
-it("rejects an admin deep link for teachers without loading site-wide data", async () => {
+it("redirects a teacher from an admin deep link without loading site-wide data", async () => {
   setToken("teacher-session");
   history.replaceState({}, "", "/teacher/overview");
   const fetch = vi.fn(async (url: string) => json(url.endsWith("/auth/me")
     ? { id: 2, name: "教师", role: "teacher" } : []));
   vi.stubGlobal("fetch", fetch);
   render(<App />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("此页面仅管理员可访问");
+  await screen.findByRole("heading", { name: "班级管理" });
+  expect(location.pathname).toBe("/teacher/classes");
   expect(screen.queryByRole("link", { name: "全局概览" })).not.toBeInTheDocument();
   expect(fetch.mock.calls.some(([url]) => url.includes("/api/admin/"))).toBe(false);
 });

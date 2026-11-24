@@ -27,13 +27,11 @@ def test_answers_private(client, db, student, classroom):
     assert client.get(f"/api/activities/archive-477?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 404
 
 
-def test_registration_cannot_select_role_and_session_revoke(client):
+def test_public_registration_is_closed_and_logout_revokes_session(client, student):
     data = {"student_id": "23258500098500", "name": "新同学", "password": "test-password-123"}
-    assert client.post("/api/auth/register", json={**data, "role": "teacher"}).status_code == 422
-    result = client.post("/api/auth/register", json=data)
-    assert result.status_code == 201
-    assert result.json()["user"]["role"] == "student"
-    headers = {"Authorization": "Bearer " + result.json()["access_token"]}
+    assert client.post("/api/auth/register", json={**data, "role": "teacher"}).status_code == 404
+    assert client.post("/api/auth/register", json=data).status_code == 404
+    headers = student["headers"]
     assert client.get("/api/auth/me", headers=headers).status_code == 200
     assert client.post("/api/auth/logout", headers=headers).status_code == 200
     assert client.get("/api/auth/me", headers=headers).status_code == 401

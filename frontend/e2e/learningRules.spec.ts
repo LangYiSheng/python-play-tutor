@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse, scopedTeacher } from "./courseFixture";
 import { test, expect, type APIResponse, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -22,9 +23,8 @@ test("configured page ranges and real video playback drive authoritative goals",
   const classroom = await json<{ id: number; join_code: string }>(await request.post("/api/classrooms", { headers, data: { name: `学习目标验收 ${tag}` } }));
   const ids = await importCourse(request, headers, classroom.id);
   await json(await request.put(`/api/teacher/classrooms/${classroom.id}/releases/${ids.chapter["179"]}`, { headers, data: { status: "published" } }));
-  const identity = await json<Identity>(await request.post("/api/auth/register", { data: { name: "目标验收居民", student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Resident-${randomUUID()}` } }));
+  const { identity } = await provisionStudent(request, headers, classroom.id, "目标验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  await json(await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } }));
   const materials = await json<{ id: number; kind: string; chapter_id: number; duration_seconds: number | null }[]>(await request.get(`/api/library?classroom_id=${classroom.id}`, { headers: student }));
   const pdf = materials.find(material => material.id === ids.material["186"])!;
   const video = materials.find(material => material.chapter_id === ids.chapter["179"] && material.kind === "video" && (material.duration_seconds ?? 0) > 30)!;

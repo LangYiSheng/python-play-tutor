@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toast } from "@/components/ui/toast";
 import { api, errorMessage, request } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
@@ -28,7 +29,7 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
   const [query, setQuery] = useState(""), [mine, setMine] = useState("all");
   const [status, setStatus] = useState<ManagedClass["status"]>("active");
   const [change, setChange] = useState<{ row: ManagedClass; action: Action } | null>(null);
-  const [history, setHistory] = useState<ManagedClass | null>(null), [notice, setNotice] = useState("");
+  const [history, setHistory] = useState<ManagedClass | null>(null);
   const list = useResource<ManagedClass[]>(`/teacher/classrooms/management${status === "deleted" ? "?deleted=true" : ""}`);
   const rows = list.data?.filter(row => row.status === status && (mine !== "mine" || row.teacher_id === userId)
     && (row.name + " " + row.teacher_name).toLowerCase().includes(query.trim().toLowerCase()));
@@ -43,7 +44,7 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
         <option value="all">全部班级</option><option value="mine">我负责的班级</option>
       </SelectField>}
     </div>
-    {notice && <p role="status" className="success-notice">{notice}</p>}<ErrorNotice message={list.error} />
+    <ErrorNotice message={list.error} />
     {list.loading && <Loading />}
     {rows && <div className="overflow-hidden rounded-lg border bg-background"><Table><TableHeader><TableRow>
       <TableHead>班级</TableHead><TableHead>任课教师</TableHead><TableHead>学生数</TableHead><TableHead className="text-right">操作</TableHead>
@@ -63,7 +64,8 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
       </div></TableCell>
     </TableRow>)}</TableBody></Table>{!rows.length && <Empty title="没有匹配的班级" />}</div>}
     {change && <ClassActionDialog {...change} onClose={() => setChange(null)} onSaved={() => {
-      setNotice(`${change.row.name} 已完成${actions[change.action]}。`); setChange(null); list.reload(); onChanged();
+      toast.add({ title: `${change.row.name} 已完成${actions[change.action]}。`, type: "success" });
+      setChange(null); list.reload(); onChanged();
     }} />}
     {history && <HistoryDialog row={history} onClose={() => setHistory(null)} />}
   </>;
@@ -103,12 +105,12 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
       <ErrorNotice message={error || teachers.error} />
       {(action === "rename" || action === "delete") && <div className="field"><Label htmlFor="class-action-name">{action === "rename" ? "新班级名" : "确认班级全名"}</Label><Input id="class-action-name" maxLength={100} value={value} required onChange={e => setValue(e.target.value)} /></div>}
       {action === "transfer" && <div className="field">
-        <TableSearch label="搜索教师姓名或学号" value={search} onValueChange={v => { setTeacher(""); setSearch(v); }} />
+        <TableSearch label="搜索教师姓名或工号" value={search} onValueChange={v => { setTeacher(""); setSearch(v); }} />
         <Label htmlFor="next-class-teacher">新任课教师</Label>
         <SelectField id="next-class-teacher" value={teacher} disabled={teachers.loading} onValueChange={setTeacher}>
-          {(teachers.data?.items ?? []).filter(item => item.id !== row.teacher_id).map(item => <option value={item.id} key={item.id}>{item.name}（{item.student_id}）</option>)}
+          {(teachers.data?.items ?? []).filter(item => item.id !== row.teacher_id && !item.disabled).map(item => <option value={item.id} key={item.id}>{item.name}（{item.student_id}）</option>)}
         </SelectField>
-        {teachers.data && teachers.data.total > teachers.data.items.length && <p className="hint">当前显示前 100 人，可按学号搜索。</p>}
+        {teachers.data && teachers.data.total > teachers.data.items.length && <p className="hint">当前显示前 100 人，可按工号搜索。</p>}
       </div>}
       <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
         <Button type="submit" variant={action === "delete" ? "destructive" : "default"} disabled={!valid || busy}>{busy ? "处理中…" : `确认${actions[action]}`}</Button>

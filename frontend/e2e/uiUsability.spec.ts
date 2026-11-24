@@ -1,3 +1,4 @@
+import { provisionStudent, signInStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import {
   test,
@@ -178,17 +179,7 @@ test("usable world HUD, modal focus, history, text scaling and keyboard controls
   expect(released.ok()).toBeTruthy();
 
   await page.goto("/");
-  await page.getByRole("button", { name: "初次到访？注册居民证" }).click();
-  await page.getByLabel("名字", { exact: true }).fill("界面验收居民");
-  await page
-    .getByLabel("学号", { exact: true })
-    .fill(BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString());
-  await page.getByLabel("密码", { exact: true }).fill(`UI-${randomUUID()}`);
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-  await page
-    .getByLabel("班级加入码", { exact: true })
-    .fill(classroom.join_code);
-  await page.getByRole("button", { name: "加入班级", exact: true }).click();
+  await signInStudent(page, (await provisionStudent(request, teacherHeaders, classroom.id, "界面验收居民")).credentials);
   const welcome = page.getByRole("dialog", { name: "欢迎回到小镇", exact: true });
   await welcome.getByRole("button", { name: "按任意键继续", exact: true }).click();
   await expect(welcome).toBeHidden();

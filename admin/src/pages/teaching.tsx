@@ -33,6 +33,7 @@ import {
 import { api, scoped, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
+import { toast } from "@/components/ui/toast";
 import type { Chapter, Course } from "@/lib/types";
 import { formatTimestamp, isoToLocalDateTime, localDateTimeToIso, TIME_ZONE } from "@/lib/time";
 interface Release {
@@ -97,7 +98,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [dirty, setDirty] = useState(false),
-    [success, setSuccess] = useState(""),
     [student, setStudent] = useState<number | null>(null),
     [releaseQuery, setReleaseQuery] = useState(""),
     [releaseFilter, setReleaseFilter] = useState("all"),
@@ -133,7 +133,7 @@ export function Teaching({ classroomId }: { classroomId: number }) {
       );
       setEditing(null);
       setDirty(false);
-      setSuccess("章节安排已保存");
+      toast.add({ title: "章节安排已保存", type: "success" });
       releases.reload();
     } catch (e) {
       setError(errorMessage(e));
@@ -175,11 +175,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
           (!editing ? error : "")
         }
       />
-      {success && (
-        <p role="status" className="success-notice">
-          {success}
-        </p>
-      )}
       <Tabs value={tab} onValueChange={setTab} className="gap-4">
         <TabsList variant="line" aria-label="教学管理视图">
           <TabsTrigger value="releases">章节安排</TabsTrigger>

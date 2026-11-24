@@ -10,6 +10,7 @@ import { SuggestInput } from '@/components/suggest-input';
 import { ErrorNotice, Loading } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
+import { toast } from '@/components/ui/toast';
 
 type SpeechCatalog = {
   models: { id: string; name: string }[];
@@ -41,7 +42,7 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
   const [saved, setSaved] = useState<Settings>(), [draft, setDraft] = useState<Settings>();
   const [catalog, setCatalog] = useState<SpeechCatalog>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
-  const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const dirty = !!saved && (JSON.stringify(saved) !== JSON.stringify(draft) || !!key || clearKey);
   useDraft(dirty);
   const path = `/teacher/services/${service}`;
@@ -61,21 +62,22 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     return () => controller.abort();
   }, [service, saved?.key_configured, saved?.revision]);
   async function testSpeech() {
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const result = await api.post<{ elapsed_ms: number; bytes: number; format: string }>('/teacher/services/speech/test', {});
-      setNotice(`连接正常 · ${result.elapsed_ms} ms · ${result.format} · ${(result.bytes / 1024).toFixed(1)} KB`);
+      toast.add({ title: '连接正常', description: `${result.elapsed_ms} ms · ${result.format} · ${(result.bytes / 1024).toFixed(1)} KB`, type: 'success' });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   async function save() {
     if (!draft || !saved || busy) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const value = await api.put<Settings>(path, {
         ...Object.fromEntries(fields[service].map(({ key: name }) => [name, draft[name]])),
         expected_revision: saved.revision, api_key: key || null, clear_key: clearKey,
       });
-      setSaved(value); setDraft(value); setKey(''); setClearKey(false); setNotice('设置已保存');
+      setSaved(value); setDraft(value); setKey(''); setClearKey(false);
+      toast.add({ title: '设置已保存', type: 'success' });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   const deepseek = service === 'speech' && draft?.protocol === 'deepseek';
@@ -97,15 +99,15 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     const known = ['', 'https://api.deepseek.com', 'https://api.openai.com'];
     const root = String(draft.base_url).replace(/\/+$/, '').replace(/\/v1(?:\/(?:tools\/tts|audio\/speech))?$/, '');
     setDraft({ ...draft, ...example, base_url: replace || known.includes(root) ? example.base_url : draft.base_url, protocol });
-    setNotice('示例已填入，请核对后保存。');
+    toast.add({ title: '示例已填入，请核对后保存。', type: 'info' });
   }
   return <section className="surface space-y-4 p-6">
     <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
-      if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); setNotice(''); }
+      if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
     }} />
     <h2 className="font-semibold">{names[service]}</h2>
     <p className="hint">适用范围：全站{service === 'authoring' ? '讲稿生成与校准' : '语音合成'}。由管理员维护，{service === 'authoring' ? '用于 PDF、演示文稿，不占用学生答疑预算。' : '仅合成教师已接受的讲稿。'}保存设置不会调用外部服务。</p>
-    <ErrorNotice message={error} />{notice && !dirty && <p role="status" className="hint">{notice}</p>}
+    <ErrorNotice message={error} />
     {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="space-y-4">
       {service === 'speech' && <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-3">
         <p className="hint flex-1">{deepseek ? 'DeepSeek 示例：api.deepseek.com · Stella 女声 / Tide 男声 · WAV / PCM。此接口无需模型名称，合成语速固定为 1。' : dashscope ? '阿里百炼原生语音接口：地址填业务空间域名（https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com），模型如 qwen-audio-3.0-tts-flash / cosyvoice-v3-plus，音色从控制台复制；返回音频 URL 由服务端下载。' : 'OpenAI 兼容接口：填写服务基础地址、模型和音色。示例仅供配置参考，是否可用以你的供应商为准。'}</p>

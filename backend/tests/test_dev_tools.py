@@ -31,6 +31,7 @@ from app.models import (
     NodeState,
     PlayerPosition,
     PlayerQuest,
+    PracticeSession,
     StorySession,
     Submission,
     User,
@@ -40,7 +41,7 @@ from app.world_config import load_world_config
 
 RESET_PATH = "/api/dev/progress/reset"
 RESET_MODELS = (LearningEvent, NodeState, PlayerQuest, StorySession, ActivityProgress, LearningRecord,
-                SubmissionPayload, Submission, WorldFlag, PlayerPosition, AssessmentAttempt, BuildingUnlock)
+                SubmissionPayload, Submission, WorldFlag, PlayerPosition, AssessmentAttempt, BuildingUnlock, PracticeSession)
 
 
 @pytest.fixture
@@ -88,6 +89,7 @@ def add_progress(db, user_id, classroom_id):
         LearningRecord(user_id=user_id, classroom_id=classroom_id, activity_id="ch1-lesson", data={"test": True}),
         SubmissionPayload(submission_id=submission.id, cases=[], public_count=0),
         AssessmentAttempt(user_id=user_id, classroom_id=classroom_id, activity_id="ch1-assessment", state="draft"),
+        PracticeSession(user_id=user_id, classroom_id=classroom_id, activity_id="ch1-practice", items=[]),
         WorldFlag(user_id=user_id, classroom_id=classroom_id, key="library_unlocked"),
         BuildingUnlock(user_id=user_id, classroom_id=classroom_id, course_instance_id=course.id, building_id="library"),
         PlayerPosition(user_id=user_id, classroom_id=classroom_id, map_key="library", tile_x=9, tile_y=5, direction="up"),
@@ -121,8 +123,6 @@ def test_capability_in_me_login_and_registration_is_student_only(dev_client, stu
     assert dev_client.get("/api/auth/me", headers=teacher["headers"]).json()["dev_tools_enabled"] is False
     logged_in = dev_client.post("/api/auth/login", json={"student_id": student["student_id"], "password": "student-password-123"})
     assert logged_in.status_code == 200 and logged_in.json()["user"]["dev_tools_enabled"] is True
-    registered = dev_client.post("/api/auth/register", json={"student_id": "42631089867999", "name": "开发验收", "password": "student-password-123"})
-    assert registered.status_code == 201 and registered.json()["user"]["dev_tools_enabled"] is True
 
 
 def test_runtime_guard_disables_existing_route_and_capability(dev_client, db, student, classroom, monkeypatch):

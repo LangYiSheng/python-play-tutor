@@ -1,3 +1,4 @@
+import { provisionStudent, signInStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type Page, type Response } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -214,13 +215,7 @@ test("map preview, filters, WASD, library doors and cross-map guidance share one
   });
   expect(release.ok(), await release.text()).toBeTruthy();
   await page.goto("/");
-  await page.getByRole("button", { name: "初次到访？注册居民证" }).click();
-  await page.getByLabel("名字", { exact: true }).fill("地图新居民");
-  await page.getByLabel("学号", { exact: true }).fill(BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString());
-  await page.getByLabel("密码", { exact: true }).fill(`World-${randomUUID()}`);
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-  await page.getByLabel("班级加入码").fill(classroom.join_code);
-  await page.getByRole("button", { name: "加入班级", exact: true }).click();
+  await signInStudent(page, (await provisionStudent(request, teacher, classroom.id, "地图新居民")).credentials);
   const welcome = page.getByRole("dialog", { name: "欢迎回到小镇", exact: true });
   await welcome.getByRole("button", { name: "按任意键继续" }).click();
   await expect(welcome).toBeHidden();

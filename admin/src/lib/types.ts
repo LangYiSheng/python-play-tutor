@@ -19,6 +19,7 @@ export interface Student {
   student_id: string;
   name: string;
   must_change_password: boolean;
+  disabled: boolean;
 }
 export interface StudentPreview {
   student_id: string;

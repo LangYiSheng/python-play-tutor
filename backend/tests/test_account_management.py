@@ -48,10 +48,10 @@ def test_self_password_and_session_revocation(client, db, student, teacher, role
 
 def test_provision_reset_force_change_and_remove(client, db, teacher, classroom):
     base = f"/api/teacher/classrooms/{classroom['id']}/students"
-    body = {"students": [{"student_id": "00012", "name": "新同学"}]}
+    body = {"students": [{"student_id": "00000012", "name": "新同学"}]}
     assert client.post(base, headers=teacher["headers"], json=body).json()["created"] == 1
     assert client.post(base, headers=teacher["headers"], json=body).json()["existing"] == 1
-    login = client.post("/api/auth/login", json={"student_id": "00012", "password": "00012"}).json()
+    login = client.post("/api/auth/login", json={"student_id": "00000012", "password": "00000012"}).json()
     headers = {"Authorization": "Bearer " + login["access_token"]}
     assert login["user"]["must_change_password"]
     assert client.get("/api/classrooms", headers=headers).status_code == 403
@@ -61,11 +61,11 @@ def test_provision_reset_force_change_and_remove(client, db, teacher, classroom)
     assert client.get("/api/auth/me", headers=headers).status_code == 401
     headers = {"Authorization": "Bearer " + result.json()["access_token"]}
     assert client.get("/api/classrooms", headers=headers).status_code == 200
-    reset = {"student_ids": ["00012"], "action": "reset-password"}
+    reset = {"student_ids": ["00000012"], "action": "reset-password"}
     assert client.post(base + "/batch", headers=teacher["headers"], json=reset).json()["affected"] == 1
     assert client.get("/api/auth/me", headers=headers).status_code == 401
-    assert client.post("/api/auth/login", json={"student_id": "00012", "password": "private-password-123"}).status_code == 401
-    login = client.post("/api/auth/login", json={"student_id": "00012", "password": "00012"}).json()
+    assert client.post("/api/auth/login", json={"student_id": "00000012", "password": "private-password-123"}).status_code == 401
+    login = client.post("/api/auth/login", json={"student_id": "00000012", "password": "00000012"}).json()
     assert login["user"]["must_change_password"]
     reset_headers = {"Authorization": "Bearer " + login["access_token"]}
     changed = client.post("/api/auth/password", headers=reset_headers, json={"new_password": "another-private-password"})
@@ -92,10 +92,10 @@ def test_account_management_permissions_and_atomicity(client, db, teacher, stude
     db.add_all([outsider, other_teacher])
     db.commit()
     base = f"/api/teacher/classrooms/{classroom['id']}/students"
-    body = {"students": [{"student_id": "00013", "name": "不应创建"}, {"student_id": "00099", "name": "已有"}]}
+    body = {"students": [{"student_id": "00000013", "name": "不应创建"}, {"student_id": "00099", "name": "已有"}]}
     mismatch = client.post(base, headers=teacher["headers"], json=body)
     assert mismatch.status_code == 422 and outsider.name not in mismatch.text
-    assert not db.scalar(select(User).where(User.student_id == "00013"))
+    assert not db.scalar(select(User).where(User.student_id == "00000013"))
     assert client.post(base, headers=student["headers"], json=body).status_code == 403
     login = client.post("/api/auth/login", json={"student_id": "00098", "password": "private-password-123"}).json()
     assert client.get(base, headers={"Authorization": "Bearer " + login["access_token"]}).status_code == 403
@@ -117,10 +117,10 @@ def test_account_management_permissions_and_atomicity(client, db, teacher, stude
 
 def test_import_preview_and_invalid_rows(client, teacher, classroom):
     path = f"/api/teacher/classrooms/{classroom['id']}/students/import-preview"
-    content = "学号,姓名\n000123,小明\n000124,小红\n".encode("utf-8-sig")
+    content = "学号,姓名\n00000123,小明\n00000124,小红\n".encode("utf-8-sig")
     result = client.post(path, headers=teacher["headers"], files={"file": ("students.csv", content, "text/csv")})
     assert result.status_code == 200, result.text
-    assert result.json()["students"][0]["student_id"] == "000123"
+    assert result.json()["students"][0]["student_id"] == "00000123"
     assert client.get(path.removesuffix("/import-preview"), headers=teacher["headers"]).json().__len__() == 1
     for content in ["学号,姓名\n12,甲\n12,乙", "学号,姓名\nwrong,甲", "邮箱,姓名\na,甲"]:
         assert client.post(path, headers=teacher["headers"], files={"file": ("students.csv", content.encode())}).status_code == 422
@@ -137,14 +137,12 @@ def workbook_bytes(value):
     return buffer.getvalue()
 
 
-def test_six_character_password_boundary(client, student):
-    for password, expected in [("abc12", 422), ("abc123", 200)]:
+def test_eight_character_password_boundary(client, student):
+    for password, expected in [("1234567", 422), ("12345678", 200)]:
         response = client.post("/api/auth/password", headers=student["headers"],
                                json={"current_password": "student-password-123", "new_password": password})
         assert response.status_code == expected
-    assert client.post("/api/auth/login", json={"student_id": student["student_id"], "password": "abc123"}).status_code == 200
-    assert client.post("/api/auth/register", json={"student_id": "006001", "name": "六位密码", "password": "abc12"}).status_code == 422
-    assert client.post("/api/auth/register", json={"student_id": "006001", "name": "六位密码", "password": "abc123"}).status_code == 201
+    assert client.post("/api/auth/login", json={"student_id": student["student_id"], "password": "12345678"}).status_code == 200
 
 
 def test_excel_preserves_text_and_rejects_formulas_numbers_limits():

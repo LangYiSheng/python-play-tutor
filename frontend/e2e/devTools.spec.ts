@@ -1,6 +1,7 @@
 import { importCourse, type CourseIds } from "./courseFixture";
 import { test, expect, type APIRequestContext, type APIResponse, type Page, type Response } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { provisionStudent } from "./studentAccount";
 import type { ExperienceOverview } from "../src/features/developer/types";
 
 type Headers = { Authorization: string };
@@ -46,12 +47,6 @@ function client(request: APIRequestContext, base: string, identity: Identity) {
     post: <T>(path: string, data: unknown) => request.post(endpoint(base, path), { headers: authorization, data }).then(json<T>),
     put: <T>(path: string, data: unknown) => request.put(endpoint(base, path), { headers: authorization, data }).then(json<T>),
   };
-}
-
-async function register(request: APIRequestContext, base: string, label: string) {
-  const credentials = { name: label, student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Resident-${randomUUID()}` };
-  const identity = await json<Identity>(await request.post(endpoint(base, "/auth/register"), { data: credentials }));
-  return { identity, credentials };
 }
 
 async function createClass(request: APIRequestContext, base: string, teacher: Identity, label: string) {
@@ -157,8 +152,8 @@ test("development reset clears only the confirmed student's selected classroom a
   const teacher = await json<Identity>(await request.post(endpoint(target, "/auth/login"), { data: { student_id, password } }));
   expect(teacher.user.dev_tools_enabled).toBe(false);
   const first = await createClass(request, target, teacher, "当前班"), second = await createClass(request, target, teacher, "对照班");
-  const { identity } = await register(request, target, "开发工具验收本人");
-  const { identity: other } = await register(request, target, "开发工具验收对照学生");
+  const { identity } = await provisionStudent(request, headers(teacher), first.id, "开发工具验收本人", target);
+  const { identity: other } = await provisionStudent(request, headers(teacher), first.id, "开发工具验收对照学生", target);
   expect(identity.user.dev_tools_enabled).toBe(true);
   const mine = client(request, target, identity), peer = client(request, target, other), teaching = client(request, target, teacher);
   expect((await mine.get<Identity["user"]>("/auth/me")).dev_tools_enabled).toBe(true);
@@ -323,7 +318,7 @@ test("development reset clears only the confirmed student's selected classroom a
   expect(errors).toEqual([]);
 });
 
-test("production registration and login never expose the reset capability, menu or route", async ({ page, request }, info) => {
+test("production student login never exposes the reset capability, menu or route", async ({ page, request }, info) => {
   test.setTimeout(90_000);
   const base = process.env.E2E_PRODUCTION_URL;
   const student_id = process.env.E2E_PRODUCTION_TEACHER_STUDENT_ID ?? process.env.E2E_TEACHER_STUDENT_ID;
@@ -333,13 +328,12 @@ test("production registration and login never expose the reset capability, menu 
   const teacher = await json<Identity>(await request.post(endpoint(target, "/auth/login"), { data: { student_id, password } }));
   expect(teacher.user.dev_tools_enabled).toBe(false);
   const classroom = await createClass(request, target, teacher, "生产关闭");
-  const registered = await register(request, target, "生产能力关闭验收学生");
-  expect(registered.identity.user.dev_tools_enabled).toBe(false);
-  const identity = await json<Identity>(await request.post(endpoint(target, "/auth/login"), { data: { student_id: registered.credentials.student_id, password: registered.credentials.password } }));
+  const enrolled = await provisionStudent(request, headers(teacher), classroom.id, "生产能力关闭验收学生", target);
+  expect(enrolled.identity.user.dev_tools_enabled).toBe(false);
+  const identity = await json<Identity>(await request.post(endpoint(target, "/auth/login"), { data: enrolled.credentials }));
   expect(identity.user.dev_tools_enabled).toBe(false);
   const api = client(request, target, identity);
   expect((await api.get<Identity["user"]>("/auth/me")).dev_tools_enabled).toBe(false);
-  await api.post("/classrooms/join", { join_code: classroom.join_code });
   const before = await api.get<World>(`/world?classroom_id=${classroom.id}`);
   const denied = await request.post(endpoint(target, "/dev/progress/reset"), { headers: headers(identity), data: { classroom_id: classroom.id, confirmed: true } });
   expect(denied.status()).toBe(404);
@@ -360,7 +354,7 @@ test("experience panels locate content and restore checkpoints without rewinding
   const target = base!;
   const teacher = await json<Identity>(await request.post(endpoint(target, "/auth/login"), { data: { student_id, password } }));
   const classroom = await createClass(request, target, teacher, "体验链路");
-  const { identity } = await register(request, target, "体验链路验收学生");
+  const { identity } = await provisionStudent(request, headers(teacher), classroom.id, "体验链路验收学生", target);
   const evidence = await establishEvidence(request, target, identity, classroom);
   const mine = client(request, target, identity);
   const errors: string[] = [], modelMessages: string[] = [];

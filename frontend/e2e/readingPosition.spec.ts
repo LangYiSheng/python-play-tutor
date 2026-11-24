@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -15,11 +16,8 @@ test("library reading position survives removal of the former numeric cache suff
   const ids = await importCourse(request, teacher, classroom.id);
   const released = await request.put(`/api/teacher/classrooms/${classroom.id}/releases/${ids.chapter["179"]}`, { headers: teacher, data: { status: "published" } });
   expect(released.ok()).toBeTruthy();
-  const registered = await request.post("/api/auth/register", { data: { student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Reading-${randomUUID()}`, name: "阅读位置验收居民" } });
-  expect(registered.status()).toBe(201);
-  const identity = await registered.json();
+  const { identity } = await provisionStudent(request, teacher, classroom.id, "阅读位置验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  expect((await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } })).ok()).toBeTruthy();
   const library = await request.get(`/api/library?classroom_id=${classroom.id}`, { headers: student });
   expect(library.ok()).toBeTruthy();
   const listedMaterial = (await library.json())[0];

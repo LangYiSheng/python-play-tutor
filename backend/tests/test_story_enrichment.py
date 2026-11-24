@@ -83,9 +83,9 @@ def test_same_dialogue_addresses_each_signed_in_student(client, db, student, cla
         {"id": "leave", "label": "{name}准备好了", "next": "end"},
     ]}
     install_story(db, ambient_content(nodes=[welcome, {"id": "end", "type": "end"}]), chapter_id=None)
-    response = client.post("/api/auth/register", json={"student_id": "566372481025", "name": "小禾", "password": "sample-student-password"})
-    assert response.status_code == 201
-    other = {"headers": {"Authorization": "Bearer " + response.json()["access_token"]}}
+    from conftest import make_student_account
+
+    other = make_student_account(db, "566372481025", "小禾")
     assert client.post("/api/classrooms/join", headers=other["headers"], json={"join_code": classroom["join_code"]}).is_success
     move_player(client, other["headers"], story_space, "town_hub", 22, 34)
     for account, name in [(other, "小禾"), (student, "学生")]:
@@ -429,13 +429,12 @@ def test_score_conditions_and_scene_sessions_are_isolated_by_actor_and_joined_cl
     install_story(db, content)
     submit_paper(client, db, student, story_space, 3)
     view = interact(client, student, story_space)
-    stranger_response = client.post("/api/auth/register", json={
-        "student_id": "66523241585256", "name": "Other student", "password": "long-enough-test-password"})
-    assert stranger_response.status_code == 201
-    other = {"headers": {"Authorization": "Bearer " + stranger_response.json()["access_token"]}}
+    from conftest import make_student_account
+
+    other = make_student_account(db, "66523241585256", "Other student")
     assert client.post("/api/classrooms/join", headers=other["headers"], json={"join_code": classroom["join_code"]}).status_code == 200
     move_player(client, other["headers"], story_space, "town_hub", 22, 34)
-    other_arrival = db.scalar(select(PlayerQuest).where(PlayerQuest.user_id == stranger_response.json()["user"]["id"],
+    other_arrival = db.scalar(select(PlayerQuest).where(PlayerQuest.user_id == other["id"],
         PlayerQuest.classroom_id == story_space, PlayerQuest.quest_id == "arrival"))
     other_arrival.status = "complete"
     db.commit()

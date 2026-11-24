@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render } from "./render-with-toasts";
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { CourseSettings } from '../src/pages/course-settings';
@@ -40,8 +41,7 @@ it('preserves keys after a conflict and clears transient key text only after sav
   expect(key).toHaveValue('fixture-key');
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
   await waitFor(() => expect(key).toHaveValue(''));
-  const section = key.closest('section')!;
-  expect(within(section).getByRole('status')).toHaveTextContent('设置已保存');
+  expect(await screen.findByText('设置已保存')).toBeVisible();
   expect(api.post).not.toHaveBeenCalled();
 });
 

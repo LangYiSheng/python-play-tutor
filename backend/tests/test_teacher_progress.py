@@ -117,12 +117,12 @@ def test_progress_counts_are_scoped_to_student_classroom_and_teacher(client, db,
     client.post("/api/classrooms/join", json={"join_code": other_class["join_code"]}, headers=student["headers"])
     assert client.post(f"/api/teacher/classrooms/{other_class['id']}/course/empty", json={"name": "Other", "confirmed": True}, headers=teacher["headers"]).status_code == 200
     assert completed_chapters(client, teacher, other_class["id"], student["id"]) == 0
-    new_student = client.post(
-        "/api/auth/register", json={"student_id": "190515614727603", "name": "Other", "password": "isolated-progress-password"}
-    ).json()
-    other_headers = {"Authorization": "Bearer " + new_student["access_token"]}
+    from conftest import make_student_account
+
+    new_student = make_student_account(db, "190515614727603", "Other")
+    other_headers = new_student["headers"]
     client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=other_headers)
-    assert completed_chapters(client, teacher, cid, new_student["user"]["id"]) == 0
+    assert completed_chapters(client, teacher, cid, new_student["id"]) == 0
     other_teacher = User(
         student_id="259066979884583", name="Other teacher", role="teacher", password_hash=hash_password("other-progress-teacher")
     )

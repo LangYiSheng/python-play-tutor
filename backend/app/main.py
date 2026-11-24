@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
         if (request.url.path == "/api/teacher/assistant/model" or request.url.path.startswith("/api/teacher/services/")
-                or request.url.path.startswith("/api/admin/") or request.url.path.startswith("/api/assistant/sessions/")):
+                or request.url.path.startswith(("/api/admin/", "/api/auth/", "/api/assistant/sessions/"))):
             # Avoid reflecting credentials, learner input, or a rejected non-JSON numeric value.
             return JSONResponse(status_code=422, content={"detail": [{key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()]})
         return await request_validation_exception_handler(request, exc)

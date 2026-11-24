@@ -5,7 +5,7 @@ import { chooseOption, credentials, go, json } from "./helpers";
 const stamp = Date.now().toString().slice(-9);
 async function login(page: Page) {
   await page.goto("/teacher/");
-  await page.getByLabel("学号", { exact: true }).fill(credentials.student_id);
+  await page.getByLabel("工号", { exact: true }).fill(credentials.student_id);
   await page.getByLabel("密码", { exact: true }).fill(credentials.password);
   await page.getByRole("button", { name: "进入工作台" }).click();
   await expect(page.getByRole("heading", { name: "班级管理" })).toBeVisible();
@@ -30,20 +30,13 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
     .click();
   await expect(page.getByText("此班级的课程独立维护，修改不会同步到其他班级。", { exact: true })).toBeVisible();
   await go(page, "学生账号");
-  await page.getByRole("button", { name: "添加学生", exact: true }).click();
-  await page.getByLabel("学号", { exact: true }).fill(`00${stamp}`);
-  await page.getByLabel("姓名", { exact: true }).fill("验收学生甲");
-  await page.getByRole("button", { name: "确认添加", exact: true }).click();
-  await expect(
-    page.getByRole("cell", { name: `00${stamp}`, exact: true }),
-  ).toBeVisible();
   await page.getByRole("button", { name: "导入学生", exact: true }).click();
   await page.getByLabel("CSV 或 XLSX 文件").setInputFiles({
     name: "名册.csv",
     mimeType: "text/csv",
-    buffer: Buffer.from(`学号,姓名\n01${stamp},验收学生乙\n`),
+    buffer: Buffer.from(`学号,姓名\n00${stamp},验收学生甲\n01${stamp},验收学生乙\n`),
   });
-  await expect(page.getByText(/将新建 1 人/)).toBeVisible();
+  await expect(page.getByText(/将新建 2 人/)).toBeVisible();
   await page.getByRole("button", { name: "确认导入", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: `01${stamp}`, exact: true }),
@@ -223,7 +216,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await go(page, "本班答疑设置");
   await chooseOption(page, page.getByLabel("课程默认答疑角色", { exact: true }), "新的教学角色");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("设置已保存");
+  await expect(page.locator('[data-slot="toast"]').getByText("设置已保存")).toBeVisible();
   await go(page, "教学管理");
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByRole("button", { name: "保存安排", exact: true }).click();
@@ -263,7 +256,7 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await page.getByRole("checkbox", { name: "我已核对差异，确认更新当前班级课程" }).click();
   await page.getByRole("button", { name: "确认导入", exact: true }).click();
   await expect(
-    page.getByText("课程包已导入，班级课程已更新。", { exact: true }),
+    page.getByText("课程包已导入", { exact: true }),
   ).toBeVisible();
   await go(page, "班级管理");
   await page.getByRole("row").filter({ hasText: `导入验收 ${stamp}` }).getByRole("button", { name: "进入班级" }).click();

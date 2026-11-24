@@ -1,5 +1,6 @@
+import { render } from "./render-with-toasts";
 import { afterEach, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Packages } from "../src/pages/packages";
 afterEach(() => vi.unstubAllGlobals());
@@ -32,7 +33,7 @@ it("previews an existing package without uploading and still requires explicit c
   expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
   await user.click(screen.getByRole("checkbox", { name: /我已核对差异/ }));
   await user.click(screen.getByRole("button", { name: "确认导入" }));
-  await screen.findByText("课程包已导入，班级课程已更新。");
+  await screen.findByText("课程包已导入");
   expect(calls[1].url).toBe("/api/teacher/classrooms/31/course/imports/mounted-preview/apply");
   expect(calls[1].body).toMatchObject({ expected_revision: 3 });
   expect(screen.queryByLabelText("课程包 ZIP 文件")).not.toBeInTheDocument();
@@ -53,7 +54,8 @@ it("exports to a server directory and cancels requests when leaving", async () =
   expect(screen.getByText("正在导出课程目录和资源")).toBeVisible();
   expect(screen.getByText(/已等待/)).toBeVisible();
   await act(() => finish(new Response(JSON.stringify({ path: "data/course/export-31-test" }))));
-  expect(screen.getByText("课程已导出到 data/course/export-31-test")).toBeVisible();
+  expect(await screen.findByText("课程包已导出")).toBeVisible();
+  expect(screen.getByText("data/course/export-31-test")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "导出课程包" }));
   unmount();
   expect(signal?.aborted).toBe(true);
@@ -94,7 +96,7 @@ it("only offers deletion for exported packages, confirms and handles failure bef
   expect(screen.getByRole('dialog')).toBeVisible();
   fail = false;
   await user.click(screen.getByRole('button',{name:'确认删除'}));
-  await screen.findByText('导出的课程包已删除，班级课程和学生记录不受影响。');
+  await screen.findByText('共享课程包已删除');
   expect(screen.queryByRole('button',{name:'删除 export-31-demo'})).not.toBeInTheDocument();
   expect(screen.getByText('default')).toBeInTheDocument();
   expect(deletes).toEqual(['/api/teacher/course/packages/owned','/api/teacher/course/packages/owned']);

@@ -1,5 +1,6 @@
+import { render } from "./render-with-toasts";
 import { afterEach, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskDetail, TaskQueue, useTaskCommands } from "../src/features/content-workspace/task-queue";
 import type { Job } from "../src/features/content-workspace/graph-layout";
@@ -24,7 +25,7 @@ it("reports actual progress and confirms cancellation for exactly the displayed 
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText(/循环语句/)).toBeInTheDocument();
   await user.click(within(dialog).getByRole("button", {name: "确认取消任务"}));
-  expect(await screen.findByRole("status")).toHaveTextContent("已请求取消");
+  expect(await screen.findByText("已请求取消")).toBeVisible();
   expect(fetch).toHaveBeenCalledWith("/api/teacher/classrooms/1/synthesis/3/cancel",
     expect.objectContaining({method:"POST", body:JSON.stringify({expected_started_at:job.started_at})}));
   expect(reload).toHaveBeenCalledOnce();
@@ -52,6 +53,6 @@ it("dismisses a failed task after confirmation and preserves its failed status",
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText(/失败记录将保留/)).toBeVisible();
   await user.click(within(dialog).getByRole("button", {name:"确认取消任务"}));
-  expect(await screen.findByRole("status")).toHaveTextContent("失败任务已从队列移除");
+  expect(await screen.findByText("失败任务已从队列移除")).toBeVisible();
   expect(reload).toHaveBeenCalledOnce();
 });

@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -82,7 +83,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [status, setStatus] = useState("");
   const [page, setPage] = useState(1), [size, setSize] = useState(25), [selected, setSelected] = useState<string | null>(null);
   const [control, setControl] = useState<boolean | null>(null), [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const action = useRef<AbortController | null>(null);
   useEffect(() => () => action.current?.abort(), []);
   const scope = classroomId === undefined ? "" : `classroom_id=${classroomId}&`;
@@ -99,7 +100,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   async function operate(kind: "probe" | "control") {
     const controller = new AbortController(), captured = token();
     action.current = controller;
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError("");
     try {
       await request(`/teacher/judge/service${kind === "probe" ? "/probe" : ""}`, {
         method: kind === "probe" ? "POST" : "PUT", signal: controller.signal,
@@ -107,7 +108,8 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
       });
       if (controller.signal.aborted || captured !== token()) return;
       setControl(null); setReason(""); service.reload(); submissions.reload();
-      setNotice(kind === "probe" ? "检测已完成，请查看最新服务状态。" : "派发设置已保存，正在执行的提交会继续完成。");
+      toast.add(kind === "probe" ? { title: "检测已完成", type: "info" } :
+        { title: "派发设置已保存", description: "正在执行的提交会继续完成。", type: "success" });
     } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) setBusy(false); }
   }
@@ -130,7 +132,6 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
       <ErrorNotice message={dateError} />
     </section>
     <ErrorNotice message={service.error || submissions.error || (control === null ? error : "")} />
-    {notice ? <p role="status" className="text-sm text-muted-foreground">{notice}</p> : null}
     <section className="surface judge-service" aria-label="评测服务状态">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 className="flex items-center gap-2 font-semibold"><ShieldCheck size={18} />评测服务</h2>

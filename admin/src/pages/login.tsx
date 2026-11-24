@@ -62,7 +62,7 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
           </p>
           <ErrorNotice message={error} />
           <div className="field">
-            <Label htmlFor="login-id">学号</Label>
+            <Label htmlFor="login-id">工号</Label>
             <Input
               id="login-id"
               autoComplete="username"

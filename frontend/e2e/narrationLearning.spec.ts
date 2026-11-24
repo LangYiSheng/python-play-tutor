@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { importCourse } from "./courseFixture";
@@ -41,10 +42,8 @@ test("PDF narration keeps all pages readable and opens the existing learning ass
     id: `narration-${randomUUID()}`, chapter_id: ids.chapter["179"], title, kind: "reading", material_id: material.id,
   } });
   expect(activity.ok(), await activity.text()).toBe(true);
-  const registered = await request.post("/api/auth/register", { data: { student_id: BigInt("0x" + randomUUID().replaceAll("-", "").slice(0, 24)).toString(), password: `Test-${randomUUID()}`, name: "讲解验收居民" } });
-  const identity = await registered.json();
+  const { identity } = await provisionStudent(request, teacher, classroom.id, "讲解验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  expect((await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } })).ok()).toBe(true);
   await expect.poll(async () => (await (await request.get(`/api/materials/${material.id}?classroom_id=${classroom.id}`, { headers: student })).json()).status).toBe("ready");
   const narration = `/api/teacher/classrooms/${classroom.id}/materials/${material.id}/narrations`;
   for (const p of [1, 3]) {

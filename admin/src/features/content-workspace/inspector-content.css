@@ -41,7 +41,7 @@
 .inspector-task[data-failed="true"] .inspector-status { background: #fdf0ec; }
 .inspector-task-focus { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; }
 .inspector-task-focus strong { display: block; font-size: 14px; }
-.inspector-task-focus small, .inspector-job-message, .inspector-feedback, .inspector-task details { font-size: 12px; overflow-wrap: anywhere; }
+.inspector-task-focus small, .inspector-job-message, .inspector-task details { font-size: 12px; overflow-wrap: anywhere; }
 .inspector-task-focus small { color: var(--muted-foreground); }
 .inspector-task-focus:hover strong { text-decoration: underline; text-underline-offset: 3px; }
 .inspector-task-line, .inspector-task h3 { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -74,4 +74,3 @@
 .synthesis-detail-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; font-size: 12px; }
 .synthesis-detail-facts dt { color: var(--muted-foreground); }
 .synthesis-detail-facts dd { margin-top: 2px; overflow-wrap: anywhere; }
-.inspector-feedback { padding: 8px; margin: 8px 0; border-radius: 5px; background: var(--muted); }

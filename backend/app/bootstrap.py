@@ -5,6 +5,7 @@ from .account_ids import normalize_student_id
 from .auth import hash_password
 from .db import SessionLocal
 from .models import User
+from .password_policy import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
 
 
 def bootstrap_admin(db):
@@ -18,8 +19,8 @@ def bootstrap_admin(db):
     name = os.getenv("REBORN_ADMIN_NAME", "管理员").strip()
     if not student_id and not password:
         return False
-    if not student_id or len(password) < 12 or len(password) > 200 or not 1 <= len(name) <= 80:
-        raise ValueError("首次管理员配置无效：需要学号、12–200位密码和1–80字姓名")
+    if not student_id or not MIN_PASSWORD_LENGTH <= len(password) <= MAX_PASSWORD_LENGTH or not 1 <= len(name) <= 80:
+        raise ValueError(f"首次管理员配置无效：需要工号、{MIN_PASSWORD_LENGTH}–{MAX_PASSWORD_LENGTH}位密码和1–80字姓名")
     student_id = normalize_student_id(student_id)
     if password == student_id:
         raise ValueError("管理员密码不能与学号相同")

@@ -40,7 +40,7 @@ function AuthoringEditor({
   const draft = useAuthoringDraft(initial, classroomId);
   const editor = useFlowEditor(draft.data, draft.change);
   const preview = useAuthoringPreview(initial, classroomId, draft);
-  const { data, change, draftEpoch, busy, error, message, setAssetBusy } =
+  const { data, change, draftEpoch, busy, error, setAssetBusy } =
     draft;
   const {
     tab,
@@ -77,11 +77,6 @@ function AuthoringEditor({
         }}
       />
       <ErrorNotice message={!preview.previewOpen ? error : ""} />
-      {message && message !== "课程已保存。" && (
-        <p role="status" className="notice-success">
-          {message}
-        </p>
-      )}
       <ValidationFeedback draft={draft} editor={editor} onValidate={validate} />
       <div inert={busy} aria-busy={busy} data-testid="authoring-fields">
         <Tabs

@@ -35,6 +35,9 @@ def list_classrooms(db: Session, user: User):
 
 
 def create_classroom(body: ClassroomInput, db: Session, user: User):
+    user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
+    if not user or user.disabled:
+        raise HTTPException(401, "账号不可用")
     item = Classroom(name=body.name.strip(), teacher_id=user.id, join_code=secrets.token_urlsafe(9))
     db.add(item)
     db.commit()
@@ -72,9 +75,10 @@ def join_classroom(body: JoinInput, db: Session, user: User):
     classroom = db.scalar(select(Classroom).where(Classroom.join_code == body.join_code.strip()))
     if not classroom:
         raise HTTPException(404, "加入码无效")
-    lock_course(db, classroom.id, exclusive=True)
-    db.refresh(classroom)
-    if classroom.status != "active":
+    classroom_id = classroom.id
+    lock_course(db, classroom_id, exclusive=True)
+    classroom = db.get(Classroom, classroom_id, populate_existing=True)
+    if not classroom or classroom.status != "active":
         raise HTTPException(404, "加入码无效")
     if not db.get(Membership, (user.id, classroom.id)):
         db.add(Membership(user_id=user.id, classroom_id=classroom.id))

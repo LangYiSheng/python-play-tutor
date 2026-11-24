@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { test, expect, type APIResponse } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -41,11 +42,8 @@ test("a chapter-free public entry opens one workspace and resumes its following 
       nodes: [{ id: "greeting", type: "dialogue", speaker: "图书馆", text: "欢迎进入图书馆，跨地图落点也会触发公共流程。", next: "done" }, { id: "done", type: "end" }],
     } }],
   } }));
-  const identity = await json<{ access_token: string; user: { id: number } }>(await request.post("/api/auth/register", { data: {
-    student_id: BigInt("0x" + randomUUID().replaceAll("-", "").slice(0, 24)).toString(), password: `Public-${randomUUID()}`, name: "公共流程验收居民",
-  } }));
+  const { identity } = await provisionStudent(request, headers, classroom.id, "公共流程验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  await json(await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } }));
   const before = await json<{ quests: unknown[]; chapters: unknown[] }>(await request.get(`/api/world?classroom_id=${classroom.id}`, { headers: student }));
   expect(before.quests).toEqual([]);
   expect(before.chapters).toEqual([]);

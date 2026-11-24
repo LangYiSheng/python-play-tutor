@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, errorMessage, request } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
+import { toast } from "@/components/ui/toast";
 import { useResource } from "@/lib/use-resource";
 import { ChapterPicker } from "./chapter-picker";
 import type { ChapterSelection, CourseTemplate, Preview, QuickCatalog, Recipe } from "./contracts";
@@ -80,7 +81,6 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
   const [pending, setPending] = useState<"refresh" | "preview" | "apply" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [conflict, setConflict] = useState(false);
   const lastQuizCount = useRef(initial.recipe?.quiz_count || 1);
   const inFlight = useRef<AbortController | null>(null);
@@ -91,7 +91,6 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
   function change(next: Recipe) {
     setRecipe(next);
     setError("");
-    setSuccess("");
     setPreview(null);
   }
   function selectTemplate(next: CourseTemplate) {
@@ -118,7 +117,6 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
     const controller = new AbortController();
     inFlight.current = controller;
     setError("");
-    setSuccess("");
     setConflict(false);
     setPending(action);
     try {
@@ -136,7 +134,7 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
         }
         setPreview(null);
         setCatalog(current);
-        setSuccess("教学内容已刷新。");
+        toast.add({ title: "教学内容已刷新", type: "success" });
         setStep("chapters");
         return;
       }
@@ -154,7 +152,7 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
         setCatalog(current => ({ ...current, recipe: submission, revision: result.revision }));
         setRecipe(submission);
         setPreview(current => current && { ...current, token: null, reset_impact: null });
-        setSuccess("课程流程已生成。你可以继续调整，或点击「进入小镇」体验这堂课。");
+        toast.add({ title: "课程流程已生成", description: "可点击「进入小镇」体验课程。", type: "success" });
       }
     } catch (e) {
       if (controller.signal.aborted) return;
@@ -240,7 +238,6 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
     <div aria-live="polite">
       <ErrorNotice message={error} />
       {conflict && <Button variant="outline" disabled={Boolean(pending)} onClick={() => void run("refresh")}>重新载入课程</Button>}
-      {success && <p role="status" className="text-sm text-green-800">{success}</p>}
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
       <span className="hint">{hint || (dirty ? "有未生成的调整" : saved ? "当前流程已保存" : "")}</span>

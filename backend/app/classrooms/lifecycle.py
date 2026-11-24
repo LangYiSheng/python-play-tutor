@@ -64,8 +64,8 @@ def transfer(db, user, classroom_id, teacher_id):
     if user.role != "admin":
         raise HTTPException(403, "只有管理员可以转交班级")
     item = managed_class(db, user, classroom_id, exclusive=True)
-    target = db.get(User, teacher_id)
-    if not target or target.role not in {"admin", "teacher"}:
+    target = db.scalar(select(User).where(User.id == teacher_id).with_for_update().execution_options(populate_existing=True))
+    if not target or target.disabled or target.role not in {"admin", "teacher"}:
         raise HTTPException(422, "请选择有效的任课教师")
     if item.teacher_id != target.id:
         instance = classroom_course(db, classroom_id)

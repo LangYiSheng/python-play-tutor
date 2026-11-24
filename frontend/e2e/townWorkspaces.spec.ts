@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type Page, type APIResponse, type TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -42,13 +43,9 @@ async function prepare(request: APIRequestContext, purpose: string) {
   };
   const first = await createClass("主班", [179, 180, 181, 182, 183, 184, 185]);
   const second = await createClass("新班", [179]);
-  const identity = await json<Identity>(await request.post("/api/auth/register", { data: {
-    name: "小镇界面验收学生", student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Resident-${randomUUID()}`,
-  } }));
+  const { identity } = await provisionStudent(request, teacher, first.id, "小镇界面验收学生");
   const student: Header = { Authorization: `Bearer ${identity.access_token}` };
-  for (const classroom of [first, second]) await json(await request.post("/api/classrooms/join", {
-    headers: student, data: { join_code: classroom.join_code },
-  }));
+  await json(await request.post("/api/classrooms/join", { headers: student, data: { join_code: second.join_code } }));
   const world = await json<WorldInfo>(await request.get(`/api/world?classroom_id=${first.id}`, { headers: student }));
   const mayor = world.npcs.find(npc => npc.key === first.ids.npc.mayor_py)!;
   await json(await request.put("/api/world/position", { headers: student, data: {

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorMessage } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
+import { toast } from "@/components/ui/toast";
 
 type AssistantSettings = { enabled?: boolean; default_npc_id?: string | null; limits?: Record<string, number> };
 type Settings = { revision: number; assistant: AssistantSettings; roles: { id: string; name: string }[]; system_limits?: Record<string, number> };
@@ -22,7 +23,6 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
   const [draft, setDraft] = useState<AssistantSettings>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const dirty = Boolean(saved && JSON.stringify(saved.assistant) !== JSON.stringify(draft));
   useDraft(dirty);
   const path = `/teacher/classrooms/${classroomId}/course/settings`;
@@ -35,11 +35,11 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
   }, [path]);
   async function save() {
     if (!saved || busy) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError("");
     try {
       const result = await api.put<{ revision: number }>(path, { expected_revision: saved.revision, assistant: draft });
       setSaved({ ...saved, revision: result.revision, assistant: draft });
-      setMessage("设置已保存");
+      toast.add({ title: "设置已保存", type: "success" });
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setBusy(false); }
   }
@@ -47,11 +47,10 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
     <PageHeader title="本班答疑设置" description="选择本班的默认助教，设置答疑开关和提问额度。">
       <div ref={setActionsTarget} />
       <SettingsActions actionsTarget={actionsTarget} active dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
-        if (saved && window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved.assistant); setError(''); setMessage(''); }
+        if (saved && window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved.assistant); setError(''); }
       }} />
     </PageHeader>
     <ErrorNotice message={error} />
-    {message && !dirty && <p role="status" className="hint">{message}</p>}
     {!saved ? (!error && <Loading />) : <fieldset disabled={busy} aria-busy={busy} className="surface space-y-6 p-6">
       <p className="hint">适用范围：当前班级。设置默认角色、答疑开关与请求预算。保存设置不会调用模型。</p>
       <Label className="gap-2"><Checkbox checked={draft.enabled ?? true} onCheckedChange={enabled => setDraft({ ...draft, enabled })} />开放本班课程 AI 答疑</Label>

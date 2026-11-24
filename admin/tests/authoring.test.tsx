@@ -1,5 +1,6 @@
+import { render } from "./render-with-toasts";
 import { it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { Authoring } from "../src/features/authoring/authoring-page";

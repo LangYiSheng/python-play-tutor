@@ -13,20 +13,13 @@
           <button class="primary" :disabled="busy" @click="continueAfterPassword">{{ busy ? "正在进入…" : "继续进入小镇" }}</button>
         </template>
         <p v-if="error || resourceError" class="error" role="alert">{{ error || resourceError }}</p>
-        <p class="muted arrival-intro">新密码至少6位，不能与学号或初始密码相同。</p>
         <button class="text-button" :disabled="busy || passwordBusy" @click="logout">换个账号？退出登录</button>
       </template>
       <template v-else>
         <p class="eyebrow">欢迎来到小镇</p>
-        <h2>{{ register ? "注册" : "登录" }}</h2>
+        <h2>登录</h2>
         <form @submit.prevent="submit">
-          <label v-if="register"
-            >名字<input
-              v-model="name"
-              autocomplete="name"
-              required
-              maxlength="80" /></label
-          ><label
+          <label
             >学号<input
               v-model="student_id"
               type="text"
@@ -39,19 +32,15 @@
             >密码<input
               v-model="password"
               type="password"
-              :autocomplete="register ? 'new-password' : 'current-password'"
+              autocomplete="current-password"
               required
-              :minlength="register ? 6 : 1"
           /></label>
           <p v-if="error || resourceError" class="error" role="alert">{{ error || resourceError }}</p>
           <button class="primary" :disabled="busy || !backdropReady || !worldAssetsReady">
-            {{ !backdropReady || !worldAssetsReady ? "正在准备小镇…" : busy ? "正在进入…" : register ? "注册并进入" : "进入小镇" }}
+            {{ !backdropReady || !worldAssetsReady ? "正在准备小镇…" : busy ? "正在进入…" : "进入小镇" }}
           </button>
         </form>
-        <button class="text-button" :disabled="busy" @click="register = !register; error = ''">
-          {{ register ? "已有居民证？登录" : "初次到访？注册居民证" }}
-        </button>
-        <p class="muted">学生可直接领取居民证；教师请使用学校提供的账号登录。</p>
+        <p class="muted">学生账号由教师提供。</p>
       </template>
       <RouterLink to="/credits">素材许可与来源</RouterLink>
     </section>
@@ -66,9 +55,7 @@ import { api } from "../shared/api";
 import { useSession } from "../shared/session";
 import type { User } from "../shared/types";
 import PasswordForm from "./PasswordForm.vue";
-const register = ref(false),
-  name = ref(""),
-  student_id = ref(""),
+const student_id = ref(""),
   password = ref(""),
   error = ref(""),
   busy = ref(false),
@@ -87,7 +74,7 @@ async function enterTown() {
     departing.value = true;
     await new Promise(resolve => setTimeout(resolve, 450));
     await router.push("/world");
-  } else window.location.assign("/teacher/");
+  } else window.location.assign("/teacher/classes");
 }
 async function continueAfterPassword() {
   if (busy.value) return;
@@ -109,7 +96,6 @@ async function logout() {
   session.reset();
   passwordSetup.value = false;
   password.value = "";
-  register.value = false;
   error.value = "";
 }
 async function submit() {
@@ -119,10 +105,8 @@ async function submit() {
   try {
     session.reset();
     const result = await api.post<{ access_token: string; user: User }>(
-      `/auth/${register.value ? "register" : "login"}`,
-      register.value
-        ? { student_id: student_id.value, password: password.value, name: name.value }
-        : { student_id: student_id.value, password: password.value },
+      "/auth/login",
+      { student_id: student_id.value, password: password.value },
     );
     api.setToken(result.access_token);
     session.user = result.user;

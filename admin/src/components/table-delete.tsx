@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/toast";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ErrorNotice } from "@/components/common";
 import { api, errorMessage, token } from "@/lib/api";
@@ -61,7 +62,10 @@ export function useTableDelete<T extends Row>(url: (row: T) => string, reload: (
       setCompleted((current) => current + removed.size);
       setTargets(failed);
       setErrors(errors);
-      if (removed.size) reload();
+      if (removed.size) {
+        if (!failed.length) toast.add({ title: `已删除 ${completed + removed.size} 条。`, type: "success" });
+        reload();
+      }
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -70,7 +74,8 @@ export function useTableDelete<T extends Row>(url: (row: T) => string, reload: (
   function cascadeDone() {
     const ids = new Set(targets.map(row => row.id));
     setSelected(current => current.filter(row => !ids.has(row.id)));
-    setCompleted(targets.length); setTargets([]); reload();
+    toast.add({ title: `已删除 ${targets.length} 条。`, type: "success" });
+    setTargets([]); reload();
   }
   return { selected, isSelected, toggle, togglePage, ask, confirm, targets, busy, errors, completed, cascade, cascadeDone, clear: () => setSelected([]) };
 }
@@ -88,7 +93,6 @@ export function DeleteSelection<T extends Row>({ actions }: { actions: ReturnTyp
           </Button>
         </div>
       )}
-      {completed > 0 && targets.length === 0 && <p role="status" className="notice-success">已删除 {completed} 条。</p>}
       {actions.cascade && targets.length > 0 && targets.every(row => actions.cascade!.kind(row)) ?
         <ContentDeleteDialog classroomId={actions.cascade.classroomId}
           targets={targets.map(row => ({ kind: actions.cascade!.kind(row)!, id: String(row.id) }))}

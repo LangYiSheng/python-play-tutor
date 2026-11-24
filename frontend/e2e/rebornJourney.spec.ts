@@ -1,3 +1,4 @@
+import { provisionStudent, signInStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { answerStoryQuestions } from "./answerActivity";
 import { verifyDailyDialogue, verifyUnlockedDailyChoice } from "./dailyDialogue";
@@ -40,15 +41,7 @@ test("only configured arrival main quest completes and stays isolated across acc
     ).ok(),
   ).toBeTruthy();
   await page.goto("/");
-  await page.getByRole("button", { name: "初次到访？注册居民证" }).click();
-  await page.getByLabel("名字", { exact: true }).fill("新居民");
-  await page
-    .getByLabel("学号", { exact: true })
-    .fill(BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString());
-  await page.getByLabel("密码", { exact: true }).fill(`Reborn-${randomUUID()}`);
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-  await page.getByLabel("班级加入码").fill(classroom.join_code);
-  await page.getByRole("button", { name: "加入班级", exact: true }).click();
+  await signInStudent(page, (await provisionStudent(request, teacher, classroom.id, "新居民")).credentials);
   await dismissArrival(page);
   await expect(page.locator(".world-canvas canvas")).toBeVisible();
   await expect(page.locator(".world-hint")).toContainText("交谈", {
@@ -176,15 +169,7 @@ test("only configured arrival main quest completes and stays isolated across acc
   expect((await world()).building_unlock).toContain("library");
   await page.getByRole("button", { name: "打开设置" }).click();
   await page.getByRole("button", { name: "退出账号", exact: true }).click();
-  await page.getByRole("button", { name: "初次到访？注册居民证" }).click();
-  await page.getByLabel("名字", { exact: true }).fill("另一位新居民");
-  await page
-    .getByLabel("学号", { exact: true })
-    .fill(BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString());
-  await page.getByLabel("密码", { exact: true }).fill(`Reborn-${randomUUID()}`);
-  await page.getByRole("button", { name: "注册并进入", exact: true }).click();
-  await page.getByLabel("班级加入码").fill(classroom.join_code);
-  await page.getByRole("button", { name: "加入班级", exact: true }).click();
+  await signInStudent(page, (await provisionStudent(request, teacher, classroom.id, "另一位新居民")).credentials);
   await dismissArrival(page);
   await expect(
     page.getByText("前往广场，拜访镇长", { exact: true }),

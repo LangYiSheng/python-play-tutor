@@ -4,30 +4,38 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import hash_password, require_admin
+from .account_deletion import delete_account_data, owned_classroom_ids
+from .course_scope import lock_course
 from .db import get_db
 from .judge_management import python_submission
-from .models import (Classroom, CourseInstance, Material, Membership, PlayerQuest, Question,
+from .models import (AuthSession, Classroom, CourseInstance, Material, Membership, PlayerQuest, Question,
                      Submission, TownPreviewStudent, User)
 from .narration.management import run_state
 from .narration.models import NarrationRun
-from .student_accounts import StudentInput, reset_account_password
+from .password_policy import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
+from .student_accounts import AccountNameInput, StudentInput, reset_account_password
 
 router = APIRouter(prefix="/admin", tags=["site-management"], dependencies=[Depends(require_admin)])
 Database = Annotated[Session, Depends(get_db)]
 
 
-class TeacherInput(StudentInput):
-    password: SecretStr = Field(min_length=12, max_length=200)
-
-
 class ResetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    password: SecretStr | None = Field(default=None, min_length=12, max_length=200)
+    password: SecretStr | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+
+class TeacherInput(StudentInput, ResetInput):
+    pass
+
+
+class AccountStatusInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    disabled: bool
 
 
 @router.get("/accounts")
@@ -58,34 +66,81 @@ def list_accounts(role: Literal["teacher", "student"], db: Database, q: str = Qu
         by_user[user_id].append({"id": key, "name": name, "status": status})
     return {"total": total, "items": [
         {"id": user.id, "role": user.role, "student_id": user.student_id, "name": user.name,
-         "must_change_password": user.must_change_password, "classrooms": by_user[user.id]} for user in accounts]}
+         "must_change_password": user.must_change_password, "disabled": user.disabled,
+         "classrooms": by_user[user.id]} for user in accounts]}
 
 
 @router.post("/teachers", status_code=201)
 def create_teacher(body: TeacherInput, db: Database):
+    password = body.password.get_secret_value() if body.password else body.student_id
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(422, f"工号不足{MIN_PASSWORD_LENGTH}位，请设置初始密码")
     user = User(student_id=body.student_id, name=body.name, role="teacher", must_change_password=True,
-                password_hash=hash_password(body.password.get_secret_value()))
+                password_hash=hash_password(password))
     db.add(user)
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(409, "该学号已被使用") from exc
+        raise HTTPException(409, "该工号已被使用") from exc
     return {"id": user.id, "name": user.name, "student_id": user.student_id}
+
+
+def managed_account(db, user_id, *, lock=True):
+    query = select(User).where(User.id == user_id).execution_options(populate_existing=True)
+    account = db.scalar(query.with_for_update() if lock else query)
+    if not account or db.get(TownPreviewStudent, user_id):
+        raise HTTPException(404, "账号不可用")
+    if account.role not in {"student", "teacher"}:
+        raise HTTPException(403, "只能管理教师和学生账号")
+    return account
 
 
 @router.post("/accounts/{user_id}/reset-password")
 def reset_password(user_id: int, body: ResetInput, db: Database):
-    account = db.scalar(select(User).where(User.id == user_id).with_for_update())
-    if not account or not account.student_id or db.get(TownPreviewStudent, user_id):
-        raise HTTPException(404, "账号不可用")
-    if account.role not in {"student", "teacher"}:
-        raise HTTPException(403, "只能重置教师和学生密码")
+    account = managed_account(db, user_id)
+    if not account.student_id:
+        raise HTTPException(422, "请先分配登录账号")
     if account.role == "teacher" and body.password is None:
         raise HTTPException(422, "请设置教师的临时密码")
     reset_account_password(db, account, body.password.get_secret_value() if body.password else account.student_id)
     db.commit()
     return {"ok": True}
+
+
+@router.put("/accounts/{user_id}/name")
+def rename_account(user_id: int, body: AccountNameInput, db: Database):
+    account = managed_account(db, user_id)
+    account.name = body.name
+    db.commit()
+    return {"ok": True}
+
+
+@router.put("/accounts/{user_id}/status")
+def set_account_status(user_id: int, body: AccountStatusInput, db: Database):
+    account = managed_account(db, user_id)
+    account.disabled = body.disabled
+    if body.disabled:
+        db.execute(delete(AuthSession).where(AuthSession.user_id == account.id))
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/accounts/{user_id}", status_code=204)
+def delete_account(user_id: int, db: Database):
+    account = managed_account(db, user_id, lock=False)
+    classrooms = owned_classroom_ids(db, user_id) if account.role == "teacher" else []
+    for classroom_id in classrooms:
+        lock_course(db, classroom_id, exclusive=True)
+    account = managed_account(db, user_id)
+    if account.role == "teacher" and owned_classroom_ids(db, user_id) != classrooms:
+        raise HTTPException(409, "负责班级已变化，请刷新后重新确认")
+    try:
+        delete_account_data(db, account, classrooms)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "账号仍被其他数据引用，未删除任何记录") from exc
 
 
 @router.get("/overview")

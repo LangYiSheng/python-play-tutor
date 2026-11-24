@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render } from "./render-with-toasts";
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { AssistantModelSettings } from '../src/components/assistant-model-settings';
 import { api } from '../src/lib/api';
@@ -17,7 +18,8 @@ it('keeps the key masked and only tests a saved connection on explicit click', a
   const key = screen.getByLabelText('API Key （已配置）') as HTMLInputElement;
   expect(key.value).toBe(''); expect(key.type).toBe('password');
   fireEvent.click(screen.getByText('测试已保存连接'));
-  await screen.findByText('连接正常 · 12 ms · 4 tokens');
+  await screen.findByText('连接正常');
+  expect(screen.getByText('12 ms · 4 tokens')).toBeVisible();
   expect(api.post).toHaveBeenCalledWith('/teacher/assistant/model/test', {});
 });
 it('preserves an unsaved key on failure and clears it after successful save', async () => {

@@ -15,21 +15,16 @@ from .auth import hash_password, require_teacher
 from app.classrooms.access import own_classroom
 from .db import get_db
 from .models import AuthSession, Membership, TownPreviewStudent, User
+from .password_policy import MIN_PASSWORD_LENGTH
 
 router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/students", tags=["student accounts"])
 MAX_ROWS = 500
 MAX_FILE = 2 * 1024 * 1024
 
 
-class StudentInput(BaseModel):
+class AccountNameInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    student_id: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=1, max_length=80)
-
-    @field_validator("student_id")
-    @classmethod
-    def valid_id(cls, value):
-        return normalize_student_id(value)
 
     @field_validator("name")
     @classmethod
@@ -37,6 +32,15 @@ class StudentInput(BaseModel):
         if not value.strip():
             raise ValueError("姓名不能为空")
         return value.strip()
+
+
+class StudentInput(AccountNameInput):
+    student_id: str = Field(min_length=1, max_length=32)
+
+    @field_validator("student_id")
+    @classmethod
+    def valid_id(cls, value):
+        return normalize_student_id(value)
 
 
 class CreateInput(BaseModel):
@@ -58,6 +62,8 @@ def inspect_students(db, classroom_id, students):
             errors.append(f"第{index}行：该学号不能作为正式学生加入班级")
         elif old and old.id not in members and old.name != student.name:
             errors.append(f"第{index}行：学号与姓名不匹配，请核对名册")
+        elif not old and len(student.student_id) < MIN_PASSWORD_LENGTH:
+            errors.append(f"第{index}行：新生学号至少须有{MIN_PASSWORD_LENGTH}位，用于设置初始密码")
         else:
             action = ("existing" if old.id in members else "bind") if old else "create"
             result.append({**student.model_dump(), "name": old.name if old else student.name, "action": action})
@@ -71,7 +77,8 @@ def inspect_students(db, classroom_id, students):
 def roster(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
     own_classroom(db, user, classroom_id)
     rows = db.scalars(select(User).join(Membership).where(Membership.classroom_id == classroom_id, User.role == "student").order_by(User.student_id))
-    return [{"id": u.id, "student_id": u.student_id, "name": u.name, "must_change_password": u.must_change_password} for u in rows]
+    return [{"id": u.id, "student_id": u.student_id, "name": u.name, "must_change_password": u.must_change_password,
+             "disabled": u.disabled} for u in rows]
 
 
 @router.post("", status_code=201)
@@ -177,6 +184,8 @@ class BatchInput(BaseModel):
 
 
 def reset_account_password(db, account, password):
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(422, f"账号长度不足{MIN_PASSWORD_LENGTH}位，请由管理员设置临时密码")
     account.password_hash = hash_password(password)
     account.must_change_password = True
     db.execute(delete(AuthSession).where(AuthSession.user_id == account.id))

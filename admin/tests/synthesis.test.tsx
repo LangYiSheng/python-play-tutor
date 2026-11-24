@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render } from "./render-with-toasts";
 import { beforeEach, expect, it, vi } from 'vitest';
 import { Synthesis } from '../src/pages/synthesis';
 import { api } from '../src/lib/api';
 
 vi.mock('../src/lib/drafts', () => ({ useDraft: vi.fn() }));
-vi.mock('../src/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() }, errorMessage: (e: Error) => e.message }));
+vi.mock('../src/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() }, errorMessage: (e: Error) => e.message, token: () => null }));
 vi.mock('../src/features/materials/narration/review', () => ({ NarrationReview: () => <div>审校对话框</div> }));
 vi.mock('../src/features/materials/narration/player', () => ({ NarrationPlayer: () => <div>试听对话框</div> }));
 const task = { id: 1, requested_by: '老师', scope: '第 1–2 页', material_available: true, material_id: 11, title: '变量讲义', material_kind: 'pdf', kind: 'generate', status: 'failed',

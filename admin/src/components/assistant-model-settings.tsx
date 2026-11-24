@@ -9,6 +9,7 @@ import { SelectField } from '@/components/select-field';
 import { ErrorNotice } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
+import { toast } from '@/components/ui/toast';
 
 type ModelSettings = {
   revision: number; base_url: string; model: string; reasoning_effort: string;
@@ -29,7 +30,7 @@ const numbers = [
 export function AssistantModelSettings({ onSaved, actionsTarget, active }: SettingsActionPlacement & { onSaved?: (limits: Record<string, number>) => void }) {
   const [saved, setSaved] = useState<ModelSettings>(), [draft, setDraft] = useState<ModelSettings>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
-  const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const dirty = !!saved && (JSON.stringify(saved) !== JSON.stringify(draft) || !!key || clearKey);
   useDraft(dirty);
   useEffect(() => {
@@ -41,30 +42,31 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
   }, []);
   async function save() {
     if (!draft || !saved || busy) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const value = await api.put<ModelSettings>('/teacher/assistant/model', {
         expected_revision: saved.revision, base_url: draft.base_url, model: draft.model, reasoning_effort: draft.reasoning_effort,
         ...Object.fromEntries(numbers.map(([name]) => [name, draft[name]])), api_key: key || null, clear_key: clearKey,
       });
-      setSaved(value); setDraft(value); setKey(''); setClearKey(false); setNotice('设置已保存');
+      setSaved(value); setDraft(value); setKey(''); setClearKey(false);
+      toast.add({ title: '设置已保存', type: 'success' });
       onSaved?.(Object.fromEntries(numbers.map(([name]) => [name, value[name]])));
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   async function test() {
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const result = await api.post<{ elapsed_ms: number; tokens: number }>('/teacher/assistant/model/test', {});
-      setNotice(`连接正常 · ${result.elapsed_ms} ms · ${result.tokens} tokens`);
+      toast.add({ title: '连接正常', description: `${result.elapsed_ms} ms · ${result.tokens} tokens`, type: 'success' });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <section className="surface space-y-4 p-6">
     <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
-      if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); setNotice(''); }
+      if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
     }} />
     <h2 className="font-semibold">学生助教</h2>
     <p className="hint">适用范围：全站学生答疑。由管理员维护，学习与练习共用此连接。保存设置不会调用模型。</p>
-    <ErrorNotice message={error} />{notice && !dirty && <p role="status" className="hint">{notice}</p>}
+    <ErrorNotice message={error} />
     {draft && <fieldset disabled={busy} className="space-y-4">
       <div><Button variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void test()}><PlugZap />测试已保存连接</Button><p className="hint mt-2">测试会发送一次短请求；有未保存修改时，请先保存或取消。</p></div>
       <div className="grid items-start gap-4 md:grid-cols-2">

@@ -7,7 +7,8 @@ import {
   type NarrationPage,
   type NarrationQuota,
 } from "@/features/materials/narration/api";
-import { errorMessage } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
+import { errorMessage, token } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
 export function useNarrationReview(classroomId: number, materialId: number, initialPage?: number) {
@@ -21,7 +22,6 @@ export function useNarrationReview(classroomId: number, materialId: number, init
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [job, setJob] = useState<NarrationJobState | null>(null);
   const load = useCallback(async () => {
     setBusy("load");
@@ -91,10 +91,10 @@ export function useNarrationReview(classroomId: number, materialId: number, init
   ) {
     setBusy(label);
     setError("");
-    setMessage("");
+    const captured = token();
     try {
       await action();
-      setMessage(done);
+      if (captured === token()) toast.add({ title: done, type: "success" });
       await load();
     } catch (e) {
       setError(errorMessage(e));
@@ -106,19 +106,20 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     if (!data) return;
     setBusy("pipeline");
     setError("");
-    setMessage("已提交一键梳理，后台会依次完成整理、校准与讲解稿");
+    const captured = token();
     try {
       await narrationApi.pipeline(classroomId, materialId);
+      if (captured === token()) toast.add({ title: "已提交一键梳理", type: "info" });
       const state = await waitForJob();
       const next = await narrationApi
         .calibration(classroomId, materialId, true)
         .catch(() => null);
       if (next) setReport(next);
-      setMessage(
-        state.status === "done"
-          ? "梳理、校准、讲解稿已完成，校准修正已自动应用"
-          : `一键梳理结束于「${state.status}」：${state.message || "请检查失败页"}`,
-      );
+      if (captured === token()) {
+        toast.add(state.status === "done"
+          ? { title: "梳理、校准与讲解稿已完成", description: "校准修正已自动应用。", type: "success" }
+          : { title: "一键梳理未完成", description: state.message, type: "warning" });
+      }
       if (state.failed?.length) {
         setError(
           state.failed
@@ -129,7 +130,6 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       }
     } catch (e) {
       setError(errorMessage(e));
-      setMessage("已完成的阶段已保存，可直接重试（不会重复计费）");
     } finally {
       setBusy("");
       await load().catch(() => {});
@@ -141,7 +141,6 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       const state = await narrationApi.job(classroomId, materialId);
       setJob(state);
       if (!state.running && !state.queued) return state;
-      if (state.message) setMessage(`正在后台处理：${state.message}`);
       if (Date.now() > deadline)
         throw new Error("任务仍在后台运行，可稍后刷新查看");
       await new Promise((resolve) => window.setTimeout(resolve, 2000));
@@ -153,7 +152,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       (item) => item.narration?.status === "draft",
     ).length;
     if (!drafts) {
-      setMessage("没有待审的草稿");
+      toast.add({ title: "没有待审的草稿", type: "info" });
       return;
     }
     if (
@@ -174,7 +173,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       (item) => item.narration?.status === "accepted",
     ).length;
     if (!accepted) {
-      setMessage("还没有已接受的页，先接受再合成音频");
+      toast.add({ title: "还没有已接受的页", description: "请先接受讲解稿，再合成配音。", type: "info" });
       return;
     }
     if (
@@ -186,15 +185,16 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     const total = data.coverage.pages;
     setBusy("audio-all");
     setError("");
-    setMessage("已提交全文配音生成，后台继续执行，可以切去别的资料");
+    const captured = token();
     try {
       await narrationApi.audioBatch(classroomId, materialId, 1, total);
+      if (captured === token()) toast.add({ title: "已提交全文配音生成", type: "info" });
       const state = await waitForJob();
-      setMessage(
-        state.status === "done"
-          ? `全文配音已生成（${state.done}/${state.total} 页）`
-          : `配音生成结束于「${state.status}」：${state.message || "请检查失败页"}`,
-      );
+      if (captured === token()) {
+        toast.add(state.status === "done"
+          ? { title: `全文配音已生成（${state.done}/${state.total} 页）`, type: "success" }
+          : { title: "全文配音未完成", description: state.message, type: "warning" });
+      }
       if (state.failed?.length) {
         setError(
           state.failed
@@ -205,7 +205,6 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       }
     } catch (e) {
       setError(errorMessage(e));
-      setMessage("已生成的配音已保存，可直接重试");
     } finally {
       setBusy("");
       await load().catch(() => {});
@@ -243,8 +242,6 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     setBusy,
     error,
     setError,
-    message,
-    setMessage,
     job,
     setJob,
     load,

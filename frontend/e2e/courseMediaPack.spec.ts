@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -20,13 +21,8 @@ async function prepare(request: APIRequestContext) {
       headers: teacher, data: { status: "published" },
     })).ok()).toBeTruthy();
   }
-  const registered = await request.post("/api/auth/register", { data: {
-    student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Media-${randomUUID()}`, name: "课程媒体验收居民",
-  } });
-  expect(registered.status()).toBe(201);
-  const identity = await registered.json();
+  const { identity } = await provisionStudent(request, teacher, classroom.id, "课程媒体验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  expect((await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } })).ok()).toBeTruthy();
   const read = async (path: string) => {
     const response = await request.get(path, { headers: student });
     expect(response.ok(), await response.text()).toBeTruthy();

@@ -11,17 +11,24 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ErrorNotice } from "@/components/common";
+import { PasswordInput } from "@/components/password-input";
+import { toast } from "@/components/ui/toast";
 import { api, errorMessage, setToken } from "@/lib/api";
 import type { AuthResult, User } from "@/lib/types";
+import { passwordLengthError } from "../../../shared/password-policy";
 export function PasswordDialog({
   open,
   onClose,
   onUser,
+  user,
+  onLogout,
   required = false,
 }: {
   open: boolean;
   onClose: () => void;
   onUser: (user: User) => void;
+  user: User;
+  onLogout?: () => Promise<void>;
   required?: boolean;
 }) {
   const [old, setOld] = useState(""),
@@ -29,17 +36,17 @@ export function PasswordDialog({
     [confirm, setConfirm] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const passwordError = next && (passwordLengthError(next) ||
+    (next === user.student_id ? "新密码不能与工号相同" : next === old ? "新密码不能与当前密码相同" : ""));
+  const confirmError = confirm && next !== confirm ? "两次输入的新密码不一致" : "";
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (next !== confirm) {
-      setError("两次新密码不一致");
-      return;
-    }
+    if (busy || !next || passwordError || next !== confirm) return;
     setBusy(true);
     setError("");
     try {
       const result = await api.post<AuthResult>("/auth/password", {
-        current_password: old,
+        ...(!required && { current_password: old }),
         new_password: next,
       });
       setToken(result.access_token);
@@ -48,6 +55,7 @@ export function PasswordDialog({
       setNext("");
       setConfirm("");
       onClose();
+      toast.add({ title: "密码已修改", type: "success" });
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -63,14 +71,14 @@ export function PasswordDialog({
     >
       <DialogContent showCloseButton={!required}>
         <DialogHeader>
-          <DialogTitle>修改密码</DialogTitle>
+          <DialogTitle>{required ? "设置密码" : "修改密码"}</DialogTitle>
           <DialogDescription>
-            修改后其他登录会话将失效，当前工作台保持登录。
+            {required ? "设置自己的密码后，即可进入工作台。" : "修改后其他登录会话将失效，当前工作台保持登录。"}
           </DialogDescription>
         </DialogHeader>
         <form inert={busy} aria-busy={busy} onSubmit={save}>
           <ErrorNotice message={error} />
-          <div className="field">
+          {!required && <div className="field">
             <Label htmlFor="old-password">当前密码</Label>
             <Input
               id="old-password"
@@ -80,41 +88,19 @@ export function PasswordDialog({
               onChange={(e) => setOld(e.target.value)}
               required
             />
-          </div>
-          <div className="field">
-            <Label htmlFor="new-password">新密码</Label>
-            <Input
-              id="new-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={6}
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <Label htmlFor="confirm-password">确认新密码</Label>
-            <Input
-              id="confirm-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={6}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              required
-            />
-          </div>
+          </div>}
+          <PasswordInput id="new-password" label="新密码" value={next} onChange={setNext} error={passwordError} required />
+          <PasswordInput id="confirm-password" label="确认新密码" value={confirm} onChange={setConfirm} error={confirmError} required />
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={onClose}
-              disabled={busy || required}
+              onClick={() => { if (required) void onLogout?.(); else onClose(); }}
+              disabled={busy}
             >
-              取消
+              {required ? "退出登录" : "取消"}
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || !next || !confirm || Boolean(passwordError || confirmError)}>
               保存密码
             </Button>
           </DialogFooter>

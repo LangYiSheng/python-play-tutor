@@ -1,4 +1,5 @@
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 import { useDraft } from "@/lib/drafts";
 import { useState } from "react";
 import type { Diagnostic, ResetImpact, Validation } from "./contracts";
@@ -10,8 +11,7 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
   const [draftEpoch, setDraftEpoch] = useState(0),
     [assetBusy, setAssetBusy] = useState(false);
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState("");
+    [error, setError] = useState("");
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]),
     [resetImpact, setResetImpact] = useState<ResetImpact>();
   const [confirmReset, setConfirmReset] = useState(false),
@@ -31,14 +31,12 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
         })),
       },
     });
-    setMessage("");
     setDiagnostics([]);
     setResetImpact(undefined);
   }
   function discard() {
     setData(savedData);
     setError("");
-    setMessage("");
     setDiagnostics([]);
     setResetImpact(undefined);
     setDraftEpoch((epoch) => epoch + 1);
@@ -47,7 +45,6 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
     if (busy || assetBusy) return;
     setBusy(true);
     setError("");
-    setMessage("");
     setImpactChanged(false);
     try {
       if (!confirmationToken) {
@@ -63,7 +60,7 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
           return;
         }
         if (!save) {
-          setMessage("校验通过：流程连接、条件和引用有效。");
+          toast.add({ title: "校验通过", description: "流程连接、条件和引用有效。", type: "success" });
           return;
         }
       }
@@ -76,7 +73,7 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
       setSavedData(next);
       setResetImpact(undefined);
       setConfirmReset(false);
-      setMessage("课程已保存。");
+      toast.add({ title: "课程已保存。", type: "success" });
     } catch (e) {
       const detail = e instanceof ApiError ? e.detail : null;
       if (
@@ -118,7 +115,6 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
     setBusy,
     error,
     setError,
-    message,
     diagnostics,
     resetImpact,
     confirmReset,

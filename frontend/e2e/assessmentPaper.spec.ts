@@ -1,3 +1,4 @@
+import { provisionStudent } from "./studentAccount";
 import { importCourse, courseIds, scopedTeacher } from "./courseFixture";
 import { test, expect, type APIResponse } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -38,9 +39,8 @@ test("practice corrections and a locked whole assessment share the question dire
     { id: "assessment", type: "PASS_ASSESSMENT", title: "TEST 整卷测验", activity_id: ids.activity[examId], dependencies: [] },
   ], effects: [] } } }));
   ids = await courseIds(request, headers, classroom.id);
-  const identity = await json<Identity>(await request.post("/api/auth/register", { data: { name: "试卷验收居民", student_id: BigInt('0x' + randomUUID().replaceAll('-', '').slice(0, 24)).toString(), password: `Resident-${randomUUID()}` } }));
+  const { identity } = await provisionStudent(request, headers, classroom.id, "试卷验收居民");
   const student = { Authorization: `Bearer ${identity.access_token}` };
-  await json(await request.post("/api/classrooms/join", { headers: student, data: { join_code: classroom.join_code } }));
   const readPaper = () => request.get(`/api/activities/${ids.activity[examId]}/assessment?classroom_id=${classroom.id}`, { headers: student }).then(json<Paper>);
   const nodeState = async (nodeId: string) => {
     const world = await json<{ quests: { id: string; nodes: { id: string; status: string }[] }[] }>(await request.get(`/api/world?classroom_id=${classroom.id}`, { headers: student }));

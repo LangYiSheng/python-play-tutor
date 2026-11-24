@@ -1,5 +1,6 @@
+import { render } from "./render-with-toasts";
 import { afterEach, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QuickOrchestration } from "../src/features/quick-orchestration/page";
 import { sameRecipe, type CourseTemplate, type Recipe } from "../src/features/quick-orchestration/contracts";
@@ -138,7 +139,7 @@ it("blocks an incomplete preview, preserves the draft after a conflict and clear
   expect(await screen.findByText("课程已变化，请重新预览")).toBeVisible();
   expect(screen.getByRole("button", { name: "重新载入课程" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "重新载入课程" }));
-  expect(await screen.findByText("教学内容已刷新。")).toBeVisible();
+  expect(await screen.findByText("教学内容已刷新")).toBeVisible();
   expect(screen.getByRole("checkbox", { name: "基础知识" })).toBeChecked();
   await step(user, "预览与生成");
   view.rerender(<QuickOrchestration classroomId={3} />);

@@ -5,17 +5,18 @@ from app.auth import hash_password, issue
 from test_curriculum_migration import migrate, sqlite_engine, populate_baseline
 
 
-def test_student_id_login_preserves_zeroes_and_rejects_old_contract(client):
-    body = {"student_id": " 00123456 ", "name": "测试学生", "password": "student-password-123"}
-    created = client.post("/api/auth/register", json=body)
-    assert created.status_code == 201
-    assert created.json()["user"]["student_id"] == "00123456"
-    assert "email" not in created.json()["user"]
-    assert client.post("/api/auth/register", json=body).status_code == 409
-    logged_in = client.post("/api/auth/login", json={k: body[k] for k in ("student_id", "password")})
+def test_student_id_login_preserves_zeroes_and_rejects_old_contract(client, teacher, classroom):
+    path = f"/api/teacher/classrooms/{classroom['id']}/students"
+    data = {"students": [{"student_id": "00123456", "name": "测试学生"}]}
+    assert client.post(path, headers=teacher["headers"], json=data).json()["created"] == 1
+    assert client.post(path, headers=teacher["headers"], json=data).json()["existing"] == 1
+    password = "00123456"
+    logged_in = client.post("/api/auth/login", json={"student_id": " 00123456 ", "password": password})
     assert logged_in.status_code == 200
-    assert client.post("/api/auth/login", json={"student_id": "123456", "password": body["password"]}).status_code == 401
-    assert client.post("/api/auth/login", json={"email": "old@example.test", "password": body["password"]}).status_code == 422
+    assert logged_in.json()["user"]["student_id"] == "00123456"
+    assert "email" not in logged_in.json()["user"]
+    assert client.post("/api/auth/login", json={"student_id": "123456", "password": password}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "old@example.test", "password": password}).status_code == 422
     assert client.post("/api/auth/login", json={"student_id": "00123456", "password": "incorrect-password"}).status_code == 401
 
 
@@ -23,7 +24,6 @@ def test_student_id_login_preserves_zeroes_and_rejects_old_contract(client):
 def test_invalid_student_ids_rejected(client, student_id):
     body = {"student_id": student_id, "password": "student-password-123"}
     assert client.post("/api/auth/login", json=body).status_code == 422
-    assert client.post("/api/auth/register", json={**body, "name": "测试"}).status_code == 422
 
 
 @pytest.mark.parametrize("role", ["teacher", "admin"])

@@ -9,7 +9,7 @@ test("课程默认角色、活动覆盖与修订冲突草稿", async ({ page, re
   await chooseOption(page, page.getByLabel("课程默认答疑角色", { exact: true }), "回归向导");
   await page.getByLabel("每次请求最多模型调用").fill("2");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("设置已保存");
+  await expect(page.locator('[data-slot="toast"]').getByText("设置已保存")).toBeVisible();
   const saved = await json<{ revision: number; assistant: { default_npc_id: string; limits: Record<string, number> } }>(await request.get(path, { headers: scope.headers }));
   expect(saved.assistant.default_npc_id).toBeTruthy();
   expect(saved.assistant.limits.model_calls).toBe(2);

@@ -115,12 +115,15 @@ test("统一角色草稿、私有素材、摆放与真实游戏身份", async ({
     nodes: [{ id: "hello", type: "dialogue", speaker_npc_id: character.id, text: "这是统一角色资料。", next: "end" }, { id: "end", type: "end" }],
   } });
   await json(await request.put(endpoint, { headers: scope.headers, data: body(doc) }));
-  const classes = await json<{ id: number; join_code: string }[]>(await request.get("/api/classrooms", { headers: scope.headers }));
-  const student = await json<{ access_token: string }>(await request.post("/api/auth/register", { data: {
-    student_id: BigInt(`0x${randomUUID().replaceAll("-", "").slice(0, 24)}`).toString(), name: "角色验收学生", password: randomUUID(),
-  } }));
+  const student_id = BigInt(`0x${randomUUID().replaceAll("-", "").slice(0, 24)}`).toString();
+  await json(await request.post(`/api/teacher/classrooms/${scope.cid}/students`, {
+    headers: scope.headers, data: { students: [{ student_id, name: "角色验收学生" }] },
+  }));
+  const initial = await json<{ access_token: string }>(await request.post("/api/auth/login", { data: { student_id, password: student_id } }));
+  const student = await json<{ access_token: string }>(await request.post("/api/auth/password", {
+    headers: { Authorization: `Bearer ${initial.access_token}` }, data: { new_password: randomUUID() },
+  }));
   const studentHeaders = { Authorization: `Bearer ${student.access_token}` };
-  await json(await request.post("/api/classrooms/join", { headers: studentHeaders, data: { join_code: classes.find((c) => c.id === scope.cid)!.join_code } }));
   const world = await json<{ npcs: { key: string; stable_id: string; name: string }[] }>(await request.get(`/api/world?classroom_id=${scope.cid}`, { headers: studentHeaders }));
   const npc = world.npcs.find((n) => n.stable_id === character.id)!;
   expect(npc.name).toBe("服务端新名称");
