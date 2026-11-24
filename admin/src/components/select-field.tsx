@@ -5,12 +5,11 @@ type Props = Pick<ComponentProps<"button">, "id" | "aria-label" | "aria-labelled
   value: string | number;
   onValueChange: (value: string) => void;
   children: ReactNode;
-  fitOptions?: boolean;
   placeholder?: string;
   required?: boolean;
 };
 
-export function SelectField({ value, onValueChange, children, fitOptions, placeholder, required, disabled, ...trigger }: Props) {
+export function SelectField({ value, onValueChange, children, placeholder, required, disabled, ...trigger }: Props) {
   const options = Children.toArray(children).flatMap((child) => {
     if (!isValidElement<ComponentProps<"option">>(child) || child.type !== "option") return [];
     return [{
@@ -31,7 +30,7 @@ export function SelectField({ value, onValueChange, children, fitOptions, placeh
       <SelectTrigger {...trigger}>
         <SelectValue placeholder={placeholder ?? "请选择"} />
       </SelectTrigger>
-      <SelectContent className={fitOptions ? "select-fit-options" : undefined} align="start" alignItemWithTrigger={false}>
+      <SelectContent align="start" alignItemWithTrigger={false}>
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}

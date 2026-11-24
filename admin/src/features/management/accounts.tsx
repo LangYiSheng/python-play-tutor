@@ -51,7 +51,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
     </PageHeader>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <TableSearch label={`搜索姓名或${numberLabel}`} value={query} onValueChange={value => { setQuery(value); setPage(1); }} />
-      {!teacher && <SelectField fitOptions aria-label="筛选班级" value={selectedClass} onValueChange={value => { setSelectedClass(value); setPage(1); }}>
+      {!teacher && <SelectField aria-label="筛选班级" value={selectedClass} onValueChange={value => { setSelectedClass(value); setPage(1); }}>
         <option value="all">全部班级</option>
         {classes.data?.map(c => <option key={c.id} value={c.id}>{`${c.teacher_name} | ${c.name}${c.status === "archived" ? "（已归档）" : ""}`}</option>)}
       </SelectField>}

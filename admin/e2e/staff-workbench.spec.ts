@@ -16,12 +16,13 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
   const id = String(Date.now()), className = `任课班 ${id}`;
   const teacherName = `验收教师 ${id}`, renamed = `已改名教师 ${id}`;
   await login(page, adminId!, adminPassword!);
+  await page.getByRole("link", { name: "进入后台" }).click();
   await page.getByRole("link", { name: "全站设置" }).click();
   await expect(page.getByRole("textbox", { name: "模型名称", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "资料合成管理" }).click();
+  await page.getByRole("link", { name: "资料合成管理" }).click();
   await expect(page.getByRole("table")).toBeVisible();
-  await page.getByRole("tab", { name: "评测管理" }).click();
-  await expect(page.getByRole("tabpanel", { name: "评测管理" })).toBeVisible();
+  await page.getByRole("link", { name: "评测管理" }).click();
+  await expect(page.getByRole("heading", { name: "评测管理", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "教师管理" }).click();
   await page.getByRole("button", { name: "创建教师" }).click();
   await page.getByLabel("姓名", { exact: true }).fill(teacherName);

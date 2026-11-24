@@ -27,3 +27,9 @@ class CourseImportPreview(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     applied_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class CourseExport(Base):
+    __tablename__ = "course_exports"
+    directory: Mapped[str] = mapped_column(String(255), primary_key=True)
+    exporter_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth import require_teacher
-from app.course_packages.contracts import ApplyInput, AvailablePackageInput
+from app.course_packages.contracts import ApplyInput, AvailablePackageInput, CreateFromPackageInput
+from app.course_packages.service import create_from_package
 from app.course_packages.service import apply_course as _apply_course
 from app.course_packages.service import available_packages as _available_packages
 from app.course_packages.service import export_course as _export_course
@@ -21,6 +22,11 @@ shared_router = APIRouter(prefix="/teacher/course/packages", tags=["course-packa
 @shared_router.get("")
 def shared_packages(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
     return _available_packages(course_id=None, db=db, user=user)
+
+
+@shared_router.post("/create-course", status_code=201)
+def create_course_from_package(body: CreateFromPackageInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    return create_from_package(body, db, user)
 
 
 @shared_router.delete("/{package_key}")

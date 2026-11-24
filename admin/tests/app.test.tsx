@@ -71,10 +71,12 @@ it("ignores an old account's class list even when its fetch resolves after cance
 it("opens the administrator workspace before any class exists", async () => {
   setToken("admin-session");
   vi.stubGlobal("fetch", vi.fn(async (url: string) => json(url.endsWith("/auth/me")
-    ? { id: 1, name: "管理员", role: "admin" } : [])));
+    ? { id: 1, name: "管理员", role: "admin" } : url.endsWith("/admin/overview") ? {items: []} : [])));
   render(<App />);
   await screen.findByRole("heading", { name: "课程选择" });
-  for (const name of ["全局概览", "教师管理", "学生管理", "全站设置"]) {
+  expect(screen.queryByRole("link", { name: "教师管理" })).toBeNull();
+  await userEvent.click(screen.getByRole("link", { name: "进入后台" }));
+  for (const name of ["全局概览", "教师管理", "学生管理", "资料合成管理", "评测管理", "全站设置"]) {
     expect(screen.getByRole("link", { name })).toBeVisible();
   }
   expect(screen.queryByRole("link", { name: "课程包" })).not.toBeInTheDocument();
@@ -90,8 +92,7 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   await screen.findByRole("heading", { name: "图谱课程 3" });
   expect(screen.queryByLabelText("待审批")).not.toBeInTheDocument();
   for (const group of [
-    ["班级管理", "班级概况", "章节开放安排"], ["教师管理", "学生管理", "学生账号"],
-    ["全局概览", "教学流程"], ["全站设置", "课程答疑设置"],
+    ["班级管理", "班级概况", "章节开放安排"], ["教学流程", "课程答疑设置"],
   ]) {
     const icons = group.map(name => {
       const icon = screen.getByRole("link", { name }).querySelector("svg");
@@ -184,4 +185,94 @@ it("课程洞察汇总两班，成绩页按所选班级显示零分、待判定�
   expect(location.search).toBe("?course=80&class=19");
   await act(async () => { history.back(); });
   expect(await screen.findByRole("cell", {name: "0"})).toBeVisible();
+});
+
+
+it("shows only the signed-in teacher's courses, exports from the card and opens the account menu", async () => {
+  setToken("teacher-session");
+  const fetch = vi.fn(async (url: string) => {
+    if (url.endsWith("/auth/me")) return json({id: 7, name: "林老师", role: "teacher"});
+    if (url.endsWith("/teacher/courses")) return json([{id: 31, name: "循环", teacher_id: 7}, {id: 32, name: "另一门课", teacher_id: 9}]);
+    if (url.endsWith("/classrooms")) return json([{id: 21, course_id:31, name:"周四班"}]);
+    return json({});
+  });
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  render(<App/>);
+  await screen.findByRole("heading", {name:"循环"});
+  expect(screen.getByText(/教学班 · 周四班/)).toBeVisible();
+  expect(screen.queryByRole("heading", {name:"另一门课"})).toBeNull();
+  expect(screen.queryByRole("link", {name:"进入后台"})).toBeNull();
+  await user.click(screen.getByRole("button", {name:"循环的更多操作"}));
+  await user.click(await screen.findByRole("menuitem", {name:"导出课程包"}));
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/teacher/courses/31/export", expect.anything()));
+  await user.click(screen.getByRole("button", {name:/欢迎，林老师/}));
+  expect(await screen.findByRole("menuitem", {name:"修改密码"})).toBeVisible();
+  expect(screen.getByRole("menuitem", {name:"退出账号"})).toBeVisible();
+});
+
+
+it("requires a course source and uses the selected package when creating from the first card", async () => {
+  setToken("teacher-session");
+  const writes: {url: string; body: Record<string, unknown>}[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (init.method === "POST") { writes.push({url, body: JSON.parse(String(init.body))}); return json({id:42}); }
+    if (url.endsWith("/auth/me")) return json({id: 7, name: "林老师", role: "teacher"});
+    if (url.endsWith("/packages")) return json({items: [{key:"sample", name:"长课程名称", directory:"demo", shared:true}]});
+    return json([]);
+  }));
+  const user = userEvent.setup();
+  render(<App/>);
+  await user.click(await screen.findByRole("button", {name:"创建新课程"}));
+  await user.type(screen.getByLabelText("课程名称"), "新课程");
+  const submit = screen.getByRole("button", {name:"创建课程"});
+  expect(submit).toBeDisabled();
+  await user.click(screen.getByRole("radio", {name:"导入课程包"}));
+  expect(submit).toBeDisabled();
+  await user.click(screen.getByRole("combobox", {name:"课程包"}));
+  await user.click(await screen.findByRole("option", {name:/长课程名称/}));
+  await user.click(submit);
+  await waitFor(() => expect(writes[0]).toMatchObject({url:"/api/teacher/course/packages/create-course",body:{name:"新课程",package_key:"sample",request_id:expect.any(String)}}));
+  await user.click(await screen.findByRole("button", {name:"创建新课程"}));
+  await user.type(screen.getByLabelText("课程名称"), "空白课");
+  await user.click(screen.getByRole("radio", {name:"创建空课程"}));
+  await user.click(screen.getByRole("button", {name:"创建课程"}));
+  await waitFor(() => expect(writes[1]).toEqual({url:"/api/teacher/courses",body:{name:"空白课"}}));
+});
+
+it("searches transfer candidates and requires selecting a teacher from the current results", async () => {
+  setToken("admin-session");
+  const transfer = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/auth/me")) return json({id: 7, name: "管理员", role: "admin"});
+    if (url.endsWith("/teacher/courses")) return json([{id: 31, name: "计算思维", teacher_id: 7}]);
+    if (url.includes("/admin/accounts?")) {
+      const query = new URL(url, location.origin).searchParams.get("q") ?? "";
+      const items = [{id: 7, name: "管理员", student_id: "0007"}, {id: 8, name: "张老师", student_id: "0008"},
+        {id: 9, name: "停用教师", student_id: "0009", disabled: true}].filter(t => (t.name + t.student_id).includes(query));
+      return json({items, total: items.length});
+    }
+    if (url.endsWith("/transfer")) transfer(JSON.parse(String(init.body)));
+    return json([]);
+  }));
+  const user = userEvent.setup();
+  render(<App/>);
+  await user.click(await screen.findByRole("button", {name:"计算思维的更多操作"}));
+  expect(await screen.findByRole("menuitem", {name:"修改课程名称"})).toBeVisible();
+  await user.click(screen.getByRole("menuitem", {name:"转交整门课程"}));
+  const target = await screen.findByRole("radio", {name:/张老师.*0008/});
+  expect(screen.getAllByRole("radio")).toHaveLength(1);
+  const confirm = screen.getByRole("button", {name:"确认转交"});
+  expect(confirm).toBeDisabled();
+  await user.click(target);
+  expect(confirm).toBeEnabled();
+  const search = screen.getByRole("searchbox", {name:"搜索教师姓名或工号"});
+  await user.type(search, "0000");
+  expect(await screen.findByText("未找到匹配的教师")).toBeVisible();
+  expect(confirm).toBeDisabled();
+  await user.clear(search);
+  await user.type(search, "0008");
+  await user.click(await screen.findByRole("radio", {name:/张老师.*0008/}));
+  await user.click(confirm);
+  await waitFor(() => expect(transfer).toHaveBeenCalledWith({teacher_id: 8}));
 });

@@ -18,11 +18,11 @@ from sqlalchemy.orm import Session
 
 from app.auth import as_utc
 from app.teacher_scope import own_course
-from app.course_exchange_models import CourseImportPreview
+from app.course_exchange_models import CourseExport, CourseImportPreview
 from app.models import CourseInstance
 from app.course_packages.apply import import_bundle
 from app.course_packages.cleanup import exchange_guard
-from app.course_packages.contracts import LIMITS, ApplyInput, AvailablePackageInput
+from app.course_packages.contracts import LIMITS, ApplyInput, AvailablePackageInput, CreateFromPackageInput
 from app.course_packages.impact import preview_impact
 from app.course_packages.manifest import PackageError
 from app.course_packages.paths import exchange_path, exchange_root
@@ -60,10 +60,12 @@ def export_course(course_id: int, db: Session, user: User):
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", instance.name).strip(" .")[:48] or "课程"
             timestamp = now().astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S")
             destination = exchange_path(f"export-{course_id}-{name}-{timestamp}-{uuid4().hex[:8]}")
+            # Persist ownership before publishing the directory to catalog readers.
+            db.add(CourseExport(directory=destination.name, exporter_id=user.id))
+            db.commit()
             _replace_staged(root, destination)
             shutil.rmtree(temporary)
-            db.commit()
-        except (PackageError, OSError, ValueError) as exc:
+        except (PackageError, OSError, ValueError, SQLAlchemyError) as exc:
             db.rollback()
             shutil.rmtree(temporary, ignore_errors=True)
             raise HTTPException(422, str(exc) if isinstance(exc, PackageError) else "课程导出失败") from exc
@@ -100,19 +102,40 @@ def _save_preview(db, user, course_id, bundle, directory, digest):
     }
 
 
-def available_packages(course_id: int | None, db: Session, user: User):
+def visible_packages(db, user):
     from app.course_packages.catalog import mounted_catalog
 
+    mounted, unavailable = mounted_catalog(exchange_root(), LIMITS)
+    owners = dict(db.execute(select(CourseExport.directory, CourseExport.exporter_id)
+                             .where(CourseExport.directory.in_([item["directory"] for item in mounted]))).all())
+    visible = []
+    for item in mounted:
+        shared = item["directory"] not in owners
+        mine = owners.get(item["directory"]) == user.id
+        if shared or mine or user.role == "admin":
+            visible.append({**item, "mine": mine, "shared": shared, "protected": not item["can_delete"],
+                            "can_delete": item["can_delete"] and (mine or user.role == "admin")})
+    return visible, unavailable
+
+
+def selected_package(db, user, key):
+    items, _ = visible_packages(db, user)
+    item = next((item for item in items if item["key"] == key), None)
+    if item is None:
+        raise HTTPException(404, "课程包已变化或不存在，请刷新列表")
+    return item
+
+
+def available_packages(course_id: int | None, db: Session, user: User):
     if course_id is not None:
         own_course(db, user, course_id)
-    root = exchange_root()
     try:
-        mounted, unavailable = mounted_catalog(root, LIMITS)
+        mounted, unavailable = visible_packages(db, user)
         items = [
             {
                 **{key: item[key] for key in ("key", "name", "package_id", "package_version", "source", "directory", "created_at", "chapter_count", "question_count")},
-                "can_delete": user.role == "admin" and item["can_delete"],
-                "protected": not item["can_delete"],
+                "can_delete": item["can_delete"], "protected": item["protected"],
+                "mine": item["mine"], "shared": item["shared"],
             }
             for item in mounted
         ]
@@ -123,7 +146,7 @@ def available_packages(course_id: int | None, db: Session, user: User):
 
 def preview_available_course(course_id: int, body: AvailablePackageInput, db: Session, user: User):
     with exchange_guard(exchange_root()):
-        from app.course_packages.catalog import copy_directory, mounted_catalog
+        from app.course_packages.catalog import copy_directory
 
         lock_course_content(db, course_id, exclusive=True)
         own_course(db, user, course_id)
@@ -131,10 +154,7 @@ def preview_available_course(course_id: int, body: AvailablePackageInput, db: Se
         try:
             with tempfile.TemporaryDirectory(prefix="course-catalog-", dir=exchange) as temporary:
                 root = Path(temporary) / "package"
-                items, _ = mounted_catalog(exchange, LIMITS)
-                selected = next((item for item in items if item["key"] == body.package_key), None)
-                if selected is None:
-                    raise HTTPException(404, "课程包已变化或不存在，请刷新列表")
+                selected = selected_package(db, user, body.package_key)
                 digest = copy_directory(selected["path"], root, exchange, LIMITS)
                 bundle = load_bundle(root)
                 return _save_preview(db, user, course_id, bundle, root, digest)
@@ -215,3 +235,39 @@ def apply_course(course_id: int, preview_id: str, body: ApplyInput, db: Session,
         except (PackageError, ValueError, OSError, SQLAlchemyError) as exc:
             db.rollback()
             raise HTTPException(422, str(exc) if isinstance(exc, PackageError) else "课程包导入失败，未修改班级课程") from exc
+
+
+def create_from_package(body: CreateFromPackageInput, db: Session, user: User):
+    from app.course_packages.catalog import copy_directory
+
+    exchange = exchange_root()
+    request_id = str(body.request_id)
+    signature = {"package_key": body.package_key, "name": body.name}
+    with exchange_guard(exchange):
+        receipt = db.scalar(select(CourseImportPreview).where(
+            CourseImportPreview.teacher_id == user.id, CourseImportPreview.applied_request_id == request_id
+        ))
+        if receipt:
+            if receipt.summary.get("create_course") != signature:
+                raise HTTPException(409, "此请求已用于其他课程操作")
+            return receipt.result
+        try:
+            selected = selected_package(db, user, body.package_key)
+            with tempfile.TemporaryDirectory(prefix="course-apply-", dir=exchange) as temporary:
+                root = Path(temporary) / "package"
+                digest = copy_directory(selected["path"], root, exchange, LIMITS)
+                bundle = load_bundle(root)
+                course = CourseInstance(teacher_id=user.id, name=body.name, package_id="course-" + uuid4().hex, package_version="1")
+                db.add(course)
+                db.flush()
+                import_bundle(db, course, bundle, root)
+                course.name = body.name
+                result = {"id": course.id, "name": course.name}
+                db.add(CourseImportPreview(teacher_id=user.id, course_id=course.id, expected_revision=0,
+                                          archive_sha256=digest, storage_key="", summary={"create_course": signature},
+                                          applied_request_id=request_id, result=result, expires_at=now()))
+                db.commit()
+                return result
+        except (PackageError, ValueError, OSError, SQLAlchemyError) as exc:
+            db.rollback()
+            raise HTTPException(422, str(exc) if isinstance(exc, PackageError) else "从课程包创建课程失败") from exc

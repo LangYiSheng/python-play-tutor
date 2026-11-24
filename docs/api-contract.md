@@ -189,7 +189,7 @@ GET /world?classroom_id增加当前可用interactions、building_access及buildi
 
 ## 目录课程包接口
 
-`GET /teacher/courses/{course_id}/packages` 列出共享默认包和全部导出目录，不按班级或导出者过滤。`POST .../imports/available/preview` 对目录创建私有副本，生成内容指纹并执行完整校验与影响分析；确认应用时再次核对指纹、课程修订和授权。教师可将任意共享包导入本人管理的班级，不能借共享包修改其他教师的班级。
+`GET /teacher/courses/{course_id}/packages` 列出可访问的目录，mine 标记本人导出，shared 标记共享包。`POST .../imports/available/preview` 对目录创建私有副本，生成内容指纹并执行完整校验与影响分析；确认应用时再次核对指纹、课程修订和授权。教师可将任意共享包导入本人管理的班级，不能借共享包修改其他教师的班级。
 
 `package_key` 仅接受 `mounted-` 加64位十六进制摘要，不接受旧 `uploaded-` 标识。`GET .../export` 返回JSON，包含 `directory` 和 `path`，完整课程已写入服务器 `data/course/` 下的目录。旧ZIP上传、下载及预览应用分支均已退出。旧待应用的非目录预览返回422并要求重新选择目录；已完成导入的幂等回执仍按原请求返回，不重新执行导入，也不删除课程或学习记录。
 
@@ -197,7 +197,7 @@ GET /world?classroom_id增加当前可用interactions、building_access及buildi
 
 课程包列表增加 directory、created_at、chapter_count 和 question_count。created_at 表示该包的 exported_at 或原始 created_at。列表仅读取章节定义和题目索引生成摘要，正式预览及应用仍执行完整校验。新导出目录为 export-<课程ID>-<安全课程名>-<北京时间YYYYMMDD-HHMMSS>-<8位随机串>，旧目录继续可选。
 
-DELETE /teacher/courses/{course_id}/packages/{package_key}：仅管理员可删除任意清单origin=exported的共享导出目录，返回 `{deleted:true,directory}`；不校验导出者或来源班级。默认包（origin缺省或supplied）不可删除（403）；目录不存在或选择过期返回404，文件操作失败返回422。列表的can_delete根据管理员身份及包内origin计算，与目录名、原服务器和来源班级无关。学生与未登录请求仍拒绝，路径中的目标班级仍需教师管理权限。删除持有交换目录锁，拒绝链接及越界路径，不修改数据库课程、学习记录或已创建的预览副本。
+GET /teacher/course/packages 返回个人导出及历史共享目录。DELETE /teacher/course/packages/{package_key} 允许导出者或管理员删除导出包，默认包受保护。原课程级接口仍校验目标课程权限。POST /teacher/course/packages/create-course 接收 package_key、name 和 request_id，完整校验并在同一事务中创建独立课程，重复请求返回同一课程。
 
 导入预览的暂存副本在已应用或24小时过期后由后台周期清理。预览与应用接口继续使用既有有效期和幂等规则，成功回执独立于文件保留；同请求重试仍返回duplicate结果。清理忙碌跳过，处理中的预览、应用和导出持有交换目录锁。
 

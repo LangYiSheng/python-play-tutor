@@ -1,4 +1,3 @@
-import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,14 +68,14 @@ function Status({ value }: { value: string }) {
   return <span className={`judge-status ${value === "accepted" ? "judge-pass" : ["prepared", "dispatching"].includes(value) ? "" : "judge-fail"}`}>{statuses[value] ?? value}</span>;
 }
 
-type JudgeProps = { actionsTarget?: HTMLDivElement | null; classroomId?: number; canManage: boolean };
+type JudgeProps = { classroomId?: number; canManage: boolean };
 
 export function Judge(props: JudgeProps) {
   // A different class unmounts the entire page, including open private evidence.
   return <JudgePage key={props.classroomId ?? "global"} {...props} canManage={props.canManage && props.classroomId === undefined} />;
 }
 
-function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
+function JudgePage({ classroomId, canManage }: JudgeProps) {
   const [draftDates, setDraftDates] = useState<JudgeDates>(() => recentJudgeDates(7));
   const [dateQuery, setDateQuery] = useState(() => judgeDateQuery(recentJudgeDates(7)));
   const [preset, setPreset] = useState<number | "all" | "custom">(7), [dateError, setDateError] = useState("");
@@ -116,9 +115,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   }
   const refreshButton = <Button variant="outline" onClick={() => { service.reload(); submissions.reload(); }}><RefreshCw />刷新</Button>;
   return <>
-    {classroomId === undefined
-      ? actionsTarget && createPortal(refreshButton, actionsTarget)
-      : <PageHeader title="评测管理">{refreshButton}</PageHeader>}
+    <PageHeader title="评测管理">{refreshButton}</PageHeader>
     <section className="surface mb-4 judge-date-filter" aria-label="评测日期筛选">
       <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">统计日期</span>
         {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}

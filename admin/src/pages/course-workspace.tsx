@@ -1,55 +1,95 @@
 import { useState, type FormEvent } from "react";
+import { MoreHorizontal, Plus } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
-import { SelectField } from "@/components/select-field";
 import { api, errorMessage, request } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
-import type { CourseInstance } from "@/lib/types";
+import type { Classroom, CourseInstance } from "@/lib/types";
+import { CreateCourseDialog } from "./create-course-dialog";
 import { RecordViewer } from "./teaching";
 
 type CourseList = ReturnType<typeof useResource<CourseInstance[]>>;
-export function CoursePicker({courses, onOpen, admin}: {courses: CourseList; onOpen: (id: number) => void; admin: boolean}) {
-  const [mode, setMode] = useState<"create" | "rename" | "transfer" | null>(null);
+export function CoursePicker({courses, items, classes, onOpen, admin, exporting, exportCourse}: {
+  courses: CourseList; items: CourseInstance[]; classes: Classroom[]; onOpen: (id: number) => void;
+  admin: boolean; exporting: number | null; exportCourse: (course: CourseInstance) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"rename" | "transfer" | null>(null);
+  const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<CourseInstance>();
   const [value, setValue] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const teachers = useResource<{items: {id: number; name: string; student_id: string; disabled: boolean}[]}>(
+  const teachers = useResource<{total: number; items: {id: number; name: string; student_id: string; disabled: boolean}[]}>(
     mode === "transfer" ? "/admin/accounts?role=teacher&size=100&q=" + encodeURIComponent(search) : null);
+  const candidates = teachers.data?.items.filter(teacher => !teacher.disabled && teacher.id !== selected?.teacher_id) ?? [];
+  const canSave = mode === "transfer"
+    ? candidates.some(teacher => String(teacher.id) === value)
+    : Boolean(value.trim());
   function edit(action: typeof mode, course?: CourseInstance) {
     setSelected(course); setValue(action === "rename" ? course?.name ?? "" : ""); setMode(action); setError(""); setSearch("");
   }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (busy || !value.trim()) return;
+    if (busy || !canSave) return;
     setBusy(true); setError("");
     try {
-      if (mode === "create") await api.post("/teacher/courses", {name: value.trim()});
       if (mode === "rename" && selected) await request("/teacher/courses/" + selected.id, {
         method: "PATCH", body: JSON.stringify({name: value.trim(), expected_revision: selected.revision})});
       if (mode === "transfer" && selected) await api.post(`/teacher/courses/${selected.id}/transfer`, {teacher_id: Number(value)});
       setMode(null); courses.reload();
     } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   }
-  return <><PageHeader title="课程选择"><Button onClick={() => edit("create")}>创建课程</Button></PageHeader>
+  return <><h1 className="sr-only">课程选择</h1>
     <ErrorNotice message={courses.error}/>{courses.loading && <Loading/>}
-    {courses.data && !courses.data.length && <Empty title="尚未创建课程"/>}
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{courses.data?.map(c => <section key={c.id} className="surface p-5">
-      <h2 className="text-lg font-semibold">{c.name}</h2><p className="hint my-3">负责教师 · {c.teacher_name}</p>
-      <div className="flex flex-wrap gap-2"><Button onClick={() => onOpen(c.id)}>进入课程</Button>
-      <Button variant="outline" onClick={() => edit("rename", c)}>改名</Button>
-      {admin && <Button variant="outline" onClick={() => edit("transfer", c)}>转交整门课程</Button>}</div></section>)}</div>
+    <div className="hub-grid">
+      <button className="hub-create" onClick={() => setCreating(true)}><Plus size={24}/>创建新课程</button>
+      {items.map(c => {
+        const rooms = classes.filter(room => room.course_id === c.id).map(room => room.name).join("、");
+        return <article key={c.id} className="surface hub-card">
+        <div className="hub-card-head"><h2>{c.name}</h2>
+          <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={c.name + "的更多操作"}/>}><MoreHorizontal/></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => edit("rename", c)}>修改课程名称</DropdownMenuItem>
+              <DropdownMenuItem disabled={exporting !== null} onClick={() => void exportCourse(c)}>导出课程包</DropdownMenuItem>
+              {admin && <DropdownMenuItem onClick={() => edit("transfer", c)}>转交整门课程</DropdownMenuItem>}
+            </DropdownMenuContent></DropdownMenu></div>
+        {rooms && <p className="hint line-clamp-2" title={rooms}>教学班 · {rooms}</p>}
+        <div className="hub-card-footer"><Button onClick={() => onOpen(c.id)}>进入课程</Button>
+          {exporting === c.id && <span role="status" className="hint">正在导出…</span>}</div>
+      </article>})}</div>
+    {creating && <CreateCourseDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); courses.reload(); }}/>}
     {mode && <Dialog open onOpenChange={open => {if (!open && !busy) setMode(null);}}><DialogContent><DialogHeader>
-      <DialogTitle>{mode === "create" ? "创建课程" : mode === "rename" ? "修改课程名称" : "转交课程及全部教学班"}</DialogTitle>
+      <DialogTitle>{mode === "rename" ? "修改课程名称" : "转交课程及全部教学班"}</DialogTitle>
     </DialogHeader><form className="space-y-4" onSubmit={save}><ErrorNotice message={error || teachers.error}/>
-      {mode === "transfer" ? <><Label htmlFor="find-teacher">搜索教师姓名或工号</Label><Input id="find-teacher" value={search} onChange={e => setSearch(e.target.value)}/>
-      <SelectField aria-label="新负责教师" value={value} onValueChange={setValue}><option value="">选择教师</option>
-        {teachers.data?.items.filter(t => !t.disabled && t.id !== selected?.teacher_id).map(t => <option key={t.id} value={t.id}>{t.name} · {t.student_id}</option>)}</SelectField></>
+      {mode === "transfer" ? <div className="grid gap-3">
+        <div className="grid gap-2">
+          <Label htmlFor="find-teacher">搜索教师姓名或工号</Label>
+          <Input id="find-teacher" type="search" maxLength={100} value={search} disabled={busy}
+            onChange={event => { setSearch(event.target.value); setValue(""); setError(""); }}/>
+        </div>
+        <fieldset disabled={busy} className="min-w-0">
+          <legend className="sr-only">新负责教师</legend>
+          <div className="max-h-44 overflow-y-auto rounded-lg border p-1">
+            {teachers.loading && <p className="hint p-2" role="status">正在查找教师…</p>}
+            {teachers.data && !candidates.length && <p className="hint p-2" role="status">{search.trim() ? "未找到匹配的教师" : "暂无可转交的教师"}</p>}
+            {teachers.error && <Button type="button" variant="ghost" onClick={teachers.reload}>重新加载</Button>}
+            {candidates.map(teacher => <label key={teacher.id}
+              className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted has-checked:bg-muted">
+              <input type="radio" name="transfer-teacher" value={teacher.id} checked={value === String(teacher.id)}
+                onChange={() => setValue(String(teacher.id))}/>
+              <span className="min-w-0 flex-1 break-words">{teacher.name}</span>
+              <span className="text-xs tabular-nums text-muted-foreground">{teacher.student_id}</span>
+            </label>)}
+          </div>
+          {teachers.data && teachers.data.total > teachers.data.items.length && <p className="hint mt-1">输入姓名或工号可缩小范围。</p>}
+        </fieldset>
+      </div>
       : <><Label htmlFor="course-name">课程名称</Label><Input id="course-name" maxLength={200} required value={value} onChange={e => setValue(e.target.value)}/></>}
-      <Button disabled={busy || !value.trim()} type="submit">{mode === "transfer" ? "确认转交" : "保存"}</Button>
+      <Button disabled={busy || !canSave} type="submit">{mode === "transfer" ? "确认转交" : "保存"}</Button>
     </form></DialogContent></Dialog>}</>;
 }
 

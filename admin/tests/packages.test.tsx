@@ -1,6 +1,6 @@
 import { render } from "./render-with-toasts";
 import { afterEach, expect, it, vi } from "vitest";
-import { act, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Packages } from "../src/pages/packages";
 afterEach(() => vi.unstubAllGlobals());
@@ -9,7 +9,7 @@ it("previews an existing package without uploading and still requires explicit c
   const key = "mounted-" + "a".repeat(64);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (url.endsWith("/packages")) return new Response(JSON.stringify({ items: [
-      { key, name: "共享课程", package_id: "shared", package_version: "2", source: "mounted", directory: "shared-course", created_at: "2026-11-12T00:00:00Z", chapter_count: 7, question_count: 42 },
+      { key, mine: true, name: "共享课程", package_id: "shared", package_version: "2", source: "mounted", directory: "shared-course", created_at: "2026-11-12T00:00:00Z", chapter_count: 7, question_count: 42 },
     ], unavailable: 0 }));
     calls.push({ url, body: JSON.parse(init.body as string) });
     if (url.endsWith("/imports/available/preview")) return new Response(JSON.stringify({
@@ -20,15 +20,16 @@ it("previews an existing package without uploading and still requires explicit c
     return new Response(JSON.stringify({ instance_id: 1, revision: 4 }));
   }));
   const user = userEvent.setup();
-  render(<Packages courseId={31} />);
+  render(<Packages courses={[{ id: 31, name: "目标课" }]} onCreated={() => {}} />);
   await screen.findByText("shared-course");
-  expect(screen.getByRole("table", { name: "可用课程包" })).toHaveTextContent("42");
-  expect(screen.getByRole("table", { name: "可用课程包" })).toHaveTextContent("章节数");
+  expect(screen.getByRole("article")).toHaveTextContent("7 章 · 42 道题");
   await user.type(screen.getByRole("textbox", { name: "搜索课程包" }), "不存在");
-  expect(screen.queryByRole("button", { name: "预览 shared-course" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "以此创建课程" })).not.toBeInTheDocument();
   await user.clear(screen.getByRole("textbox", { name: "搜索课程包" }));
-  await user.click(await screen.findByRole("button", { name: "预览 shared-course" }));
-  await screen.findByText("导入差异");
+  await user.click(await screen.findByRole("button", { name: "共享课程的更多操作" }));
+  await user.click(await screen.findByRole("menuitem", {name: "更新已有课程"}));
+  await user.click(screen.getByRole("button", {name: "预览差异"}));
+  expect(await screen.findByRole("dialog", {name:"导入差异"})).toBeVisible();
   expect(calls).toEqual([{ url: "/api/teacher/courses/31/imports/available/preview", body: { package_key: key } }]);
   expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
   await user.click(screen.getByRole("checkbox", { name: /我已核对差异/ }));
@@ -40,30 +41,28 @@ it("previews an existing package without uploading and still requires explicit c
 });
 
 
-it("exports to a server directory and cancels requests when leaving", async () => {
-  let finish!: (response: Response) => void;
-  let signal: AbortSignal | undefined;
-  vi.stubGlobal("fetch", vi.fn((url: string, init: RequestInit) => {
-    if (url.endsWith("/packages")) return Promise.resolve(new Response(JSON.stringify({ items: [], unavailable: 0 })));
-    signal = init.signal as AbortSignal;
-    return new Promise<Response>((resolve) => { finish = resolve; });
-  }));
+it("creates an independent course using the selected package and a retry key", async () => {
+  const created = vi.fn();
+  const fetch = vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/packages")) return new Response(JSON.stringify({items: [{key:"package", name:"循环", mine:true, chapter_count:1, question_count:23}]}));
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({name:"循环练习", package_key:"package"});
+    expect(body.request_id).toBeTruthy();
+    return new Response(JSON.stringify({id:42, name:body.name}));
+  });
+  vi.stubGlobal("fetch", fetch);
   const user = userEvent.setup();
-  const { unmount } = render(<Packages courseId={31} />);
-  await user.click(screen.getByRole("button", { name: "导出课程包" }));
-  expect(screen.getByText("正在导出课程目录和资源")).toBeVisible();
-  expect(screen.getByText(/已等待/)).toBeVisible();
-  await act(() => finish(new Response(JSON.stringify({ path: "data/course/export-31-test" }))));
-  expect(await screen.findByText("课程包已导出")).toBeVisible();
-  expect(screen.getByText("data/course/export-31-test")).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "导出课程包" }));
-  unmount();
-  expect(signal?.aborted).toBe(true);
+  render(<Packages courses={[]} onCreated={created}/>);
+  await user.click(await screen.findByRole("button", {name:"以此创建课程"}));
+  await user.type(screen.getByLabelText("新课程名称"), "练习");
+  await user.click(screen.getByRole("button", {name:"创建课程"}));
+  expect(await screen.findByText("已创建课程「循环练习」")).toBeVisible();
+  expect(created).toHaveBeenCalledOnce();
 });
 
 it("shows a catalog error with a retry and no ZIP upload", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "课程列表暂不可用" }), { status: 503 })));
-  render(<Packages courseId={31} />);
+  render(<Packages courses={[{ id: 31, name: "目标课" }]} onCreated={() => {}} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("课程列表暂不可用");
   expect(screen.getByRole("button", { name: "刷新列表" })).toBeEnabled();
   expect(screen.queryByLabelText("课程包 ZIP 文件")).not.toBeInTheDocument();
@@ -71,8 +70,8 @@ it("shows a catalog error with a retry and no ZIP upload", async () => {
 
 it("only offers deletion for exported packages, confirms and handles failure before removing the row", async () => {
   const items = [
-    {key:'owned',name:'导出课程',directory:'export-31-demo',can_delete:true},
-    {key:'default',name:'默认课程',directory:'default',can_delete:false},
+    {key:'owned',mine:true,name:'导出课程',directory:'export-31-demo',can_delete:true},
+    {key:'default',mine:true,name:'默认课程',directory:'default',can_delete:false},
   ];
   let fail = true;
   const deletes: string[] = [];
@@ -84,19 +83,21 @@ it("only offers deletion for exported packages, confirms and handles failure bef
     }
     return new Response(JSON.stringify({items,unavailable:0}));
   }));
-  const user = userEvent.setup(); render(<Packages courseId={31}/>);
-  await user.click(await screen.findByRole('button',{name:'删除 export-31-demo'}));
+  const user = userEvent.setup(); render(<Packages courses={[{ id: 31, name: "目标课" }]} onCreated={() => {}}/>);
+  await user.click(await screen.findByRole('button',{name:'导出课程的更多操作'}));
+  await user.click(await screen.findByRole('menuitem',{name:'删除课程包'}));
   expect(screen.queryByRole('button',{name:'删除 default'})).not.toBeInTheDocument();
   expect(deletes).toHaveLength(0);
   await user.click(screen.getByRole('button',{name:'取消'}));
   expect(deletes).toHaveLength(0);
-  await user.click(screen.getByRole('button',{name:'删除 export-31-demo'}));
+  await user.click(screen.getByRole('button',{name:'导出课程的更多操作'}));
+  await user.click(await screen.findByRole('menuitem',{name:'删除课程包'}));
   await user.click(screen.getByRole('button',{name:'确认删除'}));
   expect(await screen.findByRole('alert')).toHaveTextContent('删除失败');
   expect(screen.getByRole('dialog')).toBeVisible();
   fail = false;
   await user.click(screen.getByRole('button',{name:'确认删除'}));
-  await screen.findByText('共享课程包已删除');
+  await screen.findByText('课程包已删除');
   expect(screen.queryByRole('button',{name:'删除 export-31-demo'})).not.toBeInTheDocument();
   expect(screen.getByText('default')).toBeInTheDocument();
   expect(deletes).toEqual(['/api/teacher/course/packages/owned','/api/teacher/course/packages/owned']);

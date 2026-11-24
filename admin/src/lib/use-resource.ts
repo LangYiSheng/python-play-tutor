@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { api, errorMessage } from "./api";
-export function useResource<T>(path: string | null) {
+export function useResource<T>(path: string | null, version = 0) {
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(Boolean(path)),
@@ -28,6 +28,6 @@ export function useResource<T>(path: string | null) {
       active = false;
       controller.abort();
     };
-  }, [path, revision]);
+  }, [path, revision, version]);
   return { data, error, loading, reload };
 }

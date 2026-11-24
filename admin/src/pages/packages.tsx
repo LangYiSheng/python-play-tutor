@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { FolderOutput, PackageCheck, RefreshCw, Search, LoaderCircle, Trash2 } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Search, LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,7 +13,9 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { PageHeader, ErrorNotice } from "@/components/common";
+import type { CourseInstance } from "@/lib/types";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { errorMessage, request, token } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
@@ -21,10 +23,7 @@ import { toast } from "@/components/ui/toast";
 import { type TransferBytes } from "@/lib/package-transfer";
 import { formatTimestamp } from "@/lib/time";
 import { useResource } from "@/lib/use-resource";
-interface AvailablePackages {
-  items: { key: string; name: string; package_id: string; package_version: string; source: "mounted" | "uploaded"; directory: string; created_at: string; chapter_count: number; question_count: number; protected?: boolean; can_delete?: boolean }[];
-  unavailable: number;
-}
+import { type AvailablePackages, createCourseFromPackage, requestId } from "@/lib/course-packages";
 interface Preview {
   id: string;
   expected_revision: number;
@@ -45,15 +44,6 @@ interface Preview {
     affected_records: number;
     reason: string;
   }[];
-}
-function requestId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 15) | 64;
-  bytes[8] = (bytes[8] & 63) | 128;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 const labels: Record<string, string> = {
   chapter: "章节",
@@ -86,7 +76,7 @@ const phaseLabels = {
   uploading: "正在上传课程包",
   validating: "正在校验课程包并生成差异",
   applying: "正在导入课程和资源",
-  packaging: "正在导出课程目录和资源",
+  creating: "正在从课程包创建课程",
   downloading: "正在下载课程包",
   deleting: "正在删除导出的课程包",
 };
@@ -146,21 +136,27 @@ function OperationProgress({ operation }: { operation: Operation | null }) {
   );
 }
 
-export function Packages({ courseId }: { courseId: number }) {
+type PackageItem = AvailablePackages["items"][number];
+
+export function Packages({ courses, onCreated, revision = 0 }: { revision?: number; courses: Pick<CourseInstance, "id" | "name">[]; onCreated: () => void }) {
+  const [scope, setScope] = useState("mine");
+  const [action, setAction] = useState<"create" | "update" | null>(null);
+  const [selected, setSelected] = useState<PackageItem | null>(null);
+  const [courseId, setCourseId] = useState("");
+  const [courseName, setCourseName] = useState("");
   const base = `/teacher/courses/${courseId}`;
-  const available = useResource<AvailablePackages>("/teacher/course/packages");
+  const available = useResource<AvailablePackages>("/teacher/course/packages", revision);
   const [deleting, setDeleting] = useState<AvailablePackages["items"][number] | null>(null);
   const [packageSearch, setPackageSearch] = useState("");
   const packages = available.data?.items ?? [];
   const packageQuery = packageSearch.trim().toLowerCase();
   const visiblePackages = packages.filter((item) =>
-    (item.name + " " + item.directory).toLowerCase().includes(packageQuery),
+    (scope === "mine" ? item.mine : item.shared) && (item.name + " " + item.directory).toLowerCase().includes(packageQuery),
   );
   const pending = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null),
     [requestKey, setRequestKey] = useState(""),
     [error, setError] = useState<{ phase: Phase; message: string } | null>(null),
-    [exportPath, setExportPath] = useState(""),
     [operation, setOperation] = useState<Operation | null>(null),
     [confirmed, setConfirmed] = useState(false),
     [search, setSearch] = useState(""),
@@ -181,7 +177,6 @@ export function Packages({ courseId }: { courseId: number }) {
     const isCurrent = () => !controller.signal.aborted && captured === token();
     setOperation({ phase });
     setError(null);
-    setExportPath("");
     try {
       const result = await execute(controller.signal, (progress) => {
         if (isCurrent()) setOperation(progress);
@@ -201,7 +196,7 @@ export function Packages({ courseId }: { courseId: number }) {
       setDeleting(null);
       setPreview(null);
       setConfirmed(false);
-      toast.add({ title: "共享课程包已删除", type: "success" });
+      toast.add({ title: "课程包已删除", type: "success" });
       available.reload();
     });
   }
@@ -216,6 +211,7 @@ export function Packages({ courseId }: { courseId: number }) {
         method: "POST", body: JSON.stringify({ package_key: packageKey }), signal,
       }),
       (result) => {
+        setAction(null);
         setPreview(result);
         setRequestKey(requestId());
         setSearch("");
@@ -246,16 +242,22 @@ export function Packages({ courseId }: { courseId: number }) {
     );
   }
 
-  function exportPackage() {
-    return operate(
-      "packaging",
-      (signal) => request<{ path: string }>(`${base}/export`, { signal }),
-      (result) => {
-        setExportPath(result.path);
-        toast.add({ title: "课程包已导出", type: "success" });
-        available.reload();
-      },
-    );
+  function choose(item: PackageItem, next: "create" | "update") {
+    setSelected(item);
+    setCourseName(item.name);
+    setCourseId(courses.length === 1 ? String(courses[0].id) : "");
+    setRequestKey(requestId());
+    setError(null);
+    setAction(next);
+  }
+
+  function createCourse() {
+    if (!selected || !courseName.trim()) return;
+    return operate("creating", signal => createCourseFromPackage(selected.key, courseName.trim(), requestKey, signal), result => {
+      setAction(null);
+      onCreated();
+      toast.add({ title: `已创建课程「${result.name}」`, type: "success" });
+    });
   }
 
   const searchText = search.trim().toLowerCase();
@@ -272,88 +274,60 @@ export function Packages({ courseId }: { courseId: number }) {
     <>
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open && !busy) setDeleting(null); }}>
         <DialogContent showCloseButton={!busy}>
-          <DialogHeader><DialogTitle>删除导出的课程包</DialogTitle><DialogDescription>从全站共享目录删除此导出包。已导入的课程、学生进度和成绩都会保留。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>删除导出的课程包</DialogTitle><DialogDescription>删除后仍可使用此前由它创建的课程，学生进度和成绩也会保留。</DialogDescription></DialogHeader>
           <p className="font-medium">{deleting?.name}</p><p className="break-all text-sm text-muted-foreground">{deleting?.directory}</p>
           <ErrorNotice message={error?.phase === "deleting" ? error.message : ""} />
           <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>取消</Button><Button variant="destructive" disabled={busy} onClick={() => void deletePackage()}><Trash2 />{busy ? "正在删除…" : "确认删除"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <PageHeader
-        title="课程包"
-      >
-        <Button
-          variant="outline"
-          disabled={busy}
-          onClick={() => void exportPackage()}
-        >
-          <FolderOutput />
-          导出课程包
-        </Button>
-      </PageHeader>
-      <ErrorNotice message={error?.phase === "packaging" ? error.message : ""} />
-      <OperationProgress
-        operation={operation?.phase === "packaging" || operation?.phase === "downloading" ? operation : null}
-      />
-      {exportPath && <p className="hint break-all">课程已导出到 <code>{exportPath}</code></p>}
-      <section className="surface p-6 mt-4">
-        <div className="flex gap-3 items-center mb-5">
-          <div className="icon-box">
-            <PackageCheck />
-          </div>
-          <div>
-            <h2 className="font-semibold">导入课程包</h2>
-            <p className="text-sm text-muted-foreground">
-              导入前可预览课程包对课程内容的改动。
-            </p>
-          </div>
+      <h1 className="sr-only">课程包管理</h1>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <SelectField aria-label="课程包来源" value={scope} onValueChange={setScope}>
+          <option value="mine">我的导出</option><option value="shared">共享课程包</option>
+        </SelectField>
+        <Input aria-label="搜索课程包" placeholder="搜索课程名称或文件夹" className="max-w-sm" value={packageSearch} onChange={e => setPackageSearch(e.target.value)} />
+        <Button variant="outline" aria-label="刷新列表" disabled={busy} onClick={available.reload}><RefreshCw/>刷新</Button>
+      </div>
+      <ErrorNotice message={available.error}/>
+      {available.loading && <p role="status" className="hint mt-5">正在加载课程包…</p>}
+      <div className="hub-grid">{visiblePackages.map(item => <article className="surface hub-card" key={item.key}>
+        <div className="hub-card-head"><h2>{item.name}</h2>
+          {(courses.length > 0 || item.can_delete) && <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon" disabled={busy || Boolean(preview)} aria-label={item.name + "的更多操作"}/>}><MoreHorizontal/></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {courses.length > 0 && <DropdownMenuItem onClick={() => choose(item, "update")}>更新已有课程</DropdownMenuItem>}
+              {item.can_delete && <DropdownMenuItem onClick={() => {setDeleting(item); setError(null);}}>删除课程包</DropdownMenuItem>}
+            </DropdownMenuContent></DropdownMenu>}
         </div>
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Input aria-label="搜索课程包" placeholder="搜索课程名称或文件夹" className="max-w-sm"
-              value={packageSearch} onChange={(event) => setPackageSearch(event.target.value)} />
-            <Button variant="outline" size="sm" disabled={busy || available.loading} onClick={available.reload}><RefreshCw />刷新列表</Button>
-          </div>
-          <ErrorNotice message={available.error} />
-          <Table aria-label="可用课程包">
-            <TableHeader><TableRow>
-              <TableHead>课程名称</TableHead><TableHead>创建日期</TableHead>
-              <TableHead>章节数</TableHead><TableHead>题目数</TableHead>
-              <TableHead>文件夹</TableHead><TableHead className="text-right">操作</TableHead>
-            </TableRow></TableHeader>
-            <TableBody>
-              {visiblePackages.map((item) => <TableRow key={item.key}>
-                <TableCell className="min-w-48 max-w-80 whitespace-normal break-words font-medium">{item.name}</TableCell>
-                <TableCell>{item.created_at ? formatTimestamp(item.created_at) : "—"}</TableCell>
-                <TableCell className="tabular-nums">{item.chapter_count ?? "—"}</TableCell>
-                <TableCell className="tabular-nums">{item.question_count ?? "—"}</TableCell>
-                <TableCell className="min-w-48 max-w-80 whitespace-normal break-all text-muted-foreground">{item.directory}</TableCell>
-                <TableCell className="text-right"><Button variant="outline" size="sm" disabled={busy || available.loading}
-                  aria-label={`预览 ${item.directory}`} onClick={() => void inspectAvailable(item.key)}>预览导入</Button>
-                  {item.can_delete ? <Button className="ml-2" variant="ghost" size="sm" disabled={busy || available.loading}
-                    aria-label={`删除 ${item.directory}`} onClick={() => { setDeleting(item); setError(null); }}><Trash2 />删除</Button> : item.protected ? <span className="ml-2 text-xs text-muted-foreground">受保护</span> : null}
-                </TableCell>
-              </TableRow>)}
-            </TableBody>
-          </Table>
-          {available.loading ? <p role="status" className="hint">正在加载课程包…</p> : null}
-          {!available.loading && !available.error && !visiblePackages.length ? (
-            <p className="hint" role="status">{packages.length ? "没有找到匹配的课程包。" : "还没有可导入的课程包。将解压后的课程包放入服务器的 data/course，再刷新列表。"}</p>
-          ) : null}
-          {available.data?.unavailable ? <p className="hint">有 {available.data.unavailable} 份课程包暂不可用，请检查包格式。</p> : null}
-        </div>
-        <ErrorNotice message={error?.phase === "validating" ? error.message : ""} />
-        <OperationProgress
-          operation={operation?.phase === "uploading" || operation?.phase === "validating" ? operation : null}
-        />
-      </section>
+        <p className="hint">{item.chapter_count} 章 · {item.question_count} 道题{item.created_at && <> · {formatTimestamp(item.created_at)}</>}</p>
+        <p className="hint break-all">{item.directory}</p>
+        <div className="hub-card-footer"><Button disabled={busy || Boolean(preview)} onClick={() => choose(item, "create")}>以此创建课程</Button></div>
+      </article>)}</div>
+      {!available.loading && !available.error && !visiblePackages.length && <p role="status" className="hint grid min-h-48 place-items-center px-5 py-8 text-center">{packageQuery ? "没有找到匹配的课程包。" : scope === "mine" ? "还没有导出的课程包。可在课程卡片的更多操作中选择「导出课程包」。" : "暂无共享课程包。"}</p>}
+      {available.data?.unavailable ? <p className="hint">有 {available.data.unavailable} 份课程包暂不可用。</p> : null}
+      <Dialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}>
+        <DialogContent showCloseButton={!busy}><DialogHeader><DialogTitle>{action === "create" ? "从课程包创建课程" : "更新已有课程"}</DialogTitle>
+          <DialogDescription>{selected?.name} · {selected?.chapter_count} 章 · {selected?.question_count} 道题</DialogDescription></DialogHeader>
+          <form className="space-y-4" onSubmit={e => { e.preventDefault(); if (action === "create") void createCourse(); else if (selected && courseId) void inspectAvailable(selected.key); }}>
+            {action === "create" ? <><Label htmlFor="package-course-name">新课程名称</Label><Input id="package-course-name" value={courseName} onChange={e => setCourseName(e.target.value)} required maxLength={200} disabled={busy}/></> :
+              <><Label htmlFor="package-target">目标课程</Label><SelectField className="w-full" id="package-target" value={courseId} onValueChange={setCourseId} disabled={busy}>
+                <option value="">选择课程</option>{courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</SelectField></>}
+            <ErrorNotice message={error?.phase === "creating" || error?.phase === "validating" ? error.message : ""}/>
+            <OperationProgress operation={operation}/>
+            <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setAction(null)} type="button">取消</Button>
+              <Button type="submit" disabled={busy || (action === "create" ? !courseName.trim() : !courseId)}>{action === "create" ? "创建课程" : "预览差异"}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {preview ? (
-        <section className="surface mt-6">
-          <div className="p-5 border-b">
-            <h2 className="font-semibold">导入差异</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {preview.name} · {preview.package_version}
-            </p>
-          </div>
+        <Dialog open onOpenChange={open => { if (!open && !busy) setPreview(null); }}>
+          <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl" showCloseButton={!busy}>
+          <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
+            <DialogTitle>导入差异</DialogTitle>
+            <DialogDescription className="break-words">
+              {preview.name} · {preview.package_version} → {courses.find(c => String(c.id) === courseId)?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto">
           <div className="toolbar">
             <div className="search">
               <Search size={16} aria-hidden="true" />
@@ -422,7 +396,8 @@ export function Packages({ courseId }: { courseId: number }) {
               ))}
             </div>
           ) : null}
-          <div className="p-5 border-t">
+          </div>
+          <div className="max-h-[45dvh] shrink-0 overflow-y-auto border-t p-4">
             <ErrorNotice message={error?.phase === "applying" ? error.message : ""} />
             <div className="flex items-center gap-2 mb-4">
               <Checkbox
@@ -436,12 +411,12 @@ export function Packages({ courseId }: { courseId: number }) {
                 我已核对差异，确认更新本课程及所有教学班的共享内容
               </Label>
             </div>
-            <Button
+            <div className="flex justify-end gap-2"><Button variant="outline" disabled={busy} onClick={() => setPreview(null)}>取消导入</Button><Button
               onClick={() => void apply()}
               disabled={!confirmed || busy || !preview.can_apply}
             >
               确认导入
-            </Button>
+            </Button></div>
             <OperationProgress operation={operation?.phase === "applying" ? operation : null} />
             <p className="hint mt-3">
               若课程已被其他操作修改，需要重新预览。导入不清除已有学习记录。
@@ -449,7 +424,8 @@ export function Packages({ courseId }: { courseId: number }) {
               {formatTimestamp(preview.expires_at)}。
             </p>
           </div>
-        </section>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </>
   );

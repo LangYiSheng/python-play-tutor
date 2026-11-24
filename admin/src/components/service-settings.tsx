@@ -35,7 +35,6 @@ const fields: Record<Service, Field[]> = {
     { key: 'speed', label: '合成语速', min: 0.25, max: 4, step: 0.05 },
     { key: 'timeout', label: '请求超时（秒）', min: 10, max: 600 }],
 };
-const names = { authoring: '讲稿生成', speech: '语音合成' };
 const labels: Record<string, string> = { none: '关闭', minimal: '最少', low: '低', medium: '中', high: '高', stella: 'Stella（女声）', tide: 'Tide（男声）', openai: 'OpenAI 兼容语音接口', deepseek: 'DeepSeek 工具语音接口', dashscope: '阿里百炼原生语音接口' };
 
 export function ServiceSettings({ service, actionsTarget, active }: SettingsActionPlacement & { service: Service }) {
@@ -101,11 +100,10 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     setDraft({ ...draft, ...example, base_url: replace || known.includes(root) ? example.base_url : draft.base_url, protocol });
     toast.add({ title: '示例已填入，请核对后保存。', type: 'info' });
   }
-  return <section className="surface space-y-4 p-6">
+  return <section className="space-y-4 py-4">
     <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
       if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
     }} />
-    <h2 className="font-semibold">{names[service]}</h2>
     <p className="hint">适用范围：全站{service === 'authoring' ? '讲稿生成与校准' : '语音合成'}。由管理员维护，{service === 'authoring' ? '用于 PDF、演示文稿，不占用学生答疑预算。' : '仅合成教师已接受的讲稿。'}保存设置不会调用外部服务。</p>
     <ErrorNotice message={error} />
     {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="space-y-4">
@@ -146,7 +144,6 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
         <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>
       </div>
       {deepseek && <p className="hint">学生播放时仍可调速。<a className="underline" href="https://api-docs.deepseek.com/zh-cn/guides/tts/" target="_blank" rel="noreferrer">查看接口说明</a></p>}
-      <p className="hint">当前来源：{saved?.source === 'database' ? '后台已保存设置' : '统一环境配置'}。密钥留空会保留现有值。</p>
     </fieldset>}
   </section>;
 }

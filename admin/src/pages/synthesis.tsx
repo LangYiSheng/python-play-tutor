@@ -1,4 +1,3 @@
-import { createPortal } from "react-dom";
 import { useEffect, useState } from 'react';
 import { Eye, Headphones, NotebookPen, RefreshCw } from 'lucide-react';
 import { PageHeader, ErrorNotice, Loading, Empty, Pager } from '@/components/common';
@@ -26,11 +25,11 @@ type Task = TaskSnapshot & {
 type Overview = { items: Task[]; total: number; counts: Record<string, number> };
 const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '已中断', cancelled: '已取消', cancelling: '正在取消' };
 
-export function Synthesis({ actionsTarget, courseId }: { actionsTarget?: HTMLDivElement | null; courseId?: number }) {
-  return <SynthesisPage key={courseId ?? 'global'} actionsTarget={actionsTarget} courseId={courseId}/>;
+export function Synthesis({ courseId }: { courseId?: number }) {
+  return <SynthesisPage key={courseId ?? 'global'} courseId={courseId}/>;
 }
 
-function SynthesisPage({ actionsTarget, courseId }: { actionsTarget?: HTMLDivElement | null; courseId?: number }) {
+function SynthesisPage({ courseId }: { courseId?: number }) {
   const [query, setQuery] = useState(''), [status, setStatus] = useState('all');
   const [view, setView] = useState('running');
   const [page, setPage] = useState(1), [size, setSize] = useState(25), [refresh, setRefresh] = useState(0);
@@ -54,9 +53,7 @@ function SynthesisPage({ actionsTarget, courseId }: { actionsTarget?: HTMLDivEle
   }, [courseId, query, status, view, page, size, refresh]);
   const refreshButton = <Button variant="outline" onClick={() => setRefresh(n => n + 1)}><RefreshCw />刷新</Button>;
   return <>
-    {courseId === undefined
-      ? actionsTarget && createPortal(refreshButton, actionsTarget)
-      : <PageHeader title="资料合成管理">{refreshButton}</PageHeader>}
+    <PageHeader title="资料合成管理">{refreshButton}</PageHeader>
     <Tabs value={view} onValueChange={v => { setView(v as string); setStatus('all'); setPage(1); }} className="mb-4">
       <TabsList><TabsTrigger value="running"><Activity />正在执行{data ? `（${data.counts.running}）` : ''}</TabsTrigger><TabsTrigger value="history"><History />历史记录</TabsTrigger></TabsList>
     </Tabs>

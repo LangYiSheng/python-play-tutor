@@ -38,3 +38,9 @@ class ApplyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: UUID
     expected_revision: int = Field(ge=0, strict=True)
+
+
+class CreateFromPackageInput(AvailablePackageInput):
+    name: str = Field(min_length=1, max_length=200)
+    request_id: UUID
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)

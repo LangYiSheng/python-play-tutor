@@ -60,11 +60,10 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
       toast.add({ title: '连接正常', description: `${result.elapsed_ms} ms · ${result.tokens} tokens`, type: 'success' });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
-  return <section className="surface space-y-4 p-6">
+  return <section className="space-y-4 py-4">
     <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
       if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
     }} />
-    <h2 className="font-semibold">学生助教</h2>
     <p className="hint">适用范围：全站学生答疑。由管理员维护，学习与练习共用此连接。保存设置不会调用模型。</p>
     <ErrorNotice message={error} />
     {draft && <fieldset disabled={busy} className="space-y-4">
@@ -84,7 +83,6 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
         <Label htmlFor={`model-${name}`}>{label}</Label><Input id={`model-${name}`} type="number" min={min} max={max} value={draft[name]} onChange={e => setDraft({ ...draft, [name]: Number(e.target.value) })} />
       </div>)}</div>
       <p className="hint">上下文上限需与供应商模型匹配。达到阈值时自动整理历史，最多增加一次摘要调用；原聊天记录保留。{draft.token_counting}。</p>
-      <p className="hint">当前来源：{saved?.source === 'database' ? '后台已保存设置' : '统一环境配置'}。密钥留空会保留现有值。</p>
     </fieldset>}
   </section>;
 }

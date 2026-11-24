@@ -30,16 +30,17 @@
   border-bottom: 1px solid var(--border);
   gap: 8px;
 }
-[data-slot="select-content"].select-fit-options {
+[data-slot="select-content"] {
   width: max-content;
   min-width: min(var(--anchor-width), var(--available-width));
-  max-width: min(38rem, var(--available-width), calc(100vw - 1rem));
+  max-width: min(var(--available-width), calc(100vw - 1rem), max(38rem, var(--anchor-width)));
 }
-.select-fit-options [data-slot="select-item-text"] {
+[data-slot="select-item-text"] {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
 }
+[data-slot="select-trigger"] { min-width: 0; max-width: 100%; }
 .search {
   position: relative;
   max-width: 360px;

@@ -695,7 +695,7 @@ def test_catalog_summary_and_readable_export_name(client, db, teacher, exchange)
     assert item["chapter_count"] > 0 and item["question_count"] > 0
     assert {key: item[key] for key in ("chapter_count", "question_count")} == package_counts(exchange_root() / directory, PackageLimits())
     other_items = client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"]).json()["items"]
-    assert any(row["directory"] == directory and not row["can_delete"] and not row["protected"] for row in other_items)
+    assert any(row["directory"] == directory and row["mine"] and row["can_delete"] and not row["protected"] for row in other_items)
 
 
 def test_available_packages_authorize_the_selected_classroom(client, db, teacher, exchange):
@@ -876,8 +876,6 @@ def test_export_delete_protects_supplied_packages_and_preserves_preview(client, 
     receipt = db.get(CourseImportPreview, preview.json()["id"])
     staged = root / receipt.storage_key
     revision = source.revision
-    assert client.delete(base + "packages/" + original["key"], headers=teacher["headers"]).status_code == 403
-    assert client.delete("/api/teacher/course/packages/" + original["key"], headers=teacher["headers"]).status_code == 403
     result = client.delete("/api/teacher/course/packages/" + original["key"], headers=admin_account["headers"])
     assert result.status_code == 200, result.text
     assert not directory.exists() and supplied.exists() and lookalike.exists() and staged.exists()
@@ -985,3 +983,35 @@ def test_multiple_choice_roundtrip_keeps_array_answers_and_class_isolation(clien
     db.get(QuestionSecret, imported_id).answer = ["int", "str"]
     db.commit()
     assert db.get(QuestionSecret, source_id).answer == ["float", "int"]
+
+
+def test_personal_package_create_retry_delete_and_access(client, db, teacher, exchange):
+    from app.auth import issue
+    from app.models import User
+
+    source, target = exchange
+    base = "/api/teacher/course/packages"
+    auth = teacher["headers"]
+    assert client.get(endpoint(source.id, "export"), headers=auth).status_code == 200
+    package, = client.get(base, headers=auth).json()["items"]
+    assert package["mine"] and package["can_delete"] and not package["shared"]
+    other = User(student_id="67829381", name="其他教师", role="teacher", password_hash=db.get(User, teacher["id"]).password_hash)
+    db.add(other)
+    db.flush()
+    target.course.teacher_id = other.id
+    foreign = {"Authorization": "Bearer " + issue(db, other)["access_token"]}
+    db.commit()
+    body = {"name": "独立副本", "package_key": package["key"], "request_id": str(uuid4())}
+    assert not client.get(base, headers=foreign).json()["items"]
+    assert client.post(base + "/create-course", headers=foreign, json=body).status_code == 404
+    assert client.delete(base + "/" + package["key"], headers=foreign).status_code == 404
+    assert client.post(endpoint(target.course_id, "imports/available/preview"), headers=foreign,
+                       json={"package_key": package["key"]}).status_code == 404
+    response = client.post(base + "/create-course", headers=auth, json=body)
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["id"] != source.id and result["name"] == body["name"]
+    assert client.post(base + "/create-course", headers=auth, json=body).json() == result
+    assert client.delete(base + "/" + package["key"], headers=auth).status_code == 200
+    assert client.get(base, headers=auth).json()["items"] == []
+    assert db.scalar(select(Question).where(Question.course_instance_id == result["id"])) is not None
