@@ -294,7 +294,9 @@ docker build -t pythontopia-reborn-converter:local deploy/converter
 
 服务器IP或域名的HTTP测试部署属于非安全上下文，与localhost不同。请求UUID统一由前端`shared/uuid.ts`生成：原生`crypto.randomUUID`不可用时使用`crypto.getRandomValues`生成UUID v4。更新兼容修复后需重建并替换Web镜像、刷新页面；无需数据库迁移。正式部署仍应在入口配置HTTPS以保护登录和会话传输，UUID兼容不提供传输加密。专项`httpUuid.spec.ts`使用非localhost的HTTP页面验证此路径，不需要启动业务服务。
 
-### 基础检查
+Docker API 入口在启动服务前执行 `alembic upgrade head`。共享课程迁移原位保留内容 ID，每个旧班配一门课程，没有课程的旧班创建同名空课。正常启动不导入课程包。升级前应备份数据库和私有文件；回退至一班一课版本需要恢复升级前备份。
+
+## 基础检查
 
 先完成一轮功能实现，在合并或交付前集中验证、修复问题，复测稳定后再合并；直接在main开发也需在功能交付前完成这一步。阶段性编辑或提交不要求重复全量测试。默认选择覆盖改动及直接影响范围的最小、稳定测试集；通过后无新变化不重跑。
 
@@ -368,7 +370,7 @@ git diff --check
 
 已知待核实项（记录于2026-11-16，本次文档整理未重跑）：学生浏览器用例assessmentPaper仍引用已移除的禁用按钮，narrationLearning仍使用旧material_id请求字段。相关套件不能视为全通过；修改对应功能时需先核对现行界面与契约，再修复用例并定向验证。
 
-Playwright不会自动启动服务器。先准备独立验收数据库、媒体/交换目录及专用教师账号，设置E2E_URL、ADMIN_E2E_URL（同域入口）、E2E_TEACHER_STUDENT_ID、E2E_TEACHER_PASSWORD。跨教师权限另需E2E_OTHER_TEACHER_STUDENT_ID/PASSWORD。将解压后的完整测试包放进隔离交换目录，设置 REBORN_E2E_COURSE_PACKAGE 为清单的 package_id。学生用例先创建班级并显式导入。后台包往返测试在同一隔离环境运行，测试进程的 REBORN_COURSE_EXCHANGE_ROOT 指向可访问的交换目录。
+Playwright不会自动启动服务器。先准备独立验收数据库、媒体/交换目录及专用教师账号，设置E2E_URL、ADMIN_E2E_URL（同域入口）、E2E_TEACHER_STUDENT_ID、E2E_TEACHER_PASSWORD。跨教师权限另需E2E_OTHER_TEACHER_STUDENT_ID/PASSWORD。将解压后的完整测试包放进隔离交换目录，设置 REBORN_E2E_COURSE_PACKAGE 为清单的 package_id。学生用例先创建课程、显式导入，再开班并开放测试章节。后台包往返测试在同一隔离环境运行，测试进程的 REBORN_COURSE_EXCHANGE_ROOT 指向可访问的交换目录。
 
 本机浏览器验收使用 tests/fixture_package 生成 v3 合成测试包并解压到隔离交换目录，再启动API、React和Vue。依赖在启动服务器前安装，浏览器运行期间不要执行npm ci。后台e2e在admin指定相关测试文件执行；游戏按下方专项表选择用例，只有需要完整浏览器回归时才不指定文件。
 

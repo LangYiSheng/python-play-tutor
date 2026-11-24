@@ -1,6 +1,6 @@
 """Write only the native definitions changed by the template in the caller's transaction."""
+from app.course_scope import course_class_ids
 
-from datetime import datetime
 
 from sqlalchemy import select
 
@@ -11,7 +11,7 @@ from app.course_instances import content_mapping, remap_references
 from app.db import RetirableContent
 from app.integration_models import AssistantSession
 from app.models import (
-    Activity, ActivityProgress, AssessmentAttempt, ChapterRelease, LearningRecord, Npc,
+    Activity, ActivityProgress, AssessmentAttempt, LearningRecord, Npc,
     PracticeSession, QuestDefinition, StoryDefinition, StorySession, Submission,
 )
 from app.teacher_scope import scoped_key
@@ -34,7 +34,7 @@ def runtime_ids(db, instance, plan):
     return maps
 
 
-def protect_learning(db, classroom_id, plan, maps):
+def protect_learning(db, course_id, plan, maps):
     changed_objectives = set()
     for stable_id, (before, after) in plan.edits["activity"].items():
         if not before:
@@ -45,7 +45,7 @@ def protect_learning(db, classroom_id, plan, maps):
             continue
         key = maps["activity"][stable_id]
         changed_objectives.add(key)
-        if db.scalar(select(StorySession.id).where(StorySession.classroom_id == classroom_id,
+        if db.scalar(select(StorySession.id).where(StorySession.classroom_id.in_(course_class_ids(course_id)),
                 StorySession.pending_activity_id == key, StorySession.status == "waiting").limit(1)):
             plan.blockers.append(f"有学生正在「{before['title']}」学习，请等他们结束本次互动后再调整。")
         if after is None:
@@ -59,14 +59,14 @@ def protect_learning(db, classroom_id, plan, maps):
             # Reading progress is per material and fixed practice submissions are
             # per question. The normal activity editor can change these associations.
             continue
-        if any(db.scalar(select(model.activity_id).where(model.classroom_id == classroom_id, model.activity_id == key).limit(1)) for model in evidence):
+        if any(db.scalar(select(model.activity_id).where(model.classroom_id.in_(course_class_ids(course_id)), model.activity_id == key).limit(1)) for model in evidence):
             detail = "请保留已有练习目标和个人题单。" if rules_changed else "请保留这项活动及已有试卷的题单。"
             plan.blockers.append(f"「{before['title']}」已有学习记录，{detail}")
     return changed_objectives
 
 
-def write_plan(db, classroom, instance, plan, maps):
-    plan.reset.apply(db, classroom.id)
+def write_plan(db, instance, plan, maps):
+    plan.reset.apply(db, instance.id)
     for kind, model in MODELS.items():
         for stable, (before, after) in plan.edits[kind].items():
             if after is None:
@@ -76,7 +76,7 @@ def write_plan(db, classroom, instance, plan, maps):
             if row is None:
                 row = model(course_instance_id=instance.id, stable_id=stable, **{"key" if model is Npc else "id": key})
                 if hasattr(model, "owner_id"):
-                    row.owner_id = classroom.teacher_id
+                    row.owner_id = instance.teacher_id
                 db.add(row)
             fields = after if model is Npc else remap_references(after, maps)
             if model is QuestDefinition:
@@ -95,15 +95,7 @@ def write_plan(db, classroom, instance, plan, maps):
                     set_activity_questions(db, row, [])
                 db.delete(row)
         db.flush()
-    for stable, (_, after) in plan.edits["releases"].items():
+    for stable, (_, after) in plan.edits["prerequisites"].items():
         key = maps["chapter"][stable]
-        release = db.get(ChapterRelease, (classroom.id, key))
-        if after is None:
-            db.delete(release)
-            continue
-        if release is None:
-            release = ChapterRelease(classroom_id=classroom.id, chapter_id=key)
-            db.add(release)
-        release.status = after["status"]
-        release.opens_at = datetime.fromisoformat(after["opens_at"]) if after["opens_at"] else None
-        release.prerequisite_chapter_id = maps["chapter"].get(after["prerequisite_chapter_id"])
+        from app.models import Chapter
+        db.get(Chapter, key).prerequisite_chapter_id = maps["chapter"].get(after["prerequisite_chapter_id"]) if after else None

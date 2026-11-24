@@ -1,4 +1,5 @@
 """Actual row locks prevent duplicate assistant dispatch across HTTP requests."""
+from course_fixtures import empty_course
 import asyncio
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -51,7 +52,7 @@ def test_duplicate_turn_reserves_and_dispatches_once(monkeypatch):
             student = User(student_id="99002", name="student", role="student", password_hash="unused")
             db.add_all([teacher, student])
             db.flush()
-            classroom = Classroom(name="isolated assistant", teacher_id=teacher.id, join_code=uuid4().hex[:20])
+            classroom = Classroom(name="isolated assistant", course=empty_course(teacher.id), join_code=uuid4().hex[:20])
             db.add(classroom)
             db.flush()
             db.add(Membership(user_id=student.id, classroom_id=classroom.id))

@@ -1,6 +1,6 @@
 import type { Authoring as AuthoringData } from "./model";
 export type Document = AuthoringData & {
-  students: { id: number; name: string }[];
+  students: { id: number; name: string; classroom_name: string }[];
 };
 export interface Validation {
   valid: boolean;
@@ -8,6 +8,7 @@ export interface Validation {
   reset_impact?: ResetImpact;
 }
 export type ResetImpact = {
+  classrooms: {id: number; name: string; sessions: number; tasks: number; quest_titles: string[]; flow_titles: string[]}[];
   token: string;
   students: number;
   flows: {

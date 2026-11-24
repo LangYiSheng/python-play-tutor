@@ -1,3 +1,4 @@
+from course_fixtures import empty_course
 from app.content_relations import set_activity_questions
 from conftest import make_question
 import asyncio
@@ -237,7 +238,7 @@ def test_postgres_concurrent_hand_ins_have_one_atomic_paper():
             student = User(student_id="198477289005076", name="student", role="student", password_hash="unused")
             session.add_all([teacher, student])
             session.flush()
-            classroom = Classroom(name="exam-test-only", teacher_id=teacher.id, join_code=uuid4().hex[:20])
+            classroom = Classroom(name="exam-test-only", course=empty_course(teacher.id), join_code=uuid4().hex[:20])
             session.add(classroom)
             session.flush()
             session.add_all([Membership(user_id=student.id, classroom_id=classroom.id),

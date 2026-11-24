@@ -22,13 +22,13 @@ import { CharacterAssetPicker } from "./character-asset-picker";
 export function AssistantEditor({
   data,
   onChange,
-  classroomId,
+  courseId,
   focusTarget,
   onUploadState,
 }: {
   data: Authoring;
   onChange: (value: Authoring) => void;
-  classroomId: number;
+  courseId: number;
   focusTarget?: { roleId?: string };
   onUploadState?: (busy: boolean) => void;
 }) {
@@ -56,7 +56,7 @@ export function AssistantEditor({
     const controller = new AbortController();
     void api
       .get<CharacterAsset[]>(
-        `/teacher/classrooms/${classroomId}/character-assets`,
+        `/teacher/courses/${courseId}/character-assets`,
         controller.signal,
       )
       .then((result) => {
@@ -69,7 +69,7 @@ export function AssistantEditor({
       controller.abort();
       uploadGeneration.current += 1;
     };
-  }, [classroomId]);
+  }, [courseId]);
   function updateRole(next: Character) {
     onChange({
       ...data,
@@ -105,7 +105,7 @@ export function AssistantEditor({
     setError("");
     try {
       const asset = await api.upload<CharacterAsset>(
-        `/teacher/classrooms/${classroomId}/character-assets`,
+        `/teacher/courses/${courseId}/character-assets`,
         body,
       );
       if (generation !== uploadGeneration.current) return;

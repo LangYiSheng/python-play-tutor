@@ -27,7 +27,7 @@ it('retains service drafts across icon tabs and hides global configuration from 
   expect(screen.getByLabelText('页面图像模型')).toHaveValue('unsaved-vision');
   expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
   w.unmount();
-  render(<CourseSettings classroomId={1} />);
+  render(<CourseSettings courseId={1} />);
   expect(screen.queryByRole('tab', { name: '讲稿生成' })).toBeNull();
 });
 it('preserves keys after a conflict and clears transient key text only after save', async () => {

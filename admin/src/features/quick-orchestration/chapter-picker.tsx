@@ -74,7 +74,7 @@ export function ChapterPicker({ chapters, selected, problems, withQuiz, finalId,
   const [filter, setFilter] = useState("");
   const [openError, setOpenError] = useState("");
   function openManager(page: "curriculum" | "materials") {
-    const tab = window.open("/teacher/" + page, "_blank");
+    const tab = window.open("/teacher/" + page + location.search, "_blank");
     if (tab) {
       tab.opener = null;
       setOpenError("");

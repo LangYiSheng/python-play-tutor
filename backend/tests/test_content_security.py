@@ -1,4 +1,5 @@
 """Authorization and current quest-reference regression tests."""
+from course_fixtures import create_test_class
 from app.models import ActivityMaterial
 
 
@@ -21,8 +22,8 @@ def new_teacher(db):
 
 def test_teacher_cannot_read_other_owner_draft_assessment_or_metadata(client, db, teacher, classroom):
     other = new_teacher(db)
-    other_class = client.post("/api/classrooms", json={"name": "Teacher B private class"}, headers=other["headers"]).json()
-    assert client.post(f"/api/teacher/classrooms/{other_class['id']}/course/empty", json={"name": "Other", "confirmed": True}, headers=other["headers"]).status_code == 200
+    other_class = create_test_class(client, json={"name": "Teacher B private class"}, headers=other["headers"]).json()
+    assert client.get(f"/api/teacher/courses/{other_class['course_id']}", headers=other["headers"]).status_code == 200
     assessment = Activity(id='teacher-a-unpublished-exam', chapter_id=179, title='PRIVATE_DRAFT_TITLE', kind='assessment', owner_id=teacher['id'], content={'published': False, 'question_ids': ['teacher-a-private-question']}, resources=[])
     db.add(assessment)
     db.flush()
@@ -43,19 +44,18 @@ def test_teacher_cannot_read_other_owner_draft_assessment_or_metadata(client, db
     blocked = client.get(f"/api/activities/{assessment.id}?classroom_id={other_class['id']}", headers=other["headers"])
     assert blocked.status_code == 403
     assert "PRIVATE_UNPUBLISHED_EXAM_TEXT" not in blocked.text
-    # Joining A's class grants normal member access, never A's draft-preview privileges.
-    assert client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=other["headers"]).status_code == 200
+    # Only enrolled students can join via a code. Other teachers cannot acquire draft access.
+    assert client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=other["headers"]).status_code == 403
     assert client.get(f"/api/activities/{assessment.id}?classroom_id={classroom['id']}", headers=other["headers"]).status_code == 403
     own_preview = client.get(f"/api/activities/{assessment.id}?classroom_id={classroom['id']}", headers=teacher["headers"])
     assert own_preview.status_code == 200 and "PRIVATE_UNPUBLISHED_EXAM_TEXT" in own_preview.text
-    listing = client.get("/api/teacher/courses", headers=other["headers"], params={"classroom_id": classroom["id"]})
+    listing = client.get(f"/api/teacher/courses/{classroom['course_id']}/catalog", headers=other["headers"])
     assert listing.status_code == 403 and "PRIVATE_DRAFT_TITLE" not in listing.text
     assert client.get(f"/api/activities/ch1-lesson?classroom_id={other_class['id']}", headers=other["headers"]).status_code == 403
 
 
-def test_enrolled_external_teacher_reads_bound_current_material_only(client, db, teacher, classroom):
-    other = new_teacher(db)
-    client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=other["headers"])
+def test_enrolled_student_reads_bound_current_material_only(client, db, teacher, classroom, student):
+    assert client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=student["headers"]).status_code == 200
     material = make_material(db, id=9200, chapter_ids=[179], title="Current material", kind="text", owner_id=teacher["id"], status="ready",
                         content={"pages": [{"id": 9201, "page_no": 1, "title": "page", "text": "PUBLISHED_CURRENT_MATERIAL"}]})
     db.add(material)
@@ -63,7 +63,7 @@ def test_enrolled_external_teacher_reads_bound_current_material_only(client, db,
     activity = Activity(id='a-published-reading', chapter_id=179, title='A published lesson', kind='lesson', owner_id=teacher['id'], content={'published': True, 'question_ids': []}, resources=[ActivityMaterial(material_id=material.id, required=True, order_index=0, learning={})])
     db.add(activity)
     db.commit()
-    cid, headers = classroom["id"], other["headers"]
+    cid, headers = classroom["id"], student["headers"]
     published = client.get(f"/api/materials/{material.id}?classroom_id={cid}", headers=headers)
     assert published.status_code == 200 and "PUBLISHED_CURRENT_MATERIAL" in published.text
     material.content = {"pages": [{"id": 9201, "page_no": 1, "title": "page", "text": "UPDATED_CURRENT_MATERIAL"}]}
@@ -86,14 +86,14 @@ def test_removed_version_fields_are_rejected(client, teacher, field, classroom):
     definition = lesson_definition()
     target = definition if field == "version" else definition["nodes"][0]
     target[field] = 1
-    response = client.post("/api/teacher/quests/validate", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    response = client.post(f"/api/teacher/courses/{classroom['course_id']}/quests/validate", json={"definition": definition}, headers=teacher["headers"])
     assert response.status_code == 422, response.text
 
 
 def test_current_activity_kind_and_publication_are_authoritative(client, db, teacher, classroom):
     activity = db.get(Activity, "ch1-lesson")
     def validate():
-        return client.post("/api/teacher/quests/validate", json={"definition": lesson_definition()}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+        return client.post(f"/api/teacher/courses/{classroom['course_id']}/quests/validate", json={"definition": lesson_definition()}, headers=teacher["headers"])
     assert validate().status_code == 200
     activity.kind = "practice"
     db.commit()
@@ -214,7 +214,7 @@ def test_all_merge_keeps_required_practice_after_chosen_branch(client, db, teach
         ],
         "effects": [{"type": "set_world_flag", "key": "required_merge_passed"}]}
     assert validate_definition(definition, db) == definition
-    created = client.post("/api/teacher/quests", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    created = client.post(f"/api/teacher/courses/{classroom['course_id']}/quests", json={"definition": definition}, headers=teacher["headers"])
     assert created.status_code == 201, created.text
     definition["id"] = created.json()["id"]
     from app.models import StoryDefinition
@@ -298,7 +298,7 @@ def test_all_merge_keeps_required_practice_after_chosen_branch(client, db, teach
 )
 def test_teacher_cannot_publish_unjudgeable_cases(client, db, teacher, samples, hidden_cases, classroom):
     response = client.post(
-        "/api/teacher/questions",
+        f"/api/teacher/courses/{classroom['course_id']}/questions",
         json={
             "id": "invalid-cases",
             "chapter_ids": [179], "status": "ready",
@@ -307,8 +307,7 @@ def test_teacher_cannot_publish_unjudgeable_cases(client, db, teacher, samples, 
             "prompt": "Test fixture",
             "samples": samples,
             "hidden_cases": hidden_cases},
-        headers=teacher["headers"],
-     params={"classroom_id": classroom["id"]})
+        headers=teacher["headers"])
     assert response.status_code == 422, response.text
     assert db.get(Question, "invalid-cases") is None
 
@@ -316,14 +315,13 @@ def test_teacher_cannot_publish_unjudgeable_cases(client, db, teacher, samples, 
 def test_twenty_bounded_cases_publish_and_formally_submit_without_runtime_config_error(client, db, teacher, student, classroom):
     activity_id = "twenty-cases-practice"
     response = client.post(
-        "/api/teacher/activities",
+        f"/api/teacher/courses/{classroom['course_id']}/activities",
         json={"id": activity_id, "chapter_id": 179, "title": "Bounded cases", "kind": "assessment", "npc_key": "mayor_py", "assistant_allowed": False},
-        headers=teacher["headers"],
-     params={"classroom_id": classroom["id"]})
+        headers=teacher["headers"])
     assert response.status_code == 201, response.text
     activity_id = response.json()["id"]
     response = client.post(
-        "/api/teacher/questions",
+        f"/api/teacher/courses/{classroom['course_id']}/questions",
         json={
             "id": "twenty-cases",
             "chapter_ids": [179], "status": "ready",
@@ -332,12 +330,11 @@ def test_twenty_bounded_cases_publish_and_formally_submit_without_runtime_config
             "prompt": "Explicit test fixture, not course content",
             "samples": [{"input": "x", "output": "x"}] * 19,
             "hidden_cases": [{"input": "private", "expected_output": "private"}]},
-        headers=teacher["headers"],
-     params={"classroom_id": classroom["id"]})
+        headers=teacher["headers"])
     assert response.status_code == 201, response.text
     question_id = response.json()["id"]
     assert "activity_version" not in response.json()
-    assert client.put(f"/api/teacher/activities/{activity_id}/questions", json={"question_ids": [question_id]}, headers=teacher["headers"], params={"classroom_id": classroom["id"]}).status_code == 200
+    assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/{activity_id}/questions", json={"question_ids": [question_id]}, headers=teacher["headers"]).status_code == 200
     response = client.put(
         f"/api/teacher/classrooms/{classroom['id']}/releases/179", json={"status": "published"}, headers=teacher["headers"]
     )

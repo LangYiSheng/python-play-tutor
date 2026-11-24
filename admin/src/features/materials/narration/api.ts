@@ -130,8 +130,8 @@ export interface CalibrationReport {
   } | null;
 }
 
-const base = (classroomId: number, materialId: number) =>
-  `/teacher/classrooms/${classroomId}/materials/${materialId}/narrations`;
+const base = (courseId: number, materialId: number) =>
+  `/teacher/courses/${courseId}/materials/${materialId}/narrations`;
 
 export interface NarrationJobState {
   id: number | null;
@@ -150,12 +150,12 @@ export interface NarrationJobState {
 }
 
 export const narrationApi = {
-  list: (classroomId: number, materialId: number) =>
-    api.get<NarrationList>(base(classroomId, materialId)),
-  quota: (classroomId: number, materialId: number) =>
-    api.get<NarrationQuota>(`${base(classroomId, materialId)}/quota`),
+  list: (courseId: number, materialId: number) =>
+    api.get<NarrationList>(base(courseId, materialId)),
+  quota: (courseId: number, materialId: number) =>
+    api.get<NarrationQuota>(`${base(courseId, materialId)}/quota`),
   generatePage: (
-    classroomId: number,
+    courseId: number,
     materialId: number,
     pageNo: number,
     targetSeconds?: number,
@@ -166,17 +166,17 @@ export const narrationApi = {
       reused: boolean;
       model: string;
     }>(
-      `${base(classroomId, materialId)}/${pageNo}/generate`,
+      `${base(courseId, materialId)}/${pageNo}/generate`,
       targetSeconds ? { target_seconds: targetSeconds } : {},
     ),
   generateRange: (
-    classroomId: number,
+    courseId: number,
     materialId: number,
     firstPage: number,
     lastPage: number,
   ) =>
     api.post<{ job: NarrationJobState }>(
-      `${base(classroomId, materialId)}/generate`,
+      `${base(courseId, materialId)}/generate`,
       {
         first_page: firstPage,
         last_page: lastPage,
@@ -184,86 +184,86 @@ export const narrationApi = {
         mode: "serial",
       },
     ),
-  job: (classroomId: number, materialId: number) =>
-    api.get<NarrationJobState>(`${base(classroomId, materialId)}/job`),
-  pipeline: (classroomId: number, materialId: number) =>
+  job: (courseId: number, materialId: number) =>
+    api.get<NarrationJobState>(`${base(courseId, materialId)}/job`),
+  pipeline: (courseId: number, materialId: number) =>
     api.post<{ job: NarrationJobState }>(
-      `${base(classroomId, materialId)}/pipeline`,
+      `${base(courseId, materialId)}/pipeline`,
       {},
     ),
   acceptBatch: (
-    classroomId: number,
+    courseId: number,
     materialId: number,
     firstPage?: number,
     lastPage?: number,
   ) =>
     api.post<{ accepted: number[]; count: number }>(
-      `${base(classroomId, materialId)}/accept-batch`,
+      `${base(courseId, materialId)}/accept-batch`,
       {
         first_page: firstPage ?? null,
         last_page: lastPage ?? null,
       },
     ),
   audioBatch: (
-    classroomId: number,
+    courseId: number,
     materialId: number,
     firstPage: number,
     lastPage: number,
   ) =>
     api.post<{ job: NarrationJobState }>(
-      `${base(classroomId, materialId)}/audio-batch`,
+      `${base(courseId, materialId)}/audio-batch`,
       {
         first_page: firstPage,
         last_page: lastPage,
       },
     ),
   save: (
-    classroomId: number,
+    courseId: number,
     materialId: number,
     pageNo: number,
     text: string,
   ) =>
     api.put<{ page_no: number; status: string; text: string }>(
-      `${base(classroomId, materialId)}/${pageNo}`,
+      `${base(courseId, materialId)}/${pageNo}`,
       { text },
     ),
-  accept: (classroomId: number, materialId: number, pageNo: number) =>
+  accept: (courseId: number, materialId: number, pageNo: number) =>
     api.post<{ page_no: number; status: string }>(
-      `${base(classroomId, materialId)}/${pageNo}/accept`,
+      `${base(courseId, materialId)}/${pageNo}/accept`,
       {},
     ),
-  reject: (classroomId: number, materialId: number, pageNo: number) =>
+  reject: (courseId: number, materialId: number, pageNo: number) =>
     api.post<{ page_no: number; status: string }>(
-      `${base(classroomId, materialId)}/${pageNo}/reject`,
+      `${base(courseId, materialId)}/${pageNo}/reject`,
       {},
     ),
-  remove: (classroomId: number, materialId: number, pageNo: number) =>
-    api.delete(`${base(classroomId, materialId)}/${pageNo}`),
-  calibrate: (classroomId: number, materialId: number) =>
+  remove: (courseId: number, materialId: number, pageNo: number) =>
+    api.delete(`${base(courseId, materialId)}/${pageNo}`),
+  calibrate: (courseId: number, materialId: number) =>
     api.post<{ job: NarrationJobState }>(
-      `${base(classroomId, materialId)}/calibrate`,
+      `${base(courseId, materialId)}/calibrate`,
       {},
     ),
-  calibration: (classroomId: number, materialId: number, partial = false) =>
+  calibration: (courseId: number, materialId: number, partial = false) =>
     api.get<CalibrationReport>(
-      `${base(classroomId, materialId)}/calibrate${partial ? "?partial=1" : ""}`,
+      `${base(courseId, materialId)}/calibrate${partial ? "?partial=1" : ""}`,
     ),
-  applyCalibration: (classroomId: number, materialId: number) =>
+  applyCalibration: (courseId: number, materialId: number) =>
     api.post<CalibrationReport["applied_pages"]>(
-      `${base(classroomId, materialId)}/calibrate/apply`,
+      `${base(courseId, materialId)}/calibrate/apply`,
       {},
     ),
-  audioStatus: (classroomId: number, materialId: number) =>
-    api.get<NarrationAudioStatus>(`${base(classroomId, materialId)}/audio`),
-  synthesizeAudio: (classroomId: number, materialId: number, pageNo: number) =>
+  audioStatus: (courseId: number, materialId: number) =>
+    api.get<NarrationAudioStatus>(`${base(courseId, materialId)}/audio`),
+  synthesizeAudio: (courseId: number, materialId: number, pageNo: number) =>
     api.post<{
       page_no: number;
       reused: boolean;
       key: string;
       seconds: number;
-    }>(`${base(classroomId, materialId)}/${pageNo}/audio`, {}),
-  pageImage: (classroomId: number, materialId: number, pageNo: number) =>
-    `${base(classroomId, materialId)}/${pageNo}/page-image`,
-  audioFile: (classroomId: number, materialId: number, pageNo: number) =>
-    `/teacher/classrooms/${classroomId}/materials/${materialId}/narrations/${pageNo}/audio/file`,
+    }>(`${base(courseId, materialId)}/${pageNo}/audio`, {}),
+  pageImage: (courseId: number, materialId: number, pageNo: number) =>
+    `${base(courseId, materialId)}/${pageNo}/page-image`,
+  audioFile: (courseId: number, materialId: number, pageNo: number) =>
+    `/teacher/courses/${courseId}/materials/${materialId}/narrations/${pageNo}/audio/file`,
 };

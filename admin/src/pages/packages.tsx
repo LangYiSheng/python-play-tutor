@@ -146,8 +146,8 @@ function OperationProgress({ operation }: { operation: Operation | null }) {
   );
 }
 
-export function Packages({ classroomId }: { classroomId: number }) {
-  const base = `/teacher/classrooms/${classroomId}/course`;
+export function Packages({ courseId }: { courseId: number }) {
+  const base = `/teacher/courses/${courseId}`;
   const available = useResource<AvailablePackages>("/teacher/course/packages");
   const [deleting, setDeleting] = useState<AvailablePackages["items"][number] | null>(null);
   const [packageSearch, setPackageSearch] = useState("");
@@ -272,7 +272,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
     <>
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open && !busy) setDeleting(null); }}>
         <DialogContent showCloseButton={!busy}>
-          <DialogHeader><DialogTitle>删除导出的课程包</DialogTitle><DialogDescription>从全站共享目录删除此导出包。已导入的班级课程、学生进度和成绩都会保留。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>删除导出的课程包</DialogTitle><DialogDescription>从全站共享目录删除此导出包。已导入的课程、学生进度和成绩都会保留。</DialogDescription></DialogHeader>
           <p className="font-medium">{deleting?.name}</p><p className="break-all text-sm text-muted-foreground">{deleting?.directory}</p>
           <ErrorNotice message={error?.phase === "deleting" ? error.message : ""} />
           <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>取消</Button><Button variant="destructive" disabled={busy} onClick={() => void deletePackage()}><Trash2 />{busy ? "正在删除…" : "确认删除"}</Button></DialogFooter>
@@ -303,7 +303,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
           <div>
             <h2 className="font-semibold">导入课程包</h2>
             <p className="text-sm text-muted-foreground">
-              导入前可预览课程包对本班课程的改动。
+              导入前可预览课程包对课程内容的改动。
             </p>
           </div>
         </div>
@@ -433,7 +433,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
                 disabled={busy || !preview.can_apply}
               />
               <Label htmlFor="confirm-course-import" id="confirm-course-import-label">
-                我已核对差异，确认更新当前班级课程
+                我已核对差异，确认更新本课程及所有教学班的共享内容
               </Label>
             </div>
             <Button

@@ -48,7 +48,7 @@ it("defaults to available course content, reorders chapters, previews edits and 
     return json({ revision: 8 });
   }));
   const user = userEvent.setup();
-  const view = render(<QuickOrchestration classroomId={2} />);
+  const view = render(<QuickOrchestration courseId={2} />);
   expect(await screen.findByRole("tab", { name: "模板与功能", selected: true })).toBeVisible();
   expect(within(screen.getByRole("tablist")).getAllByRole("tab").map(tab => tab.getAttribute("aria-label")))
     .toEqual(["模板与功能", "授课章节", "题量与题型", "预览与生成"]);
@@ -80,7 +80,7 @@ it("defaults to available course content, reorders chapters, previews edits and 
   expect(town.getByText("认识书架")).toBeVisible();
   expect(town.getByText("完成《循环课件》后出现")).toBeVisible();
   expect(review.getByRole("table")).not.toHaveTextContent("认识书架");
-  expect(requests).toEqual([{ url: "/api/teacher/classrooms/2/quick-orchestration/preview", body: {
+  expect(requests).toEqual([{ url: "/api/teacher/courses/2/quick-orchestration/preview", body: {
     expected_revision: 7, recipe: {
       template_id: "learn-practice-quiz", practice_count: 1, quiz_count: 3,
       start_chapter_id: "iteration", final_chapter_id: null, feature_ids: ["public_chat", "library_shelf_tour"],
@@ -96,7 +96,7 @@ it("defaults to available course content, reorders chapters, previews edits and 
   expect(review.getByText("欢迎来到本章课堂！")).toBeVisible();
   expect(requests[1]).toMatchObject({ body: { expected_revision: 7, token: "preview-1" } });
   view.unmount();
-  render(<QuickOrchestration classroomId={2} />);
+  render(<QuickOrchestration courseId={2} />);
   await step(user, "授课章节");
   expect(await screen.findByRole("checkbox", { name: "基础知识" })).toBeChecked();
   await user.click(screen.getByRole("button", { name: "调整基础知识的内容" }));
@@ -126,7 +126,7 @@ it("blocks an incomplete preview, preserves the draft after a conflict and clear
     return json({ detail: "课程已变化，请重新预览" }, 409);
   }));
   const user = userEvent.setup();
-  const view = render(<QuickOrchestration classroomId={2} />);
+  const view = render(<QuickOrchestration courseId={2} />);
   await step(user, "授课章节");
   await user.click(await screen.findByRole("checkbox", { name: "基础知识" }));
   await step(user, "预览与生成");
@@ -142,7 +142,7 @@ it("blocks an incomplete preview, preserves the draft after a conflict and clear
   expect(await screen.findByText("教学内容已刷新")).toBeVisible();
   expect(screen.getByRole("checkbox", { name: "基础知识" })).toBeChecked();
   await step(user, "预览与生成");
-  view.rerender(<QuickOrchestration classroomId={3} />);
+  view.rerender(<QuickOrchestration courseId={3} />);
   expect(await screen.findByRole("tab", { name: "模板与功能", selected: true })).toBeVisible();
   await step(user, "授课章节");
   expect(await screen.findByText("这门课程还没有章节")).toBeVisible();
@@ -168,7 +168,7 @@ it("shows reduced inherited counts alongside a strict shortage, and can generate
       papers: [{ chapter_id: "basics", practice: { ...paper, individual: true }, assessment: paper }] });
   }));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={2} />);
+  render(<QuickOrchestration courseId={2} />);
   await step(user, "预览与生成");
   expect(await screen.findByRole("alert")).toHaveTextContent(shortage);
   const counts = () => within(screen.getByRole("row", { name: /1\. 基础知识/ })).getAllByRole("cell").slice(3);
@@ -199,7 +199,7 @@ it("guides a teacher from an empty chapter to valid selections without submittin
   ] }));
   vi.stubGlobal("fetch", fetch);
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={2} />);
+  render(<QuickOrchestration courseId={2} />);
   await step(user, "授课章节");
   await user.click(await screen.findByRole("checkbox", { name: "基础知识" }));
   const generate = nextToQuestions();
@@ -226,7 +226,7 @@ it("blocks oversized and retired selections and enables generation as soon as th
     knowledge_points: points.filter((_, i) => !refreshed || i !== 1),
   }] })));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={2} />);
+  render(<QuickOrchestration courseId={2} />);
   await step(user, "授课章节");
   await user.click(await screen.findByRole("checkbox", { name: "基础知识" }));
   const generate = nextToQuestions();
@@ -254,7 +254,7 @@ it("limits chapter selection to 64 and flags a saved chapter that was removed", 
   let refreshed = false;
   vi.stubGlobal("fetch", vi.fn(async () => json({ revision: 2, templates: [...templates, shorter], chapters: refreshed ? catalog.slice(1) : catalog, recipe })));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={8} />);
+  render(<QuickOrchestration courseId={8} />);
   await step(user, "授课章节");
   expect(await screen.findByLabelText("教学单元64")).toBeDisabled();
   refreshed = true;
@@ -277,7 +277,7 @@ it("previews a saved two-stage recipe and explicitly adds a quiz without losing 
     return json(result);
   }));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={8} />);
+  render(<QuickOrchestration courseId={8} />);
   const upgrade = await screen.findByRole("checkbox", { name: "为原有课程增加测验" });
   expect(upgrade).not.toBeChecked();
   expect(screen.getByRole("list", { name: "每章教学流程" })).not.toHaveTextContent("广场");
@@ -310,7 +310,7 @@ it("pins the chosen ending, inserts chapters in the middle, and saves optional t
     return json({ revision: 2 });
   }));
   const user = userEvent.setup();
-  const view = render(<QuickOrchestration classroomId={17} />);
+  const view = render(<QuickOrchestration courseId={17} />);
   const pick = async (which: string, option: string) => {
     await user.click(screen.getByRole("combobox", { name: which }));
     await user.click(await screen.findByRole("option", { name: option }));
@@ -341,7 +341,7 @@ it("pins the chosen ending, inserts chapters in the middle, and saves optional t
   await user.click(screen.getByRole("button", { name: "确认生成课程流程" }));
   await screen.findByText(/课程流程已生成/);
   view.unmount();
-  render(<QuickOrchestration classroomId={17} />);
+  render(<QuickOrchestration courseId={17} />);
   expect(await screen.findByRole("checkbox", { name: "参观小镇" })).toBeChecked();
   expect(screen.getByRole("checkbox", { name: "小镇日常" })).not.toBeChecked();
   await user.click(screen.getByRole("checkbox", { name: "参观小镇" }));
@@ -361,7 +361,7 @@ it("opens older full courses with their original ending and allows one chapter t
   const catalog = [{ ...templates[0], features: [...features, newerFeature] }];
   vi.stubGlobal("fetch", vi.fn(async () => json({ templates: catalog, chapters, recipe: old, revision: 2 })));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={18} />);
+  render(<QuickOrchestration courseId={18} />);
   expect(await screen.findByRole("checkbox", { name: "认识新地点" })).not.toBeChecked();
   await step(user, "授课章节");
   expect(await screen.findByRole("combobox", { name: "最终章" })).toHaveTextContent("基础知识");
@@ -387,7 +387,7 @@ it("narrows a twelve-chapter course by knowledge point and reviews the actual ge
     })),
   }) : json({ templates, chapters: large, recipe: null, revision: 1 })));
   const user = userEvent.setup();
-  render(<QuickOrchestration classroomId={11} />);
+  render(<QuickOrchestration courseId={11} />);
   await step(user, "授课章节");
   await user.click(screen.getByRole("button", { name: "选中全部章节" }));
   await user.type(screen.getByLabelText("搜索章节或知识点"), "拓展12-9");

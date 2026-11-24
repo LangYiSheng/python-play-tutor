@@ -1,8 +1,10 @@
 """Compute replacement impact without changing course content or learner history."""
-
+from collections import Counter
 import hashlib
 
-from sqlalchemy import func, select
+from app.course_scope import course_class_ids
+
+from sqlalchemy import select
 
 from app.course_content.snapshot import snapshot_content, stable_id
 from app.course_instances import CONTENT_MODELS, MODEL_NAMES, content_mapping
@@ -10,14 +12,14 @@ from app.course_packages.contracts import CONFIG_FILES
 from app.integration_models import AssistantSession
 from app.materials.storage import get_storage
 from app.practice_rules import practice_question_available, without_legacy_retry_interval
-from app.models import ActivityProgress, AssessmentAttempt, LearningRecord, Material, PlayerQuest, PracticeSession, StorySession, Submission
+from app.models import ActivityProgress, AssessmentAttempt, Classroom, LearningRecord, Material, PlayerQuest, PracticeSession, StorySession, Submission
 
 
-def has_learning_history(db, classroom_id):
+def has_learning_history(db, course_id):
     from app.models import BuildingUnlock, PlayerPosition, WorldFlag
 
     return any(
-        db.scalar(select(model).where(model.classroom_id == classroom_id).limit(1)) is not None
+        db.scalar(select(model).where(model.classroom_id.in_(course_class_ids(course_id))).limit(1)) is not None
         for model in (
             PlayerQuest,
             StorySession,
@@ -61,9 +63,9 @@ def preview_impact(db, instance, bundle):
         compare("quick_orchestration", {"课程流程": previous_recipe} if previous_recipe else {},
                 {"课程流程": incoming_recipe} if incoming_recipe else {})
     compare(
-        "releases",
+        "prerequisites",
         {row["chapter_id"]: row for row in snapshot[2]} if snapshot else {},
-        {row["chapter_id"]: row for row in bundle["course"]["releases"]},
+        {row["chapter_id"]: row for row in bundle["course"]["prerequisites"]},
     )
     old_assets = {row["id"]: row["sha256"] for row in old_config.get("_assets", [])}
     if snapshot:
@@ -102,12 +104,12 @@ def preview_impact(db, instance, bundle):
     if instance and db.scalar(
         select(Material.id).where(Material.course_instance_id == instance.id, Material.status.in_(["queued", "processing"])).limit(1)
     ):
-        blockers.append("班级资料仍在转换，请完成后重新预览")
-    if instance and has_learning_history(db, instance.classroom_id):
+        blockers.append("课程资料仍在转换，请完成后重新预览")
+    if instance and has_learning_history(db, instance.id):
         if instance.package_id != bundle["manifest"]["package_id"]:
-            blockers.append("班级已有学习记录，不能替换为另一课程；请创建新班级")
+            blockers.append("课程已有班级学习记录，请新建课程后导入其他课程包")
         elif any(diff[kind]["removed"] for kind in MODEL_NAMES.values()):
-            blockers.append("班级已有学习记录，本次更新包含删除定义；请保留原ID并停用内容后重新预览")
+            blockers.append("课程已有班级学习记录，本次更新包含删除定义；请保留原ID并停用内容后重新预览")
     if instance:
         from app.characters import character_issues
 
@@ -138,68 +140,55 @@ def preview_impact(db, instance, bundle):
                 .limit(1)
             ):
                 blockers.append("待移除定义仍被历史保留内容引用，请先使用级联删除预览处理，再重新导入")
-        attempts = list(db.scalars(select(AssessmentAttempt).where(AssessmentAttempt.classroom_id == instance.classroom_id)))
-        practices = list(db.scalars(select(PracticeSession).where(PracticeSession.classroom_id == instance.classroom_id)))
-        submissions = list(db.scalars(select(Submission).where(Submission.classroom_id == instance.classroom_id)))
+        attempts = list(db.scalars(select(AssessmentAttempt).where(AssessmentAttempt.classroom_id.in_(course_class_ids(instance.id)))))
+        practices = list(db.scalars(select(PracticeSession).where(PracticeSession.classroom_id.in_(course_class_ids(instance.id)))))
+        submissions = list(db.scalars(select(Submission).where(Submission.classroom_id.in_(course_class_ids(instance.id)))))
         active_stories = list(
-            db.scalars(select(StorySession).where(StorySession.classroom_id == instance.classroom_id, StorySession.status.in_(["active", "waiting"])))
+            db.scalars(select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(instance.id)), StorySession.status.in_(["active", "waiting"])))
         )
 
-        def protect(kind, stable_id, count, reason):
-            if count:
-                learning_impact.append({"kind": kind, "stable_id": stable_id, "affected_records": count, "reason": reason})
-                blockers.append(reason)
+        room_names = dict(db.execute(select(Classroom.id, Classroom.name).where(Classroom.course_id == instance.id)).all())
+
+        def protect(kind, stable_id, class_ids, reason):
+            counts = Counter(class_ids)
+            if not counts:
+                return
+            reason += "（" + "、".join(f"{room_names[cid]} {n} 条" for cid, n in sorted(counts.items())) + "）"
+            learning_impact.append({"kind": kind, "stable_id": stable_id, "affected_records": sum(counts.values()), "reason": reason})
+            blockers.append(reason)
 
         from app.authoring_protection import changed_quest_structure
 
         for stable in diff["quest"]["updated"]:
             old, new = current["quest"][stable], incoming["quest"][stable]
             if changed_quest_structure(old["definition"], new["definition"]):
-                progress_count = db.scalar(
-                    select(func.count())
-                    .select_from(PlayerQuest)
-                    .where(PlayerQuest.classroom_id == instance.classroom_id, PlayerQuest.quest_id == maps["quest"][stable])
+                progress_count = db.scalars(
+                    select(PlayerQuest.classroom_id)
+                    .where(PlayerQuest.classroom_id.in_(course_class_ids(instance.id)), PlayerQuest.quest_id == maps["quest"][stable])
                 )
                 protect("quest", stable, progress_count, f"任务「{old['title']}」已有班级进度，请在教学流程编辑器中确认重置后再调整任务结构")
         for stable in diff["question"]["updated"]:
             key = maps["question"][stable]
             if current["question"][stable]["kind"] != incoming["question"][stable]["kind"]:
-                count = sum(row.question_id == key for row in submissions) + sum(key in row.question_ids for row in attempts)
+                count = [r.classroom_id for r in submissions if r.question_id == key] + [r.classroom_id for r in attempts if key in r.question_ids]
                 protect("question", stable, count, "已有正式题目证据，改变题型需要新的题目ID")
             new_question = incoming["question"][stable]
             available = practice_question_available(new_question["kind"], new_question["status"], bool(new_question["samples"]))
             available_points = {maps["knowledge_point"].get(point) for point in new_question["knowledge_point_ids"]}
-            assigned = sum(
-                any(item["question_id"] == key and (
+            assigned = [session.classroom_id for session in practices if any(item["question_id"] == key and (
                     item["kind"] != new_question["kind"] or not available or item["knowledge_point_id"] not in available_points
-                ) for item in session.items)
-                for session in practices
-            )
+                ) for item in session.items)]
             protect("question", stable, assigned, "题目已进入学生个人题单，须保留可用状态、已分配的知识点和题型；编程题须保留公开样例")
         for stable in diff["activity"]["updated"]:
             old, new = current["activity"][stable], incoming["activity"][stable]
             key = maps["activity"][stable]
             changed_rules = old["content"].get("practice_rules") != without_legacy_retry_interval(new["content"].get("practice_rules"))
             if changed_rules or old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
-                count = sum(row.activity_id == key for row in attempts) + sum(row.activity_id == key for row in submissions)
-                count += sum(row.activity_id == key for row in practices)
-                count += len(
-                    list(
-                        db.scalars(
-                            select(ActivityProgress).where(
-                                ActivityProgress.classroom_id == instance.classroom_id, ActivityProgress.activity_id == key
-                            )
-                        )
-                    )
-                )
-                count += len(
-                    list(
-                        db.scalars(
-                            select(LearningRecord).where(LearningRecord.classroom_id == instance.classroom_id, LearningRecord.activity_id == key)
-                        )
-                    )
-                )
-                protect("activity", stable, count, "活动已有学习或测验证据，改变活动类型、练习目标或测验题集需要新的活动ID")
+                class_ids = [row.classroom_id for rows in (attempts, submissions, practices) for row in rows if row.activity_id == key]
+                for model in (ActivityProgress, LearningRecord):
+                    class_ids.extend(db.scalars(select(model.classroom_id).where(
+                        model.classroom_id.in_(course_class_ids(instance.id)), model.activity_id == key)))
+                protect("activity", stable, class_ids, "活动已有学习或测验证据，改变活动类型、练习目标或测验题集需要新的活动ID")
         changed_activities = {maps["activity"][stable] for stable in diff["activity"]["updated"]}
         changed_assets = set(diff["assets"]["updated"] + diff["assets"]["removed"])
         changed_materials = set(diff["material"]["updated"]) | {
@@ -218,11 +207,14 @@ def preview_impact(db, instance, bundle):
                 if session.story_id == maps["story"][stable]
                 and (stable in diff["story"]["updated"] or stable in diff["story"]["removed"] or session.pending_activity_id in changed_activities)
             ]
-            protect("story", stable, len(affected), "流程仍有进行中或等待活动的会话，请先完成或关闭后重新预览更新")
+            protect("story", stable, [r.classroom_id for r in affected], "流程仍有进行中或等待活动的会话，请先完成或关闭后重新预览更新")
+    warnings = ["导入更新课程内容和前置顺序，各班的开放时间和暂停状态单独维护。", "同ID内容更新保留历史证据与成绩，不重新评分"]
+    if bundle.get("legacy_schedule"):
+        warnings.append("旧版课程包中的章节前置关系将导入课程，原开放时间和暂停状态不会应用到教学班。")
     return {
         "narration_revision": narration_revision,
         "diff": diff,
         "blockers": list(dict.fromkeys(blockers)),
         "learning_impact": learning_impact,
-        "warnings": ["同ID内容更新保留历史证据与成绩，不重新评分"],
+        "warnings": warnings,
     }

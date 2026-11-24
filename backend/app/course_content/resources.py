@@ -37,7 +37,7 @@ def set_resources(db, activity, rows):
         if material and (material.course_instance_id != activity.course_instance_id
                          or not material_in_chapter(db, key, activity.chapter_id)
                          or material.owner_id not in {None, activity.owner_id}):
-            raise HTTPException(403, "活动资料必须属于本班课程、教师及活动章节")
+            raise HTTPException(403, "活动资料必须属于当前课程、负责教师及活动章节")
         return material
     validate_resources(rows, activity.kind, resolve)
     existing = {row.material_id: row for row in activity.resources}

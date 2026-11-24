@@ -7,6 +7,8 @@ export function ResetImpactList({ impact }: { impact: ResetImpact }) {
   };
   return (
     <ul className="mt-2 max-h-44 space-y-2 overflow-auto text-sm">
+      {impact.classrooms?.map(room => <li key={room.id}>{room.name} · {room.sessions} 条互动会话，{room.tasks} 条任务进度
+        <p className="text-muted-foreground">{[...room.quest_titles, ...room.flow_titles].join("、")}</p></li>)}
       {impact.flows.map((flow) => (
         <li key={`flow:${flow.id}`}>
           <p className="font-medium">流程 · {flow.title}</p>

@@ -1,4 +1,5 @@
 """Course characters and bounded, authorized appearance resources."""
+from app.course_scope import course_class_ids
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -20,7 +21,7 @@ def stored_assets(db, instance_id):
     return state.configuration.get("_assets", []) if state else []
 
 
-def asset_descriptor(reference, kind, assets, classroom_id=None):
+def asset_descriptor(reference, kind, assets, classroom_id=None, *, course_id=None):
     builtin = next((item for item in builtin_assets() if item["id"] == reference and item["kind"] == kind), None)
     if builtin:
         return dict(builtin)
@@ -31,6 +32,8 @@ def asset_descriptor(reference, kind, assets, classroom_id=None):
         raise ValueError("角色素材不存在或类型不匹配")
     result = {key: item[key] for key in ("sha256", "frame_width", "frame_height", "owner_npc_id") if key in item}
     result.update(id=reference, kind=kind, name=item.get("original_name", "自定义素材"))
+    if course_id is not None:
+        result["url"] = f"/api/teacher/courses/{course_id}/character-assets/{item['id']}?v={item['sha256']}"
     if classroom_id is not None:
         result["url"] = f"/api/classrooms/{classroom_id}/character-assets/{item['id']}?v={item['sha256']}"
     return result
@@ -122,18 +125,18 @@ def character_issues(db, instance, data):
     incoming = {row["id"]: row for row in data["npc"]}
     for npc in db.scalars(select(Npc).where(Npc.course_instance_id == instance.id)):
         updated = incoming.get(npc.stable_id)
-        sessions = select(StorySession).where(StorySession.classroom_id == instance.classroom_id, StorySession.npc_key == npc.key)
+        sessions = select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(instance.id)), StorySession.npc_key == npc.key)
         message = None
         if updated is None:
             historical = db.scalar(sessions.limit(1)) or db.scalar(select(WorldFlag).where(
-                WorldFlag.classroom_id == instance.classroom_id, WorldFlag.key.contains(npc.key)).limit(1))
+                WorldFlag.classroom_id.in_(course_class_ids(instance.id)), WorldFlag.key.contains(npc.key)).limit(1))
             if not historical:
-                historical = db.scalar(select(LearningEvent.id).where(LearningEvent.classroom_id == instance.classroom_id,
+                historical = db.scalar(select(LearningEvent.id).where(LearningEvent.classroom_id.in_(course_class_ids(instance.id)),
                                        LearningEvent.evidence["npc_key"].as_string() == npc.key).limit(1))
             if not historical:
                 spoken_flows = [story.id for story in db.scalars(select(StoryDefinition).where(StoryDefinition.course_instance_id == instance.id))
                                 if any(node.get("speaker_npc_id") == npc.key for node in story.content["nodes"])]
-                historical = db.scalar(select(StorySession.id).where(StorySession.classroom_id == instance.classroom_id,
+                historical = db.scalar(select(StorySession.id).where(StorySession.classroom_id.in_(course_class_ids(instance.id)),
                                        StorySession.story_id.in_(spoken_flows)).limit(1)) if spoken_flows else None
             if historical:
                 message = "角色已有互动历史，无法删除；可以结束互动后撤回地图放置"

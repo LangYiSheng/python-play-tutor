@@ -1,4 +1,5 @@
 """World authoring uses real scoped definitions, collision and learning evidence."""
+from course_fixtures import empty_course
 from app.models import ActivityMaterial
 
 from copy import deepcopy
@@ -9,7 +10,7 @@ from sqlalchemy import func, select
 
 from app.content_relations import set_material_chapters
 from app.models import (Activity, ActivityProgress, AssessmentAttempt, BuildingUnlock, Chapter, ChapterRelease, Classroom,
-                        CourseInstance, LearningEvent, LearningRecord, Material, Membership, NodeState, Npc, PlayerQuest,
+                        LearningEvent, LearningRecord, Material, Membership, NodeState, Npc, PlayerQuest,
                         Question, QuestDefinition, StoryDefinition, StorySession, Submission, WorldFlag)
 from app.integration_models import AssistantCall
 from app.teaching.world.rules import reachable_cells
@@ -17,10 +18,13 @@ from app.teaching.world.rules import reachable_cells
 
 @pytest.fixture
 def scene(db, teacher, student):
-    classroom = Classroom(name="世界编辑", teacher_id=teacher["id"], join_code=uuid4().hex[:24])
+    classroom = Classroom(name="世界编辑", course=empty_course(teacher["id"]), join_code=uuid4().hex[:24])
     db.add(classroom)
     db.flush()
-    instance = CourseInstance(classroom_id=classroom.id, package_id="world-test", name="世界课程", package_version="1")
+    instance = classroom.course
+    instance.package_id = "world-test"
+    instance.name = "世界课程"
+    instance.package_version = "1"
     db.add(instance)
     db.add(Membership(user_id=student["id"], classroom_id=classroom.id))
     db.flush()
@@ -44,7 +48,7 @@ def scene(db, teacher, student):
 
 
 def endpoint(scene, suffix=""):
-    return f"/api/teacher/classrooms/{scene['classroom'].id}/authoring{suffix}"
+    return f"/api/teacher/courses/{scene['classroom'].course_id}/authoring{suffix}"
 
 
 def interaction(*, object_id="town_square", name="square"):
@@ -395,9 +399,15 @@ def test_confirmed_task_reset_removes_only_linked_progress_and_restarts(client, 
     question = Question(id=f"reset-question-{cid}", stable_id="question", title="保留作答", kind="boolean", prompt="判断", course_instance_id=instance_id)
     db.add_all([grade_activity, question])
     db.flush()
-    other = Classroom(name="另一个班", teacher_id=teacher["id"], join_code=uuid4().hex[:24])
+    other = Classroom(name="另一个班", course=empty_course(teacher["id"]), join_code=uuid4().hex[:24])
     db.add(other)
     db.flush()
+    sibling = Classroom(name="同课程晚班", course_id=instance_id, join_code=uuid4().hex[:24])
+    db.add(sibling)
+    db.flush()
+    late_session = StorySession(user_id=uid, classroom_id=sibling.id, story_id=saved_story_id,
+                                npc_key=scene["npc"].key, node_id="after", status="waiting")
+    db.add(late_session)
     other_session = StorySession(user_id=uid, classroom_id=other.id, story_id=saved_story_id, npc_key=scene["npc"].key, node_id="after", status="ended")
     record = LearningRecord(user_id=uid, classroom_id=cid, activity_id=scene["activity"].id, data={"page_no": 1})
     submission = Submission(user_id=uid, classroom_id=cid, activity_id=grade_activity.id, question_id=question.id,
@@ -426,6 +436,9 @@ def test_confirmed_task_reset_removes_only_linked_progress_and_restarts(client, 
     impact = result["reset_impact"]
     assert impact["quests"] == [{"id": "task", "title": "初次见面", "reason": "delete" if remove else "edit",
                                  "progress": 1, "students": 1, "events": 1}]
+    assert {room["id"] for room in impact["classrooms"]} == {cid, sibling.id}
+    assert next(room for room in impact["classrooms"] if room["id"] == sibling.id)["sessions"] == 1
+    late_session_id = late_session.id
     assert impact["flows"][0]["reason"] == ("delete" if remove else "task_reset")
     assert impact["checkpoint_flags"] == 1
     assert client.put(endpoint(scene), json=body, headers=teacher["headers"]).status_code == 409
@@ -435,6 +448,7 @@ def test_confirmed_task_reset_removes_only_linked_progress_and_restarts(client, 
     assert db.scalar(select(LearningEvent.id).where(LearningEvent.player_quest_id == old_progress_id)) is None
     assert db.scalar(select(WorldFlag.key).where(WorldFlag.classroom_id == cid, WorldFlag.key == old_flag)) is None
     assert db.get(WorldFlag, (uid, other.id, old_flag)) and db.get(WorldFlag, (uid, cid, "unrelated:achievement"))
+    assert db.scalar(select(StorySession.id).where(StorySession.id == late_session_id)) is None
     assert db.scalar(select(StorySession.id).where(StorySession.id == other_session.id)) == other_session.id
     assert db.get(PlayerQuest, other_progress_id) and db.get(BuildingUnlock, (uid, cid, instance_id, "library"))
     assert db.get(ActivityProgress, (uid, cid, scene["activity"].id)).completed
@@ -465,11 +479,11 @@ def test_authored_region_produces_exactly_one_verified_map_goal_and_unlock(clien
     assert start(client, student, scene).json()["id"] == first.json()["id"]
     assert db.scalar(select(func.count()).select_from(LearningEvent)) == 1
     assert db.scalar(select(PlayerQuest.status).where(PlayerQuest.classroom_id == scene["classroom"].id)) == "complete"
-    other = Classroom(name="其他课程", teacher_id=teacher["id"], join_code=uuid4().hex[:24])
+    other = Classroom(name="其他课程", course=empty_course(teacher["id"]), join_code=uuid4().hex[:24])
     db.add(other)
     db.flush()
     db.add(Membership(user_id=student["id"], classroom_id=other.id))
-    db.add(CourseInstance(classroom_id=other.id, package_id="other", name="其他", package_version="1"))
+    other.course.name = "其他"
     db.commit()
     world = client.get(f"/api/world?classroom_id={other.id}", headers=student["headers"]).json()
     assert world["building_unlock"] == [] and world["building_access"]["library"]["can_enter"] is False
@@ -490,15 +504,15 @@ def test_draft_paper_freezes_question_set_and_kind_but_allows_identical_order(cl
     query = {"classroom_id": cid}
     ids = []
     for key in ("a", "b"):
-        created = client.post("/api/teacher/questions", headers=teacher["headers"], params=query, json={
+        created = client.post(f"/api/teacher/courses/{query['classroom_id']}/questions", headers=teacher["headers"], params=query, json={
             "id": key, "title": key, "prompt": "Test", "kind": "boolean", "answer": True, "status": "ready", "chapter_ids": [scene["chapter"].id]})
         assert created.status_code == 201, created.text
         ids.append(created.json()["id"])
-    result = client.post("/api/teacher/activities", headers=teacher["headers"], params=query, json={"id": "paper", "title": "Paper",
+    result = client.post(f"/api/teacher/courses/{query['classroom_id']}/activities", headers=teacher["headers"], params=query, json={"id": "paper", "title": "Paper",
         "kind": "assessment", "chapter_id": scene["chapter"].id, "npc_key": scene["npc"].key})
     assert result.status_code == 201, result.text
     activity_id = result.json()["id"]
-    path = f"/api/teacher/activities/{activity_id}/questions"
+    path = f"/api/teacher/courses/{scene['instance'].id}/activities/{activity_id}/questions"
     assert client.put(path, headers=teacher["headers"], params=query, json={"question_ids": ids}).status_code == 200
     draft = client.put(f"/api/activities/{activity_id}/assessment", headers=student["headers"], json={
         "classroom_id": cid, "revision": 0, "answers": [{"question_id": ids[0], "answer": True}]})
@@ -506,27 +520,27 @@ def test_draft_paper_freezes_question_set_and_kind_but_allows_identical_order(cl
     assert client.put(path, headers=teacher["headers"], params=query, json={"question_ids": list(reversed(ids))}).status_code == 409
     assert client.put(path, headers=teacher["headers"], params=query, json={"question_ids": ids[:1]}).status_code == 409
     assert client.put(path, headers=teacher["headers"], params=query, json={"question_ids": ids}).status_code == 200
-    assert client.put(f"/api/teacher/questions/{ids[0]}", headers=teacher["headers"], params=query,
+    assert client.put(f"/api/teacher/courses/{query['classroom_id']}/questions/{ids[0]}", headers=teacher["headers"], params=query,
                       json={"kind": "fill", "answer": "yes"}).status_code == 409
 
 
 def test_actual_submission_freezes_question_kind(client, teacher, student, scene):
     query = {"classroom_id": scene["classroom"].id}
-    created = client.post("/api/teacher/questions", headers=teacher["headers"], params=query, json={
+    created = client.post(f"/api/teacher/courses/{query['classroom_id']}/questions", headers=teacher["headers"], params=query, json={
         "id": "submitted", "title": "Question", "prompt": "Test", "kind": "boolean", "answer": True,
         "status": "ready", "chapter_ids": [scene["chapter"].id]})
     assert created.status_code == 201
     question_id = created.json()["id"]
-    created = client.post("/api/teacher/activities", headers=teacher["headers"], params=query, json={"id": "practice", "title": "Practice",
+    created = client.post(f"/api/teacher/courses/{query['classroom_id']}/activities", headers=teacher["headers"], params=query, json={"id": "practice", "title": "Practice",
         "kind": "practice", "chapter_id": scene["chapter"].id, "npc_key": scene["npc"].key})
     assert created.status_code == 201
     activity_id = created.json()["id"]
-    assert client.put(f"/api/teacher/activities/{activity_id}/questions", headers=teacher["headers"], params=query,
+    assert client.put(f"/api/teacher/courses/{query['classroom_id']}/activities/{activity_id}/questions", headers=teacher["headers"], params=query,
                       json={"question_ids": [question_id]}).status_code == 200
     submitted = client.post("/api/submissions", headers=student["headers"], json={**query, "activity_id": activity_id,
         "question_id": question_id, "idempotency_key": str(uuid4()), "answer": True})
     assert submitted.status_code == 201, submitted.text
-    assert client.put(f"/api/teacher/questions/{question_id}", headers=teacher["headers"], params=query,
+    assert client.put(f"/api/teacher/courses/{query['classroom_id']}/questions/{question_id}", headers=teacher["headers"], params=query,
                       json={"kind": "fill", "answer": "yes"}).status_code == 409
 
 

@@ -10,7 +10,7 @@ export function NarrationPagePreview({
 }: {
   review: ReturnType<typeof useNarrationReview>;
   media: ReturnType<typeof usePageMedia>;
-  classroomId: number;
+  courseId: number;
   materialId: number;
 }) {
   const { data, setPageNo, page, previous, next } = review;

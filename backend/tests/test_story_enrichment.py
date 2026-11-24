@@ -1,4 +1,5 @@
 """Story DSL behavior: verified state, persistent randomness and harmless ambient scenes."""
+from course_fixtures import create_test_class
 import app.teaching.story.runtime as teaching_story_runtime
 
 from copy import deepcopy
@@ -441,7 +442,7 @@ def test_score_conditions_and_scene_sessions_are_isolated_by_actor_and_joined_cl
     interact(client, other, story_space, expected=404)
     advance(client, other, story_space, view, expected=404)
     assert client.get(f"/api/story/current?classroom_id={story_space}", headers=other["headers"]).json() is None
-    created = client.post("/api/classrooms", headers=teacher["headers"], json={"name": "Another isolated classroom"})
+    created = create_test_class(client, headers=teacher["headers"], json={"name": "Another isolated classroom"})
     assert created.status_code == 201
     second = created.json()
     from conftest import copy_fixture_course

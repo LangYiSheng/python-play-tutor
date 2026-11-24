@@ -22,7 +22,7 @@ def test_large_class_catalogues_page_before_loading_details(client, db, teacher,
     base = {"classroom_id": classroom["id"]}
 
     def get(path, **filters):
-        response = client.get("/api/teacher/" + path, params={**base, **filters}, headers=teacher["headers"])
+        response = client.get(f"/api/teacher/courses/{course_id}/" + path, params={**base, **filters}, headers=teacher["headers"])
         assert response.status_code == 200, response.text
         return response.json()
 
@@ -50,7 +50,7 @@ def test_large_class_catalogues_page_before_loading_details(client, db, teacher,
         assert get(f"questions/{row['id']}")["prompt"] == "100% Python"
         last = get("knowledge-points", page=9999, size=10, chapter_id=chapter.id, search="目录样例")
         assert last["total"] == 9999 and last["page"] == 1000 and len(last["items"]) == 9
-        assert set(get("courses", view="chapters")) == {"chapters"}
+        assert set(get("catalog", view="chapters")) == {"chapters"}
         assert row["id"] in {q["id"] for q in get(f"chapters/{chapter.id}/question-candidates")}
         labels = get("knowledge-point-labels", ids=[p["id"] for p in last["items"]])
         assert {p["id"] for p in labels} == {p["id"] for p in last["items"]}
@@ -64,7 +64,7 @@ def test_large_class_catalogues_page_before_loading_details(client, db, teacher,
     finally:
         event.remove(db.bind, "before_cursor_execute", capture)
     for path in ("questions/bulk-0011", "knowledge-points"):
-        assert client.get("/api/teacher/" + path, params=base, headers=student["headers"]).status_code == 403
+        assert client.get(f"/api/teacher/courses/{course_id}/" + path, params=base, headers=student["headers"]).status_code == 403
 
 
 def test_material_catalog_filters_before_paging(client, db, teacher, classroom):
@@ -77,7 +77,7 @@ def test_material_catalog_filters_before_paging(client, db, teacher, classroom):
     db.commit()
 
     def get(**params):
-        response = client.get("/api/teacher/materials", params={"classroom_id": classroom["id"], "search": "工作区分页课件",
+        response = client.get(f"/api/teacher/courses/{classroom['course_id']}/materials", params={"search": "工作区分页课件",
                               "page": 2, "size": 10, "status": "converting", **params}, headers=teacher["headers"])
         assert response.status_code == 200
         return response.json()

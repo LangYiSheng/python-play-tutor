@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, load_only
 from ..auth import require_admin, require_teacher
 from ..db import get_db
 from ..materials.access import teacher_material as visible_material
-from ..models import Classroom, CourseInstance, Material, User, now
+from ..models import CourseInstance, Material, User, now
 from ..teacher_scope import teacher_instance_id
 from . import repository, task_progress
 from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
@@ -18,7 +18,7 @@ from .task_commands import (calibrate_deck, digest_deck, generate_narration, gen
                             synthesize_audio, synthesize_audio_batch)
 from .models import NarrationJob, NarrationRun
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/synthesis", tags=["narration"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/synthesis", tags=["narration"])
 global_router = APIRouter(tags=["narration"], dependencies=[Depends(require_admin)])
 OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate", "digest", "pipeline"}
 WORKER_OPERATIONS = OPERATIONS - {"generate_page", "audio_page"}
@@ -64,28 +64,27 @@ def run_state(model: type[NarrationRun] | type[NarrationJob] = NarrationRun) -> 
     return case(((model.status == "running") & ~unclaimed & ((moment < cutoff) | moment.is_(None)), "interrupted"), else_=model.status)
 
 
-def visible_runs(db: Session, user: User, classroom_id: int | None) -> Select[*RunRow]:
-    statement = (select(NarrationRun, Material, User.name, Classroom.id, Classroom.name, NarrationJob.id)
+def visible_runs(db: Session, user: User, course_id: int | None) -> Select[*RunRow]:
+    statement = (select(NarrationRun, Material, User.name, CourseInstance.id, CourseInstance.name, NarrationJob.id)
         .join(Material, NarrationRun.material_id == Material.id)
         .join(CourseInstance, Material.course_instance_id == CourseInstance.id)
-        .join(Classroom, CourseInstance.classroom_id == Classroom.id)
         .outerjoin(User, NarrationRun.requested_by == User.id)
         .outerjoin(NarrationJob, (NarrationJob.material_id == Material.id) & (NarrationJob.started_at == NarrationRun.started_at))
         .options(load_only(Material.id, Material.title, Material.kind, Material.deleted_at))
         .execution_options(include_deleted=True))
-    if classroom_id is not None:
-        statement = statement.where(Material.course_instance_id == teacher_instance_id(db, user, classroom_id))
+    if course_id is not None:
+        statement = statement.where(Material.course_instance_id == teacher_instance_id(db, user, course_id))
     if user.role != "admin":
         statement = statement.where(Material.owner_id.is_(None) | (Material.owner_id == user.id))
     return statement
 
 
-def history_item(row: Row[*RunRow], db: Session, *, class_view: bool) -> dict[str, Any]:
-    record, material, name, class_id, class_name, current_job_id = row
+def history_item(row: Row[*RunRow], db: Session, *, course_view: bool) -> dict[str, Any]:
+    record, material, name, course_id, course_name, current_job_id = row
     item = snapshot(material, record, latest_db=db if current_job_id else None)
     item.update(requested_by=name or "—", material_available=material.deleted_at is None,
-                classroom_id=class_id, classroom_name=class_name, run_id=record.id)
-    if not (class_view and current_job_id) or material.deleted_at is not None:
+                course_id=course_id, course_name=course_name, run_id=record.id)
+    if not (course_view and current_job_id) or material.deleted_at is not None:
         item.update(retryable=False, cancellable=False, retry_note="")
     request = (record.progress or {}).get("request") or {}
     body = request.get("body") or {}
@@ -97,22 +96,22 @@ def history_item(row: Row[*RunRow], db: Session, *, class_view: bool) -> dict[st
 @global_router.get("/admin/synthesis/runs/{run_id}")
 @router.get("/runs/{run_id}")
 def get_task(run_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
-             classroom_id: int | None = None) -> dict[str, Any]:
-    row = db.execute(visible_runs(db, user, classroom_id).where(NarrationRun.id == run_id)).one_or_none()
+             course_id: int | None = None) -> dict[str, Any]:
+    row = db.execute(visible_runs(db, user, course_id).where(NarrationRun.id == run_id)).one_or_none()
     if row is None:
         raise HTTPException(404, "任务记录不存在")
-    return history_item(row, db, class_view=classroom_id is not None)
+    return history_item(row, db, course_view=course_id is not None)
 
 
 @global_router.get("/admin/synthesis")
 @router.get("")
 def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
-               classroom_id: int | None = None,
+               course_id: int | None = None,
                query: str = "", status: Literal["all", "running", "done", "failed", "interrupted", "cancelled"] = "all",
                view: Literal["all", "running", "history"] = "all",
                page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=100)] = 20) -> dict[str, Any]:
     state = run_state()
-    statement = visible_runs(db, user, classroom_id)
+    statement = visible_runs(db, user, course_id)
     if query.strip():
         statement = statement.where(Material.title.icontains(query.strip(), autoescape=True))
     counts: dict[str, int] = dict(db.execute(statement.with_only_columns(state, func.count()).group_by(state)).all())
@@ -123,7 +122,7 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
     total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
     items = []
     for row in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
-        items.append(history_item(row, db, class_view=classroom_id is not None))
+        items.append(history_item(row, db, course_view=course_id is not None))
     return {"items": items, "total": total,
             "counts": {key: counts.get(key, 0) for key in ("running", "done", "failed", "interrupted", "cancelled")}}
 
@@ -134,9 +133,9 @@ class RetryInput(BaseModel):
 
 
 @router.post("/{material_id}/cancel")
-def cancel_task(classroom_id: int, material_id: int, body: RetryInput,
+def cancel_task(course_id: int, material_id: int, body: RetryInput,
                 db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = visible_material(db, user, material_id, instance_id=teacher_instance_id(db, user, classroom_id))
+    material = visible_material(db, user, material_id, instance_id=teacher_instance_id(db, user, course_id))
     job = repository.job_of(db, material_id)
     if not job or not repository.same_attempt(job.started_at, body.expected_started_at):
         raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
@@ -180,9 +179,9 @@ def cancel_task(classroom_id: int, material_id: int, body: RetryInput,
 
 
 @router.post("/{material_id}/retry")
-def retry_task(classroom_id: int, material_id: int, body: RetryInput,
+def retry_task(course_id: int, material_id: int, body: RetryInput,
                db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = visible_material(db, user, material_id, instance_id=teacher_instance_id(db, user, classroom_id))
+    material = visible_material(db, user, material_id, instance_id=teacher_instance_id(db, user, course_id))
     job = repository.job_of(db, material_id)
     if (not job or not snapshot(material, job)["retryable"] or not job.started_at
             or not repository.same_attempt(job.started_at, body.expected_started_at)):
@@ -192,7 +191,7 @@ def retry_task(classroom_id: int, material_id: int, body: RetryInput,
     db.info["narration_retry_expected"] = body.expected_started_at
     db.info["narration_retry_pages"] = progress.get("retry_pages") or request.get("only_pages")
     operation = request["operation"]
-    args: dict[str, Any] = {"classroom_id": classroom_id, "material_id": material_id, "db": db, "user": user}
+    args: dict[str, Any] = {"course_id": course_id, "material_id": material_id, "db": db, "user": user}
     try:
         if operation == "generate_page":
             generate_narration(page_no=request["page_no"], body=PageGenerateInput(**request["body"]), **args)

@@ -14,7 +14,7 @@ it("configures independent required resources, key pages and video requirements 
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ pages: [{ id: 101, page_no: 1, title: "重点概念" }] }), { headers: { "Content-Type": "application/json" } })));
   function Form() {
     const [rows, setRows] = useState<ActivityResource[]>([]);
-    return <ResourceEditor classroomId={7} chapterId={1} materials={materials} resources={rows} onChange={next => { setRows(next); changed(next); }} />;
+    return <ResourceEditor courseId={7} chapterId={1} materials={materials} resources={rows} onChange={next => { setRows(next); changed(next); }} />;
   }
   const user = userEvent.setup();
   render(<Form />);

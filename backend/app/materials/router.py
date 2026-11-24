@@ -23,7 +23,7 @@ from app.models import User
 router = APIRouter(tags=["materials"])
 
 
-@router.post("/teacher/materials/upload", status_code=201)
+@router.post("/teacher/courses/{course_id}/materials/upload", status_code=201)
 async def upload_material(
     user: Annotated[User, Depends(require_teacher)],
     db: Annotated[Session, Depends(get_db)],
@@ -31,45 +31,45 @@ async def upload_material(
     file: Annotated[UploadFile, File()],
     material_id: Annotated[int | None, Form()] = None,
     chapter_ids: Annotated[str | None, Form()] = None,
-    classroom_id: int | None = None,
+    course_id: int | None = None,
 ):
     return await _upload_material(
-        user=user, db=db, title=title, file=file, material_id=material_id, chapter_ids=chapter_ids, classroom_id=classroom_id
+        user=user, db=db, title=title, file=file, material_id=material_id, chapter_ids=chapter_ids, course_id=course_id
     )
 
 
-@router.get("/teacher/materials")
-def teacher_materials(user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None,
+@router.get("/teacher/courses/{course_id}/materials")
+def teacher_materials(user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], course_id: int | None = None,
                       page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
                       kind: str | None = None, status: str | None = None):
     if page is not None:
-        return material_page(db, user, classroom_id, page, size, search, kind, status)
-    return _teacher_materials(user=user, db=db, classroom_id=classroom_id)
+        return material_page(db, user, course_id, page, size, search, kind, status)
+    return _teacher_materials(user=user, db=db, course_id=course_id)
 
 
-@router.get("/teacher/materials/{material_id}")
+@router.get("/teacher/courses/{course_id}/materials/{material_id}")
 def teacher_material_preview(
-    material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None
+    material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], course_id: int | None = None
 ):
-    return _teacher_material_preview(material_id=material_id, user=user, db=db, classroom_id=classroom_id)
+    return _teacher_material_preview(material_id=material_id, user=user, db=db, course_id=course_id)
 
 
-@router.put("/teacher/materials/{material_id}")
+@router.put("/teacher/courses/{course_id}/materials/{material_id}")
 def update_material(
     material_id: int,
     body: MaterialUpdate,
     user: Annotated[User, Depends(require_teacher)],
     db: Annotated[Session, Depends(get_db)],
-    classroom_id: int | None = None,
+    course_id: int | None = None,
 ):
-    return _update_material(material_id=material_id, body=body, user=user, db=db, classroom_id=classroom_id)
+    return _update_material(material_id=material_id, body=body, user=user, db=db, course_id=course_id)
 
 
-@router.delete("/teacher/materials/{material_id}")
+@router.delete("/teacher/courses/{course_id}/materials/{material_id}")
 def delete_material(
-    material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None
+    material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], course_id: int | None = None
 ):
-    return _delete_material(material_id=material_id, user=user, db=db, classroom_id=classroom_id)
+    return _delete_material(material_id=material_id, user=user, db=db, course_id=course_id)
 
 
 @router.get("/materials/{material_id}/file")
@@ -83,12 +83,12 @@ def material_file(
     return _material_file(material_id=material_id, classroom_id=classroom_id, request=request, user=user, db=db)
 
 
-@router.get("/teacher/materials/{material_id}/file")
+@router.get("/teacher/courses/{course_id}/materials/{material_id}/file")
 def teacher_material_file(
     material_id: int,
     request: Request,
     user: Annotated[User, Depends(require_teacher)],
     db: Annotated[Session, Depends(get_db)],
-    classroom_id: int | None = None,
+    course_id: int | None = None,
 ):
-    return _teacher_material_file(material_id=material_id, request=request, user=user, db=db, classroom_id=classroom_id)
+    return _teacher_material_file(material_id=material_id, request=request, user=user, db=db, course_id=course_id)

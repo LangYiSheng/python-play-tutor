@@ -113,6 +113,8 @@ def create_app() -> FastAPI:
     ):
         app.include_router(module.router, prefix="/api")
     # Narration authoring is additive and isolated; see app/narration.
+    from app.course_content.reports import router as report_router
+    app.include_router(report_router, prefix="/api")
     app.include_router(narration.router, prefix="/api")
     app.include_router(synthesis_management.router, prefix="/api")
     app.include_router(synthesis_management.global_router, prefix="/api")

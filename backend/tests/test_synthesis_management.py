@@ -11,7 +11,7 @@ from test_narration import material_fixture, url
 
 
 def overview(classroom):
-    return f"/api/teacher/classrooms/{classroom['id']}/synthesis"
+    return f"/api/teacher/courses/{classroom['course_id']}/synthesis"
 
 
 def test_overview_scope_types_and_interrupted_tasks(client, db, classroom, teacher, student):
@@ -25,7 +25,7 @@ def test_overview_scope_types_and_interrupted_tasks(client, db, classroom, teach
     item = response.json()["items"][0]
     assert item["status"] == "interrupted" and not item["retryable"]
     assert client.get(overview(classroom), headers=student["headers"]).status_code == 403
-    db.get(Classroom, classroom["id"]).teacher_id = student["id"]
+    db.get(Classroom, classroom["id"]).course.teacher_id = student["id"]
     db.commit()
     assert client.get(overview(classroom), headers=teacher["headers"]).status_code == 403
 

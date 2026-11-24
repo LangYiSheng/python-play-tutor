@@ -1,4 +1,5 @@
 """Synthetic course-package fixtures; never opens the configured application database."""
+from course_fixtures import empty_course
 import argparse
 from contextlib import contextmanager
 import json
@@ -68,7 +69,7 @@ def build_fixture_package(source, content, output, *, package_id, name, package_
                 teacher = User(name="测试包临时教师", role="teacher", password_hash="offline-disabled-account")
                 db.add(teacher)
                 db.flush()
-                classroom = Classroom(name=name, teacher_id=teacher.id, join_code=uuid4().hex[:24])
+                classroom = Classroom(name=name, course=empty_course(teacher.id), join_code=uuid4().hex[:24])
                 db.add(classroom)
                 db.flush()
                 # Exported test curriculum remains unpublished until a teacher explicitly releases it.

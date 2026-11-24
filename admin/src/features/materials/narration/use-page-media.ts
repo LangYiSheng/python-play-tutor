@@ -3,7 +3,7 @@ import { fileBlob } from "@/lib/api";
 import { useEffect, useRef, useState } from "react";
 
 export function usePageMedia(
-  classroomId: number,
+  courseId: number,
   materialId: number,
   pageNo: number | null,
   saved: string,
@@ -30,7 +30,7 @@ export function usePageMedia(
     void (async () => {
       try {
         const blob = await fileBlob(
-          narrationApi.pageImage(classroomId, materialId, pageNo),
+          narrationApi.pageImage(courseId, materialId, pageNo),
         );
         if (dropped) return;
         setPageImage(URL.createObjectURL(blob));
@@ -41,7 +41,7 @@ export function usePageMedia(
     return () => {
       dropped = true;
     };
-  }, [classroomId, materialId, pageNo]);
+  }, [courseId, materialId, pageNo]);
   useEffect(
     () => () => {
       setPageImage((previous) => {

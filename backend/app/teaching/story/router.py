@@ -3,12 +3,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import current_user
 from app.db import get_db
-from app.models import CourseInstance, User
+from app.models import User
 from app.teaching.story.commands import advance as _advance
 from app.teaching.story.commands import current as _current
 from app.teaching.story.commands import end_session as _end_session
@@ -37,7 +36,8 @@ def _present(view, dialogue_format, db, user, classroom_id):
         return view
     course_name = None
     if "course_name" in fields:
-        course_name = db.scalar(select(CourseInstance.name).where(CourseInstance.classroom_id == classroom_id))
+        from app.course_instances import classroom_course
+        course_name = classroom_course(db, classroom_id).name
     chapter_name = next((row["title"] for row in view["world"]["chapters"] if row["id"] == chapter_id), None)
     values = {"name": user.name, "course_name": course_name, "chapter_name": chapter_name}
     node["text"] = render_dialogue(node["text"], **values)

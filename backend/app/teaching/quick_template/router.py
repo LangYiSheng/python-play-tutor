@@ -10,21 +10,21 @@ from app.teaching.quick_template import service
 from app.teaching.quick_template.contracts import ApplyInput, PreviewInput
 
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/quick-orchestration", tags=["course-authoring"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/quick-orchestration", tags=["course-authoring"])
 Database = Annotated[Session, Depends(get_db)]
 Teacher = Annotated[User, Depends(require_teacher)]
 
 
 @router.get("")
-def get_editor(classroom_id: int, db: Database, user: Teacher):
-    return service.get_editor(db, user, classroom_id)
+def get_editor(course_id: int, db: Database, user: Teacher):
+    return service.get_editor(db, user, course_id)
 
 
 @router.post("/preview")
-def preview(classroom_id: int, body: PreviewInput, db: Database, user: Teacher):
-    return service.preview(db, user, classroom_id, body)
+def preview(course_id: int, body: PreviewInput, db: Database, user: Teacher):
+    return service.preview(db, user, course_id, body)
 
 
 @router.post("/apply")
-def apply(classroom_id: int, body: ApplyInput, db: Database, user: Teacher):
-    return service.apply(db, user, classroom_id, body)
+def apply(course_id: int, body: ApplyInput, db: Database, user: Teacher):
+    return service.apply(db, user, course_id, body)

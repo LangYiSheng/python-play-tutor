@@ -15,7 +15,7 @@ it("pages only the selected knowledge point and loads other catalogs on demand",
   vi.stubGlobal("fetch", async (path: string) => {
     const url = new URL(path, location.origin);
     calls.push(url);
-    if (url.pathname.endsWith("/courses")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/knowledge-point-labels")) return json([point]);
     const page = Number(url.searchParams.get("page"));
     return json({ page, total: 35, items: [{ id: "q" + page, title: "测试题 " + page,
@@ -23,7 +23,7 @@ it("pages only the selected knowledge point and loads other catalogs on demand",
   });
   history.replaceState({}, "", "/teacher/content-list?tab=questions&point=81");
   const user = userEvent.setup();
-  render(<ContentListPage classroomId={12} />);
+  render(<ContentListPage courseId={12} />);
   expect(await screen.findByText("知识点 · 表达式")).toBeVisible();
   expect(await screen.findByText("测试题 1")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "下一页" }));
@@ -31,7 +31,7 @@ it("pages only the selected knowledge point and loads other catalogs on demand",
   const requests = calls.filter(url => url.pathname.endsWith("/questions"));
   expect(requests.map(url => url.searchParams.get("page"))).toEqual(["1", "2"]);
   expect(requests.every(url => url.searchParams.get("knowledge_point_id") === "81" && url.searchParams.get("size") === "10")).toBe(true);
-  expect(calls.every(url => url.searchParams.get("classroom_id") === "12")).toBe(true);
+  expect(calls.every(url => url.pathname.startsWith("/api/teacher/courses/12/"))).toBe(true);
   expect(calls.some(url => url.pathname.endsWith("/materials"))).toBe(false);
   await user.click(screen.getByRole("tab", { name: "章节" }));
   expect(await screen.findByText("基础语法")).toBeVisible();
@@ -43,7 +43,7 @@ it("从待审批直达本人可审的题目，翻页保留范围，切换状态�
   const requests: URLSearchParams[] = [];
   vi.stubGlobal("fetch", async (path: string) => {
     const url = new URL(path, location.origin);
-    if (url.pathname.endsWith("/courses")) return json({ chapters: [] });
+    if (url.pathname.endsWith("/catalog")) return json({ chapters: [] });
     requests.push(url.searchParams);
     const page = Number(url.searchParams.get("page"));
     return json({ page, total: 12, items: [{ id: "q" + page, title: "题目 " + page, kind: "fill",
@@ -51,7 +51,7 @@ it("从待审批直达本人可审的题目，翻页保留范围，切换状态�
   });
   history.replaceState({}, "", "/teacher/content-list?tab=questions&status=draft&reviewable=true");
   const user = userEvent.setup();
-  render(<ContentListPage classroomId={12}/>);
+  render(<ContentListPage courseId={12}/>);
   expect(await screen.findByText("题目 1")).toBeVisible();
   const status = screen.getByRole("combobox", { name: "题目状态" });
   expect(status).toHaveTextContent("待我审核");
@@ -71,16 +71,16 @@ it("graph editing reads the selected point and saves through the curriculum edit
   const saved = vi.fn(), closed = vi.fn();
   vi.stubGlobal("fetch", async (path: string, init: RequestInit) => {
     const url = new URL(path, location.origin);
-    if (init.method === "PUT") saved(url.pathname, url.searchParams.get("classroom_id"), JSON.parse(String(init.body)));
-    return json(url.pathname.endsWith("/courses") ? { chapters: [chapter] } : point);
+    if (init.method === "PUT") saved(url.pathname, JSON.parse(String(init.body)));
+    return json(url.pathname.endsWith("/catalog") ? { chapters: [chapter] } : point);
   });
   const user = userEvent.setup();
-  render(<ContentActionDialog classroomId={12} action={{ kind: "point", mode: "edit", id: 81 }} onClose={closed} />);
+  render(<ContentActionDialog courseId={12} action={{ kind: "point", mode: "edit", id: 81 }} onClose={closed} />);
   const name = await screen.findByLabelText("名称");
   expect(name).toHaveValue("表达式");
   await user.clear(name);
   await user.type(name, "表达式与求值");
   await user.click(screen.getByRole("button", { name: "保存" }));
   await waitFor(() => expect(closed).toHaveBeenCalledWith(true));
-  expect(saved).toHaveBeenCalledWith("/api/teacher/knowledge-points/81", "12", { title: "表达式与求值", content: point.content });
+  expect(saved).toHaveBeenCalledWith("/api/teacher/courses/12/knowledge-points/81", { title: "表达式与求值", content: point.content });
 });

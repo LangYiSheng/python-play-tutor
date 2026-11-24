@@ -1,5 +1,6 @@
 """Supplemental library media preserves chapter authorization and learning state."""
 
+from course_fixtures import empty_course
 from copy import deepcopy
 
 import pytest
@@ -91,7 +92,7 @@ def test_library_publication_does_not_bypass_class_membership_or_owner(client, d
     other = User(student_id="83530536446524", name="其他教师", role="teacher", password_hash="not-used")
     db.add(other)
     db.flush()
-    other_class = Classroom(name="其他班级", teacher_id=other.id, join_code="other-media-class")
+    other_class = Classroom(name="其他班级", course=empty_course(other.id), join_code="other-media-class")
     db.add(other_class)
     db.flush()
     db.commit()

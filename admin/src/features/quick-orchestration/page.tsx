@@ -41,17 +41,17 @@ function editorRecipe(catalog: QuickCatalog): Recipe {
   };
 }
 
-export function QuickOrchestration({ classroomId }: { classroomId: number }) {
-  const path = "/teacher/classrooms/" + classroomId + "/quick-orchestration";
-  return <ClassQuickOrchestration key={path} path={path} />;
+export function QuickOrchestration({ courseId }: { courseId: number }) {
+  const path = "/teacher/courses/" + courseId + "/quick-orchestration";
+  return <CourseQuickOrchestration key={path} path={path} courseId={courseId} />;
 }
-function ClassQuickOrchestration({ path }: { path: string }) {
+function CourseQuickOrchestration({ path, courseId }: { path: string; courseId: number }) {
   const catalog = useResource<QuickCatalog>(path);
   return <>
     <PageHeader title="快速编排" />
     {catalog.loading ? <Loading /> : catalog.error ? <>
       <ErrorNotice message={catalog.error} /><Button variant="outline" onClick={catalog.reload}>重新加载</Button>
-    </> : catalog.data && <RecipeEditor path={path} initial={catalog.data} />}
+    </> : catalog.data && <RecipeEditor courseId={courseId} path={path} initial={catalog.data} />}
   </>;
 }
 
@@ -68,7 +68,7 @@ function StageRoute({ template }: { template: CourseTemplate }) {
   </ol>;
 }
 
-function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }) {
+function RecipeEditor({ path, courseId, initial }: { path: string; courseId: number; initial: QuickCatalog }) {
   const [catalog, setCatalog] = useState(initial);
   const { templates, chapters, revision, recipe: saved } = catalog;
   const [recipe, setRecipe] = useState(() => editorRecipe(initial));
@@ -124,9 +124,9 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
         const current = await request<QuickCatalog>(path, { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!sameRecipe(current.recipe, saved)) {
-          if (dirty && !window.confirm("本班已保存一份新的编排。载入最新编排将放弃当前调整，是否继续？")) {
+          if (dirty && !window.confirm("本课程已保存一份新的编排。载入最新编排将放弃当前调整，是否继续？")) {
             setConflict(true);
-            setError("已保留当前调整。生成前请先载入本班的最新编排。");
+            setError("已保留当前调整。生成前请先载入本课程的最新编排。");
             return;
           }
           setRecipe(editorRecipe(current));
@@ -223,7 +223,7 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
             onChange={changeChapterOrder} onRefresh={() => void run("refresh")} refreshing={pending === "refresh"} />
           : <div className="surface"><Empty title="这门课程还没有章节" />
             <div className="flex justify-center gap-3 pb-5">
-              <a href="/teacher/content-list?tab=chapters" className="text-sm underline underline-offset-2">前往章节列表</a>
+              <a href={`/teacher/content-list?course=${courseId}&tab=chapters`} className="text-sm underline underline-offset-2">前往章节列表</a>
               <Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("refresh")}><RefreshCw />刷新章节</Button>
             </div>
           </div>}

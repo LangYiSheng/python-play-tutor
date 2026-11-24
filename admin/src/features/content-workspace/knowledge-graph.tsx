@@ -18,7 +18,7 @@ import "./inspector-content.css";
 
 const ContentReviewPanel = lazy(() => import("@/pages/content-review").then(module => ({ default: module.ContentReviewPanel })));
 const emptyGraph: GraphData = { title: "", chapters: [], materials: [] };
-type GraphLocation = { classroomId: number; selection: Selection | null; branch: Branch | null; chapterPage: number;
+type GraphLocation = { courseId: number; selection: Selection | null; branch: Branch | null; chapterPage: number;
   questionPoint?: number | null; questionPage?: number; viewport?: Viewport };
 const pageSize = 6;
 const kindNames = { course: "课程", chapter: "章节", material: "教学资料", point: "知识点",
@@ -47,13 +47,13 @@ function MaterialOutputs({ detail, open }: { detail: MaterialDetail; open: (mode
   </ul></section>;
 }
 
-type GraphProps = { classroomId: number; initialReview?: { materialId?: number } };
+type GraphProps = { courseId: number; initialReview?: { materialId?: number } };
 type Panel = "node" | "review" | "tasks" | null;
 export function KnowledgeGraph(props: GraphProps) {
-  return <GraphPage key={props.classroomId} {...props}/>;
+  return <GraphPage key={props.courseId} {...props}/>;
 }
-function GraphPage({ classroomId, initialReview }: GraphProps) {
-  const saved = useRef<GraphLocation | undefined>(history.state?.courseGraph?.classroomId === classroomId ? history.state.courseGraph : undefined);
+function GraphPage({ courseId, initialReview }: GraphProps) {
+  const saved = useRef<GraphLocation | undefined>(history.state?.courseGraph?.courseId === courseId ? history.state.courseGraph : undefined);
   const [selection, setSelection] = useState<Selection | null>(saved.current?.selection ?? null);
   const [branch, setBranch] = useState<Branch | null>(saved.current?.branch ?? null);
   const [chapterPage, setChapterPage] = useState(saved.current?.chapterPage ?? 1);
@@ -74,26 +74,26 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   const selectedKey = selection ? nodeKey(selection) : "";
   useEffect(() => { inspector.current?.scrollTo(0, 0); }, [selectedKey, panel]);
   const refresh = () => setRevision(n => n + 1);
-  const commands = useTaskCommands(classroomId, refresh);
+  const commands = useTaskCommands(courseId, refresh);
   useEffect(() => {
     // Another teacher or browser tab may have reviewed drafts while this tab was idle.
     const updateCount = () => setReviewRevision(n => n + 1);
     window.addEventListener("focus", updateCount);
     return () => window.removeEventListener("focus", updateCount);
   }, []);
-  const endpoint = (suffix: string) => scoped("/teacher/course-graph" + suffix, classroomId);
+  const endpoint = (suffix: string) => scoped("/teacher/course-graph" + suffix, courseId);
   const catalog = useGraphData<GraphData>(endpoint(""), revision);
   const taskList = useGraphData<TaskSnapshot[]>(endpoint("/tasks"), revision, 4000);
   const pending = useGraphData<{ material_count: number; question_count: number }>(
-    `/teacher/classrooms/${classroomId}/content-review/summary`, revision + reviewRevision);
+    `/teacher/courses/${courseId}/content-review/summary`, revision + reviewRevision);
   const pendingEntries = pending?.data && pending.data.material_count + Number(pending.data.question_count > 0);
   const material = useGraphData<MaterialDetail>(branch?.kind === "material" ? endpoint("/materials/" + branch.id) : null, revision);
   const points = useGraphData<{ items: PointNode[]; total: number; page: number }>(branch?.kind === "chapter" && selection?.kind === "chapter"
-    ? scoped("/teacher/knowledge-points?chapter_id=" + branch.id + "&page=" + chapterPage + "&size=12", classroomId) : null, revision);
+    ? scoped("/teacher/knowledge-points?chapter_id=" + branch.id + "&page=" + chapterPage + "&size=12", courseId) : null, revision);
   const contextPoint = selection?.kind === "point" ? selection.id : selection?.kind === "question" ? questionPoint : null;
   const point = useGraphData<PointDetail>(contextPoint != null ? endpoint("/points/" + contextPoint) : null, revision);
   const questions = useGraphData<{ items: QuestionNode[]; total: number; page: number }>(contextPoint != null ?
-    scoped("/teacher/questions?knowledge_point_id=" + contextPoint + "&page=" + questionPage + "&size=" + pageSize, classroomId) : null, revision);
+    scoped("/teacher/questions?knowledge_point_id=" + contextPoint + "&page=" + questionPage + "&size=" + pageSize, courseId) : null, revision);
   const question = useGraphData<GraphQuestion>(selection?.kind === "question" ? endpoint("/questions/" + encodeURIComponent(selection.id)) : null, revision);
   const graph = catalog?.data ?? emptyGraph;
   useEffect(() => {
@@ -105,7 +105,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
     history.replaceState({ ...history.state, initialReview: {} }, "");
     const deck = catalog.data.materials.find(m => m.id === id);
     if (deck && ["presentation", "pdf"].includes(deck.kind)) setAction({kind: "material", mode: "narration", id});
-    else setBookmarkNotice("这份资料在当前班级无法审校。");
+    else setBookmarkNotice("这份资料在当前课程中无法审校。");
   }, [reviewScope, panel, catalog?.data]);
   const jobs = taskList?.data;
   const layout = useMemo(() => graphLayout(graph, branch, material?.data ?? null, jobs ?? [], point?.data,
@@ -120,9 +120,9 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   }, [jobs]);
   function persist(viewport = view.current) {
     view.current = viewport;
-    history.replaceState({ ...history.state, courseGraph: { classroomId, branch, selection, chapterPage, questionPoint, questionPage, viewport } }, "");
+    history.replaceState({ ...history.state, courseGraph: { courseId, branch, selection, chapterPage, questionPoint, questionPage, viewport } }, "");
   }
-  useEffect(() => { persist(); }, [classroomId, branch, selection, chapterPage, questionPoint, questionPage]);
+  useEffect(() => { persist(); }, [courseId, branch, selection, chapterPage, questionPoint, questionPage]);
   function focusOn(key: string) { setFocus(prev => ({ key, seq: (prev?.seq ?? 0) + 1 })); }
   function showPanel(next: Panel) {
     if (next !== "review" && reviewScope) {
@@ -214,7 +214,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
   } else if (selection?.kind === "point") {
     const p = point?.data;
     details = p ? <><p className="inspector-meta">{chapterLookup(p.chapter_id)}</p>
-      <div className="inspector-actions"><ButtonLink href={`/teacher/content-list?tab=questions&point=${p.id}&pointName=${encodeURIComponent(p.title)}`}>
+      <div className="inspector-actions"><ButtonLink href={`/teacher/content-list?course=${courseId}&tab=questions&point=${p.id}&pointName=${encodeURIComponent(p.title)}`}>
         查看关联题目（{p.questions}）<ChevronRight data-icon="inline-end" aria-hidden="true"/></ButtonLink>
         <Button variant="outline" onClick={() => edit("point", "edit", p.id)}><Pencil/>编辑知识点</Button></div>
       {questions?.data ? <><Relations title={`关联题目 · ${questions.data.total}`} rows={questions.data.items.map(q => ({ ...q, note: kinds[q.kind] }))}
@@ -260,7 +260,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
       <header className="cg-overlay-header">
         <div className="cg-heading"><h1>知识图谱</h1>{catalog?.data && <><p>{graph.title}</p>
           <span className="cg-stats">{graph.chapters.length} 章 · {graph.materials.length} 份资料</span></>}</div>
-        <div className="cg-bar">{catalog?.data && <GraphSearch classroomId={classroomId} revision={revision} cards={layout.cards} select={searchSelect}/>}
+        <div className="cg-bar">{catalog?.data && <GraphSearch courseId={courseId} revision={revision} cards={layout.cards} select={searchSelect}/>}
         <Button ref={reviewButton} variant="outline" size="sm" aria-expanded={panel === "review"} aria-controls={panel === "review" ? inspectorId : undefined}
           onClick={e => togglePanel("review", e.detail === 0)}><ToolbarLabel icon={ClipboardCheck} label="待审批" count={pendingEntries}/></Button>
         <Button ref={taskButton} variant="outline" size="sm" aria-expanded={panel === "tasks"} aria-controls={panel === "tasks" ? inspectorId : undefined}
@@ -283,12 +283,12 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
           {panel === "tasks" && (taskList?.error ? <ErrorNotice message={taskList.error}/> : !jobs ? <Loading/> :
             <TaskQueue jobs={jobs} titleOf={id => graph.materials.find(m => m.id === id)?.title ?? "课件"} onSelect={chooseTask} request={commands.request}/>)}
           {panel === "review" && <Suspense fallback={<Loading/>}>{bookmarkNotice && <p className="inspector-meta" role="status">{bookmarkNotice}</p>}
-            <ContentReviewPanel classroomId={classroomId} revision={revision + reviewRevision}
+            <ContentReviewPanel courseId={courseId} revision={revision + reviewRevision}
               onOpenMaterial={(id, pageNo) => setAction({kind: "material", mode: "narration", id, pageNo})}/></Suspense>}
         </aside>}
       </div>
     </section>
-    {action && <ContentActionDialog classroomId={classroomId} action={action} onClose={changed => {
+    {action && <ContentActionDialog courseId={courseId} action={action} onClose={changed => {
       if (changed || action.mode === "narration" || action.mode === "audio") refresh();
       setAction(null);
     }}/>}

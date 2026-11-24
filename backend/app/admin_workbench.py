@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .auth import hash_password, require_admin
 from .account_deletion import delete_account_data, owned_classroom_ids
-from .course_scope import lock_course
+from .course_scope import lock_course_content
 from .db import get_db
 from .judge_management import python_submission
 from .models import (AuthSession, Classroom, CourseInstance, Material, Membership, PlayerQuest, Question,
@@ -47,7 +47,7 @@ def list_accounts(role: Literal["teacher", "student"], db: Database, q: str = Qu
     if classroom_id is not None:
         visible_class = select(Classroom.id).where(Classroom.id == classroom_id, Classroom.status != "deleted")
         if staff:
-            query = query.where(User.id.in_(select(Classroom.teacher_id).where(Classroom.id.in_(visible_class))))
+            query = query.where(User.id.in_(select(CourseInstance.teacher_id).join(Classroom).where(Classroom.id.in_(visible_class))))
         else:
             query = query.where(User.id.in_(select(Membership.user_id).where(Membership.classroom_id.in_(visible_class))))
     if q.strip():
@@ -57,7 +57,7 @@ def list_accounts(role: Literal["teacher", "student"], db: Database, q: str = Qu
     accounts = db.scalars(query.order_by(User.student_id, User.id).limit(size).offset((page - 1) * size)).all()
     ids = [user.id for user in accounts]
     if staff:
-        classes = select(Classroom.teacher_id, Classroom.id, Classroom.name, Classroom.status).where(Classroom.teacher_id.in_(ids))
+        classes = select(CourseInstance.teacher_id, Classroom.id, Classroom.name, Classroom.status).join(Classroom).where(CourseInstance.teacher_id.in_(ids))
     else:
         classes = (select(Membership.user_id, Classroom.id, Classroom.name, Classroom.status)
                    .join(Classroom, Membership.classroom_id == Classroom.id).where(Membership.user_id.in_(ids)))
@@ -130,10 +130,12 @@ def set_account_status(user_id: int, body: AccountStatusInput, db: Database):
 def delete_account(user_id: int, db: Database):
     account = managed_account(db, user_id, lock=False)
     classrooms = owned_classroom_ids(db, user_id) if account.role == "teacher" else []
-    for classroom_id in classrooms:
-        lock_course(db, classroom_id, exclusive=True)
+    owned = select(CourseInstance.id).where(CourseInstance.teacher_id == user_id).order_by(CourseInstance.id)
+    course_ids = list(db.scalars(owned))
+    for course_id in course_ids:
+        lock_course_content(db, course_id, exclusive=True)
     account = managed_account(db, user_id)
-    if account.role == "teacher" and owned_classroom_ids(db, user_id) != classrooms:
+    if account.role == "teacher" and (owned_classroom_ids(db, user_id) != classrooms or list(db.scalars(owned)) != course_ids):
         raise HTTPException(409, "负责班级已变化，请刷新后重新确认")
     try:
         delete_account_data(db, account, classrooms)
@@ -145,9 +147,9 @@ def delete_account(user_id: int, db: Database):
 
 @router.get("/overview")
 def overview(db: Database, teacher_id: int | None = None, classroom_id: int | None = None):
-    query = select(Classroom, User.name).join(User, Classroom.teacher_id == User.id).where(Classroom.status == "active")
+    query = select(Classroom, User.name).select_from(Classroom).join(CourseInstance).join(User, CourseInstance.teacher_id == User.id).where(Classroom.status == "active")
     if teacher_id is not None:
-        query = query.where(Classroom.teacher_id == teacher_id)
+        query = query.where(CourseInstance.teacher_id == teacher_id)
     if classroom_id is not None:
         query = query.where(Classroom.id == classroom_id)
     rows = {c.id: {"classroom_id": c.id, "classroom_name": c.name, "teacher_id": c.teacher_id,
@@ -168,10 +170,11 @@ def overview(db: Database, teacher_id: int | None = None, classroom_id: int | No
         if status == "complete":
             rows[key]["task_completed"] = count
     state = run_state()
-    synthesis = (select(CourseInstance.classroom_id, state, func.count()).select_from(NarrationRun)
+    synthesis = (select(Classroom.id, state, func.count()).select_from(NarrationRun)
                  .join(Material, Material.id == NarrationRun.material_id)
                  .join(CourseInstance, Material.course_instance_id == CourseInstance.id)
-                 .where(CourseInstance.classroom_id.in_(rows)).group_by(CourseInstance.classroom_id, state)
+                 .join(Classroom, Classroom.course_id == CourseInstance.id)
+                 .where(Classroom.id.in_(rows)).group_by(Classroom.id, state)
                  .execution_options(include_deleted=True))
     for key, status, count in db.execute(synthesis):
         rows[key]["synthesis_counts"][status] = count

@@ -22,7 +22,7 @@ function readLocation() {
   };
 }
 
-export function ContentListPage({ classroomId }: { classroomId: number }) {
+export function ContentListPage({ courseId }: { courseId: number }) {
   const [view, setView] = useState(readLocation);
   useEffect(() => {
     const sync = () => setView(readLocation());
@@ -30,7 +30,7 @@ export function ContentListPage({ classroomId }: { classroomId: number }) {
     return () => window.removeEventListener("popstate", sync);
   }, []);
   function show(tab: Tab) {
-    const params = new URLSearchParams({ tab });
+    const params = new URLSearchParams({ tab, course: String(courseId) });
     history.pushState({}, "", "/teacher/content-list?" + params);
     setView(readLocation());
   }
@@ -55,11 +55,11 @@ export function ContentListPage({ classroomId }: { classroomId: number }) {
         {Object.entries(tabs).map(([id, title]) => <TabsTrigger key={id} value={id}>{title}</TabsTrigger>)}
       </TabsList>
       <TabsContent key={view.tab} value={view.tab}>
-        {view.tab === "questions" ? <Questions key={view.point ?? "all"} classroomId={classroomId} pointId={view.point}
+        {view.tab === "questions" ? <Questions key={view.point ?? "all"} courseId={courseId} pointId={view.point}
           status={view.status} onStatusChange={setQuestionStatus}
           clearPoint={() => updateFilters(params => { params.delete("point"); params.delete("pointName"); })} />
-          : view.tab === "materials" ? <Materials classroomId={classroomId} />
-          : <Curriculum tab={view.tab} classroomId={classroomId} />}
+          : view.tab === "materials" ? <Materials courseId={courseId} />
+          : <Curriculum tab={view.tab} courseId={courseId} />}
       </TabsContent>
     </Tabs>
   </>;

@@ -13,17 +13,17 @@ it("ignores an old classroom response after switching", async () => {
   );
   const { result, rerender } = renderHook(
     ({ path }) => useResource<{ name: string }>(path),
-    { initialProps: { path: "/teacher/courses?classroom_id=1" } },
+    { initialProps: { path: "/teacher/courses/1/catalog" } },
   );
-  rerender({ path: "/teacher/courses?classroom_id=2" });
+  rerender({ path: "/teacher/courses/2/catalog" });
   await act(async () =>
-    pending.get("/api/teacher/courses?classroom_id=2")!(
+    pending.get("/api/teacher/courses/2/catalog")!(
       new Response(JSON.stringify({ name: "班级二" })),
     ),
   );
   await waitFor(() => expect(result.current.data?.name).toBe("班级二"));
   await act(async () =>
-    pending.get("/api/teacher/courses?classroom_id=1")!(
+    pending.get("/api/teacher/courses/1/catalog")!(
       new Response(JSON.stringify({ name: "班级一" })),
     ),
   );

@@ -1,4 +1,4 @@
-"""Prepare and publish a template under the existing classroom content lock."""
+"""Prepare and publish a template under the course content lock."""
 
 from collections import Counter
 from hmac import compare_digest
@@ -13,9 +13,9 @@ from app.characters import validate_characters
 from app.course_content.snapshot import snapshot_content, stable_id
 from app.course_exchange_models import CoursePackageState
 from app.course_instances import MODEL_NAMES, remap_references
-from app.models import Chapter, CourseInstance, KnowledgePoint, Material, MaterialChapter, Question, QuestionChapter, QuestionKnowledgePoint
+from app.models import Chapter, KnowledgePoint, Material, MaterialChapter, Question, QuestionChapter, QuestionKnowledgePoint
 from app.practice_rules import QuestionShortages, practice_question_available
-from app.teacher_scope import teacher_course_scope
+from app.teacher_scope import own_course
 from app.teaching.authoring.validation import validate_configuration
 from app.teaching.quests.validation import validate_definition
 from app.teaching.quick_template.compiler import compile_template, eligible_material, template_catalog
@@ -30,18 +30,16 @@ from app.world_config import interaction_points
 STATE_KEY = "_quick_orchestration"
 
 
-def _course(db, user, classroom_id, *, exclusive=False):
-    classroom, key = teacher_course_scope(db, user, classroom_id, exclusive=exclusive)
-    query = select(CourseInstance).where(CourseInstance.id == key)
-    instance = db.scalar((query.with_for_update() if exclusive else query).execution_options(populate_existing=True))
-    return classroom, instance, db.get(CoursePackageState, key)
+def _course(db, user, course_id, *, exclusive=False):
+    instance = own_course(db, user, course_id, exclusive=exclusive)
+    return instance, db.get(CoursePackageState, instance.id)
 
 
-def get_editor(db, user, classroom_id):
-    classroom, instance, state = _course(db, user, classroom_id)
+def get_editor(db, user, course_id):
+    instance, state = _course(db, user, course_id)
 
     def selectable(model):
-        return model.course_instance_id == instance.id, or_(model.owner_id.is_(None), model.owner_id == classroom.teacher_id)
+        return model.course_instance_id == instance.id, or_(model.owner_id.is_(None), model.owner_id == instance.teacher_id)
 
     chapters = {
         row.id: {"id": row.stable_id, "title": row.title, "materials": [], "knowledge_points": []}
@@ -118,10 +116,10 @@ def _sample_dialogue(generated, data, chapter_id, node_ids, course_name):
     return None
 
 
-def _prepare(db, user, classroom, instance, state, body):
+def _prepare(db, user, instance, state, body):
     if body.expected_revision != instance.revision:
         raise HTTPException(409, "课程已更新，请重新加载后预览")
-    data, _, releases, config, rows = snapshot_content(db, instance, include_secrets=False)
+    data, _, prerequisites, config, rows = snapshot_content(db, instance, include_secrets=False)
     recipe = body.recipe.model_dump(exclude_unset=True)
     saved = state.configuration.get(STATE_KEY, {}) if state else {}
     plan, maps, impact, welcome, closing = None, None, None, None, None
@@ -129,17 +127,17 @@ def _prepare(db, user, classroom, instance, state, body):
     try:
         sources = dict(data)
         for model in (Chapter, KnowledgePoint, Material, Question):
-            allowed = {stable_id(row) for row in rows[model] if row.owner_id in (None, classroom.teacher_id)}
+            allowed = {stable_id(row) for row in rows[model] if row.owner_id in (None, instance.teacher_id)}
             kind = MODEL_NAMES[model]
             sources[kind] = [row for row in data[kind] if row["id"] in allowed]
         generated = compile_template(sources, recipe, owned_quests=saved.get("owned", {}).get("quest", {}), adjustments=adjustments)
-        plan = merge_course(data, config, releases, generated, recipe, saved)
+        plan = merge_course(data, config, prerequisites, generated, recipe, saved)
         maps = runtime_ids(db, instance, plan)
-        changed_objectives = protect_learning(db, instance.classroom_id, plan, maps)
+        changed_objectives = protect_learning(db, instance.id, plan, maps)
         blockers = plan.blockers
         if not blockers:
             if len(plan.data["story"]) > 500 or len(plan.data["quest"]) > 500:
-                raise ValueError("本班最多可维护500条流程和500项任务，请减少本次章节数量。")
+                raise ValueError("本课程最多可维护500条流程和500项任务，请减少本次章节数量。")
             first_id = recipe["chapters"][0]["chapter_id"]
             welcome = _sample_dialogue(generated, plan.data, first_id, ("welcome-mayor", "invite-lesson"), instance.name)
             if recipe["template_id"] == "learn-practice-quiz":
@@ -151,7 +149,7 @@ def _prepare(db, user, classroom, instance, state, body):
             objects = set(interaction_points()) | {row["id"] for row in plan.configuration["world"]["interactions"]}
             for row in plan.data["quest"]:
                 validate_definition(remap_references(row["definition"], maps), objects=objects)
-            _validate_releases(plan)
+            _validate_prerequisites(plan)
             diagnostics, plan.reset = publication_plan(db, instance, plan.data, maps, plan.configuration, changed_activity_ids=changed_objectives)
             blockers.extend(issue["message"] for issue in diagnostics)
             impact = plan.reset.impact(instance, user.id, recipe)
@@ -180,33 +178,30 @@ def _prepare(db, user, classroom, instance, state, body):
             "welcome_dialogue": welcome, "closing_dialogue": closing, "papers": papers, "quests": quests}, plan, maps
 
 
-def _validate_releases(plan):
-    indexed = {row["chapter_id"]: row for row in plan.releases}
-    removed = {key for key, (_, after) in plan.edits["releases"].items() if after is None}
+def _validate_prerequisites(plan):
+    indexed = {row["chapter_id"]: row for row in plan.prerequisites}
     for key in indexed:
         seen = set()
         while key in indexed:
             if key in seen:
-                raise ValueError("所选顺序与已有章节前置形成循环，请核对章节开放设置。")
+                raise ValueError("所选顺序与已有章节前置形成循环，请核对章节前置顺序。")
             seen.add(key)
             key = indexed[key]["prerequisite_chapter_id"]
-            if key in removed:
-                raise ValueError("其他章节仍依赖即将撤下的章节，请先调整其前置章节。")
 
 
-def preview(db, user, classroom_id, body):
-    classroom, instance, state = _course(db, user, classroom_id)
-    result, _, _ = _prepare(db, user, classroom, instance, state, body)
+def preview(db, user, course_id, body):
+    instance, state = _course(db, user, course_id)
+    result, _, _ = _prepare(db, user, instance, state, body)
     return result
 
 
-def apply(db, user, classroom_id, body):
-    classroom, instance, state = _course(db, user, classroom_id, exclusive=True)
+def apply(db, user, course_id, body):
+    instance, state = _course(db, user, course_id, exclusive=True)
     saved = state.configuration.get(STATE_KEY, {}) if state else {}
     receipt = {"teacher": user.id, "expected_revision": body.expected_revision, "token": body.token}
     if saved.get("receipt") == receipt and saved.get("recipe") == body.recipe.model_dump(exclude_unset=True) and instance.revision == body.expected_revision + 1:
         return {"revision": instance.revision}
-    result, plan, maps = _prepare(db, user, classroom, instance, state, body)
+    result, plan, maps = _prepare(db, user, instance, state, body)
     if result["blockers"]:
         raise HTTPException(409, result["blockers"][0])
     if not compare_digest(result["token"], body.token):
@@ -214,7 +209,7 @@ def apply(db, user, classroom_id, body):
     if not any(plan.edits.values()) and all(saved.get(key) == value for key, value in plan.metadata.items()):
         return {"revision": instance.revision}
     try:
-        write_plan(db, classroom, instance, plan, maps)
+        write_plan(db, instance, plan, maps)
         if state is None:
             state = CoursePackageState(course_instance_id=instance.id, configuration={})
             db.add(state)

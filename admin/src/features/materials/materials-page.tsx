@@ -42,11 +42,11 @@ import { MaterialDialog } from "./editor-dialog";
 import { MaterialViewer } from "./material-viewer";
 import { MaterialPreview } from "./types";
 import { useMaterialEditor } from "./use-editor";
-export function Materials({ classroomId }: { classroomId: number }) {
+export function Materials({ courseId }: { courseId: number }) {
   const [query, setQuery] = useState(""), [kind, setKind] = useState("all"), [status, setStatus] = useState("all");
-  const list = useCatalogPage<Material>("/teacher/materials", classroomId, query, { kind, status });
-  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
-  const editor = useMaterialEditor(classroomId, list.reload);
+  const list = useCatalogPage<Material>("/teacher/materials", courseId, query, { kind, status });
+  const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
+  const editor = useMaterialEditor(courseId, list.reload);
   const { open, error, setError, busy, setBusy, edit } = editor;
 
   const [previewData, setPreviewData] = useState<MaterialPreview | null>(null),
@@ -62,16 +62,16 @@ export function Materials({ classroomId }: { classroomId: number }) {
   }, [list.data, list.reload]);
   const visible = list.rows;
   const deletion = useTableDelete<Material>(
-    (m) => scoped(`/teacher/materials/${m.id}`, classroomId),
+    (m) => scoped(`/teacher/materials/${m.id}`, courseId),
     list.reload,
-    { classroomId, kind: () => "material" },
+    { courseId, kind: () => "material" },
   );
   async function preview(m: Material) {
     setBusy(true);
     setError("");
     try {
       const result = await api.get<MaterialPreview>(
-        scoped(`/teacher/materials/${m.id}`, classroomId),
+        scoped(`/teacher/materials/${m.id}`, courseId),
       );
       setPreviewData(result);
     } catch (e) {
@@ -259,8 +259,8 @@ export function Materials({ classroomId }: { classroomId: number }) {
       )}
       {listening && (
         <NarrationPlayer
-          key={`${classroomId}:${listening.id}`}
-          classroomId={classroomId}
+          key={`${courseId}:${listening.id}`}
+          courseId={courseId}
           materialId={listening.id}
           title={listening.title}
           onClose={() => setListening(null)}
@@ -268,8 +268,8 @@ export function Materials({ classroomId }: { classroomId: number }) {
       )}
       {narration && (
         <NarrationReview
-          key={`${classroomId}:${narration.id}`}
-          classroomId={classroomId}
+          key={`${courseId}:${narration.id}`}
+          courseId={courseId}
           materialId={narration.id}
           title={narration.title}
           onClose={() => setNarration(null)}

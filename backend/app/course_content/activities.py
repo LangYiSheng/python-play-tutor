@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.content_relations import activity_questions, question_chapter_ids, set_activity_questions
 from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
 from app.practice_rules import PracticeRules, allocate_initial, candidate_pool, without_legacy_retry_interval
-from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
+from app.teacher_scope import commit_content, require_scope, scoped_key, own_course, teacher_instance_id
 
 
 def unique_questions(value: list[str]) -> list[str]:
@@ -50,8 +50,9 @@ class ActivityInput(BaseModel):
         return validate_id_list(value)
 
 
-def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: int | None = None):
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+def create_activity(body: ActivityInput, db: Session, user: User, course_id: int | None = None):
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
 
     runtime_id = scoped_key(instance_id, "activity", body.id)
     if db.get(Activity, runtime_id, execution_options={"include_deleted": True}):
@@ -67,7 +68,7 @@ def create_activity(body: ActivityInput, db: Session, user: User, classroom_id: 
         id=runtime_id,
         stable_id=body.id,
         course_instance_id=instance_id,
-        owner_id=classroom.teacher_id,
+        owner_id=course.teacher_id,
         content=content,
     )
     if body.practice_rules is not None:
@@ -126,8 +127,8 @@ def configure_practice(db, item, user, rules, published, requested_points=None):
     item.content = {**item.content, "knowledge_point_ids": point_ids, "practice_rules": rules, "published": published}
 
 
-def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: User, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
 
     item = db.scalar(select(Activity).where(Activity.id == activity_id).with_for_update())
     if not item:
@@ -193,16 +194,16 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     return {"id": item.id}
 
 
-def delete_activity(activity_id: str, db: Session, user: User, classroom_id: int | None = None):
+def delete_activity(activity_id: str, db: Session, user: User, course_id: int | None = None):
     from app.curriculum import editable
 
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     editable(db.scalar(select(Activity).where(Activity.id == activity_id).with_for_update()), user, instance_id)
     raise HTTPException(409, "请先预览删除影响并完成二次确认")
 
 
-def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db: Session, user: User, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def update_activity_questions(activity_id: str, body: ActivityQuestionsInput, db: Session, user: User, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     from app.curriculum import editable
 
     activity = editable(db.scalar(select(Activity).where(Activity.id == activity_id).with_for_update()), user, instance_id)

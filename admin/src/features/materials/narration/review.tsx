@@ -26,19 +26,19 @@ const STAGES: [string, string][] = [
 ];
 
 export function NarrationReview({
-  classroomId,
+  courseId,
   materialId,
   title,
   initialPage,
   onClose,
 }: {
-  classroomId: number;
+  courseId: number;
   materialId: number;
   title: string;
   initialPage?: number;
   onClose: () => void;
 }) {
-  const review = useNarrationReview(classroomId, materialId, initialPage);
+  const review = useNarrationReview(courseId, materialId, initialPage);
   const {
     data,
     quota,
@@ -57,7 +57,7 @@ export function NarrationReview({
     running,
     busyNow,
   } = review;
-  const media = usePageMedia(classroomId, materialId, pageNo, saved);
+  const media = usePageMedia(courseId, materialId, pageNo, saved);
   const [tab, setTab] = useState("review");
   const chain = job?.chain ?? [];
   const currentStage = job?.stage || chain[0] || "";
@@ -200,14 +200,14 @@ export function NarrationReview({
                       <NarrationPagePreview
                         review={review}
                         media={media}
-                        classroomId={classroomId}
+                        courseId={courseId}
                         materialId={materialId}
                       />
 
                       <NarrationPageEditor
                         review={review}
                         media={media}
-                        classroomId={classroomId}
+                        courseId={courseId}
                         materialId={materialId}
                       />
                     </>

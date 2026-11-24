@@ -1,5 +1,6 @@
 """Self-only development replay, tested on isolated fixture data without service lifespan."""
 
+from course_fixtures import empty_course
 import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
@@ -66,11 +67,7 @@ def counts(db, models=RESET_MODELS):
 
 
 def add_progress(db, user_id, classroom_id):
-    course = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
-    if not course:
-        course = CourseInstance(classroom_id=classroom_id, package_id="reset-test", name="Reset test", package_version="1")
-        db.add(course)
-        db.flush()
+    course = db.get(Classroom, classroom_id).course
     quest = PlayerQuest(user_id=user_id, classroom_id=classroom_id, quest_id="arrival", status="complete")
     db.add(quest)
     db.flush()
@@ -136,7 +133,7 @@ def test_runtime_guard_disables_existing_route_and_capability(dev_client, db, st
 
 def test_reset_is_atomic_scoped_and_repeatable(dev_client, db, student, teacher, classroom):
     cid = classroom["id"]
-    other_classroom = Classroom(name="另一个班", teacher_id=teacher["id"], join_code=uuid4().hex[:20])
+    other_classroom = Classroom(name="另一个班", course=empty_course(teacher["id"]), join_code=uuid4().hex[:20])
     other_student = User(student_id="46844559636383", name="另一学生", role="student", password_hash="unused-test-only")
     db.add_all([other_classroom, other_student])
     db.flush()
@@ -230,7 +227,7 @@ def test_authentication_and_membership_are_required(dev_client, db, student, tea
     admin_headers = {"Authorization": "Bearer " + issue(db, admin)["access_token"]}
     assert dev_client.get("/api/auth/me", headers=admin_headers).json()["dev_tools_enabled"] is False
     assert dev_client.post(RESET_PATH, json=body, headers=admin_headers).status_code == 403
-    other = Classroom(name="无权班级", teacher_id=teacher["id"], join_code=uuid4().hex[:20])
+    other = Classroom(name="无权班级", course=empty_course(teacher["id"]), join_code=uuid4().hex[:20])
     db.add(other)
     db.commit()
     assert dev_client.post(RESET_PATH, json={**body, "classroom_id": other.id}, headers=student["headers"]).status_code == 403
@@ -257,7 +254,7 @@ def test_postgres_repeated_resets_are_serialized(monkeypatch):
             actor = User(student_id="206268306512709", name="student", role="student", password_hash="unused")
             db.add_all([teacher, actor])
             db.flush()
-            classroom = Classroom(name="isolated reset", teacher_id=teacher.id, join_code=uuid4().hex[:20])
+            classroom = Classroom(name="isolated reset", course=empty_course(teacher.id), join_code=uuid4().hex[:20])
             db.add(classroom)
             db.flush()
             cid, user_id = classroom.id, actor.id

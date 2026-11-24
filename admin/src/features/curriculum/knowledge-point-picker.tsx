@@ -13,7 +13,7 @@ import { useId, useState } from "react";
 export function KnowledgePointPicker({
   chapters,
   points = [],
-  classroomId,
+  courseId,
   selected,
   initialChapterId,
   chapterSelection,
@@ -21,7 +21,7 @@ export function KnowledgePointPicker({
 }: {
   chapters: Chapter[];
   points?: Point[];
-  classroomId?: number;
+  courseId?: number;
   selected: number[];
   initialChapterId: number;
   chapterSelection?: { ids: number[]; change: (ids: number[]) => void };
@@ -30,13 +30,13 @@ export function KnowledgePointPicker({
   const id = useId();
   const [focused, setFocused] = useState(initialChapterId);
   const chapterId = chapters.some(c => c.id === focused) ? focused : initialChapterId;
-  const remote = classroomId !== undefined;
-  const page = useCatalogPage<Point>("/teacher/knowledge-points", classroomId ?? 0, "",
+  const remote = courseId !== undefined;
+  const page = useCatalogPage<Point>("/teacher/knowledge-points", courseId ?? 0, "",
     { chapter_id: String(chapterId) }, remote && !!chapterId);
   const selectedIds = [...new Set(selected)];
   const params = new URLSearchParams(selectedIds.map(key => ["ids", String(key)]));
   const labels = useResource<Pick<Point, "id" | "chapter_id" | "title">[]>(
-    remote && selectedIds.length ? scoped("/teacher/knowledge-point-labels?" + params, classroomId) : null);
+    remote && selectedIds.length ? scoped("/teacher/knowledge-point-labels?" + params, courseId) : null);
   const uniquePoints = new Map([...points, ...page.rows, ...(labels.data ?? [])].map(point => [point.id, point]));
   const groups = [...chapters].sort((a, b) => a.order_index - b.order_index);
   const visible = remote ? page.rows : [...uniquePoints.values()].filter(point => point.chapter_id === chapterId);

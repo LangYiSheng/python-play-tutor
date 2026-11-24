@@ -1,4 +1,5 @@
 """Real course locks make repeated confirmations atomic on PostgreSQL."""
+from course_fixtures import empty_course
 import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
@@ -35,19 +36,22 @@ def test_postgres_simultaneous_confirmation_is_idempotent():
             teacher = User(student_id='991415001',name='删除并发测试',role='teacher',password_hash='unused')
             db.add(teacher)
             db.flush()
-            classroom = Classroom(name='隔离测试',teacher_id=teacher.id,join_code=uuid4().hex[:20])
+            classroom = Classroom(name='隔离测试',course=empty_course(teacher.id),join_code=uuid4().hex[:20])
             db.add(classroom)
             db.flush()
-            instance = CourseInstance(classroom_id=classroom.id,package_id='isolated',name='隔离课',package_version='1')
+            instance = classroom.course
+            instance.package_id = 'isolated'
+            instance.name = '隔离课'
+            instance.package_version = '1'
             db.add(instance)
             db.flush()
             chapter = Chapter(course_instance_id=instance.id,stable_id='chapter',title='并发章节',order_index=1,owner_id=teacher.id)
             db.add(chapter)
             db.commit()
-            class_id, instance_id, chapter_id, revision = classroom.id, instance.id, chapter.id, instance.revision
+            instance_id, chapter_id, revision = instance.id, chapter.id, instance.revision
             headers = {'Authorization':'Bearer '+issue(db, teacher)['access_token']}
         client = TestClient(application)
-        plan = client.post('/api/teacher/content-deletions/preview',headers=headers,json={'classroom_id':class_id,'targets':[{'kind':'chapter','id':str(chapter_id)}]})
+        plan = client.post(f'/api/teacher/courses/{instance_id}/content-deletions/preview',headers=headers,json={'targets':[{'kind':'chapter','id':str(chapter_id)}]})
         assert plan.status_code == 200, plan.text
         plan = plan.json()
         assert not plan['blockers'], plan
@@ -55,8 +59,8 @@ def test_postgres_simultaneous_confirmation_is_idempotent():
         def confirm_once(_):
             caller = TestClient(application)
             try:
-                return caller.post(f"/api/teacher/content-deletions/{plan['id']}/confirm",headers=headers,
-                                   json={'classroom_id':class_id,'confirmation':plan['confirmation'],'confirmed':True})
+                return caller.post(f"/api/teacher/courses/{instance_id}/content-deletions/{plan['id']}/confirm",headers=headers,
+                                   json={'confirmation':plan['confirmation'],'confirmed':True})
             finally:
                 caller.close()
         with ThreadPoolExecutor(max_workers=2) as pool:

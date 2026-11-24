@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { Diagnostic, ResetImpact, Validation } from "./contracts";
 import type { Authoring } from "./model";
 import { authoringBody } from "./request";
-export function useAuthoringDraft(initial: Authoring, classroomId: number) {
+export function useAuthoringDraft(initial: Authoring, courseId: number) {
   const [data, setData] = useState(initial),
     [savedData, setSavedData] = useState(initial);
   const [draftEpoch, setDraftEpoch] = useState(0),
@@ -17,7 +17,7 @@ export function useAuthoringDraft(initial: Authoring, classroomId: number) {
   const [confirmReset, setConfirmReset] = useState(false),
     [impactChanged, setImpactChanged] = useState(false);
   const dirty = data !== savedData;
-  const base = `/teacher/classrooms/${classroomId}/authoring`;
+  const base = `/teacher/courses/${courseId}/authoring`;
   useDraft(dirty);
   function change(next: Authoring) {
     setData({

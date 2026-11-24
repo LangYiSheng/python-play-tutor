@@ -14,7 +14,7 @@ type PendingMaterial = {
 };
 type MaterialPage = { items: PendingMaterial[]; total: number; page: number; question_count: number };
 type Props = {
-  classroomId: number;
+  courseId: number;
   revision?: number;
   onOpenMaterial: (materialId: number, pageNo: number) => void;
 };
@@ -22,14 +22,14 @@ type Props = {
 const pageSize = 25;
 
 export function ContentReviewPanel(props: Props) {
-  return <PendingContent key={props.classroomId} {...props}/>;
+  return <PendingContent key={props.courseId} {...props}/>;
 }
 
-function PendingContent({ classroomId, revision = 0, onOpenMaterial }: Props) {
+function PendingContent({ courseId, revision = 0, onOpenMaterial }: Props) {
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
   const result = useGraphData<MaterialPage>(
-    `/teacher/classrooms/${classroomId}/content-review/materials?page=${page}&size=${pageSize}`,
+    `/teacher/courses/${courseId}/content-review/materials?page=${page}&size=${pageSize}`,
     revision + retry,
   );
   if (result?.error) return <div className="review-panel">
@@ -38,7 +38,7 @@ function PendingContent({ classroomId, revision = 0, onOpenMaterial }: Props) {
   </div>;
   if (!result?.data) return <Loading/>;
   const {items, total, page: current, question_count: questions} = result.data;
-  if (!total && !questions) return <Empty title="当前班级没有待审批内容"/>;
+  if (!total && !questions) return <Empty title="当前课程没有待审批内容"/>;
 
   const pages = Math.ceil(total / pageSize);
   return <div className="review-panel">
@@ -55,7 +55,7 @@ function PendingContent({ classroomId, revision = 0, onOpenMaterial }: Props) {
         </li>;
       })}
       {questions > 0 && <li>
-        <ButtonLink className="review-row" variant="ghost" href="/teacher/content-list?tab=questions&status=draft&reviewable=true">
+        <ButtonLink className="review-row" variant="ghost" href={`/teacher/content-list?course=${courseId}&tab=questions&status=draft&reviewable=true`}>
           <FileQuestionMark aria-hidden/><span className="review-row-copy">
             <strong>待审题目</strong><small>{questions} 道题目草稿</small>
           </span><ChevronRight aria-hidden/>

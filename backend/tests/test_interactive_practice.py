@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 from copy import deepcopy
 
 import pytest
@@ -43,7 +44,7 @@ def test_interactive_json_depth_and_finite_number():
 
 def test_author_and_submit_interactive_with_private_verification(client, db, teacher, student, classroom):
     scope = {"classroom_id": classroom["id"]}
-    teacher_api = "/api/teacher"
+    teacher_api = f"/api/teacher/courses/{classroom['course_id']}"
     opts = {"params": scope, "headers": teacher["headers"]}
     learner = {"params": scope, "headers": student["headers"]}
     assert client.post(teacher_api + "/questions", **learner, json=DEFINITION).status_code == 403
@@ -82,16 +83,16 @@ def test_author_and_submit_interactive_with_private_verification(client, db, tea
 
 def test_interactive_excluded_from_assessment_and_course_exchange(client, db, teacher, student, classroom, tmp_path):
     opts = {"params": {"classroom_id": classroom["id"]}, "headers": teacher["headers"]}
-    created = client.post("/api/teacher/questions", **opts, json=DEFINITION)
+    created = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json=DEFINITION)
     assert created.status_code == 201, created.text
     question_id = created.json()["id"]
-    exam_id = client.post("/api/teacher/activities", **opts,
+    exam_id = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", **opts,
                           json={"id": "stack-assessment", "chapter_id": 179, "title": "单元测验", "kind": "assessment"}).json()["id"]
-    binding = f"/api/teacher/activities/{exam_id}/questions"
+    binding = f"/api/teacher/courses/{classroom['course_id']}/activities/{exam_id}/questions"
     assert client.put(binding, **opts, json={"question_ids": [question_id]}).status_code == 422
-    existing = client.post("/api/teacher/questions", **opts, json={**DEFINITION, "id": "assessed", "kind": "fill",
+    existing = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json={**DEFINITION, "id": "assessed", "kind": "fill",
                                                                     "interactive": None, "answer": "answer"}).json()["id"]
-    activity_url = f"/api/teacher/activities/{exam_id}"
+    activity_url = f"/api/teacher/courses/{classroom['course_id']}/activities/{exam_id}"
     assert client.put(activity_url, **opts, json={"title": "第一场测验", "question_ids": [existing]}).status_code == 200
     paper = client.put(f"/api/activities/{exam_id}/assessment", headers=student["headers"], json={
         "classroom_id": classroom["id"], "revision": 0, "answers": [{"question_id": existing, "answer": "草稿"}]})
@@ -101,16 +102,16 @@ def test_interactive_excluded_from_assessment_and_course_exchange(client, db, te
     # The fixture shares a session across requests. End it as the production dependency does.
     db.rollback()
     assert db.get(Activity, exam_id).title == "第一场测验"
-    change = client.put("/api/teacher/questions/" + existing, **opts, json={"kind": "interactive", "interactive": CONTENT, "answer": TARGET})
+    change = client.put(f"/api/teacher/courses/{classroom['course_id']}/questions/" + existing, **opts, json={"kind": "interactive", "interactive": CONTENT, "answer": TARGET})
     assert change.status_code == 409
 
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom["id"]))
+    instance = db.scalar(select(CourseInstance).where(CourseInstance.id == classroom["course_id"]))
     write_package(db, instance, tmp_path)
     bundle = load_bundle(tmp_path)
     exported = next(q for q in bundle["data"]["question"] if q["id"] == DEFINITION["id"])
     assert exported["interactive"] == CONTENT and "answer" not in exported
-    imported_class = client.post("/api/classrooms", headers=teacher["headers"], json={"name": "交互课"}).json()["id"]
-    copied = import_bundle(db, db.get(Classroom, imported_class), None, bundle, tmp_path)
+    imported_class = create_test_class(client, headers=teacher["headers"], json={"name": "交互课"}).json()["id"]
+    copied = import_bundle(db, db.get(Classroom, imported_class).course, bundle, tmp_path)
     imported = db.scalar(select(Question).where(Question.course_instance_id == copied.id, Question.stable_id == DEFINITION["id"]))
     assert imported.interactive == CONTENT and db.get(QuestionSecret, imported.id).answer == TARGET
     bad = deepcopy(bundle)
@@ -127,10 +128,10 @@ def test_interactive_excluded_from_assessment_and_course_exchange(client, db, te
 def test_interactive_knowledge_point_goal(client, teacher, student, classroom):
     scope = {"classroom_id": classroom["id"]}
     opts = {"params": scope, "headers": teacher["headers"]}
-    point = client.post("/api/teacher/knowledge-points", **opts, json={"chapter_id": 179, "title": "栈"}).json()["id"]
-    question = client.post("/api/teacher/questions", **opts, json={**DEFINITION, "knowledge_point_ids": [point]}).json()["id"]
+    point = client.post(f"/api/teacher/courses/{classroom['course_id']}/knowledge-points", **opts, json={"chapter_id": 179, "title": "栈"}).json()["id"]
+    question = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json={**DEFINITION, "knowledge_point_ids": [point]}).json()["id"]
     rules = {"goals": [{"knowledge_point_id": point, "by_kind": {"interactive": 1}}]}
-    activity = client.post("/api/teacher/activities", **opts, json={"kind": "practice", "chapter_id": 179, "id": "stack-goal",
+    activity = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", **opts, json={"kind": "practice", "chapter_id": 179, "id": "stack-goal",
                            "title": "栈练习", "practice_rules": rules})
     assert activity.status_code == 201, activity.text
     activity_id = activity.json()["id"]

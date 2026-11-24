@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from .auth import require_teacher
 from .course_content.knowledge_graph import router as graph_router
 from .db import get_db
-from .teacher_scope import teacher_course_scope, teacher_instance_id, require_scope, new_stable_id, commit_content
+from .teacher_scope import own_course, teacher_instance_id, require_scope, new_stable_id, commit_content
 from .models import Activity, Chapter, KnowledgePoint, QuestionKnowledgePoint, User
 
-router = APIRouter(prefix="/teacher", tags=["curriculum"])
+router = APIRouter(prefix="/teacher/courses/{course_id}", tags=["curriculum"])
 router.include_router(graph_router)
 
 
@@ -47,7 +47,7 @@ def validate_activity_points(db, user, chapter_id, ids, instance_id=None):
     for point_id in ids:
         point = db.get(KnowledgePoint, point_id)
         if not point or point.course_instance_id != instance_id:
-            raise HTTPException(422, "知识点必须存在且属于当前班级课程")
+            raise HTTPException(422, "知识点必须存在且属于当前课程")
         authoring_chapter(db, user, point.chapter_id, instance_id)
         if user.role != "admin" and point.owner_id not in {None, user.id}:
             raise HTTPException(403, "无权绑定其他教师的私有知识点")
@@ -59,7 +59,8 @@ def chapter_payload(chapter):
         "title": chapter.title,
         "order_index": chapter.order_index,
         "owner_id": chapter.owner_id,
-        "course_id": chapter.course_id,
+        "course_id": chapter.course_instance_id,
+        "prerequisite_chapter_id": chapter.prerequisite_chapter_id,
     }
 
 
@@ -68,6 +69,7 @@ def point_payload(point):
 
 
 class ChapterInput(BaseModel):
+    prerequisite_chapter_id: int | None = None
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     order_index: int | None = Field(default=None, ge=1, strict=True)
@@ -81,6 +83,7 @@ class ChapterInput(BaseModel):
 
 
 class ChapterUpdate(BaseModel):
+    prerequisite_chapter_id: int | None = None
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=200)
     order_index: int | None = Field(default=None, ge=1, strict=True)
@@ -100,6 +103,16 @@ class ChapterUpdate(BaseModel):
         return value
 
 
+def check_prerequisite(db, course_id, chapter, previous):
+    visited = {chapter.id}
+    while previous is not None:
+        if previous in visited:
+            raise HTTPException(422, "前置章节不能成环")
+        visited.add(previous)
+        parent = require_scope(db.get(Chapter, previous), course_id)
+        previous = parent.prerequisite_chapter_id
+
+
 def commit_metadata(db, instance_id=None):
     try:
         commit_content(db, instance_id)
@@ -109,20 +122,24 @@ def commit_metadata(db, instance_id=None):
 
 
 @router.post("/chapters", status_code=201)
-def create_chapter(body: ChapterInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+def create_chapter(body: ChapterInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
     order = body.order_index if body.order_index is not None else (db.scalar(select(func.max(Chapter.order_index)).where(Chapter.course_instance_id == instance_id)) or 0) + 1
-    chapter = Chapter(title=body.title, order_index=order, owner_id=classroom.teacher_id, course_id=43,
+    chapter = Chapter(title=body.title, order_index=order, owner_id=course.teacher_id, course_id=43,
                       course_instance_id=instance_id, stable_id=new_stable_id())
+    check_prerequisite(db, instance_id, chapter, body.prerequisite_chapter_id)
+    chapter.prerequisite_chapter_id = body.prerequisite_chapter_id
     db.add(chapter)
     commit_metadata(db, instance_id)
     return chapter_payload(chapter)
 
 
 @router.put("/chapters/{chapter_id}")
-def update_chapter(chapter_id: int, body: ChapterUpdate, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def update_chapter(chapter_id: int, body: ChapterUpdate, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     chapter = editable(db.get(Chapter, chapter_id), user, instance_id)
+    check_prerequisite(db, instance_id, chapter, body.prerequisite_chapter_id)
     for key, value in body.model_dump(exclude_unset=True).items():
         setattr(chapter, key, value)
     commit_metadata(db, instance_id)
@@ -130,8 +147,8 @@ def update_chapter(chapter_id: int, body: ChapterUpdate, db: Annotated[Session, 
 
 
 @router.delete("/chapters/{chapter_id}")
-def delete_chapter(chapter_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def delete_chapter(chapter_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     editable(db.get(Chapter, chapter_id), user, instance_id)
     raise HTTPException(409, "请先预览删除影响并完成二次确认")
 
@@ -178,18 +195,19 @@ class PointUpdate(BaseModel):
 
 
 @router.post("/knowledge-points", status_code=201)
-def create_point(body: PointInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+def create_point(body: PointInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
     authoring_chapter(db, user, body.chapter_id, instance_id)
-    point = KnowledgePoint(**body.model_dump(), owner_id=classroom.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
+    point = KnowledgePoint(**body.model_dump(), owner_id=course.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
     db.add(point)
     commit_metadata(db, instance_id)
     return point_payload(point)
 
 
 @router.put("/knowledge-points/{point_id}")
-def update_point(point_id: int, body: PointUpdate, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def update_point(point_id: int, body: PointUpdate, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     point = editable(db.get(KnowledgePoint, point_id), user, instance_id)
     authoring_chapter(db, user, point.chapter_id, instance_id)
     for key, value in body.model_dump(exclude_unset=True).items():
@@ -199,8 +217,8 @@ def update_point(point_id: int, body: PointUpdate, db: Annotated[Session, Depend
 
 
 @router.delete("/knowledge-points/{point_id}")
-def delete_point(point_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def delete_point(point_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     point = editable(db.get(KnowledgePoint, point_id), user, instance_id)
     if (db.scalar(select(QuestionKnowledgePoint).where(QuestionKnowledgePoint.knowledge_point_id == point_id).limit(1))
             or any(point_id in a.content.get("knowledge_point_ids", []) for a in db.scalars(select(Activity)))):

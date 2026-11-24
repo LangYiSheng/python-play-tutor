@@ -45,25 +45,25 @@ def exchange(db, classroom, teacher, monkeypatch, tmp_path):
     monkeypatch.setenv("REBORN_STORAGE_ROOT", str(tmp_path / "storage"))
     monkeypatch.setenv("REBORN_COURSE_EXCHANGE_ROOT", str(tmp_path / "exchange"))
     original = db.get(Classroom, classroom["id"])
-    instance = clone_current_course(db, original)
+    instance = original.course
     db.add(Question(id=f"draft-{uuid4().hex}", stable_id="unassigned-draft", course_instance_id=instance.id,
                     owner_id=teacher["id"], title="未分配草稿", kind="boolean", prompt="待审核", source_type="ai_generated",
                     status="draft", options=[], samples=[], source={}))
     db.flush()
     draft = db.scalar(select(Question).where(Question.course_instance_id == instance.id, Question.stable_id == "unassigned-draft"))
     db.add(QuestionSecret(question_id=draft.id, answer=True, hidden_cases=[]))
-    target = Classroom(name="新班级", teacher_id=teacher["id"], join_code=uuid4().hex[:24])
+    target = Classroom(name="新班级", course=CourseInstance(name="空课程", teacher_id=teacher["id"], package_id="new", package_version="1"), join_code=uuid4().hex[:24])
     db.add(target)
     db.commit()
     return instance, target
 
 
 def endpoint(cid, suffix):
-    return f"/api/teacher/classrooms/{cid}/course/{suffix}"
+    return f"/api/teacher/courses/{cid}/{suffix}"
 
 
 def export(client, teacher, instance):
-    response = client.get(endpoint(instance.classroom_id, "export"), headers=teacher["headers"])
+    response = client.get(endpoint(instance.id, "export"), headers=teacher["headers"])
     assert response.status_code == 200, response.text
     from app.course_packages.paths import exchange_root
     import io
@@ -120,13 +120,13 @@ def test_complete_roundtrip_draft_private_answers_and_repeated_apply(client, db,
                                                       learning={"reading": {"scope": "pages", "page_ids": [42]}}))
     db.commit()
     payload = export(client, teacher, source)
-    item = preview(client, teacher, target.id, payload)
-    assert item["expected_revision"] == 0 and item["can_apply"]
+    item = preview(client, teacher, target.course_id, payload)
+    assert item["expected_revision"] == target.course.revision and item["can_apply"]
     request_id = str(uuid4())
-    response = apply(client, teacher, target.id, item, request_id)
+    response = apply(client, teacher, target.course_id, item, request_id)
     assert response.status_code == 200, response.text
     imported = db.get(CourseInstance, response.json()["instance_id"])
-    assert imported.classroom_id == target.id
+    assert imported.id == target.course_id
     maps = content_mapping(db, imported)
     imported_activity = db.get(Activity, maps["activity"]["ch1-lesson"])
     assert imported_activity.content["knowledge_point_ids"] == [maps["knowledge_point"][point_stable_id]]
@@ -138,8 +138,8 @@ def test_complete_roundtrip_draft_private_answers_and_repeated_apply(client, db,
     question = db.get(Question, maps["question"]["unassigned-draft"])
     assert question.status == "draft" and question.source_type == "ai_generated"
     assert db.get(QuestionSecret, question.id).answer is True
-    assert apply(client, teacher, target.id, item, request_id).json()["duplicate"] is True
-    assert apply(client, teacher, target.id, item).status_code == 409
+    assert apply(client, teacher, target.course_id, item, request_id).json()["duplicate"] is True
+    assert apply(client, teacher, target.course_id, item).status_code == 409
     again = export(client, teacher, imported)
     bundles = []
     for i, raw in enumerate((payload, again)):
@@ -156,23 +156,23 @@ def test_complete_roundtrip_draft_private_answers_and_repeated_apply(client, db,
 
 def test_revision_conflict_and_wrong_class_preview_rejected(client, db, teacher, exchange):
     source, target = exchange
-    item = preview(client, teacher, source.classroom_id, export(client, teacher, source))
-    assert apply(client, teacher, target.id, item).status_code == 404
+    item = preview(client, teacher, source.id, export(client, teacher, source))
+    assert apply(client, teacher, target.course_id, item).status_code == 404
     source.revision += 1
     db.commit()
-    assert apply(client, teacher, source.classroom_id, item).status_code == 409
+    assert apply(client, teacher, source.id, item).status_code == 409
 
 
 def test_same_package_keeps_activity_progress_and_ids(client, db, teacher, student, exchange):
     source, _ = exchange
     maps = content_mapping(db, source)
     activity_id = maps["activity"]["ch1-lesson"]
-    progress = ActivityProgress(user_id=student["id"], classroom_id=source.classroom_id, activity_id=activity_id,
+    progress = ActivityProgress(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)), activity_id=activity_id,
                                 page_no=42, visited_pages=[10723], completed=False)
     db.add(progress)
     db.commit()
-    item = preview(client, teacher, source.classroom_id, export(client, teacher, source))
-    assert apply(client, teacher, source.classroom_id, item).status_code == 200
+    item = preview(client, teacher, source.id, export(client, teacher, source))
+    assert apply(client, teacher, source.id, item).status_code == 200
     db.refresh(progress)
     assert progress.page_no == 42 and progress.visited_pages == [10723]
     assert content_mapping(db, source)["activity"]["ch1-lesson"] == activity_id
@@ -211,14 +211,14 @@ def test_missing_media_blocks_complete_export(client, db, teacher, exchange):
     material = db.scalar(select(Material).where(Material.course_instance_id == source.id))
     material.kind, material.storage_key = "pdf", "missing/file.pdf"
     db.commit()
-    response = client.get(endpoint(source.classroom_id, "export"), headers=teacher["headers"])
+    response = client.get(endpoint(source.id, "export"), headers=teacher["headers"])
     assert response.status_code == 422
 
 
 def test_student_cannot_export_private_answers(client, student, exchange):
     source, target = exchange
-    assert client.get(endpoint(source.classroom_id, "export"), headers=student["headers"]).status_code == 403
-    assert client.post(endpoint(target.id, "imports/available/preview"), headers=student["headers"],
+    assert client.get(endpoint(source.id, "export"), headers=student["headers"]).status_code == 403
+    assert client.post(endpoint(target.course_id, "imports/available/preview"), headers=student["headers"],
                        json={"package_key": "mounted-" + "0" * 64}).status_code == 403
 
 
@@ -232,6 +232,38 @@ def rewrite_archive(payload, transform):
         for name, raw in entries.items():
             archive.writestr(name, raw)
     return result.getvalue()
+
+
+def test_legacy_package_imports_prerequisites_without_changing_either_class_schedule(client, db, classroom, teacher, exchange):
+    import yaml
+    from app.models import Chapter
+
+    course, _ = exchange
+    headers = teacher["headers"]
+    keys = content_mapping(db, course)["chapter"]
+    first, second = list(keys)[:2]
+    new_class = client.post(endpoint(course.id, "classrooms"), json={"name": "晚班"}, headers=headers).json()
+    releases = f"/api/teacher/classrooms/{classroom['id']}/releases"
+    before = client.get(releases, headers=headers).json()
+
+    def old_curriculum(entries):
+        path = "curriculum/course.yaml"
+        data = yaml.safe_load(entries[path])
+        assert "releases" not in data and "prerequisites" in data
+        data.pop("prerequisites")
+        data.update(schema_version=1, releases=[{"chapter_id": second, "prerequisite_chapter_id": first,
+                    "status": "published", "opens_at": "2099-12-01T19:00:00+08:00"}])
+        entries[path] = yaml.safe_dump(data).encode()
+
+    package = rewrite_archive(export(client, teacher, course), old_curriculum)
+    planned = preview(client, teacher, course.id, package)
+    assert any("旧版课程包" in warning for warning in planned["warnings"])
+    response = apply(client, teacher, course.id, planned)
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert db.get(Chapter, keys[second]).prerequisite_chapter_id == keys[first]
+    assert client.get(releases, headers=headers).json() == before
+    assert client.get(f"/api/teacher/classrooms/{new_class['id']}/releases", headers=headers).json() == []
 
 
 def test_real_media_and_unassigned_sources_roundtrip(client, db, teacher, exchange, tmp_path):
@@ -256,8 +288,8 @@ def test_real_media_and_unassigned_sources_roundtrip(client, db, teacher, exchan
         entries["assets/index.jsonl"] += (json.dumps(asset) + "\n").encode()
         entries[asset["path"]] = extra
     payload = rewrite_archive(payload, attach)
-    item = preview(client, teacher, target.id, payload)
-    result = apply(client, teacher, target.id, item)
+    item = preview(client, teacher, target.course_id, payload)
+    result = apply(client, teacher, target.course_id, item)
     assert result.status_code == 200, result.text
     imported = db.get(CourseInstance, result.json()["instance_id"])
     assets = db.get(CoursePackageState, imported.id).configuration["_assets"]
@@ -298,7 +330,7 @@ def test_invalid_domain_package_never_creates_instance(client, db, teacher, exch
     unpack_archive(archive, root)
     with pytest.raises(PackageError):
         load_bundle(root)
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
+    assert db.get(CourseInstance, target.course_id).revision == 1
 
 
 def test_history_blocks_course_replacement_and_removal(client, db, teacher, student, exchange):
@@ -306,7 +338,7 @@ def test_history_blocks_course_replacement_and_removal(client, db, teacher, stud
     import yaml
     source, _ = exchange
     maps = content_mapping(db, source)
-    db.add(ActivityProgress(user_id=student["id"], classroom_id=source.classroom_id,
+    db.add(ActivityProgress(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)),
                             activity_id=maps["activity"]["ch1-lesson"], visited_pages=[10715]))
     db.commit()
     original = export(client, teacher, source)
@@ -319,9 +351,9 @@ def test_history_blocks_course_replacement_and_removal(client, db, teacher, stud
             rows = [json.loads(line) for line in entries[name].decode().splitlines()]
             entries[name] = ("\n".join(json.dumps(row) for row in rows if row["id"] != "unassigned-draft") + "\n").encode()
     for transform in (replace, remove):
-        item = preview(client, teacher, source.classroom_id, rewrite_archive(original, transform))
+        item = preview(client, teacher, source.id, rewrite_archive(original, transform))
         assert not item["can_apply"] and item["blockers"]
-        assert apply(client, teacher, source.classroom_id, item).status_code == 409
+        assert apply(client, teacher, source.id, item).status_code == 409
     assert content_mapping(db, source)["question"]["unassigned-draft"] == maps["question"]["unassigned-draft"]
 
 
@@ -336,14 +368,14 @@ def test_storage_failure_rolls_back_every_definition(client, db, teacher, exchan
     adapter.put("test/original.txt", original)
     material.storage_key = "test/original.txt"
     db.commit()
-    item = preview(client, teacher, target.id, export(client, teacher, source))
+    item = preview(client, teacher, target.course_id, export(client, teacher, source))
     def fail_put(*args):
         raise OSError("simulated storage failure")
     monkeypatch.setattr(adapter, "put", fail_put)
     monkeypatch.setattr(course_packages_apply, "get_storage", lambda: adapter)
-    response = apply(client, teacher, target.id, item)
+    response = apply(client, teacher, target.course_id, item)
     assert response.status_code == 422
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
+    assert db.get(CourseInstance, target.course_id).revision == 1
     assert db.get(CourseImportPreview, item["id"]).result is None
 
 
@@ -351,25 +383,25 @@ def test_teacher_cannot_use_another_teachers_class_or_preview(client, db, teache
     from app.auth import issue
     from app.models import User
     source, target = exchange
-    item = preview(client, teacher, target.id, export(client, teacher, source))
+    item = preview(client, teacher, target.course_id, export(client, teacher, source))
     other = User(student_id="91827461827365", name="其他教师", role="teacher", password_hash=db.get(User, teacher["id"]).password_hash)
     db.add(other)
     db.commit()
     headers = {"Authorization": "Bearer " + issue(db, other)["access_token"]}
-    assert client.get(endpoint(source.classroom_id, "export"), headers=headers).status_code == 403
-    assert client.post(endpoint(target.id, f"imports/{item['id']}/apply"), headers=headers,
+    assert client.get(endpoint(source.id, "export"), headers=headers).status_code == 403
+    assert client.post(endpoint(target.course_id, f"imports/{item['id']}/apply"), headers=headers,
                        json={"request_id": str(uuid4()), "expected_revision": 0}).status_code == 403
 
 
 def test_request_id_deduplicates_across_new_previews(client, db, teacher, exchange):
     source, target = exchange
     payload = export(client, teacher, source)
-    first = preview(client, teacher, target.id, payload)
+    first = preview(client, teacher, target.course_id, payload)
     request_id = str(uuid4())
-    result = apply(client, teacher, target.id, first, request_id)
+    result = apply(client, teacher, target.course_id, first, request_id)
     assert result.status_code == 200
-    second = preview(client, teacher, target.id, payload)
-    duplicate = apply(client, teacher, target.id, second, request_id)
+    second = preview(client, teacher, target.course_id, payload)
+    duplicate = apply(client, teacher, target.course_id, second, request_id)
     assert duplicate.status_code == 200 and duplicate.json()["duplicate"]
     assert duplicate.json()["revision"] == result.json()["revision"]
 
@@ -379,7 +411,7 @@ def test_pending_story_update_has_concrete_impact_and_blocks(client, db, teacher
     from app.models import StorySession
     source, _ = exchange
     maps = content_mapping(db, source)
-    db.add(StorySession(user_id=student["id"], classroom_id=source.classroom_id,
+    db.add(StorySession(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)),
                         story_id=maps["story"]["first-steps"], npc_key=maps["npc"]["mayor_py"],
                         node_id="test-pending", status="waiting", pending_activity_id=maps["activity"]["ch1-lesson"],
                         revision=0, return_mapping={}, receipts=[]))
@@ -391,11 +423,11 @@ def test_pending_story_update_has_concrete_impact_and_blocks(client, db, teacher
                 if row["id"] == "first-steps":
                     next(node for node in row["content"]["nodes"] if node["type"] == "dialogue")["text"] = "修改对白"
                     entries[name] = yaml.safe_dump(row, allow_unicode=True).encode()
-    item = preview(client, teacher, source.classroom_id, rewrite_archive(export(client, teacher, source), edit))
+    item = preview(client, teacher, source.id, rewrite_archive(export(client, teacher, source), edit))
     assert not item["can_apply"]
     assert any(row["kind"] == "story" and row["stable_id"] == "first-steps" and row["affected_records"] == 1
                for row in item["learning_impact"])
-    assert apply(client, teacher, source.classroom_id, item).status_code == 409
+    assert apply(client, teacher, source.id, item).status_code == 409
 
 
 def test_zip_update_cannot_bypass_task_reset_confirmation(client, db, teacher, student, exchange):
@@ -404,7 +436,7 @@ def test_zip_update_cannot_bypass_task_reset_confirmation(client, db, teacher, s
 
     source, _ = exchange
     quest_id = content_mapping(db, source)["quest"]["arrival"]
-    db.add(PlayerQuest(user_id=student["id"], classroom_id=source.classroom_id, quest_id=quest_id))
+    db.add(PlayerQuest(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)), quest_id=quest_id))
     db.commit()
 
     def edit(entries):
@@ -416,11 +448,11 @@ def test_zip_update_cannot_bypass_task_reset_confirmation(client, db, teacher, s
                 row["definition"]["nodes"][0]["optional"] = True
                 entries[name] = yaml.safe_dump(row, allow_unicode=True).encode()
 
-    item = preview(client, teacher, source.classroom_id, rewrite_archive(export(client, teacher, source), edit))
+    item = preview(client, teacher, source.id, rewrite_archive(export(client, teacher, source), edit))
     assert not item["can_apply"]
     assert any(row["kind"] == "quest" and row["stable_id"] == "arrival" and row["affected_records"] == 1
                for row in item["learning_impact"])
-    assert apply(client, teacher, source.classroom_id, item).status_code == 409
+    assert apply(client, teacher, source.id, item).status_code == 409
 
 
 def test_assessment_question_order_locked_by_formal_attempt(client, db, teacher, student, exchange):
@@ -428,7 +460,7 @@ def test_assessment_question_order_locked_by_formal_attempt(client, db, teacher,
     from app.models import AssessmentAttempt
     source, _ = exchange
     maps = content_mapping(db, source)
-    db.add(AssessmentAttempt(user_id=student["id"], classroom_id=source.classroom_id,
+    db.add(AssessmentAttempt(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)),
                              activity_id=maps["activity"]["ch1-assessment"], state="draft", question_ids=[], answers={}, submission_ids={}))
     db.commit()
     def edit(entries):
@@ -438,7 +470,7 @@ def test_assessment_question_order_locked_by_formal_attempt(client, db, teacher,
                 if row["id"] == "ch1-assessment":
                     row["question_ids"] = list(reversed(row["question_ids"]))
                     entries[name] = yaml.safe_dump(row).encode()
-    item = preview(client, teacher, source.classroom_id, rewrite_archive(export(client, teacher, source), edit))
+    item = preview(client, teacher, source.id, rewrite_archive(export(client, teacher, source), edit))
     assert not item["can_apply"]
     assert any(row["kind"] == "activity" and row["affected_records"] == 1 for row in item["learning_impact"])
 
@@ -463,8 +495,8 @@ def test_preview_resource_is_portable_and_storage_keys_are_private(client, db, t
         item = next(row for row in rows if row["id"] == material.stable_id)
         assert item["preview_asset_id"] and "preview_key" not in item["content"]
         assert b"private/preview.pdf" not in archive.read("content/materials.jsonl")
-    item = preview(client, teacher, target.id, payload)
-    result = apply(client, teacher, target.id, item)
+    item = preview(client, teacher, target.course_id, payload)
+    result = apply(client, teacher, target.course_id, item)
     assert result.status_code == 200, result.text
     imported = db.get(CourseInstance, result.json()["instance_id"])
     material_id = content_mapping(db, imported)["material"][material.stable_id]
@@ -475,7 +507,7 @@ def test_exchange_files_persist_privately_after_response(client, teacher, exchan
     from app.course_packages.paths import exchange_root
     source, target = exchange
     payload = export(client, teacher, source)
-    preview(client, teacher, target.id, payload)
+    preview(client, teacher, target.course_id, payload)
     assert len(list(exchange_root().glob("export-*"))) == 1
     assert len(list((exchange_root() / "imports").iterdir())) == 1
     assert not list(exchange_root().glob("course-*"))
@@ -511,26 +543,26 @@ def test_postgres_repeated_apply_is_serialized_and_idempotent(pg_course_engine, 
         staged = exchange_path("imports/parallel")
         digest = copy_directory(directory, staged, tmp_path, LIMITS)
         from app.course_packages.narrations import revision
-        item = CourseImportPreview(teacher_id=teacher_row.id, classroom_id=target.id, expected_revision=0,
+        item = CourseImportPreview(teacher_id=teacher_row.id, course_id=target.course_id, expected_revision=1,
                                    archive_sha256=digest, storage_key="imports/parallel", summary={"narration_revision": revision(db, None)},
                                    expires_at=now() + timedelta(hours=1))
         db.add(item)
         db.commit()
-        teacher_id, class_id, preview_id = teacher_row.id, target.id, item.id
+        teacher_id, class_id, preview_id = teacher_row.id, target.course_id, item.id
     barrier, request_id = Barrier(2), uuid4()
     def perform():
         with Session(pg_course_engine) as db:
             user = db.get(User, teacher_id)
             barrier.wait(timeout=20)
-            return apply_course(class_id, preview_id, ApplyInput(request_id=request_id, expected_revision=0), db, user)
+            return apply_course(class_id, preview_id, ApplyInput(request_id=request_id, expected_revision=1), db, user)
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _: perform(), range(2)))
     assert sorted(row["duplicate"] for row in results) == [False, True]
     assert results[0]["instance_id"] == results[1]["instance_id"]
     with Session(pg_course_engine) as db:
-        imported = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == class_id))
-        assert imported.revision == 1
-        assert len(db.scalars(select(CourseInstance).where(CourseInstance.classroom_id == class_id)).all()) == 1
+        imported = db.scalar(select(CourseInstance).where(CourseInstance.id == class_id))
+        assert imported.revision == 2
+        assert len(db.scalars(select(CourseInstance).where(CourseInstance.id == class_id)).all()) == 1
 
 
 def test_postgres_same_instance_reorders_and_removes_unreferenced_content(pg_course_engine, tmp_path, monkeypatch):
@@ -556,7 +588,7 @@ def test_postgres_same_instance_reorders_and_removes_unreferenced_content(pg_cou
         bundle["secrets"] = [row for row in bundle["secrets"] if row["id"] != "disposable"]
         first, second = bundle["data"]["chapter"][:2]
         first["order_index"], second["order_index"] = second["order_index"], first["order_index"]
-        import_bundle(db, source, instance, bundle, root)
+        import_bundle(db, instance, bundle, root)
         db.commit()
         assert db.get(Question, "pg-disposable") is None
         mapping = content_mapping(db, instance)
@@ -570,8 +602,8 @@ def test_teaching_roles_are_part_of_complete_package(client, db, teacher, exchan
     policy = {"enabled": True, "default_npc_id": "librarian_doc", "limits": {"model_calls": 1, "output_tokens": 128}}
     state.configuration = {**state.configuration, "assistant": policy}
     db.commit()
-    item = preview(client, teacher, target.id, export(client, teacher, source))
-    result = apply(client, teacher, target.id, item)
+    item = preview(client, teacher, target.course_id, export(client, teacher, source))
+    result = apply(client, teacher, target.course_id, item)
     assert result.status_code == 200, result.text
     stored = db.get(CoursePackageState, result.json()["instance_id"])
     assert stored.configuration["assistant"] == policy
@@ -589,25 +621,25 @@ def test_available_mounted_package_uses_normal_preview_and_apply(client, db, tea
         folder.mkdir()
         unpack_archive(mounted, folder)
         mounted.unlink()
-    listed = client.get(endpoint(target.id, "packages"), headers=teacher["headers"])
+    listed = client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"])
     assert listed.status_code == 200, listed.text
     items = listed.json()["items"]
     assert len(items) == 2 and all(item["source"] == "mounted" for item in items)
     items = [item for item in items if item["directory"] == "operator-course"]
     assert not {"path", "storage_key", "answers", "secrets"} & set(items[0])
-    response = client.post(endpoint(target.id, "imports/available/preview"), headers=teacher["headers"],
+    response = client.post(endpoint(target.course_id, "imports/available/preview"), headers=teacher["headers"],
                            json={"package_key": items[0]["key"]})
     assert response.status_code == 200, response.text
     item = response.json()
-    assert item["expected_revision"] == 0 and item["can_apply"]
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
-    assert apply(client, teacher, target.id, item).status_code == 200
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)).package_id == source.package_id
+    assert item["expected_revision"] == target.course.revision and item["can_apply"]
+    assert db.get(CourseInstance, target.course_id).revision == 1
+    assert apply(client, teacher, target.course_id, item).status_code == 200
+    assert db.scalar(select(CourseInstance).where(CourseInstance.id == target.course_id)).package_id == source.package_id
 
 
 def test_retired_zip_upload_route_is_absent(client, teacher, exchange):
     _, target = exchange
-    response = client.post(endpoint(target.id, "imports/preview"), headers=teacher["headers"], files={"file": ("course.zip", b"zip")})
+    response = client.post(endpoint(target.course_id, "imports/preview"), headers=teacher["headers"], files={"file": ("course.zip", b"zip")})
     assert response.status_code == 404
 
 
@@ -617,7 +649,7 @@ def test_historical_archive_preview_is_not_executed_but_receipts_are_preserved(c
 
     source, target = exchange
     payload = export(client, teacher, source)
-    item = preview(client, teacher, target.id, payload)
+    item = preview(client, teacher, target.course_id, payload)
     saved = db.get(CourseImportPreview, item["id"])
     saved.storage_key = f"imports/{uuid4().hex}.zip"
     archive = exchange_path(saved.storage_key)
@@ -625,13 +657,13 @@ def test_historical_archive_preview_is_not_executed_but_receipts_are_preserved(c
     db.commit()
     request_id = str(uuid4())
     body = {"request_id": request_id, "expected_revision": item["expected_revision"]}
-    url = endpoint(target.id, f"imports/{item['id']}/apply")
+    url = endpoint(target.course_id, f"imports/{item['id']}/apply")
     response = client.post(url, headers=teacher["headers"], json=body)
     assert response.status_code == 422 and "重新预览" in response.text
     assert archive.read_bytes() == payload
     assert db.get(CourseImportPreview, saved.id).applied_request_id is None
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
-    assert client.post(endpoint(target.id, "imports/available/preview"), headers=teacher["headers"],
+    assert db.get(CourseInstance, target.course_id).revision == 1
+    assert client.post(endpoint(target.course_id, "imports/available/preview"), headers=teacher["headers"],
                        json={"package_key": "uploaded-" + item["id"]}).status_code == 422
 
     # Historical completed receipts are factual records, not a second import path.
@@ -652,17 +684,17 @@ def test_catalog_summary_and_readable_export_name(client, db, teacher, exchange)
     source, target = exchange
     source.name = 'Python/基础：第一课'
     db.commit()
-    response = client.get(endpoint(source.classroom_id, "export"), headers=teacher["headers"])
+    response = client.get(endpoint(source.id, "export"), headers=teacher["headers"])
     assert response.status_code == 200
     directory = response.json()["directory"]
     assert re.fullmatch(r"export-\d+-Python-基础：第一课-\d{8}-\d{6}-[a-f0-9]{8}", directory)
-    items = client.get(endpoint(source.classroom_id, "packages"), headers=teacher["headers"]).json()["items"]
+    items = client.get(endpoint(source.id, "packages"), headers=teacher["headers"]).json()["items"]
     item = next(row for row in items if row["directory"] == directory)
     assert item["name"] == source.name
     assert item["created_at"]
     assert item["chapter_count"] > 0 and item["question_count"] > 0
     assert {key: item[key] for key in ("chapter_count", "question_count")} == package_counts(exchange_root() / directory, PackageLimits())
-    other_items = client.get(endpoint(target.id, "packages"), headers=teacher["headers"]).json()["items"]
+    other_items = client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"]).json()["items"]
     assert any(row["directory"] == directory and not row["can_delete"] and not row["protected"] for row in other_items)
 
 
@@ -671,14 +703,14 @@ def test_available_packages_authorize_the_selected_classroom(client, db, teacher
     from app.models import User
 
     source, target = exchange
-    preview(client, teacher, target.id, export(client, teacher, source))
+    preview(client, teacher, target.course_id, export(client, teacher, source))
     other = User(student_id="87811934201267", name="另一教师", role="teacher", password_hash=db.get(User, teacher["id"]).password_hash)
     db.add(other)
     db.flush()
     headers = {"Authorization": "Bearer " + issue(db, other)["access_token"]}
     db.commit()
-    assert client.get(endpoint(target.id, "packages"), headers=headers).status_code == 403
-    assert client.post(endpoint(target.id, "imports/available/preview"), headers=headers,
+    assert client.get(endpoint(target.course_id, "packages"), headers=headers).status_code == 403
+    assert client.post(endpoint(target.course_id, "imports/available/preview"), headers=headers,
                        json={"package_key": "mounted-" + "0" * 64}).status_code == 403
 
 
@@ -691,13 +723,13 @@ def test_mounted_selection_is_stale_after_change_and_files_remain_private(client
     folder = exchange_root() / "mounted"
     folder.mkdir()
     unpack_archive(mounted, folder)
-    item = next(item for item in client.get(endpoint(target.id, "packages"), headers=teacher["headers"]).json()["items"] if item["directory"] == folder.name)
+    item = next(item for item in client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"]).json()["items"] if item["directory"] == folder.name)
     (folder / "manifest.yaml").write_text("invalid", encoding="utf-8")
-    response = client.post(endpoint(target.id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": item["key"]})
+    response = client.post(endpoint(target.course_id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": item["key"]})
     assert response.status_code == 404
     assert str(exchange_root()) not in response.text
     for key in ("../exports/private.zip", str(mounted), "mounted-" + "0" * 64):
-        rejected = client.post(endpoint(target.id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": key})
+        rejected = client.post(endpoint(target.course_id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": key})
         assert rejected.status_code in {404, 422}
 
 
@@ -706,7 +738,7 @@ def test_mounted_catalog_does_not_list_archives(client, teacher, exchange):
     source, target = exchange
     payload = export(client, teacher, source)
     (course_packages_paths.exchange_root() / "large.zip").write_bytes(payload)
-    listed = client.get(endpoint(target.id, "packages"), headers=teacher["headers"])
+    listed = client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"])
     assert listed.status_code == 200
     assert len(listed.json()["items"]) == 1
     assert not listed.json()["items"][0]["protected"]
@@ -721,13 +753,13 @@ def test_available_preview_is_snapshot_and_apply_rechecks_revision(client, db, t
     source, _ = exchange
     mounted = exchange_root() / "snapshot.zip"
     mounted.write_bytes(export(client, teacher, source))
-    key = client.get(endpoint(source.classroom_id, "packages"), headers=teacher["headers"]).json()["items"][0]["key"]
-    response = client.post(endpoint(source.classroom_id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": key})
+    key = client.get(endpoint(source.id, "packages"), headers=teacher["headers"]).json()["items"][0]["key"]
+    response = client.post(endpoint(source.id, "imports/available/preview"), headers=teacher["headers"], json={"package_key": key})
     assert response.status_code == 200, response.text
     mounted.write_bytes(b"subsequent replacement must not be used")
     source.revision += 1
     db.commit()
-    assert apply(client, teacher, source.classroom_id, response.json()).status_code == 409
+    assert apply(client, teacher, source.id, response.json()).status_code == 409
 
 
 def test_uploaded_catalog_tampering_is_rejected(client, teacher, exchange):
@@ -735,15 +767,15 @@ def test_uploaded_catalog_tampering_is_rejected(client, teacher, exchange):
     from app.course_exchange_models import CourseImportPreview
 
     source, target = exchange
-    item = preview(client, teacher, target.id, export(client, teacher, source))
+    item = preview(client, teacher, target.course_id, export(client, teacher, source))
     # Lookup only the authenticated upload record; no API accepts a storage path.
     from sqlalchemy.orm import object_session
     db = object_session(source)
     record = db.get(CourseImportPreview, item["id"])
     (exchange_path(record.storage_key) / "manifest.yaml").write_bytes(b"tampered")
-    response = apply(client, teacher, target.id, item)
+    response = apply(client, teacher, target.course_id, item)
     assert response.status_code == 422 and "校验失败" in response.text
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
+    assert db.get(CourseInstance, target.course_id).revision == 1
 
 
 def test_catalog_reader_rejects_outside_files_and_reparse_points(tmp_path, monkeypatch):
@@ -805,9 +837,9 @@ def test_directory_size_metadata_does_not_invalidate_catalog_key(client, teacher
         return value
 
     monkeypatch.setattr(Path, "lstat", directory_stat)
-    item = next(item for item in client.get(endpoint(target.id, "packages"), headers=teacher["headers"]).json()["items"] if item["directory"] == folder.name)
+    item = next(item for item in client.get(endpoint(target.course_id, "packages"), headers=teacher["headers"]).json()["items"] if item["directory"] == folder.name)
     size = 4096
-    response = client.post(endpoint(target.id, "imports/available/preview"), headers=teacher["headers"],
+    response = client.post(endpoint(target.course_id, "imports/available/preview"), headers=teacher["headers"],
                            json={"package_key": item["key"]})
     assert response.status_code == 200, response.text
 
@@ -815,7 +847,7 @@ def test_export_delete_protects_supplied_packages_and_preserves_preview(client, 
     import shutil
     from app.course_packages.paths import exchange_root
     source, _ = exchange
-    base = endpoint(source.classroom_id, "")
+    base = endpoint(source.id, "")
     response = client.get(base + "export", headers=teacher["headers"])
     assert response.status_code == 200
     root = exchange_root()
@@ -823,7 +855,7 @@ def test_export_delete_protects_supplied_packages_and_preserves_preview(client, 
     supplied = root / "supplied-course"
     shutil.copytree(directory, supplied)
     # A supplied package is protected regardless of its directory name.
-    lookalike = root / f"export-{source.classroom_id}-manual-copy"
+    lookalike = root / f"export-{source.id}-manual-copy"
     shutil.copytree(directory, lookalike)
     import yaml
     for folder in (supplied, lookalike):
@@ -857,7 +889,7 @@ def test_export_delete_protects_supplied_packages_and_preserves_preview(client, 
 def test_shared_export_delete_rejects_stale_selection(client, teacher, exchange, admin_account):
     from app.course_packages.paths import exchange_root
     source, target = exchange
-    base = endpoint(source.classroom_id, "")
+    base = endpoint(source.id, "")
     response = client.get(base + "export", headers=teacher["headers"])
     path = exchange_root() / response.json()["directory"]
     item = next(x for x in client.get(base + "packages", headers=teacher["headers"]).json()["items"] if x["directory"] == path.name)
@@ -866,14 +898,14 @@ def test_shared_export_delete_rejects_stale_selection(client, teacher, exchange,
     assert client.delete(base + "packages/" + item["key"], headers=admin_account["headers"]).status_code == 404
     changed = next(x for x in client.get(base + "packages", headers=admin_account["headers"]).json()["items"] if x["directory"] == path.name)
     assert changed["can_delete"]
-    assert client.delete(endpoint(target.id, "packages/" + changed["key"]), headers=admin_account["headers"]).status_code == 200
+    assert client.delete(endpoint(target.course_id, "packages/" + changed["key"]), headers=admin_account["headers"]).status_code == 200
     assert not path.exists()
 
 
 def test_export_delete_rejects_linked_descendants(client, teacher, exchange, tmp_path, admin_account):
     from app.course_packages.paths import exchange_root
     source, _ = exchange
-    base = endpoint(source.classroom_id, "")
+    base = endpoint(source.id, "")
     response = client.get(base + "export", headers=teacher["headers"])
     path = exchange_root() / response.json()["directory"]
     outside = tmp_path / "outside.txt"
@@ -895,7 +927,7 @@ def test_export_can_be_copied_renamed_imported_by_another_teacher_and_deleted_by
 
     source, target = exchange
     original_root = exchange_root()
-    response = client.get(endpoint(source.classroom_id, "export"), headers=teacher["headers"])
+    response = client.get(endpoint(source.id, "export"), headers=teacher["headers"])
     assert response.status_code == 200
     original = original_root / response.json()["directory"]
     other_root = tmp_path / "another-server" / "data" / "course"
@@ -906,10 +938,10 @@ def test_export_can_be_copied_renamed_imported_by_another_teacher_and_deleted_by
     other = User(student_id="991116287", name="另一位教师", role="teacher", password_hash=db.get(User, teacher["id"]).password_hash)
     db.add(other)
     db.flush()
-    target.teacher_id = other.id
+    target.course.teacher_id = other.id
     headers = {"Authorization": "Bearer " + issue(db, other)["access_token"]}
     db.commit()
-    base = endpoint(target.id, "")
+    base = endpoint(target.course_id, "")
     catalog = client.get(base + "packages", headers=headers)
     assert catalog.status_code == 200
     item, = catalog.json()["items"]
@@ -920,9 +952,9 @@ def test_export_can_be_copied_renamed_imported_by_another_teacher_and_deleted_by
         assert client.delete(base + "packages/" + item["key"], headers=auth).status_code in {401, 403}
     previewed = client.post(base + "imports/available/preview", headers=headers, json={"package_key": item["key"]})
     assert previewed.status_code == 200, previewed.text
-    imported = apply(client, {"headers": headers}, target.id, previewed.json())
+    imported = apply(client, {"headers": headers}, target.course_id, previewed.json())
     assert imported.status_code == 200, imported.text
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id))
+    instance = db.scalar(select(CourseInstance).where(CourseInstance.id == target.course_id))
     assert instance and instance.id != source.id and instance.package_id == source.package_id
     revision = instance.revision
     assert client.delete(base + "packages/" + item["key"], headers=headers).status_code == 403
@@ -942,8 +974,8 @@ def test_multiple_choice_roundtrip_keeps_array_answers_and_class_isolation(clien
     db.get(QuestionSecret, source_id).answer = ["float", "int"]
     db.commit()
     payload = export(client, teacher, source)
-    item = preview(client, teacher, target.id, payload)
-    response = apply(client, teacher, target.id, item)
+    item = preview(client, teacher, target.course_id, payload)
+    response = apply(client, teacher, target.course_id, item)
     assert response.status_code == 200, response.text
     imported = db.get(CourseInstance, response.json()["instance_id"])
     imported_id = content_mapping(db, imported)["question"]["ch1-computation"]

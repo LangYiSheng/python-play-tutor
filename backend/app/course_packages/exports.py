@@ -13,19 +13,19 @@ class DeleteResult(TypedDict):
     directory: str
 
 
-def delete_export(classroom_id: int | None, package_key: str, db: Session, user: User) -> DeleteResult:
+def delete_export(course_id: int | None, package_key: str, db: Session, user: User) -> DeleteResult:
     from fastapi import HTTPException
 
     from app.course_packages.catalog import mounted_catalog
     from app.course_packages.cleanup import exchange_guard, remove_scratch
     from app.course_packages.contracts import LIMITS
     from app.course_packages.paths import exchange_root
-    from app.classrooms.access import own_classroom
+    from app.teacher_scope import own_course
     from app.auth import require_admin
 
     require_admin(user)
-    if classroom_id is not None:
-        own_classroom(db, user, classroom_id)
+    if course_id is not None:
+        own_course(db, user, course_id)
     root = exchange_root()
     with exchange_guard(root):
         try:

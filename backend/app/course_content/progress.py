@@ -63,7 +63,8 @@ def student_record(classroom_id: int, student_id: int, db: Session, user: User):
     own_classroom(db, user, classroom_id)
     if not db.get(Membership, (student_id, classroom_id)):
         raise HTTPException(404, "学生不在当前班级")
-    return record_payload(classroom_id, student_id, db)
+    from app.classrooms.lifecycle import student_assessments
+    return {**record_payload(classroom_id, student_id, db), "assessments": student_assessments(db, classroom_id, student_id)}
 
 
 def record_payload(classroom_id, student_id, db):

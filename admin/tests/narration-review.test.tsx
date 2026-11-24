@@ -109,7 +109,7 @@ function stub(
 
 it("shows coverage and the generated draft next to the page source", async () => {
   stub([]);
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByText("共 2 页")).toBeTruthy());
   expect(screen.getByText("已生成 1")).toBeTruthy();
   expect(screen.getByText("待审 1")).toBeTruthy();
@@ -120,7 +120,7 @@ it("shows coverage and the generated draft next to the page source", async () =>
 
 it("opens the source page requested by the approval queue", async () => {
   stub([]);
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" initialPage={2} onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" initialPage={2} onClose={() => {}} />);
   expect(await screen.findByRole("button", { name: /第 2 页/ })).toHaveAttribute("aria-current", "true");
 });
 
@@ -128,7 +128,7 @@ it("accepting is blocked until an edited draft is saved", async () => {
   const calls: { url: string; method: string; body?: unknown }[] = [];
   stub(calls);
   const user = userEvent.setup();
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByLabelText("讲解稿")).toBeTruthy());
 
   const accept = screen.getByRole("button", { name: /^接受$/ });
@@ -139,13 +139,13 @@ it("accepting is blocked until an edited draft is saved", async () => {
   await user.click(screen.getByRole("button", { name: /保存修改/ }));
   await waitFor(() => expect(calls.some((call) => call.method === "PUT")).toBe(true));
   const saved = calls.find((call) => call.method === "PUT")!;
-  expect(saved.url).toContain("/teacher/classrooms/3/materials/7/narrations/1");
+  expect(saved.url).toContain("/teacher/courses/3/materials/7/narrations/1");
   expect(saved.body).toEqual({ text: "这一页先看监督学习的定义。再看标签。" });
 });
 
 it("keeps audio generation disabled until the page is accepted", async () => {
   stub([]);
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByText("音色 Meilin · zonos3-mini")).toBeTruthy());
   const audio = screen.getByRole("button", { name: /生成音频/ });
   expect(audio).toBeDisabled();
@@ -171,7 +171,7 @@ it("queues the one-click pipeline and shows which stage is running", async () =>
   });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   const user = userEvent.setup();
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByRole("button", { name: /一键梳理文本/ })).toBeTruthy());
   await user.click(screen.getByRole("button", { name: /一键梳理文本/ }));
   await waitFor(() => expect(calls.some((call) => call.url.endsWith("/pipeline"))).toBe(true));
@@ -201,7 +201,7 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
     },
   });
   const user = userEvent.setup();
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByRole("tab", { name: /校准/ })).toBeTruthy());
   await user.click(screen.getByRole("tab", { name: /校准/ }));
   await waitFor(() => expect(screen.getByText(/校准修正已自动应用/)).toBeTruthy());
@@ -216,7 +216,7 @@ it("lists calibration fixes and tag merges, and says the fixes were applied", as
 
 it("shows the digest read-only and folds the raw text", async () => {
   stub([]);
-  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  render(<NarrationReview courseId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
   await waitFor(() => expect(screen.getByText("整理后的监督学习定义")).toBeTruthy());
   expect(screen.getByText("监督学习")).toBeTruthy();
   expect(screen.getByText("这一页讲监督学习的定义")).toBeTruthy();

@@ -6,8 +6,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 
-MANAGED = ("activity", "quest", "story", "npc", "interactions", "releases", "buildings")
-LABELS = {"activity": "活动", "quest": "任务", "story": "剧情", "npc": "角色", "interactions": "地点", "releases": "章节开放设置", "buildings": "建筑开放设置"}
+MANAGED = ("activity", "quest", "story", "npc", "interactions", "prerequisites", "buildings")
+LABELS = {"activity": "活动", "quest": "任务", "story": "剧情", "npc": "角色", "interactions": "地点", "prerequisites": "章节前置顺序", "buildings": "建筑开放设置"}
 
 
 def digest(value):
@@ -17,7 +17,7 @@ def digest(value):
 def index_rows(kind, rows):
     if kind == "buildings":
         return dict(rows)
-    key = "chapter_id" if kind == "releases" else "id"
+    key = "chapter_id" if kind == "prerequisites" else "id"
     return {row[key]: row for row in rows}
 
 
@@ -25,7 +25,7 @@ def index_rows(kind, rows):
 class CoursePlan:
     data: dict
     configuration: dict
-    releases: list
+    prerequisites: list
     metadata: dict
     edits: dict = field(default_factory=dict)
     blockers: list = field(default_factory=list)
@@ -39,16 +39,16 @@ class CoursePlan:
         return counts
 
 
-def merge_course(data, config, releases, compiled, recipe, saved):
+def merge_course(data, config, prerequisites, compiled, recipe, saved):
     public_config = {key: deepcopy(config.get(key, {})) for key in ("world", "buildings", "assistant", "editor")}
-    originals = deepcopy(saved.get("releases_before", {}))
+    originals = deepcopy(saved.get("prerequisites_before", {}))
     ownership = {}
-    plan = CoursePlan(dict(data), public_config, releases, {"recipe": recipe, "releases_before": originals, "owned": ownership},
+    plan = CoursePlan(dict(data), public_config, prerequisites, {"recipe": recipe, "prerequisites_before": originals, "owned": ownership},
                       edits={kind: {} for kind in MANAGED})
     if set(saved.get("unverified_sample_stories", ())).intersection(row["id"] for row in data["story"]):
         plan.blockers.append("此课程包使用早期四角色样板。原流程可继续游玩，也可在教学流程中维护。要体验新版三角色模板，请在新课程中生成。")
         return plan
-    current = {**data, "interactions": public_config["world"].get("interactions", []), "releases": releases, "buildings": public_config["buildings"]}
+    current = {**data, "interactions": public_config["world"].get("interactions", []), "prerequisites": prerequisites, "buildings": public_config["buildings"]}
     chapters = {row["id"]: row["title"] for row in data["chapter"]}
     for kind in MANAGED:
         live = index_rows(kind, current[kind])
@@ -67,7 +67,7 @@ def merge_course(data, config, releases, compiled, recipe, saved):
                     continue
                 plan.blockers.append(f"请先在建筑开放设置中开放「{key}」，学生需要进入此房间完成课程。")
                 continue
-            if kind == "releases":
+            if kind == "prerequisites":
                 if key in new and key not in baseline:
                     originals[key] = before
                 if key not in new:
@@ -75,13 +75,9 @@ def merge_course(data, config, releases, compiled, recipe, saved):
                     if key not in chapters:
                         # Course management has already retired this chapter.
                         after = None
-            # A regular, unscheduled release is safe to order as explicitly requested.
-            simple_release = kind == "releases" and before and before["status"] == "published" and not (
-                before["opens_at"] or before["prerequisite_chapter_id"]
-            )
-            existing_collision = not previous and before is not None and not (kind == "releases" and (before == after or simple_release))
+            existing_collision = not previous and before is not None and not (kind == "prerequisites" and before == after)
             manual_edit = previous and (before is None or digest(before) != previous)
-            if manual_edit and kind != "releases" and before is not None and after is not None and digest(after) == previous:
+            if manual_edit and kind != "prerequisites" and before is not None and after is not None and digest(after) == previous:
                 # No template change to this definition. Keep the advanced edit, but
                 # retain the baseline so a future conflicting rewrite needs attention.
                 continue
@@ -99,8 +95,8 @@ def merge_course(data, config, releases, compiled, recipe, saved):
             public_config["world"]["interactions"] = list(live.values())
         elif kind == "buildings":
             public_config["buildings"] = live
-        elif kind == "releases":
-            plan.releases = list(live.values())
+        elif kind == "prerequisites":
+            plan.prerequisites = list(live.values())
         else:
             plan.data[kind] = list(live.values())
     return plan

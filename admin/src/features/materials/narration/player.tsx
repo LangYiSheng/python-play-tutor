@@ -32,12 +32,12 @@ const PREFETCH = 5;
  * 整页画面 + 整段字幕 + 自动连播；只播放已接受且已合成音频的页。
  */
 export function NarrationPlayer({
-  classroomId,
+  courseId,
   materialId,
   title,
   onClose,
 }: {
-  classroomId: number;
+  courseId: number;
   materialId: number;
   title: string;
   onClose: () => void;
@@ -80,8 +80,8 @@ export function NarrationPlayer({
     void (async () => {
       try {
         const [list, sound] = await Promise.all([
-          narrationApi.list(classroomId, materialId),
-          narrationApi.audioStatus(classroomId, materialId),
+          narrationApi.list(courseId, materialId),
+          narrationApi.audioStatus(courseId, materialId),
         ]);
         if (dropped) return;
         setData(list);
@@ -104,7 +104,7 @@ export function NarrationPlayer({
     return () => {
       dropped = true;
     };
-  }, [classroomId, materialId]);
+  }, [courseId, materialId]);
 
   const page = data?.pages.find((item) => item.page_no === pageNo) ?? null;
   const hasAudio = page ? playable.includes(page.page_no) : false;
@@ -136,7 +136,7 @@ export function NarrationPlayer({
         if (cacheRef.current[target]) continue;
         try {
           const blob = await fileBlob(
-            narrationApi.pageImage(classroomId, materialId, target),
+            narrationApi.pageImage(courseId, materialId, target),
           );
           if (dropped) return;
           const url = URL.createObjectURL(blob);
@@ -156,7 +156,7 @@ export function NarrationPlayer({
     return () => {
       dropped = true;
     };
-  }, [classroomId, materialId, pageNo, playable]);
+  }, [courseId, materialId, pageNo, playable]);
 
   // 关闭时释放全部缓存
   useEffect(
@@ -182,7 +182,7 @@ export function NarrationPlayer({
     void (async () => {
       try {
         const blob = await fileBlob(
-          narrationApi.audioFile(classroomId, materialId, pageNo),
+          narrationApi.audioFile(courseId, materialId, pageNo),
         );
         if (dropped) return;
         objectUrl = URL.createObjectURL(blob);
@@ -195,7 +195,7 @@ export function NarrationPlayer({
       dropped = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [classroomId, materialId, pageNo, hasAudio]);
+  }, [courseId, materialId, pageNo, hasAudio]);
 
   useEffect(() => {
     if (!audioRef.current) return;

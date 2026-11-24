@@ -11,7 +11,7 @@ import { ContentDeleteDialog, type DeletionKind } from "@/components/content-del
 type Row = { id: number | string; title: string };
 
 export function useTableDelete<T extends Row>(url: (row: T) => string, reload: () => void,
-  cascade?: { classroomId: number; kind: (row: T) => DeletionKind | null }) {
+  cascade?: { courseId: number; kind: (row: T) => DeletionKind | null }) {
   const [selected, setSelected] = useState<T[]>([]);
   const [targets, setTargets] = useState<T[]>([]);
   const [busy, setBusy] = useState(false);
@@ -94,7 +94,7 @@ export function DeleteSelection<T extends Row>({ actions }: { actions: ReturnTyp
         </div>
       )}
       {actions.cascade && targets.length > 0 && targets.every(row => actions.cascade!.kind(row)) ?
-        <ContentDeleteDialog classroomId={actions.cascade.classroomId}
+        <ContentDeleteDialog courseId={actions.cascade.courseId}
           targets={targets.map(row => ({ kind: actions.cascade!.kind(row)!, id: String(row.id) }))}
           onClose={() => ask([])} onDone={actions.cascadeDone} /> : <Dialog open={targets.length > 0} onOpenChange={(open) => { if (!open && !busy) ask([]); }}>
         <DialogContent showCloseButton={false}>

@@ -17,7 +17,7 @@ def own_classroom(db, user, classroom_id, *, exclusive=False, statuses=("active"
 
 
 def classroom_payload(item, user, teacher_name=None):
-    payload = {"id": item.id, "name": item.name, "teacher_id": item.teacher_id}
+    payload = {"id": item.id, "course_id": item.course_id, "name": item.name, "teacher_id": item.teacher_id}
     if teacher_name is not None:
         payload["teacher_name"] = teacher_name
     if item.status == "active" and (item.teacher_id == user.id or user.role == "admin"):

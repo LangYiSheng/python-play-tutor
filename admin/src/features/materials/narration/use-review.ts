@@ -11,7 +11,7 @@ import { toast } from "@/components/ui/toast";
 import { errorMessage, token } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
-export function useNarrationReview(classroomId: number, materialId: number, initialPage?: number) {
+export function useNarrationReview(courseId: number, materialId: number, initialPage?: number) {
   const [data, setData] = useState<NarrationList | null>(null);
   const [quota, setQuota] = useState<NarrationQuota | null>(null);
   const [report, setReport] = useState<CalibrationReport | null>(null);
@@ -28,9 +28,9 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     setError("");
     try {
       const [list, limits, sound] = await Promise.all([
-        narrationApi.list(classroomId, materialId),
-        narrationApi.quota(classroomId, materialId),
-        narrationApi.audioStatus(classroomId, materialId),
+        narrationApi.list(courseId, materialId),
+        narrationApi.quota(courseId, materialId),
+        narrationApi.audioStatus(courseId, materialId),
       ]);
       setData(list);
       setQuota(limits);
@@ -41,7 +41,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     } finally {
       setBusy("");
     }
-  }, [classroomId, materialId, initialPage]);
+  }, [courseId, materialId, initialPage]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -57,7 +57,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     let stopped = false;
     const tick = async () => {
       try {
-        const state = await narrationApi.job(classroomId, materialId);
+        const state = await narrationApi.job(courseId, materialId);
         if (!stopped) setJob(state);
       } catch {
         // 状态查询失败不影响审校本身
@@ -69,13 +69,13 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [classroomId, materialId]);
+  }, [courseId, materialId]);
 
   useEffect(() => {
     let active = true;
     // 展示上一次的（可能未完成的）报告：中断的运行也能看到跑到第几窗。
     narrationApi
-      .calibration(classroomId, materialId, true)
+      .calibration(courseId, materialId, true)
       .then((value) => {
         if (active) setReport(value);
       })
@@ -83,7 +83,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     return () => {
       active = false;
     };
-  }, [classroomId, materialId]);
+  }, [courseId, materialId]);
   async function run(
     label: string,
     action: () => Promise<unknown>,
@@ -108,11 +108,11 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     setError("");
     const captured = token();
     try {
-      await narrationApi.pipeline(classroomId, materialId);
+      await narrationApi.pipeline(courseId, materialId);
       if (captured === token()) toast.add({ title: "已提交一键梳理", type: "info" });
       const state = await waitForJob();
       const next = await narrationApi
-        .calibration(classroomId, materialId, true)
+        .calibration(courseId, materialId, true)
         .catch(() => null);
       if (next) setReport(next);
       if (captured === token()) {
@@ -138,7 +138,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
   async function waitForJob(): Promise<NarrationJobState> {
     const deadline = Date.now() + 30 * 60_000;
     for (;;) {
-      const state = await narrationApi.job(classroomId, materialId);
+      const state = await narrationApi.job(courseId, materialId);
       setJob(state);
       if (!state.running && !state.queued) return state;
       if (Date.now() > deadline)
@@ -163,7 +163,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
       return;
     await run(
       "accept-all",
-      () => narrationApi.acceptBatch(classroomId, materialId),
+      () => narrationApi.acceptBatch(courseId, materialId),
       `已接受 ${drafts} 页`,
     );
   }
@@ -187,7 +187,7 @@ export function useNarrationReview(classroomId: number, materialId: number, init
     setError("");
     const captured = token();
     try {
-      await narrationApi.audioBatch(classroomId, materialId, 1, total);
+      await narrationApi.audioBatch(courseId, materialId, 1, total);
       if (captured === token()) toast.add({ title: "已提交全文配音生成", type: "info" });
       const state = await waitForJob();
       if (captured === token()) {

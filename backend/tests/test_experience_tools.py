@@ -46,11 +46,11 @@ def test_stage_all_skips_opposite_branch_without_completing_it():
 
 
 def test_overview_is_read_only_and_scope_checked(dev_client, db, classroom, student, teacher):
-    before = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom["id"])).revision
+    before = db.scalar(select(CourseInstance).where(CourseInstance.id == classroom["course_id"])).revision
     response = dev_client.get(BASE, params={"classroom_id": classroom["id"]}, headers=student["headers"])
     assert response.status_code == 200, response.text
     assert response.json()["chapters"]
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom["id"])).revision == before
+    assert db.scalar(select(CourseInstance).where(CourseInstance.id == classroom["course_id"])).revision == before
     assert dev_client.get(BASE, params={"classroom_id": classroom["id"]}, headers=teacher["headers"]).status_code == 403
     assert dev_client.get(BASE, params={"classroom_id": 9999}, headers=student["headers"]).status_code == 403
     assert dev_client.get("/api/teacher-town/experience", params={"classroom_id": classroom["id"]}, headers=student["headers"]).status_code == 403
@@ -94,7 +94,7 @@ def test_checkpoint_restores_state_without_reusing_story_receipts(dev_client, db
     active = db.scalar(select(StorySession).where(StorySession.status == "active"))
     assert active.id != story.id and active.receipts == [] and active.revision == 0
     assert response.json()["client_state"] == {"session": {"reading": "3"}}
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom["id"]))
+    instance = db.scalar(select(CourseInstance).where(CourseInstance.id == classroom["course_id"]))
     instance.revision += 1
     db.commit()
     assert dev_client.get(BASE + f"/checkpoints/{checkpoint_id}/preview", params={"classroom_id": classroom["id"]}, headers=student["headers"]).status_code == 409
@@ -270,7 +270,8 @@ def test_chapter_prerequisite_bypass_is_self_scoped_and_keeps_release_gate(dev_c
     from app.models import ChapterRelease, Membership, User
     from app.course_content.access import chapter_available
     release = db.get(ChapterRelease, (classroom["id"], 180))
-    release.prerequisite_chapter_id = 179
+    from app.models import Chapter
+    db.get(Chapter, release.chapter_id).prerequisite_chapter_id = 179
     other = User(student_id="20261115008", name="其他学生", role="student", password_hash="not-used")
     db.add(other)
     db.flush()

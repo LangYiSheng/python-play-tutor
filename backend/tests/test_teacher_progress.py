@@ -18,7 +18,7 @@ def author_quest(client, teacher, classroom_id, quest_id, *, kind="main", option
         definition["nodes"].append(
             {"id": "optional-talk", "type": "REACH_LOCATION", "title": "Optional", "target": "town_square", "dependencies": [], "optional": True}
         )
-    response = client.post("/api/teacher/quests", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom_id})
+    response = client.post(f"/api/teacher/courses/{classroom_id}/quests", json={"definition": definition}, headers=teacher["headers"])
     assert response.status_code == expected, response.text
     return response.json().get("id")
 
@@ -99,9 +99,12 @@ def test_current_quest_edits_preserve_completion_and_new_quests_count(client, db
     )
     assert old.status == "complete"
     assert completed_chapters(client, teacher, cid, student["id"]) == 1
+    from app.models import Chapter
+    db.get(Chapter, 180).owner_id = teacher['id']
+    db.commit()
     # The same predicate permits this chapter as the next chapter's prerequisite.
     response = client.put(
-        f"/api/teacher/classrooms/{cid}/releases/180", json={"status": "published", "prerequisite_chapter_id": 185}, headers=teacher["headers"]
+        f"/api/teacher/courses/{classroom['course_id']}/chapters/180", json={"prerequisite_chapter_id": 185}, headers=teacher["headers"]
     )
     assert response.status_code == 200
     assert client.get(f"/api/activities/ch2-lesson?classroom_id={cid}", headers=student["headers"]).status_code == 200
@@ -113,9 +116,9 @@ def test_progress_counts_are_scoped_to_student_classroom_and_teacher(client, db,
     release(client, teacher, cid)
     complete_goal(client, student, cid, key)
     assert completed_chapters(client, teacher, cid, student["id"]) == 1
-    other_class = client.post("/api/classrooms", json={"name": "Different classroom"}, headers=teacher["headers"]).json()
+    course = client.post("/api/teacher/courses", json={"name": "Other"}, headers=teacher["headers"]).json()
+    other_class = client.post(f"/api/teacher/courses/{course['id']}/classrooms", json={"name": "Different classroom"}, headers=teacher["headers"]).json()
     client.post("/api/classrooms/join", json={"join_code": other_class["join_code"]}, headers=student["headers"])
-    assert client.post(f"/api/teacher/classrooms/{other_class['id']}/course/empty", json={"name": "Other", "confirmed": True}, headers=teacher["headers"]).status_code == 200
     assert completed_chapters(client, teacher, other_class["id"], student["id"]) == 0
     from conftest import make_student_account
 

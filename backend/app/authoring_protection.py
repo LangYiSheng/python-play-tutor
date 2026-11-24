@@ -10,7 +10,8 @@ from sqlalchemy import delete, or_, select, tuple_
 from .authoring_diagnostics import AuthoringIssue
 from .course_exchange_models import CoursePackageState
 from .course_instances import remap_references
-from .models import LearningEvent, NodeState, PlayerQuest, QuestDefinition, StoryDefinition, StorySession, WorldFlag
+from .course_scope import course_class_ids
+from .models import Classroom, LearningEvent, NodeState, PlayerQuest, QuestDefinition, StoryDefinition, StorySession, WorldFlag
 
 
 END_INTERACTION = (
@@ -83,28 +84,29 @@ class PublicationReset:
     flags: list
     flow_impact: list
     quest_impact: list
+    classroom_impact: list
 
     def impact(self, instance, user_id, draft):
         if not (self.sessions or self.progress or self.flags):
             return None
-        students = {row.user_id for row in self.sessions} | {row.user_id for row in self.progress} | {student for student, _ in self.flags}
+        students = {row.user_id for row in self.sessions} | {row.user_id for row in self.progress} | {student for _, student, _ in self.flags}
         confirmed = {
-            "classroom": instance.classroom_id, "instance": instance.id, "teacher": user_id, "draft": draft,
+            "instance": instance.id, "teacher": user_id, "draft": draft,
             "sessions": [(row.id, row.revision, row.status, row.node_id) for row in self.sessions],
             "progress": [(row.id, row.user_id, row.quest_id, row.status, row.completed_at) for row in self.progress],
             "events": [(row.id, row.event_id) for row in self.events], "flags": self.flags,
         }
         fingerprint = sha256(json.dumps(confirmed, sort_keys=True, default=str).encode()).hexdigest()
         return {"token": fingerprint, "flows": self.flow_impact, "quests": self.quest_impact, "students": len(students),
-                "checkpoint_flags": len(self.flags)}
+                "classrooms": self.classroom_impact, "checkpoint_flags": len(self.flags)}
 
-    def apply(self, db, classroom_id):
-        _remove(db, LearningEvent, LearningEvent.id, [row.id for row in self.events], LearningEvent.classroom_id == classroom_id)
+    def apply(self, db, course_id):
+        _remove(db, LearningEvent, LearningEvent.id, [row.id for row in self.events], LearningEvent.classroom_id.in_(course_class_ids(course_id)))
         quest_ids = [row.id for row in self.progress]
         _remove(db, NodeState, NodeState.player_quest_id, quest_ids)
-        _remove(db, PlayerQuest, PlayerQuest.id, quest_ids, PlayerQuest.classroom_id == classroom_id)
-        _remove(db, StorySession, StorySession.id, [row.id for row in self.sessions], StorySession.classroom_id == classroom_id)
-        _remove(db, WorldFlag, tuple_(WorldFlag.user_id, WorldFlag.key), self.flags, WorldFlag.classroom_id == classroom_id)
+        _remove(db, PlayerQuest, PlayerQuest.id, quest_ids, PlayerQuest.classroom_id.in_(course_class_ids(course_id)))
+        _remove(db, StorySession, StorySession.id, [row.id for row in self.sessions], StorySession.classroom_id.in_(course_class_ids(course_id)))
+        _remove(db, WorldFlag, tuple_(WorldFlag.classroom_id, WorldFlag.user_id, WorldFlag.key), self.flags, WorldFlag.classroom_id.in_(course_class_ids(course_id)))
 
 
 def _remove(db, model, field, values, *scope):
@@ -149,7 +151,7 @@ def _checkpoint_flags(stories, quests, flow_changes, progress_by_quest):
             if delete_flow:
                 deleted[key] = story.id
             else:
-                per_student.update((row.user_id, key) for row in progress_by_quest[quest.id])
+                per_student.update((row.classroom_id, row.user_id, key) for row in progress_by_quest[quest.id])
     return deleted, per_student
 
 
@@ -165,7 +167,7 @@ def _story_impacts(stories, changes, reset_sessions, removed_flags):
 
 
 def publication_plan(db, instance, data, maps, configuration, *, changed_activity_ids=()):
-    classroom_id = instance.classroom_id
+    course_id = instance.id
     stories = {row.id: row for row in db.scalars(select(StoryDefinition).where(StoryDefinition.course_instance_id == instance.id))}
     quests = {row.id: row for row in db.scalars(select(QuestDefinition).where(QuestDefinition.course_instance_id == instance.id))}
     flow_changes = _scope_changes(stories, data["story"], maps, _changed_story)
@@ -176,7 +178,7 @@ def publication_plan(db, instance, data, maps, configuration, *, changed_activit
                 task_changes.setdefault(quest.id, "edit")
     affected_stories = {key for key, reason in flow_changes.items() if reason == "delete"}
     affected_stories.update(row.id for row in stories.values() if row.quest_id in task_changes)
-    sessions = db.scalars(select(StorySession).where(StorySession.classroom_id == classroom_id,
+    sessions = db.scalars(select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(course_id)),
         or_(StorySession.story_id.in_(affected_stories), StorySession.status.in_(OPEN_STATUSES))).order_by(StorySession.id))
     reset_sessions, retained = defaultdict(list), []
     for session in sessions:
@@ -188,24 +190,24 @@ def publication_plan(db, instance, data, maps, configuration, *, changed_activit
     progress_by_quest, event_counts = defaultdict(list), Counter()
     progress, events = [], []
     if task_changes:
-        scope = (PlayerQuest.classroom_id == classroom_id, PlayerQuest.quest_id.in_(task_changes))
+        scope = (PlayerQuest.classroom_id.in_(course_class_ids(course_id)), PlayerQuest.quest_id.in_(task_changes))
         progress = list(db.scalars(select(PlayerQuest).where(*scope).order_by(PlayerQuest.id)))
         for row in progress:
             progress_by_quest[row.quest_id].append(row)
         events = list(db.scalars(select(LearningEvent).join(PlayerQuest, LearningEvent.player_quest_id == PlayerQuest.id)
-                                 .where(LearningEvent.classroom_id == classroom_id, *scope).order_by(LearningEvent.id)))
+                                 .where(LearningEvent.classroom_id.in_(course_class_ids(course_id)), *scope).order_by(LearningEvent.id)))
         event_counts.update(row.player_quest_id for row in events)
     deleted_keys, owned_flags = _checkpoint_flags(stories, quests, flow_changes, progress_by_quest)
     flags = []
     if deleted_keys or owned_flags:
-        keys = sorted(deleted_keys.keys() | {key for _, key in owned_flags})
+        keys = sorted(deleted_keys.keys() | {key for _, _, key in owned_flags})
         for offset in range(0, len(keys), 500):
-            candidates = db.execute(select(WorldFlag.user_id, WorldFlag.key).where(WorldFlag.classroom_id == classroom_id,
+            candidates = db.execute(select(WorldFlag.classroom_id, WorldFlag.user_id, WorldFlag.key).where(WorldFlag.classroom_id.in_(course_class_ids(course_id)),
                                     WorldFlag.key.in_(keys[offset:offset + 500])))
-            flags.extend((user_id, key) for user_id, key in candidates if key in deleted_keys or (user_id, key) in owned_flags)
+            flags.extend((cid, user_id, key) for cid, user_id, key in candidates if key in deleted_keys or (cid, user_id, key) in owned_flags)
         flags.sort()
     removed_flags = defaultdict(set)
-    for user_id, key in flags:
+    for _, user_id, key in flags:
         if key in deleted_keys:
             removed_flags[deleted_keys[key]].add(user_id)
     flow_impact = list(_story_impacts(stories, flow_changes, reset_sessions, removed_flags))
@@ -215,7 +217,22 @@ def publication_plan(db, instance, data, maps, configuration, *, changed_activit
         quest_impact.append({"id": quest.stable_id or quest.id, "title": quest.title, "reason": task_changes[quest_id],
                              "progress": len(rows), "students": len({row.user_id for row in rows}),
                              "events": sum(event_counts[row.id] for row in rows)})
-    plan = PublicationReset([row for rows in reset_sessions.values() for row in rows], progress, events, flags, flow_impact, quest_impact)
+    session_rows = [row for rows in reset_sessions.values() for row in rows]
+    session_counts = Counter(row.classroom_id for row in session_rows)
+    task_counts = Counter(row.classroom_id for row in progress)
+    affected = set(session_counts) | set(task_counts) | {cid for cid, _, _ in flags}
+    task_names = defaultdict(set)
+    flow_names = defaultdict(set)
+    for row in progress:
+        task_names[row.classroom_id].add(quests[row.quest_id].title)
+    for row in session_rows:
+        flow_names[row.classroom_id].add(stories[row.story_id].content.get("title", row.story_id))
+    classroom_impact = [
+        {"id": cid, "name": name, "sessions": session_counts[cid], "tasks": task_counts[cid],
+         "quest_titles": sorted(task_names[cid]), "flow_titles": sorted(flow_names[cid])}
+        for cid, name in db.execute(select(Classroom.id, Classroom.name).where(Classroom.id.in_(affected)).order_by(Classroom.id))
+    ] if affected else []
+    plan = PublicationReset(session_rows, progress, events, flags, flow_impact, quest_impact, classroom_impact)
     state = db.get(CoursePackageState, instance.id)
     old_world = state.configuration.get("world", {}) if state else {}
     from .characters import character_issues

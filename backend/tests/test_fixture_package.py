@@ -31,7 +31,7 @@ def test_fixture_package_isolated_and_paused(tmp_path, monkeypatch):
     unpack_archive(destination, directory)
     bundle = load_bundle(directory)
     assert bundle["manifest"]["package_id"] == "offline-test"
-    assert all(row["status"] == "paused" for row in bundle["course"]["releases"])
+    assert "releases" not in bundle["course"] and "prerequisites" in bundle["course"]
     shelf = next(row for row in bundle["data"]["story"] if row["id"] == "legacy-world-library_shelf")
     assert shelf["content"]["nodes"][0] == {
         "id": "start", "type": "action", "action": "open_workspace", "workspace": "library", "next": "end",

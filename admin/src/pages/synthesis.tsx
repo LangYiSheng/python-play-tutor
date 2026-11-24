@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Activity, History } from 'lucide-react';
 
 type Task = TaskSnapshot & {
-  classroom_name?: string;
+  course_name?: string;
   id: number; material_id: number; title: string; material_kind: string; kind: string; status: string;
   requested_by: string; scope: string; material_available: boolean;
   done: number; total: number; message: string; started_at: string | null; finished_at: string | null;
@@ -26,24 +26,24 @@ type Task = TaskSnapshot & {
 type Overview = { items: Task[]; total: number; counts: Record<string, number> };
 const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '已中断', cancelled: '已取消', cancelling: '正在取消' };
 
-export function Synthesis({ actionsTarget, classroomId }: { actionsTarget?: HTMLDivElement | null; classroomId?: number }) {
-  return <SynthesisPage key={classroomId ?? 'global'} actionsTarget={actionsTarget} classroomId={classroomId}/>;
+export function Synthesis({ actionsTarget, courseId }: { actionsTarget?: HTMLDivElement | null; courseId?: number }) {
+  return <SynthesisPage key={courseId ?? 'global'} actionsTarget={actionsTarget} courseId={courseId}/>;
 }
 
-function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDivElement | null; classroomId?: number }) {
+function SynthesisPage({ actionsTarget, courseId }: { actionsTarget?: HTMLDivElement | null; courseId?: number }) {
   const [query, setQuery] = useState(''), [status, setStatus] = useState('all');
   const [view, setView] = useState('running');
   const [page, setPage] = useState(1), [size, setSize] = useState(25), [refresh, setRefresh] = useState(0);
   const [data, setData] = useState<Overview>(), [error, setError] = useState('');
   const [review, setReview] = useState<Task>(), [listen, setListen] = useState<Task>(), [selected, setSelected] = useState<Task>();
-  const commands = useTaskCommands(classroomId, () => setRefresh(n => n + 1));
+  const commands = useTaskCommands(courseId, () => setRefresh(n => n + 1));
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function load() {
       try {
         const params = new URLSearchParams({ query, status, view, page: String(page), size: String(size) });
-        const base = classroomId === undefined ? "/admin/synthesis" : `/teacher/classrooms/${classroomId}/synthesis`;
+        const base = courseId === undefined ? "/admin/synthesis" : `/teacher/courses/${courseId}/synthesis`;
         const result = await api.get<Overview>(`${base}?${params}`, controller.signal);
         if (!controller.signal.aborted) { setData(result); setError(''); }
       } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
@@ -51,10 +51,10 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
     }
     void load();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [classroomId, query, status, view, page, size, refresh]);
+  }, [courseId, query, status, view, page, size, refresh]);
   const refreshButton = <Button variant="outline" onClick={() => setRefresh(n => n + 1)}><RefreshCw />刷新</Button>;
   return <>
-    {classroomId === undefined
+    {courseId === undefined
       ? actionsTarget && createPortal(refreshButton, actionsTarget)
       : <PageHeader title="资料合成管理">{refreshButton}</PageHeader>}
     <Tabs value={view} onValueChange={v => { setView(v as string); setStatus('all'); setPage(1); }} className="mb-4">
@@ -71,7 +71,7 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
     {!data ? !error && <Loading /> : <div className="surface overflow-hidden">
       <Table><TableHeader><TableRow><TableHead>任务 / 资料</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
         <TableBody>{data.items.map(item => <TableRow key={item.id}>
-          <TableCell><span className="font-medium">{item.title}</span><div className="hint">{item.material_kind === 'pdf' ? 'PDF' : '演示文稿'}{classroomId === undefined && item.classroom_name && ` · ${item.classroom_name}`}</div></TableCell>
+          <TableCell><span className="font-medium">{item.title}</span><div className="hint">{item.material_kind === 'pdf' ? 'PDF' : '演示文稿'}{courseId === undefined && item.course_name && ` · ${item.course_name}`}</div></TableCell>
           <TableCell>{taskTitle(item)}<div className="hint">{item.scope}</div><div className="hint">任务 #{item.id} · {item.requested_by}</div></TableCell>
           <TableCell className="max-w-64 whitespace-normal"><span className={taskFailed(item) ? 'text-destructive' : ''}>{taskStatus(item)}</span>
             {taskPercent(item) !== null && <span className="ml-2 text-xs tabular-nums">{taskPercent(item)}%</span>}
@@ -81,7 +81,7 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
           <TableCell className="text-xs text-muted-foreground"><div>开始：{item.started_at ? new Date(item.started_at).toLocaleString('zh-CN') : '—'}</div><div>结束：{item.finished_at ? new Date(item.finished_at).toLocaleString('zh-CN') : '—'}</div></TableCell>
           <TableCell><div className="flex flex-wrap justify-end gap-1">
             <Button variant="ghost" size="sm" onClick={() => setSelected(item)}><Eye/>任务详情</Button>
-            {classroomId !== undefined && <>
+            {courseId !== undefined && <>
               <Button variant="ghost" size="sm" disabled={item.material_available === false} onClick={() => setReview(item)}><NotebookPen />打开课件审校</Button>
               {item.kind === 'audio' && <Button variant="ghost" size="sm" disabled={item.material_available === false} onClick={() => setListen(item)}><Headphones />试听</Button>}
               <TaskButtons job={item} material={item.title} request={commands.request} variant="ghost"/>
@@ -93,20 +93,20 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
       <Pager total={data.total} page={page} size={size} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} />
     </div>}
     <p className="hint mt-3">每 5 秒更新执行状态。</p>
-    {classroomId !== undefined && review && <NarrationReview classroomId={classroomId} materialId={review.material_id} title={review.title} onClose={() => { setReview(undefined); setRefresh(n => n + 1); }} />}
-    {classroomId !== undefined && listen && <NarrationPlayer classroomId={classroomId} materialId={listen.material_id} title={listen.title} onClose={() => setListen(undefined)} />}
-    {selected && <RunDetailDialog key={selected.id} task={selected} classroomId={classroomId} close={() => setSelected(undefined)}/>}
+    {courseId !== undefined && review && <NarrationReview courseId={courseId} materialId={review.material_id} title={review.title} onClose={() => { setReview(undefined); setRefresh(n => n + 1); }} />}
+    {courseId !== undefined && listen && <NarrationPlayer courseId={courseId} materialId={listen.material_id} title={listen.title} onClose={() => setListen(undefined)} />}
+    {selected && <RunDetailDialog key={selected.id} task={selected} courseId={courseId} close={() => setSelected(undefined)}/>}
   </>;
 }
 
-function RunDetailDialog({task, classroomId, close}: {task: Task; classroomId?: number; close: () => void}) {
+function RunDetailDialog({task, courseId, close}: {task: Task; courseId?: number; close: () => void}) {
   const [detail, setDetail] = useState(task), [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function load() {
       try {
-        const base = classroomId === undefined ? '/admin/synthesis' : `/teacher/classrooms/${classroomId}/synthesis`;
+        const base = courseId === undefined ? '/admin/synthesis' : `/teacher/courses/${courseId}/synthesis`;
         const row = await api.get<Task>(`${base}/runs/${task.id}`, controller.signal);
         if (controller.signal.aborted) return;
         setDetail(row); setError('');
@@ -117,7 +117,7 @@ function RunDetailDialog({task, classroomId, close}: {task: Task; classroomId?: 
     }
     void load();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [classroomId, task.id]);
+  }, [courseId, task.id]);
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
       <DialogContent className="synthesis-detail"><DialogHeader>
         <DialogTitle>任务详情 · {taskTitle(detail)}</DialogTitle>

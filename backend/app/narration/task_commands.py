@@ -23,10 +23,10 @@ STAGE_LABELS = {"digest": "梳理文本", "calibrate": "整册校准", "apply": 
 
 
 def generate_narration(
-    page_no: int, classroom_id: int, material_id: int, db: Session, user: User, body: PageGenerateInput | None = None
+    page_no: int, course_id: int, material_id: int, db: Session, user: User, body: PageGenerateInput | None = None
 ) -> GeneratedPage:
     """One explicit authoring request = at most one model call. Never runs on page turns."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -55,9 +55,9 @@ def generate_narration(
         return result
 
 
-def generate_range(classroom_id: int, material_id: int, body: GenerateInput, db: Session, user: User) -> NarrationJob:
+def generate_range(course_id: int, material_id: int, body: GenerateInput, db: Session, user: User) -> NarrationJob:
     """Queue the batch; the worker generates it page by page so the browser can walk away."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -78,7 +78,7 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any],
     body = GenerateInput(**request["body"])
     instance_id = material.course_instance_id
     if instance_id is None:
-        repository.release(db, material.id, status="failed", message="资料不属于当前班级，请刷新后重试", extra=extra)
+        repository.release(db, material.id, status="failed", message="资料未关联课程，请刷新后重试", extra=extra)
         return False
     try:
         results = service.generate_range(
@@ -118,9 +118,9 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any],
     return True
 
 
-def digest_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
+def digest_deck(course_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
     """Queue the whole-deck digest; the worker rewrites page_contents window by window."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -181,9 +181,9 @@ def run_digest(db: Session, material: Material, request: dict[str, Any], *,
     return True
 
 
-def calibrate_deck(classroom_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
+def calibrate_deck(course_id: int, material_id: int, db: Session, user: User) -> NarrationJob:
     """Queue the whole-deck walk; the report row is the cursor, so a restart resumes."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -233,10 +233,10 @@ def run_calibration(db: Session, material: Material, *,
     return True
 
 
-def pipeline_deck(classroom_id: int, material_id: int, db: Session, user: User,
+def pipeline_deck(course_id: int, material_id: int, db: Session, user: User,
                   resume: dict[str, Any] | None = None) -> NarrationJob:
     """Queue 梳理 → 校准 → 应用 → 讲解稿 as one task; 老师只点一次。"""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -309,9 +309,9 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
     repository.release(db, material.id, message="梳理、校准、讲解稿已完成", extra={"done": 1, "total": 1})
 
 
-def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Session, user: User) -> AudioRecord:
+def synthesize_audio(page_no: int, course_id: int, material_id: int, db: Session, user: User) -> AudioRecord:
     """Speak one approved page. Draft wording is refused, not spoken."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -336,10 +336,10 @@ def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Sess
         return result
 
 
-def synthesize_audio_batch(classroom_id: int, material_id: int, db: Session, user: User,
+def synthesize_audio_batch(course_id: int, material_id: int, db: Session, user: User,
                            body: RangeInput | None = None) -> NarrationJob:
     """Queue audio for every accepted page in the range; the worker speaks them."""
-    material = teacher_material(db, user, classroom_id, material_id)
+    material = teacher_material(db, user, course_id, material_id)
     repository.sync_staleness(db, material)
     db.commit()
     if tts.unavailable_reason(db):

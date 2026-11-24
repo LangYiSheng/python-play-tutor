@@ -26,7 +26,7 @@ it("reports actual progress and confirms cancellation for exactly the displayed 
   expect(within(dialog).getByText(/循环语句/)).toBeInTheDocument();
   await user.click(within(dialog).getByRole("button", {name: "确认取消任务"}));
   expect(await screen.findByText("已请求取消")).toBeVisible();
-  expect(fetch).toHaveBeenCalledWith("/api/teacher/classrooms/1/synthesis/3/cancel",
+  expect(fetch).toHaveBeenCalledWith("/api/teacher/courses/1/synthesis/3/cancel",
     expect.objectContaining({method:"POST", body:JSON.stringify({expected_started_at:job.started_at})}));
   expect(reload).toHaveBeenCalledOnce();
 });

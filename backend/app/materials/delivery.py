@@ -42,8 +42,8 @@ def material_file(material_id: int, classroom_id: int, request: Request, user: U
     return stream_material(item, request)
 
 
-def teacher_material_file(material_id: int, request: Request, user: User, db: Session, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def teacher_material_file(material_id: int, request: Request, user: User, db: Session, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id)
     return stream_material(teacher_material(db, user, material_id, instance_id=instance_id), request)
 
 

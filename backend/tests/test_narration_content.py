@@ -86,7 +86,7 @@ def test_review_list_shows_digest_and_teacher_edits_title_and_tags(client, db, c
                               tags=["变量"], text="整理后的第一页")
     repository.upsert(db, material, 1, text="这一页讲变量。")
     db.commit()
-    url = f"/api/teacher/classrooms/{classroom['id']}/materials/{material.id}/narrations"
+    url = f"/api/teacher/courses/{classroom['course_id']}/materials/{material.id}/narrations"
 
     listed = client.get(url, headers=teacher["headers"])
     assert listed.status_code == 200, listed.text

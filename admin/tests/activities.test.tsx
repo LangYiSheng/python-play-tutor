@@ -26,10 +26,10 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
       status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [],
     }, { id: "fruits", title: "水果索引", kind: "interactive", owner_id: 9,
       status: "ready", chapter_ids: [1], knowledge_point_ids: [12] }]);
-    return json(url.includes("/teacher/courses") ? course : []);
+    return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} teacherId={9} />);
+  render(<Activities courseId={7} teacherId={9} />);
   const create = await screen.findByRole("button", { name: "新增活动" });
   await waitFor(() => expect(create).toBeEnabled());
   await user.click(create);
@@ -82,10 +82,10 @@ it("selects shared and untagged questions once and saves their final positions w
   ].map(q => ({...q, chapter_ids: [1], owner_id: null, kind: "fill", status: "ready"}));
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (init.method === "PUT") { update(url, JSON.parse(String(init.body))); return json({}); }
-    return json(url.includes("/teacher/courses") ? course : url.includes("/question-candidates") ? questions : []);
+    return json(url.includes("/catalog") ? course : url.includes("/question-candidates") ? questions : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} teacherId={9} />);
+  render(<Activities courseId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", {name: "选题固定题单"}));
   await user.click(screen.getByRole("checkbox", {name: "B 变量题"}));
   await user.click(screen.getByRole("button", {name: /表达式/}));
@@ -99,7 +99,7 @@ it("selects shared and untagged questions once and saves their final positions w
   await user.click(screen.getByRole("button", {name: "按知识点排序"}));
   expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("B 变量题");
   await user.click(screen.getByRole("button", {name: "保存"}));
-  await waitFor(() => expect(update).toHaveBeenCalledWith(expect.stringContaining("/teacher/activities/paper?"),
+  await waitFor(() => expect(update).toHaveBeenCalledWith(expect.stringContaining("/teacher/courses/7/activities/paper"),
     expect.objectContaining({title: "固定题单", question_ids: ["both", "expression", "untagged"]})));
 });
 
@@ -110,10 +110,10 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (url.endsWith("/content-deletions/preview")) return json({ id: "p1", confirmation: "综合复习", remove: [{kind: "activity", id: "review", title: "综合复习"}], detach: [], preserve: [], blockers: [], affected_students: 0, ending_sessions: 0, history_policy: "学生历史记录保留" });
     if (url.endsWith("/p1/confirm")) { calls.push(JSON.parse(init.body as string)); removed = true; return json({ok: true}); }
-    return json(url.includes("/teacher/courses") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
+    return json(url.includes("/catalog") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} teacherId={9} />);
+  render(<Activities courseId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "删除综合复习" }));
   expect(await within(screen.getByRole("dialog")).findByText("一起删除（1）")).toBeVisible();
   await user.click(screen.getByRole("button", {name: "取消"}));
@@ -127,7 +127,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
   await user.click(screen.getByRole("checkbox", {name: "我已核对删除范围，确认保留学生历史记录"}));
   await user.click(screen.getByRole("button", {name: "确认级联删除"}));
   expect(await screen.findByText("尚无学习活动")).toBeVisible();
-  expect(calls).toEqual([{classroom_id: 7, confirmation: "综合复习", confirmed: true}]);
+  expect(calls).toEqual([{confirmation: "综合复习", confirmed: true}]);
 });
 
 it("selects knowledge points by chapter and preserves the other chapter's selections on save", async () => {
@@ -148,10 +148,10 @@ it("selects knowledge points by chapter and preserves the other chapter's select
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (init.method === "PUT") { update(url, JSON.parse(init.body as string)); return json({}); }
-    return json(url.includes("/teacher/courses") ? course : []);
+    return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} teacherId={9} />);
+  render(<Activities courseId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "编辑综合复习" }));
   expect(screen.getByRole("radio", { name: "固定题单" })).toBeChecked();
   await user.click(screen.getByRole("tab", { name: "内容关联" }));
@@ -165,7 +165,7 @@ it("selects knowledge points by chapter and preserves the other chapter's select
   await user.click(screen.getByRole("button", { name: "第三章" }));
   expect(screen.getByText("本章暂无知识点，可选择其他章节。")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "保存" }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith("/api/teacher/activities/review?classroom_id=7", expect.objectContaining({ knowledge_point_ids: [11, 22] })));
+  await waitFor(() => expect(update).toHaveBeenCalledWith("/api/teacher/courses/7/activities/review", expect.objectContaining({ knowledge_point_ids: [11, 22] })));
 });
 
 it("creates a fixed practice and switches an existing goal practice back to a fixed list", async () => {
@@ -180,10 +180,10 @@ it("creates a fixed practice and switches an existing goal practice back to a fi
       writes.push({ method: init.method, body: JSON.parse(init.body as string) });
       return json({});
     }
-    return json(url.includes("/teacher/courses") ? course : []);
+    return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<Activities classroomId={7} teacherId={9} />);
+  render(<Activities courseId={7} teacherId={9} />);
   await user.click(await screen.findByRole("button", { name: "编辑变量目标" }));
   expect(screen.getByRole("radio", { name: "按知识点出题" })).toBeChecked();
   await user.click(screen.getByRole("radio", { name: "固定题单" }));

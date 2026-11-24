@@ -11,19 +11,12 @@ from app.authoring_diagnostics import INPUT_ERRORS, AuthoringIssue, located, row
 from app.authoring_protection import publication_plan
 from app.course_exchange_models import CoursePackageState
 from app.course_instances import content_mapping, remap_references
-from app.course_scope import lock_course
-from app.models import Classroom, CourseInstance, Membership, Npc, QuestDefinition, StoryDefinition, User
-from app.teacher_scope import scoped_key, teacher_instance_id
+from app.models import Classroom, Membership, Npc, QuestDefinition, StoryDefinition, User
+from app.teacher_scope import scoped_key, own_course
 from app.teaching.authoring.contracts import AuthoringInput, PreviewInput, PublishInput
 from app.teaching.authoring.validation import flow_title, name_entry_issue, validate_configuration, validate_object, validate_short_text
 from app.teaching.world.runtime import world_condition_matches
 from app.world_config import interaction_points, load_world_config
-
-
-def _instance(db, user, classroom_id, *, exclusive=False):
-    lock_course(db, classroom_id, exclusive=exclusive)
-    key = teacher_instance_id(db, user, classroom_id)
-    return db.scalar(select(CourseInstance).where(CourseInstance.id == key).with_for_update()) if exclusive else db.get(CourseInstance, key)
 
 
 def _data(db, instance):
@@ -76,12 +69,14 @@ def _catalog(data):
     }
 
 
-def get_authoring(classroom_id: int, db: Session, user: User):
-    instance = _instance(db, user, classroom_id)
+def get_authoring(course_id: int, db: Session, user: User):
+    instance = own_course(db, user, course_id)
     data, config = _data(db, instance)
-    students = db.scalars(
-        select(User).join(Membership, Membership.user_id == User.id).where(Membership.classroom_id == classroom_id, User.role == "student")
-    )
+    students = db.execute(select(User.id, User.name, Classroom.name.label("classroom_name"))
+        .select_from(Membership).join(User, User.id == Membership.user_id)
+        .join(Classroom, Classroom.id == Membership.classroom_id)
+        .where(Classroom.course_id == course_id, Classroom.status == "active", User.role == "student")
+        .order_by(Classroom.id, User.student_id)).mappings()
     return {
         "revision": instance.revision,
         "catalog": _catalog(data),
@@ -89,7 +84,7 @@ def get_authoring(classroom_id: int, db: Session, user: User):
         "flows": [{**row, "title": row["content"].get("title", row["id"])} for row in data["story"]],
         "quests": data["quest"],
         "configuration": {key: config.get(key, {}) for key in ("world", "buildings", "assistant", "editor")},
-        "students": [{"id": row.id, "name": row.name} for row in students],
+        "students": list(students),
     }
 
 
@@ -179,8 +174,8 @@ def _error_detail(diagnostics):
     return {"message": diagnostics[0]["message"], "diagnostics": diagnostics}
 
 
-def validate_authoring(classroom_id: int, body: AuthoringInput, db: Session, user: User):
-    instance = _instance(db, user, classroom_id)
+def validate_authoring(course_id: int, body: AuthoringInput, db: Session, user: User):
+    instance = own_course(db, user, course_id)
     impact = None
     try:
         data, maps = _prepare(db, instance, body)
@@ -192,8 +187,8 @@ def validate_authoring(classroom_id: int, body: AuthoringInput, db: Session, use
     return {"valid": not diagnostics, "diagnostics": diagnostics, **({"reset_impact": impact} if impact else {})}
 
 
-def save_authoring(classroom_id: int, body: PublishInput, db: Session, user: User):
-    instance = _instance(db, user, classroom_id, exclusive=True)
+def save_authoring(course_id: int, body: PublishInput, db: Session, user: User):
+    instance = own_course(db, user, course_id, exclusive=True)
     try:
         data, maps = _prepare(db, instance, body)
     except INPUT_ERRORS as exc:
@@ -211,7 +206,7 @@ def save_authoring(classroom_id: int, body: PublishInput, db: Session, user: Use
                 "reset_impact": impact,
             },
         )
-    plan.apply(db, classroom_id)
+    plan.apply(db, course_id)
     from app.characters import CHARACTER_FIELDS
 
     incoming_npcs = {row["id"]: row for row in data["npc"]}
@@ -237,7 +232,7 @@ def save_authoring(classroom_id: int, body: PublishInput, db: Session, user: Use
             actual = remap_references(row, maps)
             fields = {"chapter_id": actual["chapter_id"], field: actual[field]}
             if kind == "quest":
-                fields.update(owner_id=db.get(Classroom, classroom_id).teacher_id, title=actual["title"])
+                fields.update(owner_id=instance.teacher_id, title=actual["title"])
                 fields["definition"]["id"] = maps[kind][stable]
             else:
                 fields["quest_id"] = actual["quest_id"]
@@ -262,9 +257,9 @@ def save_authoring(classroom_id: int, body: PublishInput, db: Session, user: Use
     from app.character_assets import drain_character_garbage
 
     try:
-        from app.course_scope import lock_course
+        from app.course_scope import lock_course_content
 
-        lock_course(db, classroom_id, exclusive=True)
+        lock_course_content(db, course_id, exclusive=True)
         db.refresh(state)
         drain_character_garbage(db, state)
     except Exception:
@@ -275,14 +270,16 @@ def save_authoring(classroom_id: int, body: PublishInput, db: Session, user: Use
     return {"revision": saved_revision}
 
 
-def preview_authoring(classroom_id: int, body: PreviewInput, db: Session, user: User):
+def preview_authoring(course_id: int, body: PreviewInput, db: Session, user: User):
     from app.teaching.conditions.runtime import condition_matches
     from app.teaching.story.runtime import select_flow
 
-    instance = _instance(db, user, classroom_id)
+    instance = own_course(db, user, course_id)
     student = db.get(User, body.student_id)
-    if not student or student.role != "student" or not db.get(Membership, (student.id, classroom_id)):
-        raise HTTPException(404, "预览学生不属于本班")
+    classroom_id = db.scalar(select(Classroom.id).join(Membership).where(
+        Membership.user_id == body.student_id, Classroom.course_id == instance.id, Classroom.status == "active"))
+    if not student or student.role != "student" or classroom_id is None:
+        raise HTTPException(404, "预览学生未加入本课程的在教班级")
     try:
         data, maps = _prepare(db, instance, body)
     except INPUT_ERRORS as exc:
@@ -293,7 +290,7 @@ def preview_authoring(classroom_id: int, body: PreviewInput, db: Session, user: 
         actual = remap_references(row, maps)
         actual["id"] = maps["quest"][row["id"]]
         actual["definition"]["id"] = actual["id"]
-        definitions[actual["id"]] = SimpleNamespace(**actual, course_instance_id=instance.id, owner_id=db.get(Classroom, classroom_id).teacher_id)
+        definitions[actual["id"]] = SimpleNamespace(**actual, course_instance_id=instance.id, owner_id=instance.teacher_id)
     candidates = []
     for row in data["story"]:
         actual = remap_references(row, maps)

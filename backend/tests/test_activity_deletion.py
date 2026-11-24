@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 from app.models import ActivityMaterial
 import pytest
 from copy import deepcopy
@@ -16,19 +17,19 @@ from app.models import Activity, CourseInstance
 
 
 def preview(client, teacher, classroom, kind, key):
-    response = client.post("/api/teacher/content-deletions/preview", headers=teacher["headers"],
-                           json={"classroom_id": classroom["id"], "targets": [{"kind": kind, "id": str(key)}]})
+    response = client.post(f"/api/teacher/courses/{classroom['course_id']}/content-deletions/preview", headers=teacher["headers"],
+                           json={"targets": [{"kind": kind, "id": str(key)}]})
     assert response.status_code == 200, response.text
     return response.json()
 
 
 def confirm(client, teacher, classroom, plan):
-    return client.post(f"/api/teacher/content-deletions/{plan['id']}/confirm", headers=teacher["headers"],
-                       json={"classroom_id": classroom["id"], "confirmation": plan["confirmation"], "confirmed": True})
+    return client.post(f"/api/teacher/courses/{classroom['course_id']}/content-deletions/{plan['id']}/confirm", headers=teacher["headers"],
+                       json={"confirmation": plan["confirmation"], "confirmed": True})
 
 
 def test_unused_activity_preview_and_confirmation(client, db, teacher, classroom):
-    result = client.post("/api/teacher/activities", params={"classroom_id": classroom["id"]}, headers=teacher["headers"],
+    result = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=teacher["headers"],
                          json={"id": "delete-me", "title": "可删除练习", "kind": "practice", "chapter_id": 179})
     assert result.status_code == 201, result.text
     key = result.json()["id"]
@@ -76,7 +77,7 @@ def test_chapter_cascade_preserves_shared_bank_and_history(client, db, teacher, 
     db.add_all(records)
     db.add(ChapterRelease(classroom_id=classroom['id'], chapter_id=9001, status='published'))
     dependent = db.get(ChapterRelease, (classroom['id'], 180))
-    dependent.prerequisite_chapter_id = 9001
+    db.get(Chapter, 180).prerequisite_chapter_id = 9001
     db.commit()
     for record in records:
         db.refresh(record)
@@ -100,7 +101,7 @@ def test_chapter_cascade_preserves_shared_bank_and_history(client, db, teacher, 
     assert db.get(MaterialChapter, (material.id, 9001)) is None
     assert db.get(QuestionKnowledgePoint, (questions[0].id, 9001)) is None
     db.refresh(dependent)
-    assert dependent.status == 'paused' and dependent.prerequisite_chapter_id is None
+    assert dependent.status == 'paused' and db.get(Chapter, 180).prerequisite_chapter_id is None
     # Retired chapter order slots may be reused without changing the old chapter.
     db.add(Chapter(title='新章节', order_index=100, owner_id=teacher['id']))
     db.commit()
@@ -182,8 +183,8 @@ def test_stale_or_incomplete_confirmation_never_deletes(client, db, teacher, stu
     elif change == 'expired':
         db.get(ContentDeletionPreview, plan['id']).created_at = now() - timedelta(minutes=16)
     db.commit()
-    body = {'classroom_id': classroom['id'], 'confirmation': 'wrong' if change == 'wrong_text' else plan['confirmation'], 'confirmed': change != 'unchecked'}
-    result = client.post(f"/api/teacher/content-deletions/{plan['id']}/confirm", headers=teacher['headers'], json=body)
+    body = {'confirmation': 'wrong' if change == 'wrong_text' else plan['confirmation'], 'confirmed': change != 'unchecked'}
+    result = client.post(f"/api/teacher/courses/{classroom['course_id']}/content-deletions/{plan['id']}/confirm", headers=teacher['headers'], json=body)
     assert result.status_code in {409, 422}, result.text
     assert db.scalar(select(Activity).where(Activity.id == activity.id))
     assert db.get(ContentDeletionPreview, plan['id']).result is None
@@ -192,26 +193,26 @@ def test_stale_or_incomplete_confirmation_never_deletes(client, db, teacher, stu
 def test_preview_permission_scope_and_blocked_foreign_owned_dependency(client, db, teacher, student, classroom, authored):
     chapter, _, _, _, activity = authored
     other = another_teacher(db)
-    body = {'classroom_id': classroom['id'], 'targets': [{'kind': 'chapter', 'id': str(chapter.id)}]}
+    body = {'targets': [{'kind': 'chapter', 'id': str(chapter.id)}]}
     for actor in (student, other):
-        assert client.post('/api/teacher/content-deletions/preview', headers=actor['headers'], json=body).status_code == 403
+        assert client.post(f"/api/teacher/courses/{classroom['course_id']}/content-deletions/preview", headers=actor['headers'], json=body).status_code == 403
     activity.owner_id = other['id']
     db.commit()
     plan = preview(client, teacher, classroom, 'chapter', chapter.id)
     assert any('无权删除' in r['message'] for r in plan['blockers'])
     assert confirm(client, teacher, classroom, plan).status_code == 409
     assert db.scalar(select(Chapter).where(Chapter.id == chapter.id))
-    second = client.post('/api/classrooms', json={'name': '另一个班'}, headers=teacher['headers']).json()
-    assert client.post(f"/api/teacher/content-deletions/{plan['id']}/confirm", headers=teacher['headers'],
-        json={'classroom_id': second['id'], 'confirmation': plan['confirmation'], 'confirmed': True}).status_code in {404, 409}
+    second = create_test_class(client, json={'name': '另一个班'}, headers=teacher['headers']).json()
+    assert client.post(f"/api/teacher/courses/{second['course_id']}/content-deletions/{plan['id']}/confirm", headers=teacher['headers'],
+        json={'confirmation': plan['confirmation'], 'confirmed': True}).status_code in {404, 409}
 
 
 def test_batch_dependency_closure_and_old_delete_cannot_bypass(client, db, teacher, classroom, authored):
     chapter, material, _, questions, activity = authored
     for path in (f'chapters/{chapter.id}', f'materials/{material.id}', f'questions/{questions[0].id}', f'activities/{activity.id}'):
-        assert client.delete(f'/api/teacher/{path}', params={'classroom_id': classroom['id']}, headers=teacher['headers']).status_code == 409
-    result = client.post('/api/teacher/content-deletions/preview', headers=teacher['headers'], json={
-        'classroom_id': classroom['id'], 'targets': [{'kind': 'question', 'id': q.id} for q in questions]})
+        assert client.delete(f"/api/teacher/courses/{classroom['course_id']}/{path}", headers=teacher['headers']).status_code == 409
+    result = client.post(f'/api/teacher/courses/{classroom['course_id']}/content-deletions/preview', headers=teacher['headers'], json={
+        'targets': [{'kind': 'question', 'id': q.id} for q in questions]})
     assert result.status_code == 200, result.text
     plan = result.json()
     assert not plan['blockers'], plan
@@ -261,7 +262,7 @@ def test_package_import_cannot_hard_delete_parent_of_retired_content(client, db,
     instance = db.get(CourseInstance, activity.course_instance_id)
     data, answers, releases, config, _ = snapshot_content(db, instance)
     data['chapter'] = [c for c in data['chapter'] if c['id'] != chapter.stable_id]
-    bundle = {'data': data, 'secrets': answers, 'course': {'releases': releases}, 'configuration': config, 'assets': [],
+    bundle = {'data': data, 'secrets': answers, 'course': {'prerequisites': releases}, 'configuration': config, 'assets': [],
               'manifest': {key: getattr(instance,key) for key in ('package_id','name','package_version')}}
     impact = preview_impact(db, instance, bundle)
     assert any('历史保留内容引用' in message for message in impact['blockers'])

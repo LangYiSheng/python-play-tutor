@@ -14,7 +14,7 @@ describe("API authorization boundary", () => {
           }),
       ),
     );
-    const pending = fileBlob("/teacher/classrooms/1/course/export");
+    const pending = fileBlob("/teacher/courses/1/export");
     setToken("new");
     finish(new Response("private zip"));
     await expect(pending).rejects.toThrow("账号状态已改变");
@@ -32,12 +32,12 @@ describe("API authorization boundary", () => {
         ),
     );
     await expect(
-      fileBlob("/teacher/classrooms/1/course/export"),
+      fileBlob("/teacher/courses/1/export"),
     ).rejects.toThrow("课程资料文件缺失");
   });
   it("scopes content and preserves other query fields", () => {
     expect(scoped("/teacher/questions?status=draft", 14)).toBe(
-      "/teacher/questions?status=draft&classroom_id=14",
+      "/teacher/courses/14/questions?status=draft",
     );
   });
   it("sends the shared token and accepts empty responses", async () => {
@@ -48,7 +48,7 @@ describe("API authorization boundary", () => {
     vi.stubGlobal("fetch", fetch);
     await api.delete(scoped("/teacher/questions/q1", 14));
     const [url, init] = fetch.mock.calls[0];
-    expect(url).toBe("/api/teacher/questions/q1?classroom_id=14");
+    expect(url).toBe("/api/teacher/courses/14/questions/q1");
     expect(init.headers.get("Authorization")).toBe("Bearer test-session");
   });
   it("does not clear a newer login when an older request returns unauthorized", async () => {

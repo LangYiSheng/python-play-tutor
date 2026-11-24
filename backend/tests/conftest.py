@@ -1,5 +1,6 @@
 # Test sources must be configured before application module constants are loaded.
 # ruff: noqa: E402
+from course_fixtures import create_test_class
 import pytest
 from source_fixtures import configure_test_sources
 
@@ -169,7 +170,8 @@ def teacher(db):
 
 @pytest.fixture
 def classroom(client, db, teacher, student):
-    result = client.post("/api/classrooms", json={"name": "测试班级"}, headers=teacher["headers"])
+    course = client.post("/api/teacher/courses", json={"name": "测试课程"}, headers=teacher["headers"]).json()
+    result = client.post(f"/api/teacher/courses/{course['id']}/classrooms", json={"name": "测试班级"}, headers=teacher["headers"])
     assert result.status_code == 201, result.text
     classroom = result.json()
     instance = bind_test_course(db, classroom["id"])
@@ -190,9 +192,11 @@ def classroom(client, db, teacher, student):
 def bind_test_course(db, classroom_id):
     """Move explicitly synthetic fixture definitions into a test course namespace."""
     from app.course_instances import CONTENT_MODELS
-    from app.models import CourseInstance, Npc
+    from app.models import Npc
     from fixture_instances import configure_fixture_world
-    instance = CourseInstance(classroom_id=classroom_id, package_id="synthetic-test", name="测试课程", package_version="1")
+    from app.course_instances import classroom_course
+    instance = classroom_course(db, classroom_id)
+    instance.package_id = "synthetic-test"
     db.add(instance)
     db.flush()
     for model in CONTENT_MODELS:
@@ -210,11 +214,12 @@ def copy_fixture_course(db, source_classroom_id, target_classroom_id):
     from app.course_instances import CONTENT_MODELS, classroom_course
     from fixture_instances import _clone_rows, _relations
     from app.course_exchange_models import CoursePackageState
-    from app.models import ChapterRelease, Classroom, CourseInstance
+    from app.models import ChapterRelease, Classroom
     source = classroom_course(db, source_classroom_id)
     target_class = db.get(Classroom, target_classroom_id)
     source_class = db.get(Classroom, source_classroom_id)
-    instance = CourseInstance(classroom_id=target_classroom_id, package_id=source.package_id, package_version=source.package_version, name=source.name)
+    instance = target_class.course
+    instance.package_id, instance.package_version, instance.name = source.package_id, source.package_version, source.name
     instance._teacher_id = target_class.teacher_id
     db.add(instance)
     db.flush()
@@ -226,7 +231,7 @@ def copy_fixture_course(db, source_classroom_id, target_classroom_id):
     for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id == source_classroom_id)):
         if release.chapter_id in maps["chapter"]:
             db.add(ChapterRelease(classroom_id=target_classroom_id, chapter_id=maps["chapter"][release.chapter_id], status=release.status,
-                prerequisite_chapter_id=maps["chapter"].get(release.prerequisite_chapter_id)))
+                opens_at=release.opens_at))
     state = db.get(CoursePackageState, source.id)
     if state:
         db.add(CoursePackageState(course_instance_id=instance.id, configuration=deepcopy(state.configuration)))
@@ -238,7 +243,7 @@ def copy_fixture_course(db, source_classroom_id, target_classroom_id):
 def legacy_classroom(client, db, teacher, student):
     """Unmigrated data is only for explicit source/migration tests, never live reads."""
     from app.models import ChapterRelease
-    classroom = client.post("/api/classrooms", json={"name": "Legacy test"}, headers=teacher["headers"]).json()
+    classroom = create_test_class(client, json={"name": "Legacy test"}, headers=teacher["headers"]).json()
     client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=student["headers"])
     db.add_all([ChapterRelease(classroom_id=classroom["id"], chapter_id=key, status="published") for key in (179, 180)])
     db.commit()

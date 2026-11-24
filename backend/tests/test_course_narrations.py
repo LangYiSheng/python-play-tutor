@@ -80,7 +80,7 @@ def test_narration_roundtrip_copied_directory_preserves_review_and_audio(client,
     assert "reviewed_by" not in serialized and "original/source" not in serialized and "storage_key" not in serialized
     copied = tmp_path / "other-server" / "renamed"
     shutil.copytree(directory, copied)
-    imported = import_bundle(db, target, None, load_bundle(copied), copied)
+    imported = import_bundle(db, target.course, load_bundle(copied), copied)
     db.commit()
     material = db.scalar(select(Material).where(Material.course_instance_id == imported.id, Material.stable_id == stable_id(original)))
     assert material.id != original.id and material.storage_key != original.storage_key
@@ -92,11 +92,15 @@ def test_narration_roundtrip_copied_directory_preserves_review_and_audio(client,
     original_bytes = b"".join(get_storage().chunks(row.audio_key, 0, get_storage().size(row.audio_key) - 1))
     assert original_bytes.startswith(b"RIFF")
     # The installed recording survives removal of the exchange copy and a repeated import.
-    import_bundle(db, target, imported, bundle, directory)
+    import_bundle(db, imported, bundle, directory)
     db.commit()
     shutil.rmtree(copied)
     assert len(repository.rows(db, material.id)) == 5
     assert get_storage().size(row.audio_key) == len(original_bytes)
+    from app.models import ChapterRelease, Classroom
+    from app.content_relations import material_chapter_ids
+    for cid in material_chapter_ids(db, material.id):
+        db.add(ChapterRelease(classroom_id=target.id, chapter_id=cid, status="published"))
     db.add(Membership(classroom_id=target.id, user_id=student["id"]))
     db.commit()
     url = f"/api/materials/{material.id}/narrations"
@@ -106,7 +110,7 @@ def test_narration_roundtrip_copied_directory_preserves_review_and_audio(client,
     stream = client.get(url + f"/1/audio?classroom_id={target.id}", headers=student["headers"])
     assert stream.status_code == 200 and stream.content == original_bytes
     assert client.get(url + f"/2/audio?classroom_id={target.id}", headers=student["headers"]).status_code == 404
-    assert client.get(url + f"/1/audio?classroom_id={source.classroom_id}", headers=student["headers"]).status_code in {403, 404}
+    assert client.get(url + f"/1/audio?classroom_id={db.scalar(select(Classroom.id).where(Classroom.course_id == source.id))}", headers=student["headers"]).status_code in {403, 404}
     second = tmp_path / "reexport"
     second.mkdir()
     write_package(db, imported, second)
@@ -144,7 +148,7 @@ def test_invalid_narration_never_imports(db, narrated, tmp_path, change):
     path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
     with pytest.raises(PackageError):
         load_bundle(directory)
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == narrated[1].id)) is None
+    assert narrated[1].course.package_id == "new"
 
 
 def test_missing_current_audio_blocks_export_but_stale_audio_does_not(db, narrated, tmp_path):
@@ -187,7 +191,7 @@ def test_preview_detects_review_changes_and_preserves_target_only_pages(client, 
     bundle = load_bundle(directory)
     bundle["narrations"] = []
     bundle["assets"] = [a for a in bundle["assets"] if not a["path"].startswith("narrations/")]
-    import_bundle(db, target, instance, bundle, directory)
+    import_bundle(db, instance, bundle, directory)
     assert repository.row(db, material.id, 2).text == "刚刚修改的讲稿"
 
 
@@ -195,7 +199,7 @@ def test_running_generation_blocks_package_exchange(client, db, teacher, narrate
     source, _, material = narrated
     db.add(NarrationJob(material_id=material.id, kind="audio", status="running"))
     db.commit()
-    response = client.get(endpoint(source.classroom_id, "export"), headers=teacher["headers"])
+    response = client.get(endpoint(source.id, "export"), headers=teacher["headers"])
     assert response.status_code == 422 and "仍在执行" in response.text
 
 
@@ -227,6 +231,6 @@ def test_audio_storage_failure_rolls_back_course_and_narration(client, db, teach
     monkeypatch.setattr(storage_type, "put", unavailable)
     result = apply(client, teacher, target.id, item)
     assert result.status_code == 422 and "私有资源写入失败" in result.text
-    assert db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == target.id)) is None
+    assert target.course.package_id == "new"
     assert len(repository.rows(db, material.id)) == 5
     assert current_audio(db, material, 1) is not None

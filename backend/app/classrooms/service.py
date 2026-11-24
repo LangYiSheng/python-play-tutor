@@ -12,14 +12,14 @@ from app.classrooms.access import classroom_payload, own_classroom
 from app.classrooms.contracts import ClassroomInput, JoinInput
 from app.course_scope import lock_course
 from app.models import Classroom, CourseInstance, Membership, TownPreviewStudent, User
-from app.teacher_scope import teacher_instance_id
+from app.teacher_scope import own_course
 
 
 def list_classrooms(db: Session, user: User):
     query = (
         select(Classroom, User.name, CourseInstance.name)
-        .join(User, User.id == Classroom.teacher_id)
-        .outerjoin(CourseInstance, CourseInstance.classroom_id == Classroom.id)
+        .select_from(Classroom).join(CourseInstance, CourseInstance.id == Classroom.course_id)
+        .join(User, User.id == CourseInstance.teacher_id)
         .where(Classroom.status == "active")
     )
     preview = db.get(TownPreviewStudent, user.id)
@@ -27,25 +27,26 @@ def list_classrooms(db: Session, user: User):
         classroom = preview_classroom(db, preview)
         query = query.where(Classroom.id == classroom.id)
     elif user.role == "teacher":
-        query = query.where(Classroom.teacher_id == user.id)
+        query = query.where(CourseInstance.teacher_id == user.id)
     elif user.role != "admin":
         memberships = select(Membership.classroom_id).where(Membership.user_id == user.id)
         query = query.where(Classroom.id.in_(memberships))
     return [{**classroom_payload(item, user, name), "course_name": course_name} for item, name, course_name in db.execute(query)]
 
 
-def create_classroom(body: ClassroomInput, db: Session, user: User):
+def create_classroom(course_id: int, body: ClassroomInput, db: Session, user: User):
+    course = own_course(db, user, course_id, exclusive=True)
     user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
     if not user or user.disabled:
         raise HTTPException(401, "账号不可用")
-    item = Classroom(name=body.name.strip(), teacher_id=user.id, join_code=secrets.token_urlsafe(9))
+    item = Classroom(name=body.name.strip(), course_id=course.id, join_code=secrets.token_urlsafe(9))
     db.add(item)
     db.commit()
-    return classroom_payload(item, user, user.name)
+    return classroom_payload(item, user, db.get(User, course.teacher_id).name)
 
 
 def open_town_session(classroom_id: int, db: Session, user: User, credentials: HTTPAuthorizationCredentials):
-    teacher_instance_id(db, user, classroom_id, exclusive=True)
+    own_classroom(db, user, classroom_id, exclusive=True)
     preview = db.scalar(
         select(TownPreviewStudent).where(
             TownPreviewStudent.teacher_id == user.id,
@@ -80,6 +81,8 @@ def join_classroom(body: JoinInput, db: Session, user: User):
     classroom = db.get(Classroom, classroom_id, populate_existing=True)
     if not classroom or classroom.status != "active":
         raise HTTPException(404, "加入码无效")
+    if db.scalar(other_class_members(classroom).where(Membership.user_id == user.id).limit(1)):
+        raise HTTPException(409, "已加入本课程的其他在教班级")
     if not db.get(Membership, (user.id, classroom.id)):
         db.add(Membership(user_id=user.id, classroom_id=classroom.id))
         db.commit()
@@ -94,3 +97,9 @@ def remove_member(classroom_id: int, student_id: int, db: Session, user: User):
         db.delete(item)
         db.commit()
     return {"ok": True}
+
+
+def other_class_members(classroom):
+    return select(Membership.user_id).join(Classroom, Classroom.id == Membership.classroom_id).where(
+        Classroom.course_id == classroom.course_id, Classroom.id != classroom.id, Classroom.status == "active"
+    )

@@ -79,7 +79,7 @@ def test_pipeline_failure_stops_there_and_retry_resumes(client, db, classroom, t
     assert calls["calibrate"] == 0 and calls["script"] == 0
 
     failing["digest"] = False
-    retry = client.post(f"/api/teacher/classrooms/{classroom['id']}/synthesis/{material.id}/retry",
+    retry = client.post(f"/api/teacher/courses/{classroom['course_id']}/synthesis/{material.id}/retry",
                         json={"expected_started_at": job.started_at.isoformat()}, headers=teacher["headers"])
     assert retry.status_code == 200, retry.text
     assert repository.job_of(db, material.id).progress.get("queued") is True

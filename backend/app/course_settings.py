@@ -15,7 +15,7 @@ from .db import get_db
 from .models import CourseInstance, Npc, User
 from .teacher_scope import teacher_instance_id
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/course/settings", tags=["course-settings"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/settings", tags=["course-settings"])
 
 
 class SettingsInput(BaseModel):
@@ -30,8 +30,8 @@ def role_choices(db, instance_id):
 
 
 @router.get("")
-def read_settings(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def read_settings(course_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    instance_id = teacher_instance_id(db, user, course_id)
     state = db.get(CoursePackageState, instance_id)
     system = configuration(db, include_key=False)
     return {"revision": db.get(CourseInstance, instance_id).revision,
@@ -40,9 +40,9 @@ def read_settings(classroom_id: int, db: Annotated[Session, Depends(get_db)], us
 
 
 @router.put("")
-def save_settings(classroom_id: int, body: SettingsInput, db: Annotated[Session, Depends(get_db)],
+def save_settings(course_id: int, body: SettingsInput, db: Annotated[Session, Depends(get_db)],
                   user: Annotated[User, Depends(require_teacher)]):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     instance = db.get(CourseInstance, instance_id)
     if instance.revision != body.expected_revision:
         raise HTTPException(409, "课程已修改，请重新加载后再保存；当前草稿仍保留")

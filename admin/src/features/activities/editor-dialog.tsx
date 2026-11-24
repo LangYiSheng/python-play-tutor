@@ -157,7 +157,7 @@ export function ActivityDialog({
                   </fieldset>
                 )}
               </> },
-              ...(kind === "reading" || kind === "lesson" ? [{label: "资料与阅读要求", content: <ResourceEditor classroomId={editor.classroomId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
+              ...(kind === "reading" || kind === "lesson" ? [{label: "资料与阅读要求", content: <ResourceEditor courseId={editor.courseId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
                     onChange={(value) => { setResources(value); setDirty(true); }} />}] : []),
               ...(editor.goalPractice ? [{label: "知识点目标", content: <>
                     <PracticeGoalsEditor rules={editor.rules}

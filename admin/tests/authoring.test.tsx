@@ -4,8 +4,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { Authoring } from "../src/features/authoring/authoring-page";
-import type { Authoring as Document } from "../src/features/authoring/model";
-const base: Document & { students: { id: number; name: string }[] } = {
+import type { Document } from "../src/features/authoring/contracts";
+const base: Document = {
   npcs: [],
   revision: 7,
   catalog: {
@@ -50,7 +50,7 @@ const base: Document & { students: { id: number; name: string }[] } = {
   ],
   quests: [],
   configuration: { world: {}, buildings: {}, editor: {}, assistant: {} },
-  students: [{ id: 3, name: "学生甲" }],
+  students: [{ id: 3, name: "学生甲", classroom_name: "下午班" }],
 };
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -87,7 +87,7 @@ it("locks authored fields while validation is pending and restores the same draf
     return json(base);
   }));
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.clear(await openSettings(user));
   await user.type(screen.getByLabelText("流程名称"), "等待保存的草稿");
   await user.click(screen.getByRole("button", { name: "关闭" }));
@@ -116,7 +116,7 @@ it("preserves editable drafts when server graph validation rejects a save", asyn
     }),
   );
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.clear(await openSettings(user));
   await user.type(screen.getByLabelText("流程名称"), "修改后的流程");
   await user.click(screen.getByRole("button", { name: "关闭" }));
@@ -149,7 +149,7 @@ it("requires a fresh confirmation when saving will reset class progress", async 
   vi.spyOn(window, "confirm").mockReturnValue(true);
   try {
     const user = userEvent.setup();
-    render(<Authoring classroomId={12} />);
+    render(<Authoring courseId={12} />);
     await user.click(await screen.findByRole("button", { name: "删除流程" }));
     await user.click(screen.getByRole("button", { name: "校验" }));
     expect(await screen.findByRole("region", { name: "保存影响" })).toHaveTextContent("重置 1 人");
@@ -184,7 +184,7 @@ it("confirms discard and restores the latest saved revision without another writ
     return json(base);
   }));
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.clear(await openSettings(user));
   await user.type(screen.getByLabelText("流程名称"), "最新保存");
   await user.click(screen.getByRole("button", { name: "关闭" }));
@@ -219,7 +219,7 @@ it("creates map interactions using object references and binds them to existing 
     }),
   );
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.click(await screen.findByRole("tab", { name: "地图交互与开放规则" }));
   await user.click(screen.getByRole("button", { name: "选择地图对象 图书架" }));
   await selectOption(user, "触发流程", "公共欢迎");
@@ -249,7 +249,7 @@ it("edits quest dependencies as typed ALL and ANY data", async () => {
     }),
   );
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.click(await screen.findByRole("tab", { name: "任务目标与依赖" }));
   await user.click(screen.getByRole("button", { name: "新建任务" }));
   expect(screen.getByRole("combobox", { name: "任务归属" })).toHaveTextContent("全镇");
@@ -293,7 +293,7 @@ it("moves a chapter side quest and its linked conversation into the town while k
     return json(document);
   }));
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.click(await screen.findByRole("tab", { name: "任务目标与依赖" }));
   await user.click(screen.getByRole("button", { name: "任务设置" }));
   await selectOption(user, "任务归属", "全镇");
@@ -322,12 +322,12 @@ it("previews using an authorized real student selection without saving", async (
     }),
   );
   const user = userEvent.setup();
-  render(<Authoring classroomId={12} />);
+  render(<Authoring courseId={12} />);
   await user.click(await screen.findByRole("button", { name: "预览" }));
   await user.click(screen.getByRole("button", { name: "执行只读预览" }));
   await screen.findByText("预览停止：end");
   expect(requests).toHaveLength(1);
-  expect(requests[0].url).toBe("/api/teacher/classrooms/12/authoring/preview");
+  expect(requests[0].url).toBe("/api/teacher/courses/12/authoring/preview");
   expect(requests[0].body).toMatchObject({
     student_id: 3,
     entry: "guide",

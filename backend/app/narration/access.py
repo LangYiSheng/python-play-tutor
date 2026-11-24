@@ -11,8 +11,8 @@ from app.teacher_scope import require_scope, teacher_instance_id
 from . import repository
 
 
-def teacher_material(db: Session, user: User, classroom_id: int, material_id: int, *, exclusive: bool = False) -> Material:
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=exclusive)
+def teacher_material(db: Session, user: User, course_id: int, material_id: int, *, exclusive: bool = False) -> Material:
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=exclusive)
     material = cast(Material, require_scope(db.get(Material, material_id), instance_id))
     require_narratable(material)
     if exclusive:

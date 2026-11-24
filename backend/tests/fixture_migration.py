@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.course_instances import classroom_course, content_mapping
 from fixture_instances import CourseCloneError, clone_current_course
 from app.models import (
-    ActivityProgress, AssessmentAttempt, ChapterRelease, Classroom, CourseInstance, LearningRecord,
+    ActivityProgress, AssessmentAttempt, Chapter, ChapterRelease, Classroom, LearningRecord,
     PlayerQuest, StorySession, Submission,
 )
 from app.integration_models import AssistantSession
@@ -37,8 +37,7 @@ def migrate_classrooms(session_factory, classroom_ids=None, *, apply=False):
         classroom_ids = sorted(set(classroom_ids))
     else:
         with session_factory() as db:
-            classroom_ids = list(db.scalars(select(Classroom.id).outerjoin(
-                CourseInstance, CourseInstance.classroom_id == Classroom.id).where(CourseInstance.id.is_(None)).order_by(Classroom.id)))
+            classroom_ids = list(db.scalars(select(Classroom.id).where(~select(Chapter.id).where(Chapter.course_instance_id == Classroom.course_id).exists()).order_by(Classroom.id)))
     results = []
     for classroom_id in classroom_ids:
         try:
@@ -48,7 +47,7 @@ def migrate_classrooms(session_factory, classroom_ids=None, *, apply=False):
                     results.append({"classroom_id": classroom_id, "status": "failed", "reason": "班级不存在"})
                     continue
                 existing = classroom_course(db, classroom_id)
-                if existing:
+                if db.scalar(select(Chapter.id).where(Chapter.course_instance_id == existing.id).limit(1)):
                     results.append({"classroom_id": classroom_id, "status": "already_active", "course_instance_id": existing.id})
                     continue
                 if not _has_course(db, classroom_id):

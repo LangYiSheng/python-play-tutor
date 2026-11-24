@@ -31,8 +31,8 @@ def visible(model, instance, user):
 
 
 @router.get("")
-def overview(classroom_id: int, db: Db, user: Teacher):
-    instance = teacher_instance_id(db, user, classroom_id)
+def overview(course_id: int, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, course_id)
     chapters = visible(Chapter, instance, user).with_only_columns(Chapter.id, Chapter.title).order_by(Chapter.order_index)
     materials = visible(Material, instance, user).with_only_columns(Material.id, Material.title, Material.kind, Material.status)
     links = defaultdict(list)
@@ -46,10 +46,10 @@ def overview(classroom_id: int, db: Db, user: Teacher):
 
 
 @router.get("/search")
-def search_content(classroom_id: int, db: Db, user: Teacher, search: Annotated[str, Query(max_length=240)],
+def search_content(course_id: int, db: Db, user: Teacher, search: Annotated[str, Query(max_length=240)],
                    kind: Literal["all", "chapter", "material", "point", "question"] = "all",
                    page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=50)] = 10):
-    instance = teacher_instance_id(db, user, classroom_id)
+    instance = teacher_instance_id(db, user, course_id)
     term = search.strip()
     if not term:
         return {"page": 1, "total": 0, "items": []}
@@ -81,8 +81,8 @@ def search_content(classroom_id: int, db: Db, user: Teacher, search: Annotated[s
 
 
 @router.get("/questions/{question_id:path}")
-def question_detail(question_id: str, classroom_id: int, db: Db, user: Teacher):
-    instance = teacher_instance_id(db, user, classroom_id)
+def question_detail(question_id: str, course_id: int, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, course_id)
     question = db.execute(visible(Question, instance, user).where(Question.id == question_id).with_only_columns(
         Question.id, Question.title, Question.kind, Question.status, Question.source_type, Question.prompt,
         Question.source)).mappings().one_or_none()
@@ -115,8 +115,8 @@ def question_detail(question_id: str, classroom_id: int, db: Db, user: Teacher):
 
 
 @router.get("/tasks")
-def active_tasks(classroom_id: int, db: Db, user: Teacher):
-    materials = visible(Material, teacher_instance_id(db, user, classroom_id), user).with_only_columns(Material.id)
+def active_tasks(course_id: int, db: Db, user: Teacher):
+    materials = visible(Material, teacher_instance_id(db, user, course_id), user).with_only_columns(Material.id)
     query = (select(NarrationJob, Material, NarrationRun.id, NarrationRun.cancel_requested_at)
              .join(Material, Material.id == NarrationJob.material_id)
              .outerjoin(NarrationRun, (NarrationRun.material_id == Material.id) & (NarrationRun.started_at == NarrationJob.started_at))
@@ -172,8 +172,8 @@ def page_refs(values):
 
 
 @router.get("/materials/{material_id}")
-def material_detail(material_id: int, classroom_id: int, db: Db, user: Teacher):
-    instance = teacher_instance_id(db, user, classroom_id)
+def material_detail(material_id: int, course_id: int, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, course_id)
     material = teacher_material(db, user, material_id, instance_id=instance)
     pages = repository.page_map(material)
     source = material.content.get("source")
@@ -210,8 +210,8 @@ def material_detail(material_id: int, classroom_id: int, db: Db, user: Teacher):
 
 
 @router.get("/points/{point_id}")
-def point_detail(point_id: int, classroom_id: int, db: Db, user: Teacher):
-    instance = teacher_instance_id(db, user, classroom_id)
+def point_detail(point_id: int, course_id: int, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, course_id)
     point = db.scalar(visible_points(instance, user).where(KnowledgePoint.id == point_id))
     if not point:
         raise HTTPException(404, "知识点不存在")

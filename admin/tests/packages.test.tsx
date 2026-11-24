@@ -20,7 +20,7 @@ it("previews an existing package without uploading and still requires explicit c
     return new Response(JSON.stringify({ instance_id: 1, revision: 4 }));
   }));
   const user = userEvent.setup();
-  render(<Packages classroomId={31} />);
+  render(<Packages courseId={31} />);
   await screen.findByText("shared-course");
   expect(screen.getByRole("table", { name: "可用课程包" })).toHaveTextContent("42");
   expect(screen.getByRole("table", { name: "可用课程包" })).toHaveTextContent("章节数");
@@ -29,12 +29,12 @@ it("previews an existing package without uploading and still requires explicit c
   await user.clear(screen.getByRole("textbox", { name: "搜索课程包" }));
   await user.click(await screen.findByRole("button", { name: "预览 shared-course" }));
   await screen.findByText("导入差异");
-  expect(calls).toEqual([{ url: "/api/teacher/classrooms/31/course/imports/available/preview", body: { package_key: key } }]);
+  expect(calls).toEqual([{ url: "/api/teacher/courses/31/imports/available/preview", body: { package_key: key } }]);
   expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
   await user.click(screen.getByRole("checkbox", { name: /我已核对差异/ }));
   await user.click(screen.getByRole("button", { name: "确认导入" }));
   await screen.findByText("课程包已导入");
-  expect(calls[1].url).toBe("/api/teacher/classrooms/31/course/imports/mounted-preview/apply");
+  expect(calls[1].url).toBe("/api/teacher/courses/31/imports/mounted-preview/apply");
   expect(calls[1].body).toMatchObject({ expected_revision: 3 });
   expect(screen.queryByLabelText("课程包 ZIP 文件")).not.toBeInTheDocument();
 });
@@ -49,7 +49,7 @@ it("exports to a server directory and cancels requests when leaving", async () =
     return new Promise<Response>((resolve) => { finish = resolve; });
   }));
   const user = userEvent.setup();
-  const { unmount } = render(<Packages classroomId={31} />);
+  const { unmount } = render(<Packages courseId={31} />);
   await user.click(screen.getByRole("button", { name: "导出课程包" }));
   expect(screen.getByText("正在导出课程目录和资源")).toBeVisible();
   expect(screen.getByText(/已等待/)).toBeVisible();
@@ -63,7 +63,7 @@ it("exports to a server directory and cancels requests when leaving", async () =
 
 it("shows a catalog error with a retry and no ZIP upload", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "课程列表暂不可用" }), { status: 503 })));
-  render(<Packages classroomId={31} />);
+  render(<Packages courseId={31} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("课程列表暂不可用");
   expect(screen.getByRole("button", { name: "刷新列表" })).toBeEnabled();
   expect(screen.queryByLabelText("课程包 ZIP 文件")).not.toBeInTheDocument();
@@ -84,7 +84,7 @@ it("only offers deletion for exported packages, confirms and handles failure bef
     }
     return new Response(JSON.stringify({items,unavailable:0}));
   }));
-  const user = userEvent.setup(); render(<Packages classroomId={31}/>);
+  const user = userEvent.setup(); render(<Packages courseId={31}/>);
   await user.click(await screen.findByRole('button',{name:'删除 export-31-demo'}));
   expect(screen.queryByRole('button',{name:'删除 default'})).not.toBeInTheDocument();
   expect(deletes).toHaveLength(0);

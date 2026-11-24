@@ -13,28 +13,27 @@ import { api, errorMessage, request } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
 import { RecordViewer } from "@/pages/teaching";
-import type { AccountList } from "./accounts";
 
 interface ManagedClass {
   id: number; name: string; teacher_id: number; teacher_name: string;
   status: "active" | "archived" | "deleted"; student_count: number; has_learning_records: boolean;
 }
-const actions = { rename: "改名", transfer: "转交班级", archive: "归档", delete: "正式删除" };
+const actions = { rename: "改名", archive: "归档", delete: "正式删除" };
 type Action = keyof typeof actions;
 const states = { active: "教学中", archived: "已归档", deleted: "已删除" };
 
-export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChanged }: {
-  isAdmin: boolean; userId: number; onOpen: (id: number) => void; onCreate: () => void; onChanged: () => void;
+export function ClassroomManagement({ courseId, isAdmin, userId, onOpen, onCreate, onChanged }: {
+  courseId: number; isAdmin: boolean; userId: number; onOpen: (id: number) => void; onCreate: () => void; onChanged: () => void;
 }) {
   const [query, setQuery] = useState(""), [mine, setMine] = useState("all");
   const [status, setStatus] = useState<ManagedClass["status"]>("active");
   const [change, setChange] = useState<{ row: ManagedClass; action: Action } | null>(null);
   const [history, setHistory] = useState<ManagedClass | null>(null);
-  const list = useResource<ManagedClass[]>(`/teacher/classrooms/management${status === "deleted" ? "?deleted=true" : ""}`);
+  const list = useResource<ManagedClass[]>(`/teacher/courses/${courseId}/classrooms${status === "deleted" ? "?deleted=true" : ""}`);
   const rows = list.data?.filter(row => row.status === status && (mine !== "mine" || row.teacher_id === userId)
     && (row.name + " " + row.teacher_name).toLowerCase().includes(query.trim().toLowerCase()));
   return <>
-    <PageHeader title="班级管理" description={isAdmin ? "按任课教师或状态查找班级，进入教学工作区或调整班级归属。" : "创建和管理自己的班级，进入班级后可维护课程、学生和教学进度。"}><Button onClick={onCreate}><Plus />创建班级</Button></PageHeader>
+    <PageHeader title="班级管理"><Button onClick={onCreate}><Plus />创建班级</Button></PageHeader>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <TableSearch label="搜索班级或任课教师" value={query} onValueChange={setQuery} />
       <SelectField aria-label="班级状态" value={status} onValueChange={v => setStatus(v as ManagedClass["status"])}>
@@ -57,7 +56,6 @@ export function ClassroomManagement({ isAdmin, userId, onOpen, onCreate, onChang
           <DropdownMenuTrigger render={<Button variant="ghost" size="sm" aria-label={`管理 ${row.name}`} />}><Ellipsis /></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {row.status === "active" && <DropdownMenuItem onClick={() => setChange({ row, action: "rename" })}>改名</DropdownMenuItem>}
-            {isAdmin && <DropdownMenuItem onClick={() => setChange({ row, action: "transfer" })}>转交班级</DropdownMenuItem>}
             {row.status === "active" && <DropdownMenuItem onClick={() => setChange({ row, action: "archive" })}>归档</DropdownMenuItem>}
             {(isAdmin || !row.has_learning_records) && <DropdownMenuItem onClick={() => setChange({ row, action: "delete" })}>正式删除</DropdownMenuItem>}
           </DropdownMenuContent></DropdownMenu>}
@@ -75,11 +73,9 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
   row: ManagedClass; action: Action; onClose: () => void; onSaved: () => void;
 }) {
   const [value, setValue] = useState(action === "rename" ? row.name : "");
-  const [search, setSearch] = useState(""), [teacher, setTeacher] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const teachers = useResource<AccountList>(action === "transfer" ? `/admin/accounts?role=teacher&size=100&q=${encodeURIComponent(search.trim())}` : null);
-  useDraft(busy || Boolean(teacher) || (action === "rename" && value !== row.name));
-  const valid = action === "delete" ? value === row.name : action === "transfer" ? Boolean(teacher) : action !== "rename" || Boolean(value.trim());
+  useDraft(busy || (action === "rename" && value !== row.name));
+  const valid = action === "delete" ? value === row.name : action !== "rename" || Boolean(value.trim());
   async function save(event: FormEvent) {
     event.preventDefault();
     if (busy || !valid) return;
@@ -89,7 +85,6 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
       if (action === "rename") await request(path, { method: "PATCH", body: JSON.stringify({ name: value.trim() }) });
       if (action === "delete") await api.delete(path);
       if (action === "archive") await api.post(`${path}/archive`, {});
-      if (action === "transfer") await api.post(`${path}/transfer`, { teacher_id: Number(teacher) });
       onSaved();
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
@@ -98,20 +93,11 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
       <DialogDescription>{{
         rename: "新名称将显示在教师和学生的班级列表中。",
         archive: "归档后退出日常教学，保留班级成员和历史学习记录。",
-        transfer: "授课与编辑权限移交给新任课教师，原班课程和学习记录保留。",
         delete: `将解除本班与 ${row.student_count} 名学生的绑定。学生账号和历史学习记录保留。请输入班级全名确认。`,
       }[action]}</DialogDescription>
     </DialogHeader><form className="space-y-4" onSubmit={save}>
-      <ErrorNotice message={error || teachers.error} />
+      <ErrorNotice message={error} />
       {(action === "rename" || action === "delete") && <div className="field"><Label htmlFor="class-action-name">{action === "rename" ? "新班级名" : "确认班级全名"}</Label><Input id="class-action-name" maxLength={100} value={value} required onChange={e => setValue(e.target.value)} /></div>}
-      {action === "transfer" && <div className="field">
-        <TableSearch label="搜索教师姓名或工号" value={search} onValueChange={v => { setTeacher(""); setSearch(v); }} />
-        <Label htmlFor="next-class-teacher">新任课教师</Label>
-        <SelectField id="next-class-teacher" value={teacher} disabled={teachers.loading} onValueChange={setTeacher}>
-          {(teachers.data?.items ?? []).filter(item => item.id !== row.teacher_id && !item.disabled).map(item => <option value={item.id} key={item.id}>{item.name}（{item.student_id}）</option>)}
-        </SelectField>
-        {teachers.data && teachers.data.total > teachers.data.items.length && <p className="hint">当前显示前 100 人，可按工号搜索。</p>}
-      </div>}
       <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
         <Button type="submit" variant={action === "delete" ? "destructive" : "default"} disabled={!valid || busy}>{busy ? "处理中…" : `确认${actions[action]}`}</Button>
       </DialogFooter>

@@ -9,8 +9,8 @@ import { api, errorMessage, scoped } from "@/lib/api";
 import type { ActivityResource, Material } from "@/lib/types";
 import { HighlightEditor } from "./highlight-editor";
 
-export function ResourceEditor({ resources, materials, chapterId, classroomId, onChange }: {
-  resources: ActivityResource[]; materials: Material[]; chapterId: number; classroomId: number;
+export function ResourceEditor({ resources, materials, chapterId, courseId, onChange }: {
+  resources: ActivityResource[]; materials: Material[]; chapterId: number; courseId: number;
   onChange: (rows: ActivityResource[]) => void;
 }) {
   const [selected, setSelected] = useState("");
@@ -49,7 +49,7 @@ export function ResourceEditor({ resources, materials, chapterId, classroomId, o
         <Button type="button" variant="ghost" size="icon" aria-label={`下移资料${index + 1}`} disabled={index === resources.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
         <Button type="button" variant="ghost" size="icon" aria-label={`移除资料${index + 1}`} onClick={() => onChange(resources.filter((_, i) => i !== index))}><X /></Button>
       </div>
-      <ResourceRules classroomId={classroomId} resource={row} kind={materials.find(m => m.id === row.material_id)?.kind} onChange={value => update(index, value)} />
+      <ResourceRules courseId={courseId} resource={row} kind={materials.find(m => m.id === row.material_id)?.kind} onChange={value => update(index, value)} />
     </section> : <p className="hint">添加资料后，在这里设置完成要求。</p>}</div></div>
   </section>;
 }
@@ -62,7 +62,7 @@ function resourceSummary(row: ActivityResource) {
   return "全部页";
 }
 
-function ResourceRules({ resource, kind, classroomId, onChange }: { classroomId: number; resource: ActivityResource; kind?: string; onChange: (row: ActivityResource) => void }) {
+function ResourceRules({ resource, kind, courseId, onChange }: { courseId: number; resource: ActivityResource; kind?: string; onChange: (row: ActivityResource) => void }) {
   const [pages, setPages] = useState<{ id: number; page_no: number; title: string }[]>([]);
   const [error, setError] = useState("");
   const learning = resource.learning;
@@ -70,9 +70,9 @@ function ResourceRules({ resource, kind, classroomId, onChange }: { classroomId:
   useEffect(() => {
     let live = true;
     if (kind === "video" || reading.scope !== "pages") return;
-    api.get<{ pages: typeof pages }>(scoped(`/teacher/materials/${resource.material_id}`, classroomId)).then(value => { if (live) { setPages(value.pages); setError(""); } }).catch(cause => { if (live) setError(errorMessage(cause)); });
+    api.get<{ pages: typeof pages }>(scoped(`/teacher/materials/${resource.material_id}`, courseId)).then(value => { if (live) { setPages(value.pages); setError(""); } }).catch(cause => { if (live) setError(errorMessage(cause)); });
     return () => { live = false; };
-  }, [resource.material_id, kind, reading.scope, classroomId]);
+  }, [resource.material_id, kind, reading.scope, courseId]);
   const update = (value: ActivityResource["learning"]) => onChange({ ...resource, learning: value });
   if (kind === "video") {
     const video = learning.video ?? {};

@@ -22,20 +22,20 @@ def event(body: EventInput, db: Annotated[Session, Depends(get_db)], user: Annot
     return _event(body=body, db=db, user=user)
 
 
-@router.post("/teacher/quests/validate")
+@router.post("/teacher/courses/{course_id}/quests/validate")
 def validate_quest(
-    body: DefinitionInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None
+    body: DefinitionInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None
 ):
-    return _validate_quest(body=body, db=db, user=user, classroom_id=classroom_id)
+    return _validate_quest(body=body, db=db, user=user, course_id=course_id)
 
 
-@router.post("/teacher/quests", status_code=201)
+@router.post("/teacher/courses/{course_id}/quests", status_code=201)
 def create_quest(
-    body: DefinitionInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None
+    body: DefinitionInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None
 ):
-    return _create_quest(body=body, db=db, user=user, classroom_id=classroom_id)
+    return _create_quest(body=body, db=db, user=user, course_id=course_id)
 
 
-@router.get("/teacher/quests")
-def list_quests(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], classroom_id: int | None = None):
-    return _list_quests(db=db, user=user, classroom_id=classroom_id)
+@router.get("/teacher/courses/{course_id}/quests")
+def list_quests(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
+    return _list_quests(db=db, user=user, course_id=course_id)

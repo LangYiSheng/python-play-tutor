@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 import pytest
 from sqlalchemy import select, text
 
@@ -29,7 +30,7 @@ def test_global_accounts_and_teacher_provisioning(client, db, admin_account, tea
     listed = client.get("/api/admin/accounts?role=student", headers=admin_headers).json()
     assert peek not in {u["id"] for u in listed["items"]}
     assert client.post(f"/api/admin/accounts/{peek}/reset-password", headers=admin_headers, json={}).status_code == 404
-    other = client.post("/api/classrooms", headers=teacher["headers"], json={"name": "另一班"}).json()
+    other = create_test_class(client, headers=teacher["headers"], json={"name": "另一班"}).json()
     params = {"role": "student", "q": student["student_id"], "classroom_id": other["id"], "size": 1}
     assert client.get("/api/admin/accounts", params=params, headers=admin_headers).json() == {"items": [], "total": 0}
     target = db.get(Classroom, classroom["id"])
@@ -90,7 +91,7 @@ def test_delete_student_removes_saves_without_removing_the_course(client, db, ad
     assert client.get("/api/auth/me", headers=student["headers"]).status_code == 401
     assert db.get(User, uid) is None and db.get(Membership, (uid, cid)) is None
     assert db.scalar(select(PlayerQuest.id).where(PlayerQuest.user_id == uid)) is None
-    assert db.scalar(select(CourseInstance.id).where(CourseInstance.classroom_id == cid))
+    assert db.get(Classroom, cid).course_id
     assert not db.execute(text("PRAGMA foreign_key_check")).all()
 
 
@@ -101,7 +102,7 @@ def test_delete_teacher_removes_owned_courses_and_preserves_other_classrooms(cli
     cid = classroom["id"]
     instance_id = db.info["fixture_course_instance_id"]
     preview_id = client.post(f"/api/teacher/classrooms/{cid}/town-session", headers=admin).json()["user"]["id"]
-    retained = client.post("/api/classrooms", headers=admin, json={"name": "另一个班"}).json()
+    retained = create_test_class(client, headers=admin, json={"name": "另一个班"}).json()
     db.add_all([
         Membership(classroom_id=retained["id"], user_id=student["id"]),
         PlayerQuest(classroom_id=cid, user_id=student["id"], quest_id="remove-with-class", status="complete"),
@@ -140,7 +141,7 @@ def test_scoped_global_monitoring(client, db, admin_account, teacher, student, c
         assert client.get(path, headers=teacher["headers"]).status_code == 403
         assert client.get(path, headers=admin_account["headers"]).status_code == 200
     job, = client.get("/api/admin/synthesis", headers=admin_account["headers"]).json()["items"]
-    assert job["classroom_id"] == cid and job["classroom_name"] == classroom["name"]
+    assert job["course_id"] == classroom["course_id"] and job["course_name"] == db.get(Classroom, cid).course.name
     assert db.get(User, teacher["id"]).role == "teacher"
     db.get(Classroom, cid).status = "archived"
     db.commit()

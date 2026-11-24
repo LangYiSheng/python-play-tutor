@@ -2,7 +2,7 @@ import { api, errorMessage, scoped } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
 import type { Material } from "@/lib/types";
 import { useState, type FormEvent } from "react";
-export function useMaterialEditor(classroomId: number, onSaved: () => void) {
+export function useMaterialEditor(courseId: number, onSaved: () => void) {
   const [editing, setEditing] = useState<Material | null>(null),
     [open, setOpen] = useState(false),
     [title, setTitle] = useState(""),
@@ -33,11 +33,11 @@ export function useMaterialEditor(classroomId: number, onSaved: () => void) {
         body.append("chapter_ids", JSON.stringify(chapterIds));
         if (editing) body.append("material_id", String(editing.id));
         await api.upload(
-          scoped("/teacher/materials/upload", classroomId),
+          scoped("/teacher/materials/upload", courseId),
           body,
         );
       } else if (editing) {
-        await api.put(scoped(`/teacher/materials/${editing.id}`, classroomId), {
+        await api.put(scoped(`/teacher/materials/${editing.id}`, courseId), {
           title,
           chapter_ids: chapterIds,
         });

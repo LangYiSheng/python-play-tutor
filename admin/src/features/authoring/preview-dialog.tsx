@@ -59,7 +59,7 @@ export function PreviewDialog({
         <DialogHeader>
           <DialogTitle>预览流程</DialogTitle>
           <DialogDescription>
-            依据所选学生在本班的真实记录判断分支。预览不会更新进度、授予解锁或调用
+            依据所选学生在其教学班的真实记录判断分支。预览不会更新进度、授予解锁或调用
             AI。
           </DialogDescription>
         </DialogHeader>
@@ -76,7 +76,7 @@ export function PreviewDialog({
             <option value={0}>选择学生</option>
             {initial.students?.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {s.classroom_name} · {s.name}
               </option>
             ))}
           </SelectField>

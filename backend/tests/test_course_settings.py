@@ -12,7 +12,7 @@ from test_world_authoring import scene  # noqa: F401
 
 def test_settings_default_override_conflict_and_authorization(client, db, teacher, student, scene):
     cid = scene["classroom"].id
-    url = f"/api/teacher/classrooms/{cid}/course/settings"
+    url = f"/api/teacher/courses/{cid}/settings"
     initial = client.get(url, headers=teacher["headers"]).json()
     assert client.get(url, headers=student["headers"]).status_code == 403
     state = CoursePackageState(course_instance_id=scene["instance"].id, configuration={"_sentinel": True})
@@ -37,7 +37,7 @@ def test_settings_default_override_conflict_and_authorization(client, db, teache
     for settings in ({"library_npc_id": "resident"}, {"default_npc_id": "outside"}, {"default_npc_id": []}, {"limits": {"model_calls": 100}}):
         result = client.put(url, headers=teacher["headers"], json={"expected_revision": new["revision"], "assistant": settings})
         assert result.status_code == 422
-    authoring = f"/api/teacher/classrooms/{cid}/authoring"
+    authoring = f"/api/teacher/courses/{cid}/authoring"
     draft = client.get(authoring, headers=teacher["headers"]).json()
     payload = {key: draft[key] for key in ("npcs", "flows", "quests", "configuration")}
     payload.update(expected_revision=draft["revision"], npcs=[row for row in draft["npcs"] if row["id"] != "resident"])
@@ -46,7 +46,7 @@ def test_settings_default_override_conflict_and_authorization(client, db, teache
 
 
 def test_activity_can_select_and_clear_override(client, teacher, scene):
-    path = f"/api/teacher/activities/{scene['activity'].id}?classroom_id={scene['classroom'].id}"
+    path = f"/api/teacher/courses/{scene['instance'].id}/activities/{scene['activity'].id}"
     for npc in (None, scene["npc"].key, None):
         result = client.put(path, headers=teacher["headers"], json={"npc_key": npc})
         assert result.status_code == 200, result.text
@@ -67,7 +67,7 @@ def test_inherited_activity_roundtrip(db, teacher, scene, tmp_path):
     bundle = load_bundle(package)
     assert bundle["data"]["activity"][0]["npc_key"] is None
     before = deepcopy(state.configuration["assistant"])
-    import_bundle(db, scene["classroom"], scene["instance"], bundle, package)
+    import_bundle(db, scene["instance"], bundle, package)
     db.commit()
     assert db.get(Activity, scene["activity"].id).npc_key is None
     assert db.get(CoursePackageState, scene["instance"].id).configuration["assistant"] == before

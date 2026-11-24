@@ -13,9 +13,9 @@ import { useAuthoringDraft } from "./use-authoring-draft";
 import { useAuthoringPreview } from "./use-authoring-preview";
 import { useFlowEditor } from "./use-flow-editor";
 import { ValidationFeedback } from "./validation-feedback";
-export function Authoring({ classroomId }: { classroomId: number }) {
+export function Authoring({ courseId }: { courseId: number }) {
   const resource = useResource<Document>(
-    `/teacher/classrooms/${classroomId}/authoring`,
+    `/teacher/courses/${courseId}/authoring`,
   );
   return resource.loading ? (
     <Loading />
@@ -23,23 +23,23 @@ export function Authoring({ classroomId }: { classroomId: number }) {
     <ErrorNotice message={resource.error} />
   ) : resource.data ? (
     <AuthoringEditor
-      key={`${classroomId}-${resource.data.revision}`}
+      key={`${courseId}-${resource.data.revision}`}
       initial={resource.data}
-      classroomId={classroomId}
+      courseId={courseId}
     />
   ) : null;
 }
 
 function AuthoringEditor({
   initial,
-  classroomId,
+  courseId,
 }: {
   initial: Document;
-  classroomId: number;
+  courseId: number;
 }) {
-  const draft = useAuthoringDraft(initial, classroomId);
+  const draft = useAuthoringDraft(initial, courseId);
   const editor = useFlowEditor(draft.data, draft.change);
-  const preview = useAuthoringPreview(initial, classroomId, draft);
+  const preview = useAuthoringPreview(initial, courseId, draft);
   const { data, change, draftEpoch, busy, error, setAssetBusy } =
     draft;
   const {
@@ -130,7 +130,7 @@ function AuthoringEditor({
           <TabsContent value="assistant">
             <AssistantEditor
               onUploadState={setAssetBusy}
-              classroomId={classroomId}
+              courseId={courseId}
               key={editorJump?.sequence}
               data={data}
               onChange={change}

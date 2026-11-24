@@ -69,11 +69,10 @@ def test_teacher_upload_processing_range_and_current_material_authorization(clie
     monkeypatch.setenv("REBORN_STORAGE_ROOT", str(tmp_path / "private"))
     monkeypatch.setattr(materials_jobs, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
     upload = client.post(
-        "/api/teacher/materials/upload",
+        f"/api/teacher/courses/{classroom['course_id']}/materials/upload",
         data={"chapter_ids": "[179]", "title": "教师补充文本"},
         files={"file": ("lesson.txt", "教师上传的真实文本。Python 学习。".encode(), "text/plain")},
-        headers=teacher["headers"],
-     params={"classroom_id": classroom["id"]})
+        headers=teacher["headers"])
     assert upload.status_code == 201, upload.text
     material_id = upload.json()["id"]
     row = db.get(Material, material_id)
@@ -92,11 +91,10 @@ def test_teacher_upload_processing_range_and_current_material_authorization(clie
     assert "private" in response.headers["cache-control"]
     assert client.get(url).status_code == 401
     update = client.post(
-        "/api/teacher/materials/upload",
+        f"/api/teacher/courses/{classroom['course_id']}/materials/upload",
         data={"chapter_ids": "[179]", "title": "更新", "material_id": material_id},
         files={"file": ("lesson.txt", b"updated content", "text/plain")},
-        headers=teacher["headers"],
-     params={"classroom_id": classroom["id"]})
+        headers=teacher["headers"])
     assert update.status_code == 201 and update.json()["id"] == material_id
     assert "version" not in update.json()
     assert client.get(url, headers=student["headers"]).status_code == 409

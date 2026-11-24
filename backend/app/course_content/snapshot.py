@@ -8,14 +8,12 @@ from sqlalchemy import select
 
 from app.course_content.resources import resource_payload
 from app.practice_rules import without_legacy_retry_interval
-from app.auth import as_utc
 from app.course_exchange_models import CoursePackageState
 from app.course_instances import CONTENT_MODELS, MODEL_NAMES, remap_references
 from app.models import (
     Activity,
     ActivityQuestion,
     Chapter,
-    ChapterRelease,
     CourseExample,
     KnowledgePoint,
     Material,
@@ -116,16 +114,8 @@ def snapshot_content(db, instance, *, include_secrets=True):
             if model in {KnowledgePoint, CourseExample} and "id" in converted["content"]:
                 converted["content"]["id"] = stable_id(row)
             data[MODEL_NAMES[model]].append({"id": stable_id(row), **converted})
-    releases = []
-    for row in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id == instance.classroom_id)):
-        if row.chapter_id not in inverse["chapter"]:
-            continue
-        releases.append(
-            {
-                "chapter_id": inverse["chapter"][row.chapter_id],
-                "status": row.status,
-                "opens_at": as_utc(row.opens_at).isoformat() if row.opens_at else None,
-                "prerequisite_chapter_id": inverse["chapter"].get(row.prerequisite_chapter_id),
-            }
-        )
-    return data, secrets, releases, configuration, rows
+    prerequisites = [
+        {"chapter_id": stable_id(row), "prerequisite_chapter_id": inverse["chapter"][row.prerequisite_chapter_id]}
+        for row in rows[Chapter] if row.prerequisite_chapter_id in inverse["chapter"]
+    ]
+    return data, secrets, prerequisites, configuration, rows

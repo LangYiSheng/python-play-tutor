@@ -17,7 +17,7 @@ const budgets = [
   ["timeout_seconds", "请求超时（秒）", 120, 1],
 ] as const;
 
-export function CourseSettings({ classroomId }: { classroomId: number }) {
+export function CourseSettings({ courseId }: { courseId: number }) {
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null);
   const [saved, setSaved] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<AssistantSettings>({});
@@ -25,7 +25,7 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
   const [busy, setBusy] = useState(false);
   const dirty = Boolean(saved && JSON.stringify(saved.assistant) !== JSON.stringify(draft));
   useDraft(dirty);
-  const path = `/teacher/classrooms/${classroomId}/course/settings`;
+  const path = `/teacher/courses/${courseId}/settings`;
   useEffect(() => {
     const controller = new AbortController();
     void api.get<Settings>(path, controller.signal).then(value => {
@@ -44,7 +44,7 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
     finally { setBusy(false); }
   }
   return <>
-    <PageHeader title="本班答疑设置">
+    <PageHeader title="课程答疑设置">
       <div ref={setActionsTarget} />
       <SettingsActions actionsTarget={actionsTarget} active dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
         if (saved && window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved.assistant); setError(''); }
@@ -52,8 +52,8 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
     </PageHeader>
     <ErrorNotice message={error} />
     {!saved ? (!error && <Loading />) : <fieldset disabled={busy} aria-busy={busy} className="surface space-y-6 p-6">
-      <p className="hint">适用范围：当前班级。设置默认角色、答疑开关与请求预算。保存设置不会调用模型。</p>
-      <Label className="gap-2"><Checkbox checked={draft.enabled ?? true} onCheckedChange={enabled => setDraft({ ...draft, enabled })} />开放本班课程 AI 答疑</Label>
+      <p className="hint">本课程的所有教学班共用默认角色、答疑开关与请求预算。保存设置不会调用模型。</p>
+      <Label className="gap-2"><Checkbox checked={draft.enabled ?? true} onCheckedChange={enabled => setDraft({ ...draft, enabled })} />开放课程 AI 答疑</Label>
       <div className="field max-w-lg">
         <Label htmlFor="default-npc">课程默认答疑角色</Label>
         <SelectField id="default-npc" placeholder="未配置" value={draft.default_npc_id ?? ""} onValueChange={value => setDraft({ ...draft, default_npc_id: value || null })}>
@@ -65,7 +65,7 @@ export function CourseSettings({ classroomId }: { classroomId: number }) {
       </div>
       <section className="space-y-4 border-t pt-5">
         <h3 className="font-medium">请求预算</h3>
-        <p className="hint">这些限制适用于本班所有 AI 答疑，仍受系统额度上限约束。关闭课程答疑后，所有活动和图书馆均不可提问；测验始终不开放助教。</p>
+        <p className="hint">这些设置适用于课程下的所有班级。每个班级的答疑用量仍受系统额度上限约束。关闭课程答疑后，所有活动和图书馆均不可提问；测验始终不开放助教。</p>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {budgets.map(([key, label, max, min]) => <div className="field" key={key}>
             <Label htmlFor={`budget-${key}`}>{label}</Label>

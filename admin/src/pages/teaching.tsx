@@ -82,8 +82,8 @@ const releaseLabels = {
   scheduled: "等待开放",
   published: "已发布",
 };
-export function Teaching({ classroomId }: { classroomId: number }) {
-  const course = useResource<Course>(scoped("/teacher/courses", classroomId)),
+export function Teaching({ classroomId, courseId }: { classroomId: number; courseId: number }) {
+  const course = useResource<Course>(scoped("/teacher/catalog", courseId)),
     releases = useResource<Release[]>(
       `/teacher/classrooms/${classroomId}/releases`,
     ),
@@ -94,7 +94,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
     [editing, setEditing] = useState<Chapter | null>(null),
     [status, setStatus] = useState<Release["status"]>("published"),
     [opensAt, setOpensAt] = useState(""),
-    [previous, setPrevious] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [dirty, setDirty] = useState(false),
@@ -110,7 +109,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
     const row = releases.data?.find((r) => r.chapter_id === chapter.id);
     setEditing(chapter);
     setStatus(row?.status ?? "published");
-    setPrevious(row?.prerequisite_chapter_id ?? null);
     setOpensAt(
       row?.opens_at ? isoToLocalDateTime(row.opens_at) : "",
     );
@@ -128,7 +126,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
         {
           status,
           opens_at: opensAt ? localDateTimeToIso(opensAt) : null,
-          prerequisite_chapter_id: previous,
         },
       );
       setEditing(null);
@@ -221,7 +218,7 @@ export function Teaching({ classroomId }: { classroomId: number }) {
                       </TableCell>
                       <TableCell>
                         {course.data?.chapters.find(
-                          (v) => v.id === r?.prerequisite_chapter_id,
+                          (v) => v.id === c.prerequisite_chapter_id,
                         )?.title ?? "无"}
                       </TableCell>
                       <TableCell className="text-right">
@@ -352,23 +349,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
               />
               <p className="hint">时区：{TIME_ZONE}。留空则立即开放。</p>
             </div>
-            <div className="field">
-              <Label htmlFor="release-previous">前置章节</Label>
-              <SelectField
-                id="release-previous"
-                value={previous ?? ""}
-                onValueChange={(value) => { setPrevious(value ? Number(value) : null); setDirty(true); }}
-              >
-                <option value="">无</option>
-                {course.data?.chapters
-                  .filter((c) => c.id !== editing?.id)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
-                    </option>
-                  ))}
-              </SelectField>
-            </div>
             <DialogFooter>
               <Button type="submit" disabled={busy}>
                 <CalendarClock />
@@ -403,18 +383,20 @@ export function RecordViewer({
   studentId,
   course,
   history = false,
+  showGrades = false,
   onClose,
 }: {
   classroomId: number;
   studentId: number;
   course?: Course | null;
   history?: boolean;
+  showGrades?: boolean;
   onClose: () => void;
 }) {
   const result = useResource<StudentRecord>(
       `/teacher/classrooms/${classroomId}/${history ? "history" : "students"}/${studentId}`,
     ),
-    [tab, setTab] = useState(history ? "assessments" : "submissions");
+    [tab, setTab] = useState(history || showGrades ? "assessments" : "submissions");
   return (
     <Dialog
       open
@@ -434,7 +416,7 @@ export function RecordViewer({
         <ErrorNotice message={result.error} />
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList variant="line" aria-label="学生记录类型">
-            {history && <TabsTrigger value="assessments">测验成绩</TabsTrigger>}
+            <TabsTrigger value="assessments">测验成绩</TabsTrigger>
             <TabsTrigger value="submissions">作答记录</TabsTrigger>
             <TabsTrigger value="participation">活动参与</TabsTrigger>
             <TabsTrigger value="events">任务节点</TabsTrigger>
@@ -446,7 +428,7 @@ export function RecordViewer({
               result.data?.assessments?.length ? <Table><TableHeader><TableRow>
                 <TableHead>测验</TableHead><TableHead>成绩</TableHead>
               </TableRow></TableHeader><TableBody>{result.data.assessments.map(item => <TableRow key={item.id}>
-                <TableCell>{item.activity_title || item.activity_id}</TableCell><TableCell>{item.score === null ? "待判定" : `${item.score} / ${item.max_score}`}</TableCell>
+                <TableCell>{item.activity_title || item.activity_id}</TableCell><TableCell>{item.score === null ? (item.status === "draft" ? "未交" : item.status === "attention" ? "评测异常" : "待判定") : `${item.score} / ${item.max_score}`}</TableCell>
               </TableRow>)}</TableBody></Table> : <Empty title="暂无测验成绩" />
             ) : tab === "submissions" ? (
             result.data?.submissions.length ? (

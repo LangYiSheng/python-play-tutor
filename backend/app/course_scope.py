@@ -1,27 +1,39 @@
-"""Resolve the single content namespace for a classroom; never mix cloned and source rows."""
+"""Fence shared course content and resolve the course for learner requests."""
 
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from .models import CourseInstance, Npc
+from .models import Classroom, Npc
 
 
-def lock_course(db, classroom_id, *, exclusive=False):
+def lock_course_content(db, course_id, *, exclusive=False):
     """Fence content activation against requests holding old definition references.
 
     PostgreSQL transaction advisory locks release on commit/rollback. Separate
     namespace avoids coupling the gate to the assistant's classroom row budget lock.
     """
+    if exclusive and db.get_bind().dialect.name == "sqlite":
+        db.execute(text("UPDATE course_instances SET revision=revision WHERE id=:id"), {"id": course_id})
     if db.get_bind().dialect.name == "postgresql":
         function = "pg_advisory_xact_lock" if exclusive else "pg_advisory_xact_lock_shared"
-        db.execute(text(f"SELECT {function}(41729, :classroom_id)"), {"classroom_id": classroom_id})
+        db.execute(text(f"SELECT {function}(41729, :course_id)"), {"course_id": course_id})
+
+
+def course_class_ids(course_id):
+    return select(Classroom.id).where(Classroom.course_id == course_id)
+
+
+def lock_course(db, classroom_id, *, exclusive=False):
+    key = db.scalar(select(Classroom.course_id).where(Classroom.id == classroom_id))
+    if key is not None:
+        lock_course_content(db, key, exclusive=exclusive)
+    return key
 
 
 def instance_id(db, classroom_id):
-    lock_course(db, classroom_id)
-    key = db.scalar(select(CourseInstance.id).where(CourseInstance.classroom_id == classroom_id))
+    key = lock_course(db, classroom_id)
     if key is None:
-        raise HTTPException(409, "本班尚未创建或导入课程，请联系教师")
+        raise HTTPException(404, "班级不存在")
     return key
 
 

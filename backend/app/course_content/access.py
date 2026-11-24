@@ -85,11 +85,11 @@ def chapter_available(db: Session, user: User, classroom_id: int, chapter_id: in
     visiting = set() if visiting is None else visiting
     if chapter_id in visiting:
         return False
-    if release.prerequisite_chapter_id:
+    if chapter.prerequisite_chapter_id:
         visiting.add(chapter_id)
-        if not chapter_available(db, user, classroom_id, release.prerequisite_chapter_id, visiting):
+        if not chapter_available(db, user, classroom_id, chapter.prerequisite_chapter_id, visiting):
             return False
-        ids = chapter_completion_requirements(db, classroom_id, release.prerequisite_chapter_id).get(release.prerequisite_chapter_id, set())
+        ids = chapter_completion_requirements(db, classroom_id, chapter.prerequisite_chapter_id).get(chapter.prerequisite_chapter_id, set())
         completed = set(
             db.scalars(
                 select(PlayerQuest.quest_id).where(

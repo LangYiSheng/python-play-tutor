@@ -8,7 +8,7 @@ from app.narration.models import NarrationJob
 
 
 def test_overview_and_source_evidence(client, db, classroom, teacher, student):
-    path = "/api/teacher/course-graph"
+    path = f"/api/teacher/courses/{classroom['course_id']}/course-graph"
     params = {"classroom_id": classroom["id"]}
     headers = teacher["headers"]
     graph = client.get(path, params=params, headers=headers).json()
@@ -32,11 +32,11 @@ def test_overview_and_source_evidence(client, db, classroom, teacher, student):
     assert detail["narrations"] == detail["audio"] == 0
     assert client.get(path + "/tasks", params=params, headers=headers).json() == []
     assert client.get(path, params=params, headers=student["headers"]).status_code == 403
-    assert client.get(f"{path}/points/{point.id}", params={"classroom_id": 99999}, headers=headers).status_code in (403, 404)
+    assert client.get(f"/api/teacher/courses/99999/course-graph/points/{point.id}", headers=headers).status_code in (403, 404)
 
 
 def test_graph_uses_current_audio_and_live_job_evidence(client, db, classroom, teacher):
-    path = "/api/teacher/course-graph"
+    path = f"/api/teacher/courses/{classroom['course_id']}/course-graph"
     params = {"classroom_id": classroom["id"]}
     headers = teacher["headers"]
     material = db.get(Material, 186)
@@ -75,7 +75,7 @@ def test_search_finds_collapsed_content_and_question_evidence(client, db, classr
     db.add_all([QuestionChapter(question_id=question.id, chapter_id=chapter.id),
                 QuestionKnowledgePoint(question_id=question.id, knowledge_point_id=point.id)])
     db.commit()
-    path, params, headers = "/api/teacher/course-graph", {"classroom_id": classroom["id"]}, teacher["headers"]
+    path, params, headers = f"/api/teacher/courses/{classroom['course_id']}/course-graph", {"classroom_id": classroom["id"]}, teacher["headers"]
 
     def search(**filters):
         r = client.get(path + "/search", params={**params, "search": "100%_", **filters}, headers=headers)
@@ -97,7 +97,7 @@ def test_search_finds_collapsed_content_and_question_evidence(client, db, classr
     result = response.json()
     assert result["points"] == [{"id": point.id, "title": point.title, "chapter_id": chapter.id}]
     assert result["chapter_ids"] == [chapter.id] and result["sources"] == [{"material_id": deck.id, "pages": [7]}]
-    assert client.get("/api/teacher/questions/q%2Fgraph", params=params, headers=headers).json()["id"] == question.id
+    assert client.get(f"/api/teacher/courses/{classroom['course_id']}/questions/q%2Fgraph", params=params, headers=headers).json()["id"] == question.id
     assert not {"answer", "hidden_cases", "interactive", "options"} & result.keys()
     question.source = {"page_ids": [70092]}
     db.commit()
@@ -113,4 +113,4 @@ def test_search_finds_collapsed_content_and_question_evidence(client, db, classr
     db.commit()
     assert search()["total"] == 0 and detail().status_code == 404
     assert client.get(path + "/search", params={**params, "search": "100"}, headers=student["headers"]).status_code == 403
-    assert client.get(question_path, params={"classroom_id": 99999}, headers=headers).status_code in (403, 404)
+    assert client.get("/api/teacher/courses/99999/course-graph/questions/q%2Fgraph", headers=headers).status_code in (403, 404)

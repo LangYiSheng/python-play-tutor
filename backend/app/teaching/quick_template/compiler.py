@@ -133,7 +133,7 @@ def compile_template(data, recipe, *, legacy_practice=False, legacy_itinerary=Fa
     cast = town_cast(data["npc"]) if indoor else characters(data["npc"], stages)
     public = town_public(public_chat=has_chat) if indoor else public_route(stages)
     result = {"npc": cast, "activity": [], "quest": [], "story": [public],
-              "interactions": [signpost()], "releases": []}
+              "interactions": [signpost()], "prerequisites": []}
     shortages = []
     for position, selection in enumerate(recipe["chapters"]):
         key = selection["chapter_id"]
@@ -163,8 +163,8 @@ def compile_template(data, recipe, *, legacy_practice=False, legacy_itinerary=Fa
             for feature_id, feature in FEATURES.items():
                 if feature_id in enabled and feature.add_to_start:
                     feature.add_to_start(result, prefix, owned_quests)
-        result["releases"].append({"chapter_id": key, "status": "published", "opens_at": None,
-                                   "prerequisite_chapter_id": previous["id"] if previous else None})
+        if previous:
+            result["prerequisites"].append({"chapter_id": key, "prerequisite_chapter_id": previous["id"]})
     if shortages:
         raise QuestionShortages(shortages)
     return result

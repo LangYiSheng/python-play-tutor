@@ -13,7 +13,8 @@ MODEL_NAMES = {Chapter: "chapter", KnowledgePoint: "knowledge_point", Material: 
 
 
 def classroom_course(db, classroom_id):
-    return db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
+    from .models import Classroom
+    return db.scalar(select(CourseInstance).join(Classroom, Classroom.course_id == CourseInstance.id).where(Classroom.id == classroom_id))
 
 
 def content_mapping(db, instance):

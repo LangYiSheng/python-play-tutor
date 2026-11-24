@@ -19,12 +19,12 @@ import type { useNarrationReview } from "./use-review";
 export function NarrationPageEditor({
   review,
   media,
-  classroomId,
+  courseId,
   materialId,
 }: {
   review: ReturnType<typeof useNarrationReview>;
   media: ReturnType<typeof usePageMedia>;
-  classroomId: number;
+  courseId: number;
   materialId: number;
 }) {
   const {
@@ -82,7 +82,7 @@ export function NarrationPageEditor({
               "generate",
               () =>
                 narrationApi.generatePage(
-                  classroomId,
+                  courseId,
                   materialId,
                   page.page_no,
                 ),
@@ -100,7 +100,7 @@ export function NarrationPageEditor({
             void run(
               "save",
               () =>
-                narrationApi.save(classroomId, materialId, page.page_no, draft),
+                narrationApi.save(courseId, materialId, page.page_no, draft),
               "已保存修改",
             )
           }
@@ -119,7 +119,7 @@ export function NarrationPageEditor({
           onClick={() =>
             void run(
               "accept",
-              () => narrationApi.accept(classroomId, materialId, page.page_no),
+              () => narrationApi.accept(courseId, materialId, page.page_no),
               "本页讲解已接受",
             )
           }
@@ -133,7 +133,7 @@ export function NarrationPageEditor({
           onClick={() =>
             void run(
               "reject",
-              () => narrationApi.reject(classroomId, materialId, page.page_no),
+              () => narrationApi.reject(courseId, materialId, page.page_no),
               "本页讲解已拒绝",
             )
           }
@@ -147,7 +147,7 @@ export function NarrationPageEditor({
           onClick={() =>
             void run(
               "remove",
-              () => narrationApi.remove(classroomId, materialId, page.page_no),
+              () => narrationApi.remove(courseId, materialId, page.page_no),
               "本页讲解已删除",
             )
           }
@@ -190,7 +190,7 @@ export function NarrationPageEditor({
                 "audio",
                 async () => {
                   await narrationApi.synthesizeAudio(
-                    classroomId,
+                    courseId,
                     materialId,
                     page.page_no,
                   );
@@ -221,7 +221,7 @@ export function NarrationPageEditor({
                 try {
                   const blob = await fileBlob(
                     narrationApi.audioFile(
-                      classroomId,
+                      courseId,
                       materialId,
                       page.page_no,
                     ),

@@ -260,31 +260,41 @@ def validate_bundle(bundle, root):
             validate_story(row["content"], quest_definition=definition, story_id=key)
             conditions(row["content"], row["content"]["bindings"], definition)
         course = bundle["course"]
-        _object(course, {"schema_version", "title", "releases", "quick_orchestration"}, {"schema_version", "title", "releases"})
+        version = course.get("schema_version")
+        if type(version) is not int or version not in (1, 2):
+            raise PackageError("课程目录格式无效")
+        key = "releases" if version == 1 else "prerequisites"
+        _object(course, {"schema_version", "title", key, "quick_orchestration"}, {"schema_version", "title", key})
+        if not _short(course["title"], 200) or not isinstance(course[key], list):
+            raise PackageError("课程目录格式无效")
         if "quick_orchestration" in course:
             from app.teaching.quick_template.contracts import Recipe
-
             Recipe.model_validate(course["quick_orchestration"])
-        if course["schema_version"] != 1 or not _short(course["title"], 200) or not isinstance(course["releases"], list):
-            raise PackageError("课程目录格式无效")
-        releases = {}
-        for row in course["releases"]:
-            _object(
-                row, {"chapter_id", "status", "opens_at", "prerequisite_chapter_id"}, {"chapter_id", "status", "opens_at", "prerequisite_chapter_id"}
-            )
+        parents = {}
+        fields = {"chapter_id", "prerequisite_chapter_id"}
+        for row in course[key]:
+            allowed = fields | {"status", "opens_at"} if version == 1 else fields
+            _object(row, allowed, allowed)
+            if version == 1:
+                if row["status"] not in {"published", "paused"}:
+                    raise PackageError("章节发布配置无效")
+                if row["opens_at"] is not None and datetime.fromisoformat(row["opens_at"]).tzinfo is None:
+                    raise PackageError("开放时间需要时区")
             remap_references(row, maps)
-            if row["chapter_id"] in releases or row["status"] not in {"published", "paused"}:
-                raise PackageError("章节发布配置重复或无效")
-            if row["opens_at"] is not None and datetime.fromisoformat(row["opens_at"]).tzinfo is None:
-                raise PackageError("开放时间需要时区")
-            releases[row["chapter_id"]] = row
-        for key in releases:
-            visited, current = set(), key
-            while current:
-                if current in visited:
+            if row["chapter_id"] in parents:
+                raise PackageError("章节前置重复")
+            parents[row["chapter_id"]] = row["prerequisite_chapter_id"]
+        for chapter in parents:
+            visited = set()
+            while chapter is not None:
+                if chapter in visited:
                     raise PackageError("章节前置依赖存在循环")
-                visited.add(current)
-                current = releases.get(current, {}).get("prerequisite_chapter_id")
+                visited.add(chapter)
+                chapter = parents.get(chapter)
+        course.pop(key)
+        course["schema_version"] = 2
+        course["prerequisites"] = [{"chapter_id": chapter, "prerequisite_chapter_id": parent}
+                                   for chapter, parent in parents.items() if parent is not None]
         from app.teaching.authoring.validation import validate_configuration
 
         validate_configuration(bundle["configuration"], data)

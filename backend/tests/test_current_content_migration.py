@@ -1,5 +1,6 @@
 """Upgrade a populated versioned database without losing learner history."""
 
+from course_fixtures import empty_course
 from datetime import datetime, timezone
 import os
 from uuid import uuid4
@@ -105,7 +106,7 @@ def test_current_story_resumes_with_long_checkpoint_evidence(existing_database):
     from app.auth import issue
     from app.db import get_db
     from app.main import app
-    from app.models import Chapter, ChapterRelease, Classroom, CourseInstance, LearningEvent, Membership, Npc, QuestDefinition, StoryDefinition, User, WorldFlag
+    from app.models import Chapter, ChapterRelease, Classroom, LearningEvent, Membership, Npc, QuestDefinition, StoryDefinition, User, WorldFlag
     from app.teaching.quests.validation import validate_definition
     from app.teaching.story.validation import validate_story
 
@@ -119,10 +120,13 @@ def test_current_story_resumes_with_long_checkpoint_evidence(existing_database):
             student = User(student_id="81002", name="Student", role="student", password_hash="test-only")
             db.add_all([teacher, student])
             db.flush()
-            classroom = Classroom(name="Checkpoint migration", teacher_id=teacher.id, join_code="checkpoint-test")
+            classroom = Classroom(name="Checkpoint migration", course=empty_course(teacher.id), join_code="checkpoint-test")
             db.add(classroom)
             db.flush()
-            course = CourseInstance(classroom_id=classroom.id, package_id="checkpoint-test", name="Checkpoint test", package_version="1")
+            course = classroom.course
+            course.package_id = "checkpoint-test"
+            course.name = "Checkpoint test"
+            course.package_version = "1"
             db.add(course)
             db.flush()
             chapter = Chapter(course_instance_id=course.id, stable_id="chapter", title="Chapter", order_index=1)

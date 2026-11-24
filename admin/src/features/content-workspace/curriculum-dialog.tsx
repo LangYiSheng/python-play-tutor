@@ -10,11 +10,12 @@ import { useDraft } from "@/lib/drafts";
 import { api, scoped, errorMessage } from "@/lib/api";
 import type { Chapter, Point } from "@/lib/types";
 
-export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterId, onClose }: {
-  classroomId: number; tab: "chapters" | "points"; chapters: Chapter[];
+export function CurriculumDialog({ courseId, tab, chapters, editing, chapterId, onClose }: {
+  courseId: number; tab: "chapters" | "points"; chapters: Chapter[];
   editing: Chapter | Point | null; chapterId?: number; onClose: (saved: boolean) => void;
 }) {
   const [title, setTitle] = useState(editing?.title ?? "");
+  const [previous, setPrevious] = useState(editing && "order_index" in editing ? editing.prerequisite_chapter_id ?? 0 : 0);
   const [order, setOrder] = useState(editing && "order_index" in editing ? editing.order_index : chapters.length + 1);
   const [chapter, setChapter] = useState(editing && "chapter_id" in editing ? editing.chapter_id : chapterId ?? chapters[0]?.id ?? 0);
   const [summary, setSummary] = useState(editing && "content" in editing ? String(editing.content.summary_markdown ?? "") : "");
@@ -31,7 +32,7 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
     try {
       const body =
         tab === "chapters"
-          ? { title, order_index: order }
+          ? { title, order_index: order, prerequisite_chapter_id: previous || null }
           : {
               title,
               content: {
@@ -41,7 +42,7 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
               ...(!editing ? { chapter_id: chapter } : {}),
             };
       const endpoint = `/teacher/${tab === "chapters" ? "chapters" : "knowledge-points"}${editing ? `/${editing.id}` : ""}`;
-      await (editing ? api.put : api.post)(scoped(endpoint, classroomId), body);
+      await (editing ? api.put : api.post)(scoped(endpoint, courseId), body);
       onClose(true);
     } catch (e) {
       setError(errorMessage(e));
@@ -63,7 +64,7 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
               {editing ? "编辑" : "新增"}
               {tab === "chapters" ? "章节" : "知识点"}
             </DialogTitle>
-            <DialogDescription>修改仅作用于当前班级课程。</DialogDescription>
+            <DialogDescription>本课程的所有教学班共用此内容。</DialogDescription>
           </DialogHeader>
           <form inert={busy} aria-busy={busy} onSubmit={save} onChange={() => setDirty(true)}>
             <ErrorNotice message={error} />
@@ -79,6 +80,10 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
             </div>
             {tab === "chapters" ? (
               <div className="field">
+                <Label htmlFor="curr-prerequisite">前置章节</Label>
+                <SelectField id="curr-prerequisite" value={previous} onValueChange={v => {setPrevious(Number(v)); setDirty(true);}}>
+                  <option value={0}>无</option>{chapters.filter(c => c.id !== editing?.id).map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </SelectField>
                 <Label htmlFor="curr-order">章节顺序</Label>
                 <Input
                   id="curr-order"

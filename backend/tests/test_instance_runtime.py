@@ -1,4 +1,5 @@
 """Classroom course namespaces are enforced even for the same teacher."""
+from course_fixtures import empty_course
 from app.models import ActivityMaterial
 
 
@@ -9,7 +10,7 @@ from sqlalchemy import select
 
 from app.content_relations import set_activity_questions, set_material_chapters, set_question_chapters
 from app.models import (
-    Activity, ActivityQuestion, Chapter, ChapterRelease, Classroom, CourseInstance, Material, Membership,
+    Activity, ActivityQuestion, Chapter, ChapterRelease, Classroom, Material, Membership,
     Npc, Question, QuestDefinition, StoryDefinition, StorySession,
 )
 
@@ -18,11 +19,14 @@ from app.models import (
 def spaces(db, teacher, student):
     rows = []
     for suffix in ("a", "b"):
-        classroom = Classroom(name=f"课程{suffix}", teacher_id=teacher["id"], join_code=uuid4().hex[:24])
+        classroom = Classroom(name=f"课程{suffix}", course=empty_course(teacher["id"]), join_code=uuid4().hex[:24])
         db.add(classroom)
         db.flush()
         db.add(Membership(user_id=student["id"], classroom_id=classroom.id))
-        instance = CourseInstance(classroom_id=classroom.id, package_id="same-package", package_version="1", name="课程")
+        instance = classroom.course
+        instance.package_id = "same-package"
+        instance.package_version = "1"
+        instance.name = "课程"
         db.add(instance)
         db.flush()
         common = {"course_instance_id": instance.id, "owner_id": teacher["id"]}
@@ -125,13 +129,13 @@ def test_public_story_has_no_fake_chapter_and_can_run(client, db, student, space
 
 def test_teacher_quest_authoring_uses_selected_scope(client, teacher, spaces):
     a, b = spaces
-    response = client.get(f"/api/teacher/quests?classroom_id={a['classroom'].id}", headers=teacher["headers"])
+    response = client.get(f"/api/teacher/courses/{a['instance'].id}/quests", headers=teacher["headers"])
     assert [row["id"] for row in response.json()] == [a["quest"].id]
     definition = {**a["quest"].definition, "id": "new-quest"}
-    response = client.post(f"/api/teacher/quests?classroom_id={a['classroom'].id}", headers=teacher["headers"], json={"definition": definition})
+    response = client.post(f"/api/teacher/courses/{a['instance'].id}/quests", headers=teacher["headers"], json={"definition": definition})
     assert response.status_code == 201, response.text
     definition["nodes"] = [{**definition["nodes"][0], "target": b["npc"].key, "navigation_target": b["npc"].key}]
-    assert client.post(f"/api/teacher/quests/validate?classroom_id={a['classroom'].id}", headers=teacher["headers"],
+    assert client.post(f"/api/teacher/courses/{a['instance'].id}/quests/validate", headers=teacher["headers"],
                        json={"definition": definition}).status_code == 404
 
 def test_cloned_arrival_can_begin_and_resume(client, db, classroom, student):

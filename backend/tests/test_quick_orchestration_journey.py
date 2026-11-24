@@ -25,30 +25,27 @@ def lesson_plan(client, db, teacher, student, tmp_path, monkeypatch, request):
     monkeypatch.setenv("REBORN_COURSE_EXCHANGE_ROOT", str(tmp_path / "packages"))
     monkeypatch.setattr(jobs, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
     headers = teacher["headers"]
-    classroom = ok(client.post("/api/classrooms", headers=headers, json={"name": "音乐体验班"}))
-    cid = classroom["id"]
-    path = f"/api/teacher/classrooms/{cid}"
-    params = {"classroom_id": cid}
-    ok(client.post(f"{path}/course/empty", headers=headers, json={"confirmed": True, "name": "音乐入门"}))
-    ok(client.post("/api/classrooms/join", headers=student["headers"], json={"join_code": classroom["join_code"]}))
+    course = ok(client.post("/api/teacher/courses", headers=headers, json={"name": "音乐入门"}))
+    path = f"/api/teacher/courses/{course['id']}"
+    assert ok(client.get(path + "/classrooms", headers=headers)) == []
     writer = PdfWriter()
     writer.add_blank_page(width=300, height=200)
     writer.add_blank_page(width=300, height=200)
     pdf = io.BytesIO()
     writer.write(pdf)
     for index, title in enumerate(["节奏与节拍", "旋律与乐句"]):
-        chapter = ok(client.post("/api/teacher/chapters", params=params, headers=headers, json={"title": title}))
-        point = ok(client.post("/api/teacher/knowledge-points", params=params, headers=headers,
+        chapter = ok(client.post(path + "/chapters", headers=headers, json={"title": title}))
+        point = ok(client.post(path + "/knowledge-points", headers=headers,
                                json={"chapter_id": chapter["id"], "title": title, "content": {"teaching_sample": {
                                    "reading": f"读前想想{title}", "practice": f"练习前想想{title}",
                                    "reflection": f"来讲讲{title}的例子",
                                }}}))
-        media = ok(client.post("/api/teacher/materials/upload", params=params, headers=headers,
+        media = ok(client.post(path + "/materials/upload", headers=headers,
                                data={"title": title, "chapter_ids": json.dumps([chapter["id"]])},
                                files={"file": ("lesson.pdf", pdf.getvalue(), "application/pdf")}))
         jobs.process_material(media["id"])
         for number in range(2):
-            ok(client.post("/api/teacher/questions", params=params, headers=headers, json={
+            ok(client.post(path + "/questions", headers=headers, json={
                 "id": f"q-{index}-{number}", "title": title, "prompt": "听音乐时可以跟着打拍子。", "kind": "boolean",
                 "answer": True, "source_type": "imported", "status": "ready",
                 "chapter_ids": [chapter["id"]], "knowledge_point_ids": [point["id"]],
@@ -72,7 +69,14 @@ def lesson_plan(client, db, teacher, student, tmp_path, monkeypatch, request):
     assert "{name}" not in planned["welcome_dialogue"]
     assert [len(row["goals"]) for row in planned["quests"] if row["kind"] == "main"] == [8, 8]
     ok(client.post(quick + "/apply", headers=headers, json={**body, "token": planned["token"]}))
-    return cid, recipe
+    chapter_ids = ok(client.get(path + "/ids", headers=headers))["chapter"]
+    classroom = ok(client.post(path + "/classrooms", headers=headers, json={"name": "音乐体验班"}))
+    cid = classroom["id"]
+    ok(client.post("/api/classrooms/join", headers=student["headers"], json={"join_code": classroom["join_code"]}))
+    assert ok(client.get(f"/api/teacher/classrooms/{cid}/releases", headers=headers)) == []
+    for chapter_id in chapter_ids.values():
+        ok(client.put(f"/api/teacher/classrooms/{cid}/releases/{chapter_id}", headers=headers, json={"status": "published"}))
+    return cid, course['id'], recipe
 
 
 def test_student_visits_the_town_and_completes_both_chapters(client, db, student, teacher, lesson_plan):
@@ -81,12 +85,12 @@ def test_student_visits_the_town_and_completes_both_chapters(client, db, student
     from app.world_config import load_world_config
     from sqlalchemy import select
 
-    cid, recipe = lesson_plan
+    cid, course_id, recipe = lesson_plan
     headers, params = {**student["headers"], "X-Dialogue-Format": "template"}, {"classroom_id": cid}
     actor = ok(client.get("/api/auth/me", headers=headers))
     classrooms = ok(client.get("/api/classrooms", headers=headers))
     assert actor["name"] == "学生" and next(row["course_name"] for row in classrooms if row["id"] == cid) == "音乐入门"
-    maps = ok(client.get(f"/api/teacher/classrooms/{cid}/course/ids", headers=teacher["headers"]))
+    maps = ok(client.get(f"/api/teacher/courses/{course_id}/ids", headers=teacher["headers"]))
 
     def world():
         return ok(client.get("/api/world", params=params, headers=headers))
@@ -234,9 +238,9 @@ def test_student_visits_the_town_and_completes_both_chapters(client, db, student
 
 
 def test_quick_preview_renders_the_saved_custom_finale(client, teacher, lesson_plan):
-    cid, recipe = lesson_plan
+    cid, course_id, recipe = lesson_plan
     headers = teacher["headers"]
-    path = f"/api/teacher/classrooms/{cid}"
+    path = f"/api/teacher/courses/{course_id}"
     native = ok(client.get(path + "/authoring", headers=headers))
     last = recipe["chapters"][-1]["chapter_id"]
     flow = next(row for row in native["flows"] if row["chapter_id"] == last and row["quest_id"])
@@ -256,9 +260,9 @@ def test_quick_preview_renders_the_saved_custom_finale(client, teacher, lesson_p
 def test_imported_plan_can_switch_templates_without_duplicating_definitions(client, db, teacher, lesson_plan):
     from app.course_instances import classroom_course
 
-    cid, recipe = lesson_plan
+    cid, course_id, recipe = lesson_plan
     headers = teacher["headers"]
-    quick = f"/api/teacher/classrooms/{cid}/quick-orchestration"
+    quick = f"/api/teacher/courses/{course_id}/quick-orchestration"
     first, second = recipe["chapters"]
     first["question_plan"] = {"practice": {"mode": "by_point", "points": [{
         "knowledge_point_id": first["knowledge_point_ids"][0], "count": 2, "by_kind": {"boolean": 2},
@@ -269,13 +273,13 @@ def test_imported_plan_can_switch_templates_without_duplicating_definitions(clie
     assert not checked["blockers"], checked
     assert [(row["practice"]["count"], row["assessment"]["count"]) for row in checked["papers"]] == [(2, 1), (1, 2)]
     ok(client.post(quick + "/apply", headers=headers, json={**update, "token": checked["token"]}))
-    source_editor = f"/api/teacher/classrooms/{cid}/authoring"
+    source_editor = f"/api/teacher/courses/{course_id}/authoring"
     original = ok(client.get(source_editor, headers=headers))
     next(npc for npc in original["npcs"] if npc["id"] == "quick-course-reader")["name"] = "林老师"
     ok(client.put(source_editor, headers=headers, json={
         "expected_revision": original["revision"], **{key: original[key] for key in ("quests", "flows", "npcs", "configuration")},
     }))
-    target = ok(client.post("/api/classrooms", headers=headers, json={"name": "隔壁班"}))["id"]
+    target = ok(client.post("/api/teacher/courses", headers=headers, json={"name": "隔壁班"}))["id"]
     package = export(client, teacher, classroom_course(db, cid))
     has_tour = "library_shelf_tour" in recipe.get("feature_ids", ["library_shelf_tour"])
     with zipfile.ZipFile(io.BytesIO(package)) as archive:
@@ -283,7 +287,7 @@ def test_imported_plan_can_switch_templates_without_duplicating_definitions(clie
     planned = preview(client, teacher, target, package)
     assert planned["diff"]["quick_orchestration"]["added"]
     ok(apply(client, teacher, target, planned))
-    path = f"/api/teacher/classrooms/{target}/quick-orchestration"
+    path = f"/api/teacher/courses/{target}/quick-orchestration"
     catalog = ok(client.get(path, headers=headers))
     assert catalog["recipe"] == recipe
     restored = ok(client.post(path + "/preview", headers=headers, json={"expected_revision": catalog["revision"], "recipe": recipe}))
@@ -303,7 +307,7 @@ def test_imported_plan_can_switch_templates_without_duplicating_definitions(clie
     # An independent edit to that same NPC must be explicitly reconciled first.
     if changed["blockers"]:
         assert all("林老师" in reason for reason in changed["blockers"])
-        target_editor = f"/api/teacher/classrooms/{target}/authoring"
+        target_editor = f"/api/teacher/courses/{target}/authoring"
         live = ok(client.get(target_editor, headers=headers))
         next(npc for npc in live["npcs"] if npc["id"] == "quick-course-reader")["name"] = "图书管理员"
         result = ok(client.put(target_editor, headers=headers, json={
@@ -315,6 +319,6 @@ def test_imported_plan_can_switch_templates_without_duplicating_definitions(clie
     assert [row["practice"]["count"] for row in changed["papers"]] == [2, 1]
     assert all("assessment" not in row for row in changed["papers"])
     ok(client.post(path + "/apply", headers=headers, json={**body, "token": changed["token"]}))
-    native = ok(client.get(f"/api/teacher/classrooms/{target}/authoring", headers=headers))
+    native = ok(client.get(f"/api/teacher/courses/{target}/authoring", headers=headers))
     assert len(native["quests"]) == 2 and {row["kind"] for row in native["catalog"]["activities"]} == {"lesson", "practice"}
-    assert ok(client.get(f"/api/teacher/classrooms/{cid}/quick-orchestration", headers=headers))["recipe"] == recipe
+    assert ok(client.get(f"/api/teacher/courses/{course_id}/quick-orchestration", headers=headers))["recipe"] == recipe

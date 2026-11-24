@@ -10,18 +10,18 @@ import { scoped } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useCatalogPage } from "@/lib/use-catalog-page";
 import type { Course, Chapter, Point } from "@/lib/types";
-export function Curriculum({ classroomId, tab }: { classroomId: number; tab: "chapters" | "points" }) {
-  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
+export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters" | "points" }) {
+  const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
   const [page, setPage] = useState(1), [size, setSize] = useState(10),
     [query, setQuery] = useState(""),
     [pointChapter, setPointChapter] = useState("all"),
     [editing, setEditing] = useState<Chapter | Point | null>(null),
     [open, setOpen] = useState(false);
-  const points = useCatalogPage<Point>("/teacher/knowledge-points", classroomId, query, { chapter_id: pointChapter }, tab === "points");
+  const points = useCatalogPage<Point>("/teacher/knowledge-points", courseId, query, { chapter_id: pointChapter }, tab === "points");
   const reload = tab === "points" ? points.reload : course.reload;
   const deletion = useTableDelete<Chapter | Point>((item) => scoped(
-    `/teacher/${"order_index" in item ? "chapters" : "knowledge-points"}/${item.id}`, classroomId,
-  ), reload, { classroomId, kind: item => "order_index" in item ? "chapter" : null });
+    `/teacher/${"order_index" in item ? "chapters" : "knowledge-points"}/${item.id}`, courseId,
+  ), reload, { courseId, kind: item => "order_index" in item ? "chapter" : null });
   function edit(item: Chapter | Point | null) { setEditing(item); setOpen(true); }
   const filtered = tab === "points" ? points.rows : (course.data?.chapters ?? []).filter(item =>
     item.title.toLowerCase().includes(query.trim().toLowerCase()));
@@ -73,7 +73,7 @@ export function Curriculum({ classroomId, tab }: { classroomId: number; tab: "ch
         )}
         {tab === "points" ? <Pager {...points.pager} /> : <Pager page={currentPage} size={size} total={filtered.length} onPage={setPage} onSize={next => { setSize(next); setPage(1); }} />}
       </div>
-      {open && <CurriculumDialog classroomId={classroomId} chapters={course.data?.chapters ?? []} tab={tab} editing={editing} onClose={saved => { setOpen(false); if (saved) reload(); }} />}
+      {open && <CurriculumDialog courseId={courseId} chapters={course.data?.chapters ?? []} tab={tab} editing={editing} onClose={saved => { setOpen(false); if (saved) reload(); }} />}
     </>
   );
 }

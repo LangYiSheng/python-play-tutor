@@ -1,4 +1,5 @@
 """Student authorization and grading contracts for reusable library content."""
+from course_fixtures import empty_course
 from app.models import ActivityMaterial
 
 
@@ -13,7 +14,7 @@ from app.auth import issue
 from app.content_relations import set_activity_questions, set_material_chapters, set_question_chapters
 from app.db import Base, get_db
 from app.main import create_app
-from app.models import Activity, Chapter, ChapterRelease, Classroom, CourseInstance, LearningRecord, Material, Membership, Question, QuestionSecret, User, Npc
+from app.models import Activity, Chapter, ChapterRelease, Classroom, LearningRecord, Material, Membership, Question, QuestionSecret, User, Npc
 
 
 @pytest.fixture
@@ -26,7 +27,7 @@ def library_runtime():
         student = User(student_id="99003", name="Student", role="student", password_hash="unused")
         db.add_all([teacher, other_teacher, student])
         db.flush()
-        classroom = Classroom(name="Reusable-content classroom", teacher_id=teacher.id, join_code="runtime-test")
+        classroom = Classroom(name="Reusable-content classroom", course=empty_course(teacher.id), join_code="runtime-test")
         db.add_all([classroom, Chapter(id=9001, title="Open", order_index=9001),
                     Chapter(id=9002, title="Unpublished", order_index=9002)])
         db.flush()
@@ -44,7 +45,10 @@ def library_runtime():
             db.add(QuestionSecret(question_id=key, answer=True))
         for key in ("runtime-practice-a", "runtime-practice-b", "runtime-assessment"):
             set_activity_questions(db, key, ["runtime-q2", "runtime-q1"])
-        instance = CourseInstance(classroom_id=classroom.id, package_id="runtime-test", name="Test", package_version="1")
+        instance = classroom.course
+        instance.package_id = "runtime-test"
+        instance.name = "Test"
+        instance.package_version = "1"
         db.add(instance)
         db.flush()
         from app.course_instances import CONTENT_MODELS

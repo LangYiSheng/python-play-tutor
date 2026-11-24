@@ -5,11 +5,11 @@ import { authoringBody } from "./request";
 import type { useAuthoringDraft } from "./use-authoring-draft";
 export function useAuthoringPreview(
   initial: Document,
-  classroomId: number,
+  courseId: number,
   draft: ReturnType<typeof useAuthoringDraft>,
 ) {
   const { data, setBusy, setError } = draft;
-  const base = `/teacher/classrooms/${classroomId}/authoring`;
+  const base = `/teacher/courses/${courseId}/authoring`;
   const [previewOpen, setPreviewOpen] = useState(false),
     [previewStudent, setPreviewStudent] = useState(
       initial.students?.[0]?.id ?? 0,

@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 it('blocks confirmation and shows the dependency location', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => json({...plan, blockers: [{message:'建筑开放条件仍引用此章节',path:'configuration.buildings.library'}]})));
-  render(<ContentDeleteDialog classroomId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={() => {}} />);
+  render(<ContentDeleteDialog courseId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={() => {}} />);
   expect(await screen.findByText('建筑开放条件仍引用此章节')).toBeVisible();
   expect(screen.getByText('位置：configuration.buildings.library')).toBeVisible();
   expect(screen.getByRole('button', {name:'继续确认'})).toBeDisabled();
@@ -21,7 +21,7 @@ it('requires a fresh preview after a conflict and clears previous confirmation',
     previews(); return json(plan);
   }));
   const user = userEvent.setup();
-  render(<ContentDeleteDialog classroomId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={done} />);
+  render(<ContentDeleteDialog courseId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={done} />);
   await waitFor(() => expect(screen.getByRole('button',{name:'继续确认'})).toBeEnabled());
   await user.click(screen.getByRole('button',{name:'继续确认'}));
   await user.type(screen.getByRole('textbox'),'章节一');

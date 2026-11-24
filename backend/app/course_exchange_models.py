@@ -15,10 +15,10 @@ class CoursePackageState(Base):
 
 class CourseImportPreview(Base):
     __tablename__ = "course_import_previews"
-    __table_args__ = (UniqueConstraint("classroom_id", "applied_request_id", name="uq_course_import_request"),)
+    __table_args__ = (UniqueConstraint("course_id", "applied_request_id", name="uq_course_import_request"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course_instances.id"), index=True)
     expected_revision: Mapped[int] = mapped_column(Integer)
     archive_sha256: Mapped[str] = mapped_column(String(64))
     storage_key: Mapped[str] = mapped_column(Text)

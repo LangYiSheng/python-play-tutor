@@ -34,27 +34,27 @@ import { useCatalogPage } from "@/lib/use-catalog-page";
 
 type QuestionRow = Pick<Question, "id" | "title" | "kind" | "status" | "source_type" | "chapter_ids">;
 
-export function Questions({ classroomId, pointId, clearPoint, status, onStatusChange }: {
-  classroomId: number; pointId?: string; clearPoint: () => void;
+export function Questions({ courseId, pointId, clearPoint, status, onStatusChange }: {
+  courseId: number; pointId?: string; clearPoint: () => void;
   status: string; onStatusChange: (value: string) => void;
 }) {
   const [query, setQuery] = useState(""),
     [sourceFilter, setSourceFilter] = useState("all"),
     [kindFilter, setKindFilter] = useState("all");
-  const list = useCatalogPage<QuestionRow>("/teacher/questions", classroomId, query, {
+  const list = useCatalogPage<QuestionRow>("/teacher/questions", courseId, query, {
     status: status === "reviewable" ? "draft" : status,
     reviewable: status === "reviewable" ? "true" : "all",
     source: sourceFilter, kind: kindFilter, knowledge_point_id: pointId ?? "all",
   });
   const point = useResource<Pick<Point, "id" | "title">[]>(pointId
-    ? scoped("/teacher/knowledge-point-labels?ids=" + encodeURIComponent(pointId), classroomId) : null);
-  const editor = useQuestionEditor(classroomId, list.reload);
+    ? scoped("/teacher/knowledge-point-labels?ids=" + encodeURIComponent(pointId), courseId) : null);
+  const editor = useQuestionEditor(courseId, list.reload);
   const { open, error } = editor;
-  const chapters = useResource<Pick<Course, "chapters">>(scoped("/teacher/courses?view=chapters", classroomId));
-  const materials = useResource<Material[]>(open ? scoped("/teacher/materials", classroomId) : null);
+  const chapters = useResource<Pick<Course, "chapters">>(scoped("/teacher/catalog?view=chapters", courseId));
+  const materials = useResource<Material[]>(open ? scoped("/teacher/materials", courseId) : null);
   const pending = useRef<AbortController | null>(null);
   const [detailError, setDetailError] = useState("");
-  useEffect(() => () => pending.current?.abort(), [classroomId]);
+  useEffect(() => () => pending.current?.abort(), [courseId]);
   async function edit(row: QuestionRow | null) {
     pending.current?.abort();
     setDetailError("");
@@ -62,7 +62,7 @@ export function Questions({ classroomId, pointId, clearPoint, status, onStatusCh
     const controller = new AbortController();
     pending.current = controller;
     try {
-      const question = await api.get<Question>(scoped("/teacher/questions/" + encodeURIComponent(row.id), classroomId), controller.signal);
+      const question = await api.get<Question>(scoped("/teacher/questions/" + encodeURIComponent(row.id), courseId), controller.signal);
       if (!controller.signal.aborted) editor.edit(question);
     } catch (cause) {
       if (!controller.signal.aborted) setDetailError(errorMessage(cause));
@@ -71,9 +71,9 @@ export function Questions({ classroomId, pointId, clearPoint, status, onStatusCh
   const visible = list.rows;
   const deletion = useTableDelete<QuestionRow>(
     (q) =>
-      scoped(`/teacher/questions/${encodeURIComponent(q.id)}`, classroomId),
+      scoped(`/teacher/questions/${encodeURIComponent(q.id)}`, courseId),
     list.reload,
-    { classroomId, kind: () => "question" },
+    { courseId, kind: () => "question" },
   );
   return (
     <>
@@ -226,7 +226,7 @@ export function Questions({ classroomId, pointId, clearPoint, status, onStatusCh
         )}
         <Pager {...list.pager} />
       </div>
-      <QuestionDialog editor={editor} classroomId={classroomId} course={chapters} materials={materials} />
+      <QuestionDialog editor={editor} courseId={courseId} course={chapters} materials={materials} />
     </>
   );
 }

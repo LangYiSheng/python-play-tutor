@@ -20,7 +20,7 @@ from app.materials.contracts import MaterialUpdate
 from app.materials.storage import get_storage, storage_root
 from app.materials.uploads import KINDS, MAX_UPLOAD, UploadValidationError, validate_upload
 from app.models import Chapter, Material, MaterialChapter, User
-from app.teacher_scope import commit_content, new_stable_id, require_scope, teacher_course_scope, teacher_instance_id
+from app.teacher_scope import commit_content, new_stable_id, require_scope, own_course, teacher_instance_id
 
 
 async def upload_material(
@@ -30,9 +30,10 @@ async def upload_material(
     file: UploadFile,
     material_id: int | None = None,
     chapter_ids: str | None = None,
-    classroom_id: int | None = None,
+    course_id: int | None = None,
 ):
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
     name = file.filename or ""
     if not name or "/" in name or "\\" in name or ":" in name or len(name) > 200 or not title.strip() or len(title) > 200:
         raise HTTPException(422, "文件名或标题无效")
@@ -79,7 +80,7 @@ async def upload_material(
         key = f"materials/{uuid4().hex}{suffix}"
         await asyncio.to_thread(get_storage().put, key, path)
     if not material:
-        material = Material(title=title.strip(), kind=KINDS[suffix], owner_id=classroom.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
+        material = Material(title=title.strip(), kind=KINDS[suffix], owner_id=course.teacher_id, course_instance_id=instance_id, stable_id=new_stable_id())
         db.add(material)
         db.flush()
     if selected_chapters is not None:
@@ -104,15 +105,15 @@ def visible_materials(instance_id, user):
     return query
 
 
-def teacher_materials(user: User, db: Session, classroom_id: int | None = None):
-    query = visible_materials(teacher_instance_id(db, user, classroom_id), user)
+def teacher_materials(user: User, db: Session, course_id: int | None = None):
+    query = visible_materials(teacher_instance_id(db, user, course_id), user)
     return [teacher_material_payload(db, material, user) for material in db.scalars(query.order_by(Material.id))]
 
 
-def material_page(db, user, classroom_id, page, size, search, kind, status):
+def material_page(db, user, course_id, page, size, search, kind, status):
     from app.course_content.catalog import page_window
 
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     query = visible_materials(instance_id, user).with_only_columns(
         Material.id, Material.title, Material.kind, Material.status, Material.error, Material.owner_id)
     links = select(MaterialChapter.material_id, Chapter.id).join(Chapter, Chapter.id == MaterialChapter.chapter_id).where(
@@ -135,20 +136,19 @@ def material_page(db, user, classroom_id, page, size, search, kind, status):
     return {**meta, "items": list(rows.values())}
 
 
-def teacher_material_preview(material_id: int, user: User, db: Session, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def teacher_material_preview(material_id: int, user: User, db: Session, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id)
     from app.materials.presentation import material_payload
 
     material = teacher_material(db, user, material_id, instance_id=instance_id)
     result = material_payload(db, material, chapter_ids=teacher_material_chapters(db, material, user))
     result["owner_id"] = material.owner_id
-    scope_query = f"?classroom_id={classroom_id}" if classroom_id is not None else ""
-    result["media_url"] = f"/api/teacher/materials/{material.id}/file{scope_query}" if material.storage_key and material.status == "ready" else None
+    result["media_url"] = f"/api/teacher/courses/{instance_id}/materials/{material.id}/file" if material.storage_key and material.status == "ready" else None
     return result
 
 
-def update_material(material_id: int, body: MaterialUpdate, user: User, db: Session, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def update_material(material_id: int, body: MaterialUpdate, user: User, db: Session, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     from app.curriculum import authoring_chapter
 
     material = teacher_material(db, user, material_id, edit=True, instance_id=instance_id)
@@ -163,7 +163,7 @@ def update_material(material_id: int, body: MaterialUpdate, user: User, db: Sess
     return teacher_material_payload(db, material, user)
 
 
-def delete_material(material_id: int, user: User, db: Session, classroom_id: int | None = None):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def delete_material(material_id: int, user: User, db: Session, course_id: int | None = None):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     teacher_material(db, user, material_id, edit=True, instance_id=instance_id)
     raise HTTPException(409, "请先预览删除影响并完成二次确认")

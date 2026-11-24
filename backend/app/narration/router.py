@@ -21,7 +21,7 @@ from . import render, repository, service
 from . import tts
 from .contracts import AppliedCalibration, AudioRecord, GeneratedPage, Quota
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/materials/{material_id}/narrations", tags=["narration"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/materials/{material_id}/narrations", tags=["narration"])
 student_router = APIRouter(prefix="/materials/{material_id}/narrations", tags=["narration"])
 
 
@@ -40,72 +40,72 @@ student_router = APIRouter(prefix="/materials/{material_id}/narrations", tags=["
 
 
 @router.post("/{page_no}/generate")
-def generate_narration(page_no: int, classroom_id: int, material_id: int,
+def generate_narration(page_no: int, course_id: int, material_id: int,
                        db: Annotated[Session, Depends(get_db)],
                        user: Annotated[User, Depends(require_teacher)],
                        body: PageGenerateInput | None = None) -> GeneratedPage:
     """One explicit authoring request = at most one model call. Never runs on page turns."""
-    return task_commands.generate_narration(page_no=page_no, classroom_id=classroom_id, material_id=material_id, db=db, user=user, body=body)
+    return task_commands.generate_narration(page_no=page_no, course_id=course_id, material_id=material_id, db=db, user=user, body=body)
 
 
 @router.post("/generate", status_code=202)
-def generate_range(classroom_id: int, material_id: int, body: GenerateInput,
+def generate_range(course_id: int, material_id: int, body: GenerateInput,
                    db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """Queue the batch; the worker generates page by page, so leaving the page is safe."""
-    job = task_commands.generate_range(classroom_id=classroom_id, material_id=material_id, body=body, db=db, user=user)
+    job = task_commands.generate_range(course_id=course_id, material_id=material_id, body=body, db=db, user=user)
     return {"job": jobs.state(material_id, job)}
 
 
 @router.post("/pipeline", status_code=202)
-def pipeline_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def pipeline_deck(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                   user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """一键梳理：整理原文 → 校准 → 应用修正 → 生成讲解稿，后台逐段跑。"""
-    job = task_commands.pipeline_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    job = task_commands.pipeline_deck(course_id=course_id, material_id=material_id, db=db, user=user)
     return {"job": jobs.state(material_id, job)}
 
 
 @router.post("/digest", status_code=202)
-def digest_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def digest_deck(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                 user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """Queue the whole-deck digest;整理稿写入 page_contents，可以关页面。"""
-    job = task_commands.digest_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    job = task_commands.digest_deck(course_id=course_id, material_id=material_id, db=db, user=user)
     return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/job")
-def read_job(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def read_job(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
              user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """前端轮询它来置灰按钮：同一份资料同时只允许一个生成/校准/音频任务。"""
-    material = teacher_material(db, user, classroom_id, material_id)
+    material = teacher_material(db, user, course_id, material_id)
     return jobs.state(material.id, repository.job_of(db, material.id))
 
 
 @router.get("/quota")
-def read_quota(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def read_quota(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                user: Annotated[User, Depends(require_teacher)]) -> Quota:
-    instance_id = teacher_instance_id(db, user, classroom_id)
-    teacher_material(db, user, classroom_id, material_id)
+    instance_id = teacher_instance_id(db, user, course_id)
+    teacher_material(db, user, course_id, material_id)
     return service.quota(db, instance_id)
 
 
 @router.post("/calibrate", status_code=202)
-def calibrate_deck(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def calibrate_deck(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                    user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """Queue the whole-deck walk; poll `/job` and `/calibrate?partial=1` for progress.
 
     The cursor lives in the run's report row, so an interrupted run resumes where it stopped.
     """
-    job = task_commands.calibrate_deck(classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    job = task_commands.calibrate_deck(course_id=course_id, material_id=material_id, db=db, user=user)
     return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/calibrate")
-def read_calibration(classroom_id: int, material_id: int,
+def read_calibration(course_id: int, material_id: int,
                      db: Annotated[Session, Depends(get_db)],
                      user: Annotated[User, Depends(require_teacher)],
                      partial: bool = False) -> dict[str, Any]:
     """The newest finished report by default; `partial=1` also shows a run still in progress."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     entry = calibrate.latest_any(db, material.id) if partial else calibrate.latest_complete(db, material.id)
@@ -116,10 +116,10 @@ def read_calibration(classroom_id: int, material_id: int,
 
 
 @router.post("/calibrate/apply")
-def apply_calibration(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def apply_calibration(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                       user: Annotated[User, Depends(require_teacher)]) -> AppliedCalibration:
     """Apply the report: corrected digest text and the course-level tag dictionary."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     entry = calibrate.latest_any(db, material.id)
@@ -135,9 +135,9 @@ def apply_calibration(classroom_id: int, material_id: int, db: Annotated[Session
 
 
 @router.get("")
-def list_narrations(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def list_narrations(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                     user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = teacher_material(db, user, classroom_id, material_id)
+    material = teacher_material(db, user, course_id, material_id)
     repository.sync_staleness(db, material)
     db.commit()
     pages = repository.page_map(material)
@@ -154,9 +154,9 @@ def list_narrations(classroom_id: int, material_id: int, db: Annotated[Session, 
 
 
 @router.put("/{page_no}")
-def author_narration(page_no: int, classroom_id: int, material_id: int, body: NarrationInput,
+def author_narration(page_no: int, course_id: int, material_id: int, body: NarrationInput,
                      db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     require_page(material, page_no)
     repository.sync_staleness(db, material)
     try:
@@ -168,10 +168,10 @@ def author_narration(page_no: int, classroom_id: int, material_id: int, body: Na
 
 
 @router.put("/{page_no}/content")
-def author_content(page_no: int, classroom_id: int, material_id: int, body: DigestInput,
+def author_content(page_no: int, course_id: int, material_id: int, body: DigestInput,
                    db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     """老师手工改整理稿的标题/主题/标签；正文改动仍走讲解稿编辑。"""
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     require_page(material, page_no)
     row = repository.content_row(db, material.id, page_no)
     if row is None:
@@ -191,9 +191,9 @@ def author_content(page_no: int, classroom_id: int, material_id: int, body: Dige
 
 
 @router.post("/{page_no}/accept")
-def accept_narration(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def accept_narration(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                      user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     repository.sync_staleness(db, material)
     try:
         item = repository.decide(db, material, page_no, "accepted", user)
@@ -207,12 +207,12 @@ def accept_narration(page_no: int, classroom_id: int, material_id: int, db: Anno
 
 
 @router.post("/accept-batch")
-def accept_batch(classroom_id: int, material_id: int,
+def accept_batch(course_id: int, material_id: int,
                  db: Annotated[Session, Depends(get_db)],
                  user: Annotated[User, Depends(require_teacher)],
                  body: RangeInput | None = None) -> dict[str, Any]:
     """Accept every reviewable draft in the range: reviewers read the deck, not one page at a time."""
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     repository.sync_staleness(db, material)
     first = body.first_page if body and body.first_page else 1
     last = body.last_page if body and body.last_page else 10**9
@@ -234,9 +234,9 @@ def accept_batch(classroom_id: int, material_id: int,
 
 
 @router.post("/{page_no}/reject")
-def reject_narration(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def reject_narration(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                      user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     repository.sync_staleness(db, material)
     try:
         item = repository.decide(db, material, page_no, "rejected", user)
@@ -249,9 +249,9 @@ def reject_narration(page_no: int, classroom_id: int, material_id: int, db: Anno
 
 
 @router.delete("/{page_no}")
-def delete_narration(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def delete_narration(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                      user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    material = teacher_material(db, user, classroom_id, material_id, exclusive=True)
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
     if not repository.remove(db, material, page_no):
         raise HTTPException(404, "本页还没有讲解草稿")
     db.commit()
@@ -259,17 +259,17 @@ def delete_narration(page_no: int, classroom_id: int, material_id: int, db: Anno
 
 
 @router.post("/{page_no}/audio")
-def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def synthesize_audio(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                      user: Annotated[User, Depends(require_teacher)]) -> AudioRecord:
     """Speak one approved page. Draft wording is refused, not spoken."""
-    return task_commands.synthesize_audio(page_no=page_no, classroom_id=classroom_id, material_id=material_id, db=db, user=user)
+    return task_commands.synthesize_audio(page_no=page_no, course_id=course_id, material_id=material_id, db=db, user=user)
 
 
 @router.get("/{page_no}/page-image")
-def read_page_image(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def read_page_image(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                     user: Annotated[User, Depends(require_teacher)]) -> Response:
     """The same rendered page the model saw, so review can compare wording against the slide."""
-    material = teacher_material(db, user, classroom_id, material_id)
+    material = teacher_material(db, user, course_id, material_id)
     image = render.render_page(material, page_no)
     if image is None:
         raise HTTPException(404, "本页没有可预览的页面图像")
@@ -277,20 +277,20 @@ def read_page_image(page_no: int, classroom_id: int, material_id: int, db: Annot
                     headers={"Cache-Control": "private, no-store"})
 
 @router.post("/audio-batch", status_code=202)
-def synthesize_audio_batch(classroom_id: int, material_id: int,
+def synthesize_audio_batch(course_id: int, material_id: int,
                            db: Annotated[Session, Depends(get_db)],
                            user: Annotated[User, Depends(require_teacher)],
                            body: RangeInput | None = None) -> dict[str, Any]:
     """Queue audio for every accepted page in the range; one failure keeps the rest."""
-    job = task_commands.synthesize_audio_batch(classroom_id=classroom_id, material_id=material_id, db=db, user=user, body=body)
+    job = task_commands.synthesize_audio_batch(course_id=course_id, material_id=material_id, db=db, user=user, body=body)
     return {"job": jobs.state(material_id, job)}
 
 
 @router.get("/{page_no}/audio/file")
-def stream_teacher_audio(page_no: int, classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def stream_teacher_audio(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                          user: Annotated[User, Depends(require_teacher)]) -> FileResponse:
     """Let the teacher hear exactly what the student will hear."""
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
@@ -305,9 +305,9 @@ def stream_teacher_audio(page_no: int, classroom_id: int, material_id: int, db: 
 
 
 @router.get("/audio")
-def read_audio_status(classroom_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+def read_audio_status(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
                       user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)

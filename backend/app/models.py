@@ -38,7 +38,13 @@ class Classroom(Base):
     __tablename__ = "classrooms"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("course_instances.id"), index=True)
+    course: Mapped["CourseInstance"] = relationship()
+
+    @property
+    def teacher_id(self):
+        return self.course.teacher_id
+
     join_code: Mapped[str] = mapped_column(String(24), unique=True)
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
 
@@ -54,7 +60,7 @@ class TownPreviewStudent(Base):
 class CourseInstance(Base):
     __tablename__ = "course_instances"
     id: Mapped[int] = mapped_column(primary_key=True)
-    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), unique=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     package_id: Mapped[str] = mapped_column(String(100))
     name: Mapped[str] = mapped_column(String(200))
     package_version: Mapped[str] = mapped_column(String(100))
@@ -101,6 +107,7 @@ class Chapter(RetirableContent, CourseContent, Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(200))
     order_index: Mapped[int] = mapped_column(Integer)
+    prerequisite_chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True)
     course_id: Mapped[int] = mapped_column(Integer, default=43)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
@@ -163,7 +170,6 @@ class ChapterRelease(Base):
     chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id"), primary_key=True)
     status: Mapped[str] = mapped_column(String(24), default="published")
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    prerequisite_chapter_id: Mapped[int | None] = mapped_column(ForeignKey("chapters.id"), nullable=True)
 
 
 class Npc(CourseContent, Base):

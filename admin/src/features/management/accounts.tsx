@@ -145,7 +145,7 @@ function AccountDialog({ edit, onClose, onSaved }: {
     enable: "账号启用后可使用原密码重新登录。",
     delete: student
       ? "永久删除该学生账号及其在所有班级的存档、提交、成绩和助教会话。此操作无法撤销。"
-      : "永久删除该教师账号、名下所有班级及其课程和学习记录。班级里的学生账号保留。此操作无法撤销。",
+      : "永久删除该教师账号、名下所有课程（包括尚未开班的课程）、教学班和学习记录。班级里的学生账号保留。此操作无法撤销。",
   }[action];
 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>

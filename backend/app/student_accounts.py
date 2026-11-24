@@ -54,12 +54,18 @@ def inspect_students(db, classroom_id, students):
     previews = set(db.scalars(select(TownPreviewStudent.student_user_id).where(
         TownPreviewStudent.student_user_id.in_([u.id for u in existing.values()]))))
     members = set(db.scalars(select(Membership.user_id).where(Membership.classroom_id == classroom_id)))
+    from .classrooms.service import other_class_members
+    from .models import Classroom
+    elsewhere = set(db.scalars(other_class_members(db.get(Classroom, classroom_id)).where(
+        Membership.user_id.in_([u.id for u in existing.values()]))))
     for index, student in enumerate(students, 2):
         old = existing.get(student.student_id)
         if student.student_id in seen:
             errors.append(f"第{index}行：学号重复")
         elif old and (old.role != "student" or old.id in previews):
             errors.append(f"第{index}行：该学号不能作为正式学生加入班级")
+        elif old and old.id in elsewhere:
+            errors.append(f"第{index}行：该学生已加入本课程的其他在教班级")
         elif old and old.id not in members and old.name != student.name:
             errors.append(f"第{index}行：学号与姓名不匹配，请核对名册")
         elif not old and len(student.student_id) < MIN_PASSWORD_LENGTH:

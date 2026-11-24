@@ -8,6 +8,7 @@ export interface User {
   must_change_password: boolean;
 }
 export interface Classroom {
+  course_id: number;
   id: number;
   name: string;
   teacher_id: number;
@@ -32,13 +33,15 @@ export interface AuthResult {
 }
 export interface CourseInstance {
   id: number;
-  classroom_id: number;
+  teacher_id: number;
+  teacher_name?: string;
   package_id: string;
   name: string;
   package_version: string;
   revision: number;
 }
 export interface Chapter {
+  prerequisite_chapter_id?: number | null;
   id: number;
   title: string;
   order_index: number;

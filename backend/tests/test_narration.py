@@ -1,4 +1,5 @@
 """Page narration: teacher review state, staleness after a re-upload, and student visibility."""
+from course_fixtures import create_test_class
 from conftest import make_material
 
 
@@ -16,7 +17,7 @@ def material_fixture(db, classroom, texts, **fields):
 
 
 def url(classroom, material, suffix=""):
-    return f"/api/teacher/classrooms/{classroom['id']}/materials/{material.id}/narrations{suffix}"
+    return f"/api/teacher/courses/{classroom['course_id']}/materials/{material.id}/narrations{suffix}"
 
 
 def test_teacher_authors_reviews_and_student_sees_only_approved(client, db, classroom, teacher, student):
@@ -100,11 +101,10 @@ def test_narration_rejects_unknown_pages_and_empty_accepts(client, db, classroom
 def test_narration_is_scoped_to_the_owning_classroom(client, db, classroom, teacher, student):
     material = material_fixture(db, classroom, ["第一页正文"])
     db.commit()
-    other = client.post("/api/classrooms", json={"name": "别人的班级"}, headers=teacher["headers"])
+    other = create_test_class(client, json={"name": "别人的班级"}, headers=teacher["headers"])
     assert other.status_code == 201, other.text
-    moved = url({"id": other.json()["id"]}, material)
-    # The other classroom has no course instance yet, so the material cannot belong to it.
-    assert client.get(moved, headers=teacher["headers"]).status_code == 409
+    moved = url(other.json(), material)
+    assert client.get(moved, headers=teacher["headers"]).status_code == 404
     assert client.get(f"/api/materials/{material.id}/narrations", headers=student["headers"]).status_code == 422
 
 

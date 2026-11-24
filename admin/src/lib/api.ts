@@ -13,8 +13,8 @@ export function setToken(value: string | null) {
   if (value) sessionStorage.setItem(TOKEN_KEY, value);
   else sessionStorage.removeItem(TOKEN_KEY);
 }
-export function scoped(path: string, classroomId: number) {
-  return `${path}${path.includes("?") ? "&" : "?"}classroom_id=${classroomId}`;
+export function scoped(path: string, courseId: number) {
+  return path.replace("/teacher/", `/teacher/courses/${courseId}/`);
 }
 export function responseError(
   status: number,

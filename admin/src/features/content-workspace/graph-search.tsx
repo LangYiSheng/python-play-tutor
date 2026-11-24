@@ -11,8 +11,8 @@ type SearchKind = Exclude<keyof typeof filters, "all">;
 type Hit = { kind: SearchKind; id: string | number; title: string; chapter_id?: number | null };
 const size = 10;
 
-export function GraphSearch({ classroomId, revision, cards, select }: {
-  classroomId: number; revision: number; cards: Card[]; select: (s: Selection, chapterId?: number | null) => void;
+export function GraphSearch({ courseId, revision, cards, select }: {
+  courseId: number; revision: number; cards: Card[]; select: (s: Selection, chapterId?: number | null) => void;
 }) {
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
@@ -37,7 +37,7 @@ export function GraphSearch({ classroomId, revision, cards, select }: {
   }, [isOpen]);
   const params = new URLSearchParams({ search, kind, page: String(page), size: String(size) });
   const result = useGraphData<{ items: Hit[]; page: number; total: number }>(search && search === term
-    ? scoped("/teacher/course-graph/search?" + params, classroomId) : null, revision);
+    ? scoped("/teacher/course-graph/search?" + params, courseId) : null, revision);
   const found = result?.data;
   const resident = kind === "all" && page === 1 && term && found ? cards.filter(c =>
     (c.kind === "course" || c.kind === "audio" || c.kind === "narration" || c.kind === "task") &&

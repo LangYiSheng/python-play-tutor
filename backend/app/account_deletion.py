@@ -24,7 +24,7 @@ LEARNER_ROWS = (
 
 
 def owned_classroom_ids(db, teacher_id):
-    return list(db.scalars(select(Classroom.id).where(Classroom.teacher_id == teacher_id).order_by(Classroom.id)))
+    return list(db.scalars(select(Classroom.id).join(CourseInstance).where(CourseInstance.teacher_id == teacher_id).order_by(Classroom.id)))
 
 
 def delete_account_data(db, account, classroom_ids):
@@ -35,12 +35,13 @@ def delete_account_data(db, account, classroom_ids):
         )))
     for model in LEARNER_ROWS:
         db.execute(delete(model).where(or_(model.user_id.in_(removed_users), model.classroom_id.in_(classroom_ids))))
-    for model in (ContentDeletionPreview, CourseImportPreview):
-        db.execute(delete(model).where(or_(model.teacher_id.in_(removed_users), model.classroom_id.in_(classroom_ids))))
+    course_ids = list(db.scalars(select(CourseInstance.id).where(CourseInstance.teacher_id == account.id)))
+    for model, scope in ((ContentDeletionPreview, ContentDeletionPreview.course_instance_id), (CourseImportPreview, CourseImportPreview.course_id)):
+        db.execute(delete(model).where(or_(model.teacher_id.in_(removed_users), scope.in_(course_ids))))
     db.execute(delete(TownPreviewStudent).where(TownPreviewStudent.student_user_id.in_(removed_users)))
 
-    if classroom_ids:
-        _delete_courses(db, classroom_ids)
+    if course_ids:
+        _delete_courses(db, classroom_ids, course_ids)
 
     # Attribution in surviving courses and retained import sources is optional.
     for model in CONTENT_MODELS:
@@ -52,8 +53,7 @@ def delete_account_data(db, account, classroom_ids):
     db.execute(delete(User).where(User.id.in_(removed_users)))
 
 
-def _delete_courses(db, classroom_ids):
-    instance_ids = select(CourseInstance.id).where(CourseInstance.classroom_id.in_(classroom_ids))
+def _delete_courses(db, classroom_ids, instance_ids):
     question_ids = select(Question.id).where(Question.course_instance_id.in_(instance_ids)).execution_options(include_deleted=True)
     db.execute(delete(ChapterRelease).where(ChapterRelease.classroom_id.in_(classroom_ids)))
     db.execute(delete(CoursePackageState).where(CoursePackageState.course_instance_id.in_(instance_ids)))
@@ -61,5 +61,5 @@ def _delete_courses(db, classroom_ids):
     # Activity deletion cascades its material and question links. Chapter comes after its definitions.
     for model in (Activity, *(model for model in CONTENT_MODELS if model not in (Activity, Chapter)), Chapter):
         db.execute(delete(model).where(model.course_instance_id.in_(instance_ids)))
-    db.execute(delete(CourseInstance).where(CourseInstance.classroom_id.in_(classroom_ids)))
     db.execute(delete(Classroom).where(Classroom.id.in_(classroom_ids)))
+    db.execute(delete(CourseInstance).where(CourseInstance.id.in_(instance_ids)))

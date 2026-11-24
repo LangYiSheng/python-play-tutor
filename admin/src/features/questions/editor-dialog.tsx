@@ -21,12 +21,12 @@ import { kinds, statuses } from "./types";
 import type { useQuestionEditor } from "./use-editor";
 export function QuestionDialog({
   editor,
-  classroomId,
+  courseId,
   course,
   materials,
 }: {
   editor: ReturnType<typeof useQuestionEditor>;
-  classroomId: number;
+  courseId: number;
   course: { data: Pick<Course, "chapters"> | null };
   materials: { data: Material[] | null };
 }) {
@@ -143,7 +143,7 @@ export function QuestionDialog({
                 onSamples={value => { editor.setSamples(value); setDirty(true); }}
                 onHidden={value => { editor.setCases(value); setDirty(true); }} /> }] : []),
               { label: "内容关联", content: <>
-                <KnowledgePointPicker chapters={course.data?.chapters ?? []} classroomId={classroomId}
+                <KnowledgePointPicker chapters={course.data?.chapters ?? []} courseId={courseId}
                   initialChapterId={chapterIds[0] ?? course.data?.chapters[0]?.id ?? 0} selected={pointIds}
                   chapterSelection={{ ids: chapterIds, change: ids => { setChapterIds(ids); setDirty(true); } }}
                   onChange={ids => { setPointIds(ids); setDirty(true); }} />

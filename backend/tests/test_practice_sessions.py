@@ -95,7 +95,7 @@ def test_practice_session_migration_round_trip(tmp_path):
     path = tmp_path / "isolated-practice.db"
     env = {**os.environ, "REBORN_ENV": "development", "REBORN_DATABASE_URL": "sqlite:///" + path.as_posix()}
     backend = Path(__file__).resolve().parents[1]
-    for command, target, expected in [("upgrade", "head", True), ("downgrade", "e51b92fa60c3", False), ("upgrade", "head", True)]:
+    for command, target, expected in [("upgrade", "f6512e40a77d", True), ("downgrade", "e51b92fa60c3", False), ("upgrade", "head", True)]:
         result = subprocess.run([sys.executable, "-m", "alembic", command, target], env=env, cwd=backend,
                                 capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stderr

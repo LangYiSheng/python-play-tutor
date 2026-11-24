@@ -1,4 +1,5 @@
 """Class-owned clones preserve source definitions and learner evidence."""
+from course_fixtures import empty_course
 from app.models import ActivityMaterial
 
 from copy import deepcopy
@@ -26,8 +27,8 @@ def classes(db):
     student = User(student_id="885002", name="Student", role="student", password_hash="test-only")
     db.add_all([teacher, student])
     db.flush()
-    first = Classroom(name="Alpha", teacher_id=teacher.id, join_code="clone-alpha")
-    second = Classroom(name="Beta", teacher_id=teacher.id, join_code="clone-beta")
+    first = Classroom(name="Alpha", course=empty_course(teacher.id), join_code="clone-alpha")
+    second = Classroom(name="Beta", course=empty_course(teacher.id), join_code="clone-beta")
     db.add_all([first, second])
     db.flush()
     for classroom in (first, second):
@@ -134,7 +135,7 @@ def test_bad_cross_owner_reference_rolls_back_the_entire_clone(db):
     db.commit()
     with pytest.raises(CourseCloneError):
         clone_current_course(db, alpha)
-    assert db.scalar(select(func.count()).select_from(CourseInstance)) == 0
+    assert db.scalar(select(func.count()).select_from(CourseInstance).where(CourseInstance.package_id == "legacy-current")) == 0
     assert db.scalar(select(func.count()).select_from(Chapter).where(Chapter.course_instance_id.is_not(None))) == 0
     assert db.get(Chapter, 179).course_instance_id is None
 
@@ -162,7 +163,7 @@ def test_course_instance_and_stable_id_uniqueness(db):
     instance = clone_current_course(db, alpha)
     db.commit()
     with pytest.raises(IntegrityError), db.begin_nested():
-        db.add(CourseInstance(classroom_id=alpha.id, package_id="other", name="Other", package_version="1"))
+        alpha.course_id = None
         db.flush()
     with pytest.raises(IntegrityError), db.begin_nested():
         db.add(Material(title="duplicate", course_instance_id=instance.id, stable_id="186"))
@@ -205,7 +206,7 @@ def test_invalid_private_material_reference_rolls_back_after_allocation(db):
     db.commit()
     with pytest.raises(CourseCloneError):
         clone_current_course(db, alpha)
-    assert db.scalar(select(func.count()).select_from(CourseInstance)) == 0
+    assert db.scalar(select(func.count()).select_from(CourseInstance).where(CourseInstance.package_id == "legacy-current")) == 0
     for model in (Chapter, Material, Question, Activity, Npc):
         assert db.scalar(select(func.count()).select_from(model).where(model.course_instance_id.is_not(None))) == 0
     assert db.get(ChapterRelease, (alpha.id, 179)) is not None
@@ -254,7 +255,7 @@ def test_clone_refuses_in_flight_assistant_stream(db, status):
     db.commit()
     with pytest.raises(CourseCloneError, match="助教回复"):
         clone_current_course(db, alpha)
-    assert db.scalar(select(func.count()).select_from(CourseInstance)) == 0
+    assert db.scalar(select(func.count()).select_from(CourseInstance).where(CourseInstance.package_id == "legacy-current")) == 0
     assert session.activity_id == "ch1-lesson" and call.status == status
 
 
@@ -311,7 +312,7 @@ def test_postgres_concurrent_same_class_clones_one_instance(pg_course_engine):
         ids = [future.result(timeout=30) for future in futures]
     assert ids[0] == ids[1]
     with Session(pg_course_engine) as db:
-        assert db.scalar(select(func.count()).select_from(CourseInstance)) == 1
+        assert db.scalar(select(func.count()).select_from(CourseInstance).where(CourseInstance.package_id == "legacy-current")) == 1
         assert db.scalar(select(func.count()).select_from(Chapter).where(Chapter.course_instance_id == ids[0])) == 7
 
 
@@ -362,11 +363,9 @@ def test_postgres_active_course_read_fences_clone_activation(pg_course_engine):
     from time import monotonic, sleep
     from sqlalchemy import text
     from app.course_scope import instance_id
-    from fastapi import HTTPException
-
     with Session(pg_course_engine, expire_on_commit=False) as db:
         _, _, alpha, _ = classes(db)
-        class_id = alpha.id
+        class_id, course_id = alpha.id, alpha.course_id
 
     def clone():
         with Session(pg_course_engine) as db:
@@ -375,9 +374,7 @@ def test_postgres_active_course_read_fences_clone_activation(pg_course_engine):
             return result
 
     with Session(pg_course_engine) as reader, ThreadPoolExecutor(max_workers=1) as pool:
-        with pytest.raises(HTTPException) as missing:
-            instance_id(reader, class_id)  # the request still holds its transaction gate until rollback
-        assert missing.value.status_code == 409
+        assert instance_id(reader, class_id) == course_id
         future = pool.submit(clone)
         waiting = False
         deadline = monotonic() + 10
@@ -385,7 +382,7 @@ def test_postgres_active_course_read_fences_clone_activation(pg_course_engine):
             while monotonic() < deadline:
                 with pg_course_engine.connect() as inspector:
                     waiting = bool(inspector.scalar(text("SELECT count(*) FROM pg_locks WHERE locktype='advisory' "
-                        "AND classid=41729 AND objid=:id AND NOT granted"), {"id": class_id}))
+                        "AND classid=41729 AND objid=:id AND NOT granted"), {"id": course_id}))
                 if waiting:
                     break
                 sleep(0.02)

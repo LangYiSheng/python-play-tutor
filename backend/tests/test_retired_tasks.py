@@ -17,7 +17,7 @@ def test_current_seed_exposes_only_authored_arrival(client, db, student, teacher
     response = client.get(f"/api/world?classroom_id={classroom['id']}", headers=student["headers"])
     assert response.status_code == 200
     assert [item["id"] for item in response.json()["quests"]] == ["arrival"]
-    assert [item["id"] for item in client.get("/api/teacher/quests", headers=teacher["headers"], params={"classroom_id": classroom["id"]}).json()] == ["arrival"]
+    assert [item["id"] for item in client.get(f"/api/teacher/courses/{classroom['course_id']}/quests", headers=teacher["headers"]).json()] == ["arrival"]
     assert client.get(f"/api/activities/archive-476?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 404
 
 
@@ -63,7 +63,8 @@ def test_legacy_source_reimport_preserves_owned_tasks_and_grades(client, db, stu
     assert db.get(Activity, activity.id).content["published"] is False
     assert db.scalar(select(StorySession).where(StorySession.story_id == "retired-story")).status == "ended"
     response = client.get(f"/api/world?classroom_id={classroom['id']}", headers=student["headers"])
-    assert response.status_code == 409  # Explicit migration is required before serving old sources.
+    assert response.status_code == 200
+    assert retired_id not in response.text
     details = client.get(f"/api/teacher/classrooms/{classroom['id']}/students/{student['id']}", headers=teacher["headers"])
     assert details.status_code == 200
     assert event_id in [item["id"] for item in details.json()["events"]]

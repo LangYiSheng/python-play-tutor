@@ -27,7 +27,7 @@ def _write_jsonl(path, values):
 
 
 def write_package(db, instance, root):
-    data, secrets, releases, config, rows = snapshot_content(db, instance)
+    data, secrets, prerequisites, config, rows = snapshot_content(db, instance)
     if any(material.status in {"queued", "processing"} for material in rows[Material]):
         raise PackageError("班级资料仍在转换，请完成后导出课程")
     created = as_utc(instance.created_at).isoformat()
@@ -49,7 +49,7 @@ def write_package(db, instance, root):
     if any(material.kind == "video" for material in rows[Material]):
         manifest["requires"]["capabilities"].append("video")
     _write_yaml(root / "manifest.yaml", manifest)
-    course = {"schema_version": 1, "title": instance.name, "releases": releases}
+    course = {"schema_version": 2, "title": instance.name, "prerequisites": prerequisites}
     recipe = config.get("_quick_orchestration", {}).get("recipe")
     if recipe is not None:
         course["quick_orchestration"] = recipe

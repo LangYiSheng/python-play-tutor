@@ -1,4 +1,4 @@
-from app.models import CourseInstance
+from course_fixtures import create_test_class
 from app.narration import repository
 from conftest import make_material, make_question
 
@@ -9,11 +9,11 @@ def drafts(client, db, classroom, teacher):
                              content={"pages": [{"page_no": 1, "text": "原始资料"}]}, chapter_ids=[179])
     narration = repository.upsert(db, material, 1, text="原始讲稿", target_seconds=100)
     db.commit()
-    response = client.post(f"/api/teacher/questions?classroom_id={cid}", headers=headers, json={
+    response = client.post(f"/api/teacher/courses/{cid}/questions", headers=headers, json={
         "id": "review-question", "title": "待审练习", "kind": "fill", "prompt": "草稿", "answer": "Python",
         "chapter_ids": [179], "source": {"material_id": material.id, "page_no": 1}})
     assert response.status_code == 201, response.text
-    return f"/api/teacher/classrooms/{cid}/content-review", material, narration, response.json()["id"]
+    return f"/api/teacher/courses/{cid}/content-review", material, narration, response.json()["id"]
 
 
 def test_review_filtered_queue_and_transactional_decision(client, db, classroom, teacher, student):
@@ -39,10 +39,9 @@ def test_review_filtered_queue_and_transactional_decision(client, db, classroom,
 def test_edit_and_accept_narration_reject_question_and_class_isolation(client, db, classroom, teacher):
     base, material, narration, question_id = drafts(client, db, classroom, teacher)
     headers = teacher["headers"]
-    second = client.post("/api/classrooms", json={"name": "隔离班级"}, headers=headers).json()["id"]
-    db.add(CourseInstance(classroom_id=second, package_id="empty-course", name="空课程", package_version="1"))
+    second = create_test_class(client, json={"name": "隔离班级"}, headers=headers).json()["id"]
     db.commit()
-    other = f"/api/teacher/classrooms/{second}/content-review"
+    other = f"/api/teacher/courses/{second}/content-review"
     assert client.get(other, headers=headers).json()["total"] == 0
     assert client.get(other + "/materials", headers=headers).json() == {"items": [], "total": 0, "page": 1, "question_count": 0}
     rows = client.get(base, headers=headers).json()["items"]
@@ -54,14 +53,14 @@ def test_edit_and_accept_narration_reject_question_and_class_isolation(client, d
     assert repository.row(db, material.id, 1).text == "已核对的新讲稿"
     question = next(r for r in client.get(base + "?kind=question", headers=headers).json()["items"] if r["id"] == question_id)
     assert client.post(base + "/decisions", json={"decision": "reject", "items": [question]}, headers=headers).status_code == 200
-    saved = client.get(f"/api/teacher/questions/{question_id}?classroom_id={classroom['id']}", headers=headers).json()
+    saved = client.get(f"/api/teacher/courses/{classroom['course_id']}/questions/{question_id}", headers=headers).json()
     assert saved["status"] == "disabled"
 
 
 def test_queue_refuses_unusable_questions_and_changed_sources(client, db, classroom, teacher):
     base, material, narration, question_id = drafts(client, db, classroom, teacher)
     headers = teacher["headers"]
-    path = f"/api/teacher/questions/{question_id}?classroom_id={classroom['id']}"
+    path = f"/api/teacher/courses/{classroom['course_id']}/questions/{question_id}"
     assert client.put(path, headers=headers, json={"chapter_ids": []}).status_code == 200
     rows = client.get(base, headers=headers).json()["items"]
     selected = [r for r in rows if (r["kind"], r["id"]) in {("narration", str(narration.id)), ("question", question_id)}]
@@ -160,17 +159,17 @@ def test_reviewable_question_filter_matches_counter_but_normal_catalog_shows_sha
     for key, owner in [("shared-q", None), ("foreign-q", student["id"])]:
         make_question(db, chapter_ids=[179], id=key, title=key, kind="fill", prompt="草稿", owner_id=owner).status = "draft"
     db.commit()
-    path = f"/api/teacher/questions?classroom_id={classroom['id']}"
-    review_page = client.get(path + "&reviewable=true", headers=h).json()
+    path = f"/api/teacher/courses/{classroom['course_id']}/questions"
+    review_page = client.get(path + "?reviewable=true", headers=h).json()
     assert [r["id"] for r in review_page["items"]] == [own]
     assert review_page["total"] == client.get(base + "/materials", headers=h).json()["question_count"] == 1
-    regular = client.get(path + "&page=1&status=draft", headers=h).json()
+    regular = client.get(path + "?page=1&status=draft", headers=h).json()
     assert {r["id"] for r in regular["items"]} == {own, "shared-q"}
-    assert client.get(path + "&reviewable=true&status=ready", headers=h).json()["total"] == 0
+    assert client.get(path + "?reviewable=true&status=ready", headers=h).json()["total"] == 0
 
     db.get(User, teacher["id"]).role = "admin"
     db.commit()
-    admin_page = client.get(path + "&reviewable=true", headers=h).json()
+    admin_page = client.get(path + "?reviewable=true", headers=h).json()
     assert {r["id"] for r in admin_page["items"]} == {own, "shared-q", "foreign-q"}
     assert admin_page["total"] == client.get(base + "/summary", headers=h).json()["question_count"] == 3
 

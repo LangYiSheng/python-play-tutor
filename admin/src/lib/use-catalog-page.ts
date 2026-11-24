@@ -4,7 +4,7 @@ import { useResource } from "./use-resource";
 
 type CatalogPage<T> = { items: T[]; page: number; total: number };
 
-export function useCatalogPage<T>(path: string, classroomId: number, query: string,
+export function useCatalogPage<T>(path: string, courseId: number, query: string,
   filters: Record<string, string>, enabled = true) {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(10);
@@ -18,7 +18,7 @@ export function useCatalogPage<T>(path: string, classroomId: number, query: stri
     if (value !== "all") params.set(key, value);
   }
   const resource = useResource<CatalogPage<T>>(enabled && search === query
-    ? scoped(`${path}?${params}`, classroomId) : null);
+    ? scoped(`${path}?${params}`, courseId) : null);
   return {
     ...resource,
     rows: resource.data?.items ?? [],

@@ -1,5 +1,6 @@
 """Import revised teaching content while retaining actual learner history."""
 
+from course_fixtures import empty_course
 from copy import deepcopy
 from uuid import uuid4
 
@@ -10,7 +11,7 @@ from app.models import Activity, ActivityProgress, Classroom, LearningRecord, Ma
 
 
 def test_reimport_updates_current_sources_without_erasing_legacy_progress(db, student, teacher, monkeypatch):
-    classroom = Classroom(name="Unmigrated legacy", teacher_id=teacher["id"], join_code=uuid4().hex[:20])
+    classroom = Classroom(name="Unmigrated legacy", course=empty_course(teacher["id"]), join_code=uuid4().hex[:20])
     db.add(classroom)
     db.flush()
     cid = classroom.id

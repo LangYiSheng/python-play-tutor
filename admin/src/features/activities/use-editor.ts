@@ -4,7 +4,7 @@ import { newId } from "@/lib/id";
 import type { Activity, ActivityResource, Course, PracticeRules } from "@/lib/types";
 import { useState, type FormEvent } from "react";
 export function useActivityEditor(
-  classroomId: number,
+  courseId: number,
   onSaved: () => void,
   course: Course | null,
 ) {
@@ -81,12 +81,12 @@ export function useActivityEditor(
         await api.put(
           scoped(
             `/teacher/activities/${encodeURIComponent(id)}`,
-            classroomId,
+            courseId,
           ),
           body,
         );
       else
-        await api.post(scoped("/teacher/activities", classroomId), {
+        await api.post(scoped("/teacher/activities", courseId), {
           id,
           chapter_id: chapter,
           kind,
@@ -102,7 +102,7 @@ export function useActivityEditor(
     }
   }
   return {
-    classroomId,
+    courseId,
     editing,
     setEditing,
     open,

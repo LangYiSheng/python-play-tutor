@@ -141,7 +141,7 @@ def test_cleanup_apply_requires_explicit_development(db, monkeypatch, environmen
 
 
 def test_runtime_image_does_not_embed_or_reseed_course_content():
-    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert "fixture_seed" not in dockerfile
     assert "course-pack-43" not in dockerfile
     assert "COPY backend/ ./" not in dockerfile

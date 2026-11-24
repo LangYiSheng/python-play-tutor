@@ -11,12 +11,13 @@ export type DeletionKind = "chapter" | "material" | "question" | "activity";
 type Impact = { kind: string; id?: string; title: string; reason?: string; count?: number };
 type Preview = {
   id: string; confirmation: string; remove: Impact[]; detach: Impact[]; preserve: Impact[];
+  classrooms: {id: number; name: string; students: number; ending_sessions: number}[];
   blockers: { message: string; path?: string }[]; affected_students: number; ending_sessions: number; history_policy: string;
 };
 const names: Record<string, string> = { chapter: "章节", material: "资料", question: "题目", activity: "活动", knowledge_point: "知识点", quest: "任务", story: "教学流程" };
 
-export function ContentDeleteDialog({ classroomId, targets, onClose, onDone }: {
-  classroomId: number; targets: { kind: DeletionKind; id: string }[]; onClose: () => void; onDone: () => void;
+export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
+  courseId: number; targets: { kind: DeletionKind; id: string }[]; onClose: () => void; onDone: () => void;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [step, setStep] = useState<"preview" | "confirm">("preview");
@@ -28,12 +29,12 @@ export function ContentDeleteDialog({ classroomId, targets, onClose, onDone }: {
   useEffect(() => {
     const controller = new AbortController(), captured = token();
     setPreview(null); setError(""); setStep("preview"); setConfirmation(""); setAcknowledged(false); setStale(false);
-    void request<Preview>("/teacher/content-deletions/preview", {
-      method: "POST", signal: controller.signal, body: JSON.stringify({ classroom_id: classroomId, targets: JSON.parse(encoded) }),
+    void request<Preview>(`/teacher/courses/${courseId}/content-deletions/preview`, {
+      method: "POST", signal: controller.signal, body: JSON.stringify({ targets: JSON.parse(encoded) }),
     }).then(value => { if (!controller.signal.aborted && token() === captured) setPreview(value); })
       .catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); });
     return () => controller.abort();
-  }, [classroomId, encoded, revision]);
+  }, [courseId, encoded, revision]);
   useEffect(() => () => action.current?.abort(), []);
   async function confirm() {
     if (!preview || busy || stale || !acknowledged || confirmation !== preview.confirmation) return;
@@ -41,9 +42,9 @@ export function ContentDeleteDialog({ classroomId, targets, onClose, onDone }: {
     action.current = controller;
     setBusy(true); setError("");
     try {
-      await request(`/teacher/content-deletions/${encodeURIComponent(preview.id)}/confirm`, {
+      await request(`/teacher/courses/${courseId}/content-deletions/${encodeURIComponent(preview.id)}/confirm`, {
         method: "POST", signal: controller.signal,
-        body: JSON.stringify({ classroom_id: classroomId, confirmation, confirmed: true }),
+        body: JSON.stringify({ confirmation, confirmed: true }),
       });
       if (!controller.signal.aborted && captured === token()) onDone();
     } catch (e) {
@@ -63,6 +64,7 @@ export function ContentDeleteDialog({ classroomId, targets, onClose, onDone }: {
           <ImpactList title="解除关联" rows={preview.detach} />
           <ImpactList title="保留" rows={preview.preserve} />
           <p className="text-sm">{preview.history_policy}</p>
+          {preview.classrooms?.map(room => <p className="text-sm" key={room.id}>{room.name} · {room.students} 名学生，{room.ending_sessions} 个进行中互动</p>)}
           {preview.affected_students > 0 ? <p className="text-sm">关联 {preview.affected_students} 名学生（含体验账号）。</p> : null}
           {preview.ending_sessions > 0 ? <p className="text-sm">将结束 {preview.ending_sessions} 个相关进行中互动，互动记录与进度保留。</p> : null}
           {preview.blockers.length > 0 ? <div className="rounded-md border border-destructive/30 p-3"><h3 className="font-semibold">需要先处理</h3>

@@ -1,4 +1,5 @@
 """Opt-in real PostgreSQL durable queue + real go-judge execution."""
+from course_fixtures import empty_course
 import asyncio
 import os
 import time
@@ -37,7 +38,7 @@ def test_live_postgres_bounded_queue_restart_and_claim(monkeypatch):
             user = User(student_id="991414001", name="isolated queue test", role="teacher", password_hash="unused")
             db.add(user)
             db.flush()
-            classroom = Classroom(name="isolated queue", teacher_id=user.id, join_code=uuid4().hex[:20])
+            classroom = Classroom(name="isolated queue", course=empty_course(user.id), join_code=uuid4().hex[:20])
             db.add(classroom)
             db.flush()
             ids = []

@@ -62,8 +62,8 @@ def test_itinerary_uses_existing_engine_validators_and_stable_ids(course):
     assert reordered_stories - original_stories == {chapter_prefix("chapter-1") + "-quest-farewell"}
     assert {q["id"] for q in generated["quest"] if q["definition"]["kind"] == "main"} == {
         q["id"] for q in reordered["quest"] if q["definition"]["kind"] == "main"}
-    assert [release["prerequisite_chapter_id"] for release in generated["releases"]] == [None, "chapter-1"]
-    assert [release["prerequisite_chapter_id"] for release in reordered["releases"]] == [None, "chapter-2"]
+    assert [release["prerequisite_chapter_id"] for release in generated["prerequisites"]] == ["chapter-1"]
+    assert [release["prerequisite_chapter_id"] for release in reordered["prerequisites"]] == ["chapter-2"]
     first = next(row["content"] for row in reordered["story"] if row["quest_id"] and row["chapter_id"] == "chapter-2")
     assert "{course_name}" in next(node["text"] for node in first["nodes"] if node["id"] == "welcome-mayor")
 
@@ -157,8 +157,8 @@ def test_importing_an_outdoor_course_recovers_the_old_baseline_before_migration(
     for kind in ("npc", "quest", "story", "activity"):
         data[kind].extend(deepcopy(installed[kind]))
     cfg = {"world": {"interactions": installed["interactions"]}}
-    releases = installed["releases"]
-    bundle = {"course": {"quick_orchestration": recipe, "releases": releases}, "configuration": cfg, "data": data}
+    releases = installed["prerequisites"]
+    bundle = {"course": {"quick_orchestration": recipe, "prerequisites": releases}, "configuration": cfg, "data": data}
 
     state = restore_template(bundle, {})["_quick_orchestration"]
     assert len(data["quest"][0]["definition"]["nodes"]) == 3
@@ -195,10 +195,10 @@ def test_imported_four_character_prototype_can_play_but_cannot_mix_with_new_shel
     public["entries"]["quick-course-professor"] = [{"when": {"always": True}, "node": "welcome"}]
     data["npc"].append({**data["npc"][0], "id": "quick-course-professor", "name": "林教授"})
     cfg = {"world": {"interactions": installed["interactions"]}}
-    bundle = {"course": {"quick_orchestration": recipe, "releases": installed["releases"]}, "configuration": cfg, "data": data}
+    bundle = {"course": {"quick_orchestration": recipe, "prerequisites": installed["prerequisites"]}, "configuration": cfg, "data": data}
     before = deepcopy(bundle)
     state = restore_template(bundle, {})["_quick_orchestration"]
-    plan = merge_course(data, cfg, installed["releases"], compile_template(data, recipe), recipe, state)
+    plan = merge_course(data, cfg, installed["prerequisites"], compile_template(data, recipe), recipe, state)
     assert any("早期四角色样板" in issue for issue in plan.blockers)
     assert not any(plan.edits.values()) and plan.data == data
     assert before == bundle
@@ -218,9 +218,9 @@ def test_imported_chapter_shelf_tour_keeps_its_id_and_manual_edits_are_protected
     installed["quest"] = [q for q in installed["quest"] if q["definition"]["kind"] == "main"] + [tour]
     for kind in ("npc", "quest", "story", "activity"):
         data[kind].extend(installed[kind])
-    releases = installed["releases"]
+    releases = installed["prerequisites"]
     config = {"world": {"interactions": installed["interactions"]}, "buildings": installed["buildings"]}
-    bundle = {"course": {"quick_orchestration": recipe, "releases": releases}, "data": data, "configuration": config}
+    bundle = {"course": {"quick_orchestration": recipe, "prerequisites": releases}, "data": data, "configuration": config}
 
     def regenerate():
         state = restore_template(bundle, {})["_quick_orchestration"]
@@ -258,8 +258,8 @@ def test_previous_indoor_package_can_remove_ending_and_tour_without_claiming_aut
     for kind in ("npc", "quest", "story", "activity"):
         data[kind].extend(installed[kind])
     cfg = {"world": {"interactions": installed["interactions"]}, "buildings": installed["buildings"]}
-    releases = installed["releases"]
-    bundle = {"course": {"quick_orchestration": recipe, "releases": releases}, "configuration": cfg, "data": data}
+    releases = installed["prerequisites"]
+    bundle = {"course": {"quick_orchestration": recipe, "prerequisites": releases}, "configuration": cfg, "data": data}
     before = deepcopy(bundle)
     state = restore_template(bundle, {})["_quick_orchestration"]
     assert state["recipe"] == recipe and before == bundle
@@ -304,8 +304,8 @@ def test_open_ended_route_and_independent_features_round_trip(course, features):
     for kind in ("npc", "quest", "story", "activity"):
         data[kind].extend(compiled[kind])
     cfg = {"world": {"interactions": compiled["interactions"]}, "buildings": compiled["buildings"]}
-    releases = compiled["releases"]
-    state = restore_template({"data": data, "configuration": cfg, "course": {"releases": releases, "quick_orchestration": recipe}}, {})
+    releases = compiled["prerequisites"]
+    state = restore_template({"data": data, "configuration": cfg, "course": {"prerequisites": releases, "quick_orchestration": recipe}}, {})
     plan = merge_course(data, cfg, releases, compiled, recipe, state["_quick_orchestration"])
     assert plan.metadata["recipe"] == recipe and not plan.blockers and not any(plan.edits.values())
     assert compile_template(data, {k: v for k, v in recipe.items() if k != "final_chapter_id"}) == compiled
@@ -341,8 +341,8 @@ def test_insert_between_designated_chapters_and_allow_single_chapter_to_finish(c
         row["knowledge_point_ids"].append("middle-point")
     middle = {"chapter_id": "middle", "material_ids": start["material_ids"], "knowledge_point_ids": ["middle-point"]}
     extended = compile_template(data, {**recipe, "chapters": [start, middle, final]})
-    assert [(r["chapter_id"], r["prerequisite_chapter_id"]) for r in extended["releases"]] == [
-        ("chapter-1", None), ("middle", "chapter-1"), ("chapter-2", "middle")]
+    assert [(r["chapter_id"], r["prerequisite_chapter_id"]) for r in extended["prerequisites"]] == [
+        ("middle", "chapter-1"), ("chapter-2", "middle")]
     assert [s for s in extended["story"] if s["id"].endswith("-quest-farewell")] == [
         s for s in original["story"] if s["id"].endswith("-quest-farewell")]
 

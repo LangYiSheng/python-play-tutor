@@ -1,90 +1,80 @@
-"""Classroom course lifecycle; explicit initialization never runs at startup."""
-
-from typing import Annotated, Literal
+"""Manage independently owned courses and their teaching classes."""
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import require_teacher
-from app.classrooms.access import own_classroom
 from .db import get_db
 from .models import CourseInstance, User
+from .teacher_scope import own_course
+from .classrooms.lifecycle import management_list
+from .course_instances import content_mapping
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/course", tags=["classroom-course"])
-
-
-def instance_payload(instance):
-    if instance is None:
-        return None
-    return {key: getattr(instance, key) for key in ("id", "classroom_id", "package_id", "name", "package_version", "revision")}
-
-
-@router.get("")
-def get_course(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    own_classroom(db, user, classroom_id)
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
-    return instance_payload(instance)
+router = APIRouter(prefix="/teacher/courses", tags=["courses"])
+Db = Annotated[Session, Depends(get_db)]
+Teacher = Annotated[User, Depends(require_teacher)]
 
 
-class CourseNameInput(BaseModel):
+class Name(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=200)
+
+
+class Rename(Name):
     expected_revision: int = Field(ge=1)
 
 
-@router.patch("")
-def rename_course(classroom_id: int, body: CourseNameInput, db: Annotated[Session, Depends(get_db)],
-                  user: Annotated[User, Depends(require_teacher)]):
-    own_classroom(db, user, classroom_id, exclusive=True)
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
-    if instance is None:
-        raise HTTPException(404, "本班尚未创建课程")
-    if instance.name != body.name:
-        if instance.revision != body.expected_revision:
-            raise HTTPException(409, "课程已更新，请刷新后重新修改名称")
-        instance.name = body.name
-        instance.revision += 1
-        db.commit()
-    return instance_payload(instance)
+def instance_payload(course):
+    return {key: getattr(course, key) for key in ("id", "teacher_id", "package_id", "name", "package_version", "revision")}
 
 
-@router.get("/ids")
-def course_ids(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    from .course_instances import content_mapping
-    from .teacher_scope import teacher_instance_id
-
-    key = teacher_instance_id(db, user, classroom_id)
-    return content_mapping(db, db.get(CourseInstance, key))
-
-
-class EmptyCourseInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    confirmed: Literal[True]
-
-    name: str = Field(min_length=1, max_length=200)
+@router.get("")
+def courses(db: Db, user: Teacher):
+    query = select(CourseInstance, User.name).join(User, User.id == CourseInstance.teacher_id).order_by(CourseInstance.id)
+    if user.role != "admin":
+        query = query.where(CourseInstance.teacher_id == user.id)
+    return [{**instance_payload(course), "teacher_name": teacher} for course, teacher in db.execute(query)]
 
 
-@router.post("/empty")
-def empty_course(classroom_id: int, body: EmptyCourseInput, db: Annotated[Session, Depends(get_db)],
-                 user: Annotated[User, Depends(require_teacher)]):
-    from .course_scope import lock_course
+@router.post("", status_code=201)
+def create_course(body: Name, db: Db, user: Teacher):
+    owner = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
+    if not owner or owner.disabled:
+        raise HTTPException(403, "账号已停用")
+    course = CourseInstance(teacher_id=owner.id, name=body.name, package_id="course-" + uuid4().hex, package_version="1")
+    db.add(course)
+    db.commit()
+    return instance_payload(course)
 
-    lock_course(db, classroom_id, exclusive=True)
-    own_classroom(db, user, classroom_id)
-    if not body.name.strip():
-        raise HTTPException(422, "课程名称不能为空")
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
-    if instance is None:
-        instance = CourseInstance(classroom_id=classroom_id, package_id="course-" + uuid4().hex,
-                                  name=body.name.strip(), package_version="1", revision=1)
-        db.add(instance)
-        try:
-            db.commit()
-        except IntegrityError as exc:
-            db.rollback()
-            raise HTTPException(409, "班级课程同时更新，请刷新后重试") from exc
-    return instance_payload(instance)
+
+@router.get("/{course_id}")
+def get_course(course_id: int, db: Db, user: Teacher):
+    return instance_payload(own_course(db, user, course_id))
+
+
+@router.patch("/{course_id}")
+def rename_course(course_id: int, body: Rename, db: Db, user: Teacher):
+    course = own_course(db, user, course_id, exclusive=True)
+    if course.name == body.name:
+        return instance_payload(course)
+    if course.revision != body.expected_revision:
+        raise HTTPException(409, "课程已更新，请刷新后重新修改名称")
+    course.name = body.name
+    course.revision += 1
+    db.commit()
+    return instance_payload(course)
+
+
+@router.get("/{course_id}/classrooms")
+def classrooms(course_id: int, db: Db, user: Teacher, deleted: bool = False):
+    own_course(db, user, course_id)
+    return management_list(db, user, deleted, course_id)
+
+
+@router.get("/{course_id}/ids")
+def course_ids(course_id: int, db: Db, user: Teacher):
+    return content_mapping(db, own_course(db, user, course_id))

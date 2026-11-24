@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 from conftest import read_activity
 from app.models import ActivityMaterial
 from app.content_relations import activity_questions
@@ -44,7 +45,7 @@ def test_release_server_time_and_cross_classroom(client, db, student, teacher, c
     assert client.put(path, json={"status": "published", "opens_at": future}, headers=teacher["headers"]).status_code == 200
     assert client.get(f"/api/activities/ch2-lesson?classroom_id={cid}", headers=student["headers"]).status_code == 403
     assert client.get(f"/api/materials/187?classroom_id={cid}", headers=student["headers"]).status_code == 403
-    other = client.post("/api/classrooms", json={"name": "另一个班"}, headers=teacher["headers"]).json()
+    other = create_test_class(client, json={"name": "另一个班"}, headers=teacher["headers"]).json()
     assert client.get(f"/api/world?classroom_id={other['id']}", headers=student["headers"]).status_code == 403
     assert (
         client.put(
@@ -190,7 +191,7 @@ def test_activity_edits_update_current_configuration_and_keep_progress(client, d
     db.add(PlayerQuest(user_id=student["id"], classroom_id=cid, quest_id=definition["id"]))
     db.add(ActivityProgress(user_id=student["id"], classroom_id=cid, activity_id=activity.id, page_no=42, visited_pages=[10723], completed=False))
     db.commit()
-    update = client.put("/api/teacher/activities/teacher-lesson", json={"title": "Updated title", "assistant_allowed": False}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    update = client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/teacher-lesson", json={"title": "Updated title", "assistant_allowed": False}, headers=teacher["headers"])
     assert update.status_code == 200, update.text
     current = client.get(f"/api/activities/teacher-lesson?classroom_id={cid}", headers=student["headers"])
     assert current.status_code == 200, current.text

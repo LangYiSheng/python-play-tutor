@@ -49,7 +49,7 @@ def test_policy_role_and_budgets_apply_only_selected_class(db, teacher, student,
     db.commit()
     user = db.get(User, student["id"])
     activity = db.get(Activity, maps["activity"]["ch1-lesson"])
-    session = AssistantSession(user_id=user.id, classroom_id=source.classroom_id, activity_id=activity.id,
+    session = AssistantSession(user_id=user.id, classroom_id=classroom["id"], activity_id=activity.id,
                                material_id=activity.resources[0].material_id, messages=[])
     monkeypatch.setenv("REBORN_AI_TIMEOUT_SECONDS", "10")
     context = build_context(db, user, session, activity, MessageInput(message="解释此页", page_no=42))
@@ -62,10 +62,10 @@ def test_policy_role_and_budgets_apply_only_selected_class(db, teacher, student,
     state.configuration = updated
     db.commit()
     with pytest.raises(HTTPException) as denied:
-        ensure_enabled(db, source.classroom_id)
+        ensure_enabled(db, classroom["id"])
     assert denied.value.status_code == 403
     with pytest.raises(HTTPException):
-        new_session(NewSession(classroom_id=source.classroom_id, activity_id=activity.id), user, db)
+        new_session(NewSession(classroom_id=classroom["id"], activity_id=activity.id), user, db)
 
 
 def test_role_budgets_compile_real_agent_without_network(monkeypatch):

@@ -56,7 +56,7 @@ def restore_template(bundle, previous):
     recipe = bundle["course"].get("quick_orchestration")
     if recipe is None:
         return {}
-    state = {"recipe": recipe, "owned": {}, "releases_before": {}}
+    state = {"recipe": recipe, "owned": {}, "prerequisites_before": {}}
     outdoors, sample_stories = _installed_itinerary(bundle["data"], recipe)
     if sample_stories:
         # The retired four-character prototype included authored point-specific text.
@@ -76,7 +76,7 @@ def restore_template(bundle, previous):
         **bundle["data"],
         "interactions": bundle["configuration"]["world"].get("interactions", []),
         "buildings": bundle["configuration"].get("buildings", {}),
-        "releases": bundle["course"]["releases"],
+        "prerequisites": bundle["course"]["prerequisites"],
     }
     legacy = {}
     if any(row["kind"] == "practice" and row["question_ids"] for row in current["activity"]):
@@ -104,9 +104,9 @@ def restore_template(bundle, previous):
         if kind == "story" and not outdoors and recipe["template_id"] == "learn-practice-quiz":
             restore_ordinary_fingerprints(owned, actual, rows, recipe)
         state["owned"][kind] = owned
-        if kind == "releases":
+        if kind == "prerequisites":
             for key in owned:
                 # A new classroom keeps the release it received if a chapter leaves
                 # the template. On a same-course update retain its local prior policy.
-                state["releases_before"][key] = previous.get("releases_before", {}).get(key, actual[key])
+                state["prerequisites_before"][key] = previous.get("prerequisites_before", {}).get(key, actual[key])
     return {"_quick_orchestration": state}

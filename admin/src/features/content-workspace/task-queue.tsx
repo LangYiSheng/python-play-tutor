@@ -12,18 +12,18 @@ type Command = "cancel" | "retry";
 type Pending = { command: Command; job: TaskSnapshot; material: string };
 type Controls = { request: (target: Pending) => void };
 
-export function useTaskCommands(classroomId: number | undefined, refresh: () => void) {
+export function useTaskCommands(courseId: number | undefined, refresh: () => void) {
   const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false);
   function request(target: Pending) {
     setPending(target);
   }
   async function submit() {
-    if (!pending?.job.started_at || busy || classroomId === undefined) return;
+    if (!pending?.job.started_at || busy || courseId === undefined) return;
     setBusy(true);
     const captured = token();
     const { job, command, material } = pending;
     try {
-      const result = await api.post<{status: string; queue_dismissed?: boolean}>(`/teacher/classrooms/${classroomId}/synthesis/${job.material_id}/${command}`,
+      const result = await api.post<{status: string; queue_dismissed?: boolean}>(`/teacher/courses/${courseId}/synthesis/${job.material_id}/${command}`,
         { expected_started_at: job.started_at });
       const label = command === "cancel" ? (result.queue_dismissed ? "失败任务已从队列移除" : result.status === "cancelled" ? "任务已取消" : "已请求取消")
         : result.status === "failed" ? "重试仍有失败" : result.status === "done" ? "重试已完成" : "已提交重试";

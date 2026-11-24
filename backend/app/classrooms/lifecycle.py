@@ -3,10 +3,10 @@
 from fastapi import HTTPException
 from sqlalchemy import delete, func, select, union_all, update
 
-from app.course_instances import CONTENT_MODELS, classroom_course
+from app.course_instances import CONTENT_MODELS
 from app.integration_models import AssistantSession
 from app.models import (
-    Activity, ActivityProgress, AssessmentAttempt, BuildingUnlock, Classroom, LearningEvent, LearningRecord,
+    Activity, ActivityProgress, AssessmentAttempt, BuildingUnlock, Classroom, CourseInstance, LearningEvent, LearningRecord,
     Membership, PlayerPosition, PlayerQuest, PracticeSession, StorySession, Submission, TownPreviewStudent, User, WorldFlag,
 )
 from app.classrooms.access import classroom_payload, own_classroom
@@ -35,11 +35,13 @@ def managed_class(db, user, classroom_id, *, exclusive=False, include_deleted=Fa
     return own_classroom(db, user, classroom_id, exclusive=exclusive, statuses=statuses)
 
 
-def management_list(db, user, deleted):
-    query = select(Classroom, User.name).join(User, User.id == Classroom.teacher_id)
+def management_list(db, user, deleted, course_id=None):
+    query = select(Classroom, User.name).select_from(Classroom).join(CourseInstance).join(User, User.id == CourseInstance.teacher_id)
+    if course_id is not None:
+        query = query.where(Classroom.course_id == course_id)
     query = query.where(Classroom.status == "deleted" if deleted else Classroom.status != "deleted")
     if user.role != "admin":
-        query = query.where(Classroom.teacher_id == user.id)
+        query = query.where(CourseInstance.teacher_id == user.id)
     counts = (select(func.count()).select_from(Membership).join(User, User.id == Membership.user_id)
               .where(Membership.classroom_id == Classroom.id, User.role == "student")
               .correlate(Classroom).scalar_subquery())
@@ -60,20 +62,19 @@ def rename(db, user, classroom_id, name):
     return {"ok": True}
 
 
-def transfer(db, user, classroom_id, teacher_id):
+def transfer(db, user, course_id, teacher_id):
     if user.role != "admin":
-        raise HTTPException(403, "只有管理员可以转交班级")
-    item = managed_class(db, user, classroom_id, exclusive=True)
+        raise HTTPException(403, "只有管理员可以转交课程")
+    from app.teacher_scope import own_course
+    item = own_course(db, user, course_id, exclusive=True)
     target = db.scalar(select(User).where(User.id == teacher_id).with_for_update().execution_options(populate_existing=True))
     if not target or target.disabled or target.role not in {"admin", "teacher"}:
         raise HTTPException(422, "请选择有效的任课教师")
     if item.teacher_id != target.id:
-        instance = classroom_course(db, classroom_id)
-        if instance:
-            for model in CONTENT_MODELS:
-                if hasattr(model, "owner_id"):
-                    db.execute(update(model).where(model.course_instance_id == instance.id, model.owner_id.is_not(None)).values(owner_id=target.id))
-            instance.revision += 1
+        for model in CONTENT_MODELS:
+            if hasattr(model, "owner_id"):
+                db.execute(update(model).where(model.course_instance_id == item.id, model.owner_id.is_not(None)).values(owner_id=target.id))
+        item.revision += 1
         item.teacher_id = target.id
     db.commit()
     return {"ok": True}
@@ -113,9 +114,12 @@ def history_detail(db, user, classroom_id, student_id):
     history = history_rows(classroom_id)
     if not db.scalar(select(select(history.c.user_id).where(history.c.user_id == student_id).exists())):
         raise HTTPException(404, "此学生在该班级没有历史记录")
+    return {**record_payload(classroom_id, student_id, db), "assessments": student_assessments(db, classroom_id, student_id)}
+
+
+def student_assessments(db, classroom_id, student_id):
     from app.assessments import assessment_payload
 
-    payload = record_payload(classroom_id, student_id, db)
     learner = db.get(User, student_id)
     query = (select(AssessmentAttempt, Activity)
              .join(Activity, Activity.id == AssessmentAttempt.activity_id)
@@ -130,4 +134,4 @@ def history_detail(db, user, classroom_id, student_id):
             paper = assessment_payload(db, learner, classroom_id, activity)
             result = {key: paper[key] for key in ("status", "score", "max_score")}
         assessments.append({"id": attempt.id, "activity_id": activity.id, "activity_title": activity.title, **result})
-    return {**payload, "assessments": assessments}
+    return assessments

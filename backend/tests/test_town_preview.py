@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -96,8 +97,8 @@ def test_town_preview_student_cannot_change_class_or_access_teacher_controls(cli
     assert client.post(launch_path, headers=other_headers).status_code == 403
 
     teacher_headers = teacher["headers"]
-    second = client.post("/api/classrooms", json={"name": "Second classroom"}, headers=teacher_headers).json()
-    assert client.post(f"/api/teacher/classrooms/{second['id']}/town-session", headers=teacher_headers).status_code == 409
+    second = create_test_class(client, json={"name": "Second classroom"}, headers=teacher_headers).json()
+    assert client.post(f"/api/teacher/classrooms/{second['id']}/town-session", headers=teacher_headers).status_code == 200
     copy_fixture_course(db, cid, second["id"])
     user, headers = launch(client, cid, teacher_headers)
     second_user, _ = launch(client, second["id"], teacher_headers)

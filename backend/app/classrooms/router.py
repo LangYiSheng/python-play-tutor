@@ -42,9 +42,9 @@ def delete_classroom(classroom_id: int, db: Database, user: Teacher):
     return lifecycle.delete_classroom(db, user, classroom_id)
 
 
-@router.post("/teacher/classrooms/{classroom_id}/transfer")
-def transfer_classroom(classroom_id: int, body: TransferInput, db: Database, user: Teacher):
-    return lifecycle.transfer(db, user, classroom_id, body.teacher_id)
+@router.post("/teacher/courses/{course_id}/transfer")
+def transfer_course(course_id: int, body: TransferInput, db: Database, user: Teacher):
+    return lifecycle.transfer(db, user, course_id, body.teacher_id)
 
 
 @router.get("/teacher/classrooms/{classroom_id}/history")
@@ -62,9 +62,9 @@ def list_classrooms(db: Annotated[Session, Depends(get_db)], user: Annotated[Use
     return _list_classrooms(db=db, user=user)
 
 
-@router.post("/classrooms", status_code=201)
-def create_classroom(body: ClassroomInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    return _create_classroom(body=body, db=db, user=user)
+@router.post("/teacher/courses/{course_id}/classrooms", status_code=201)
+def create_classroom(course_id: int, body: ClassroomInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    return _create_classroom(course_id=course_id, body=body, db=db, user=user)
 
 
 @router.post("/teacher/classrooms/{classroom_id}/town-session")

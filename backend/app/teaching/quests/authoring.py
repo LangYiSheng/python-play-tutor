@@ -30,10 +30,10 @@ def _authoring_definition(db, user, definition, instance_id):
             require_scope(db.get(Npc, node["target"]), instance_id)
 
 
-def validate_quest(body: DefinitionInput, db: Session, user: User, classroom_id: int | None = None):
+def validate_quest(body: DefinitionInput, db: Session, user: User, course_id: int | None = None):
     from app.teacher_scope import teacher_instance_id
 
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     try:
         definition = validate_definition(body.definition, db)
         _authoring_definition(db, user, definition, instance_id)
@@ -42,10 +42,11 @@ def validate_quest(body: DefinitionInput, db: Session, user: User, classroom_id:
         raise HTTPException(422, str(exc))
 
 
-def create_quest(body: DefinitionInput, db: Session, user: User, classroom_id: int | None = None):
-    from app.teacher_scope import commit_content, scoped_key, teacher_course_scope
+def create_quest(body: DefinitionInput, db: Session, user: User, course_id: int | None = None):
+    from app.teacher_scope import commit_content, scoped_key, own_course
 
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
     try:
         definition = validate_definition(body.definition, db)
     except (ValueError, KeyError, TypeError) as exc:
@@ -64,7 +65,7 @@ def create_quest(body: DefinitionInput, db: Session, user: User, classroom_id: i
             id=key,
             chapter_id=definition["chapter_id"],
             title=definition["title"],
-            owner_id=classroom.teacher_id,
+            owner_id=course.teacher_id,
             course_instance_id=instance_id,
             stable_id=stable_id,
             definition=definition,
@@ -74,10 +75,10 @@ def create_quest(body: DefinitionInput, db: Session, user: User, classroom_id: i
     return definition
 
 
-def list_quests(db: Session, user: User, classroom_id: int | None = None):
+def list_quests(db: Session, user: User, course_id: int | None = None):
     from app.teacher_scope import teacher_instance_id
 
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     query = select(QuestDefinition).where(QuestDefinition.course_instance_id == instance_id)
     if user.role != "admin":
         query = query.where((QuestDefinition.owner_id.is_(None)) | (QuestDefinition.owner_id == user.id))

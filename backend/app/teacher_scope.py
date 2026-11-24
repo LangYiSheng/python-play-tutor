@@ -1,31 +1,31 @@
-"""Explicit classroom ownership for teacher content operations."""
+"""Explicit course ownership for teacher content operations."""
 
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from .models import CourseInstance
-from .classrooms.access import own_classroom
+from .course_scope import lock_course_content
 
 
-def teacher_course_scope(db, user, classroom_id, *, exclusive=False):
-    if classroom_id is None:
-        raise HTTPException(422, "请明确选择班级课程")
-    classroom = own_classroom(db, user, classroom_id, exclusive=exclusive)
-    instance = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
-    if instance is None:
-        raise HTTPException(409, "本班尚未导入课程")
-    return classroom, instance.id
+def own_course(db, user, course_id, *, exclusive=False):
+    lock_course_content(db, course_id, exclusive=exclusive)
+    course = db.get(CourseInstance, course_id, populate_existing=True)
+    if course is None:
+        raise HTTPException(404, "课程不存在")
+    if user.role != "admin" and course.teacher_id != user.id:
+        raise HTTPException(403, "只能管理自己的课程")
+    return course
 
 
-def teacher_instance_id(db, user, classroom_id, *, exclusive=False):
-    return teacher_course_scope(db, user, classroom_id, exclusive=exclusive)[1]
+def teacher_instance_id(db, user, course_id, *, exclusive=False):
+    return own_course(db, user, course_id, exclusive=exclusive).id
 
 
 def require_scope(item, instance_id):
     if item is None or getattr(item, "deleted_at", None) is not None or item.course_instance_id != instance_id:
-        raise HTTPException(404, "内容不属于当前班级课程")
+        raise HTTPException(404, "内容不属于当前课程")
     return item
 
 

@@ -17,9 +17,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth import as_utc
-from app.classrooms.access import own_classroom
+from app.teacher_scope import own_course
 from app.course_exchange_models import CourseImportPreview
-from app.course_instances import classroom_course
+from app.models import CourseInstance
 from app.course_packages.apply import import_bundle
 from app.course_packages.cleanup import exchange_guard
 from app.course_packages.contracts import LIMITS, ApplyInput, AvailablePackageInput
@@ -28,7 +28,7 @@ from app.course_packages.manifest import PackageError
 from app.course_packages.paths import exchange_path, exchange_root
 from app.course_packages.reader import load_bundle
 from app.course_packages.writer import write_package
-from app.course_scope import lock_course
+from app.course_scope import course_class_ids, lock_course_content
 from app.integration_models import AssistantCall
 from app.models import User, now
 
@@ -46,14 +46,11 @@ def _replace_staged(source, destination):
             time.sleep(0.05 * (attempt + 1))
 
 
-def export_course(classroom_id: int, db: Session, user: User):
+def export_course(course_id: int, db: Session, user: User):
     with exchange_guard(exchange_root()):
         # Exclusive gate ensures one consistent export while blocking both edits and learner writes.
-        lock_course(db, classroom_id, exclusive=True)
-        own_classroom(db, user, classroom_id)
-        instance = classroom_course(db, classroom_id)
-        if instance is None:
-            raise HTTPException(409, "班级尚未导入课程")
+        lock_course_content(db, course_id, exclusive=True)
+        instance = own_course(db, user, course_id)
         temporary = Path(tempfile.mkdtemp(prefix="course-export-", dir=exchange_root()))
         root = temporary / "package"
         root.mkdir()
@@ -62,7 +59,7 @@ def export_course(classroom_id: int, db: Session, user: User):
             load_bundle(root)
             name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", instance.name).strip(" .")[:48] or "课程"
             timestamp = now().astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S")
-            destination = exchange_path(f"export-{classroom_id}-{name}-{timestamp}-{uuid4().hex[:8]}")
+            destination = exchange_path(f"export-{course_id}-{name}-{timestamp}-{uuid4().hex[:8]}")
             _replace_staged(root, destination)
             shutil.rmtree(temporary)
             db.commit()
@@ -73,13 +70,13 @@ def export_course(classroom_id: int, db: Session, user: User):
         return {"directory": destination.name, "path": f"data/course/{destination.name}"}
 
 
-def _save_preview(db, user, classroom_id, bundle, directory, digest):
-    instance = classroom_course(db, classroom_id)
+def _save_preview(db, user, course_id, bundle, directory, digest):
+    instance = db.get(CourseInstance, course_id)
     impact = preview_impact(db, instance, bundle)
     preview = CourseImportPreview(
         id=str(uuid4()),
         teacher_id=user.id,
-        classroom_id=classroom_id,
+        course_id=course_id,
         expected_revision=instance.revision if instance else 0,
         archive_sha256=digest,
         storage_key=f"imports/{uuid4().hex}",
@@ -103,11 +100,11 @@ def _save_preview(db, user, classroom_id, bundle, directory, digest):
     }
 
 
-def available_packages(classroom_id: int | None, db: Session, user: User):
+def available_packages(course_id: int | None, db: Session, user: User):
     from app.course_packages.catalog import mounted_catalog
 
-    if classroom_id is not None:
-        own_classroom(db, user, classroom_id)
+    if course_id is not None:
+        own_course(db, user, course_id)
     root = exchange_root()
     try:
         mounted, unavailable = mounted_catalog(root, LIMITS)
@@ -124,12 +121,12 @@ def available_packages(classroom_id: int | None, db: Session, user: User):
         raise HTTPException(422, str(exc) if isinstance(exc, PackageError) else "无法读取可选课程包，请稍后刷新") from exc
 
 
-def preview_available_course(classroom_id: int, body: AvailablePackageInput, db: Session, user: User):
+def preview_available_course(course_id: int, body: AvailablePackageInput, db: Session, user: User):
     with exchange_guard(exchange_root()):
         from app.course_packages.catalog import copy_directory, mounted_catalog
 
-        lock_course(db, classroom_id, exclusive=True)
-        own_classroom(db, user, classroom_id)
+        lock_course_content(db, course_id, exclusive=True)
+        own_course(db, user, course_id)
         exchange = exchange_root()
         try:
             with tempfile.TemporaryDirectory(prefix="course-catalog-", dir=exchange) as temporary:
@@ -140,7 +137,7 @@ def preview_available_course(classroom_id: int, body: AvailablePackageInput, db:
                     raise HTTPException(404, "课程包已变化或不存在，请刷新列表")
                 digest = copy_directory(selected["path"], root, exchange, LIMITS)
                 bundle = load_bundle(root)
-                return _save_preview(db, user, classroom_id, bundle, root, digest)
+                return _save_preview(db, user, course_id, bundle, root, digest)
         except HTTPException:
             db.rollback()
             raise
@@ -153,12 +150,12 @@ def preview_available_course(classroom_id: int, body: AvailablePackageInput, db:
             raise HTTPException(422, str(exc) if isinstance(exc, PackageError) else "课程包读取失败，请刷新列表并重新预览") from exc
 
 
-def apply_course(classroom_id: int, preview_id: str, body: ApplyInput, db: Session, user: User):
+def apply_course(course_id: int, preview_id: str, body: ApplyInput, db: Session, user: User):
     with exchange_guard(exchange_root()):
-        lock_course(db, classroom_id, exclusive=True)
-        classroom = own_classroom(db, user, classroom_id)
+        lock_course_content(db, course_id, exclusive=True)
+        instance = own_course(db, user, course_id)
         preview = db.scalar(select(CourseImportPreview).where(CourseImportPreview.id == preview_id).with_for_update())
-        if not preview or preview.classroom_id != classroom_id or preview.teacher_id != user.id:
+        if not preview or preview.course_id != course_id or preview.teacher_id != user.id:
             raise HTTPException(404, "导入预览不存在")
         if preview.applied_request_id:
             if preview.applied_request_id != str(body.request_id) or body.expected_revision != preview.expected_revision:
@@ -166,7 +163,7 @@ def apply_course(classroom_id: int, preview_id: str, body: ApplyInput, db: Sessi
             return {**preview.result, "duplicate": True}
         receipt = db.scalar(
             select(CourseImportPreview).where(
-                CourseImportPreview.classroom_id == classroom_id, CourseImportPreview.applied_request_id == str(body.request_id)
+                CourseImportPreview.course_id == course_id, CourseImportPreview.applied_request_id == str(body.request_id)
             )
         )
         if receipt:
@@ -175,13 +172,12 @@ def apply_course(classroom_id: int, preview_id: str, body: ApplyInput, db: Sessi
             return {**receipt.result, "duplicate": True}
         if as_utc(preview.expires_at) <= now():
             raise HTTPException(409, "导入预览已过期，请重新预览")
-        instance = classroom_course(db, classroom_id)
-        revision = instance.revision if instance else 0
+        revision = instance.revision
         if body.expected_revision != preview.expected_revision or revision != preview.expected_revision:
             raise HTTPException(409, "班级课程已修改，请重新预览差异")
         if db.scalar(
             select(AssistantCall.id)
-            .where(AssistantCall.classroom_id == classroom_id, AssistantCall.status.in_(["running", "cancel_requested"]))
+            .where(AssistantCall.classroom_id.in_(course_class_ids(course_id)), AssistantCall.status.in_(["running", "cancel_requested"]))
             .limit(1)
         ):
             raise HTTPException(409, "班级助教会话仍在运行，请完成后重试导入")
@@ -202,7 +198,7 @@ def apply_course(classroom_id: int, preview_id: str, body: ApplyInput, db: Sessi
                     raise HTTPException(409, "讲稿或配音已变化，请重新预览差异")
                 if impact["blockers"]:
                     raise HTTPException(409, {"message": "课程更新影响已有学习记录", "blockers": impact["blockers"]})
-                instance = import_bundle(db, classroom, instance, bundle, root)
+                instance = import_bundle(db, instance, bundle, root)
                 preview.applied_request_id = str(body.request_id)
                 preview.result = {
                     "instance_id": instance.id,

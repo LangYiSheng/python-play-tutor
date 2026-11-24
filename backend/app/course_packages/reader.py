@@ -99,5 +99,7 @@ def load_bundle(root):
         bundle["narrations"].extend(pages)
     if len(bundle["narrations"]) > 10000:
         raise PackageError("课程讲稿页数超限")
+    legacy_schedule = isinstance(course, dict) and course.get("schema_version") == 1
     validate_bundle(bundle, root)
+    bundle["legacy_schedule"] = legacy_schedule
     return bundle

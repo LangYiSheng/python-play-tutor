@@ -1,4 +1,5 @@
 """First-job creation is serialized even before a narration_jobs row exists."""
+from course_fixtures import empty_course
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -9,7 +10,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from app.db import Base
-from app.models import Classroom, CourseInstance, Material, User
+from app.models import Classroom, Material, User
 from app.narration import jobs, repository
 from app.narration.management import RetryInput, cancel_task
 from fixture_seed import seed
@@ -59,10 +60,13 @@ def test_cancellation_can_be_requested_while_worker_holds_job_row(pg_engine):
         teacher = User(name="测试教师", role="teacher", password_hash="fixture")
         worker.add(teacher)
         worker.flush()
-        classroom = Classroom(name="隔离测试班", teacher_id=teacher.id, join_code=uuid4().hex[:12])
+        classroom = Classroom(name="隔离测试班", course=empty_course(teacher.id), join_code=uuid4().hex[:12])
         worker.add(classroom)
         worker.flush()
-        course = CourseInstance(name="测试课程", classroom_id=classroom.id, package_id="test", package_version="1")
+        course = classroom.course
+        course.name = "测试课程"
+        course.package_id = "test"
+        course.package_version = "1"
         worker.add(course)
         worker.flush()
         material = Material(title="测试课件", course_instance_id=course.id, kind="pdf")

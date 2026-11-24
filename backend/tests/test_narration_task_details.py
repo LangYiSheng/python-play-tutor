@@ -27,7 +27,7 @@ def test_resumed_calibration_uses_matching_report_and_dismissal_preserves_histor
     repository.sync_run(db, job)
     db.commit()
     headers = teacher["headers"]
-    graph = "/api/teacher/course-graph/tasks"
+    graph = f"/api/teacher/courses/{classroom['course_id']}/course-graph/tasks"
     listed = client.get(graph, params={"classroom_id": classroom["id"]}, headers=headers)
     assert listed.status_code == 200, listed.text
     task, = listed.json()

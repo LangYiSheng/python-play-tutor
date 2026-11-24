@@ -24,7 +24,7 @@ def mixed(client, db, teacher, classroom):
             "segments": [{"start_seconds": 20, "end_seconds": 25, "label": "关键概念"}]}}},
         {"material_id": 9912, "required": False, "learning": {"reading": {"scope": "all"}}},
     ]
-    response = client.post("/api/teacher/activities", params={"classroom_id": classroom["id"]}, headers=teacher["headers"],
+    response = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=teacher["headers"],
         json={"id": "mixed", "chapter_id": 179, "title": "多资料学习", "kind": "lesson", "resources": rows})
     assert response.status_code == 201, response.text
     return response.json()["id"], rows
@@ -73,14 +73,14 @@ def test_mixed_all_of_video_requirements_optional_progress_and_reopen(client, db
     assert len(db.scalars(select(LearningRecord).where(LearningRecord.activity_id == key)).all()) == before
     # Reordering and optional flags never erase previous evidence.
     changed = [resources[2], resources[0], resources[1]]
-    response = client.put(f"/api/teacher/activities/{key}", params=scope, headers=teacher["headers"], json={"resources": changed})
+    response = client.put(f"/api/teacher/courses/{scope['classroom_id']}/activities/{key}", params=scope, headers=teacher["headers"], json={"resources": changed})
     assert response.status_code == 200, response.text
     assert db.get(ActivityProgress, (student["id"], classroom["id"], key)).visited_pages == [99101, 99102, 99121]
 
 
 def test_resource_config_rejects_duplicates_unowned_material_and_invalid_ranges(client, db, teacher, classroom, mixed):
     key, resources = mixed
-    url = f"/api/teacher/activities/{key}"
+    url = f"/api/teacher/courses/{classroom['course_id']}/activities/{key}"
     scope = {"classroom_id": classroom["id"]}
     for rows in [resources + [resources[0]], [{**row, "required": False} for row in resources],
                  [{**resources[0], "learning": {"reading": {"scope": "pages", "page_ids": [99121]}}}],
@@ -113,7 +113,7 @@ def test_two_videos_cannot_earn_overlapping_time(client, db, student, teacher, c
     db.commit()
     resources[2]["learning"] = {"video": {"minimum_seconds": 10}}
     scope = {"classroom_id": classroom["id"]}
-    assert client.put(f"/api/teacher/activities/{key}", params=scope, headers=teacher["headers"], json={"resources": resources}).status_code == 200
+    assert client.put(f"/api/teacher/courses/{scope['classroom_id']}/activities/{key}", params=scope, headers=teacher["headers"], json={"resources": resources}).status_code == 200
     now = [datetime(2026, 11, 15, tzinfo=timezone.utc)]
     monkeypatch.setattr(learning_rules, "utcnow", lambda: now[0])
     packet = {**scope, "material_id": 9911, "playback_session_id": str(uuid4()), "sequence": 1, "position_seconds": 0., "playing": True}

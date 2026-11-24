@@ -25,22 +25,22 @@ import { useState } from "react";
 import { ActivityDialog } from "./editor-dialog";
 import { kindName } from "./types";
 import { useActivityEditor } from "./use-editor";
-export function Activities({ classroomId, teacherId }: { classroomId: number; teacherId: number }) {
-  const course = useResource<Course>(scoped("/teacher/courses", classroomId));
-  const editor = useActivityEditor(classroomId, course.reload, course.data);
+export function Activities({ courseId, teacherId }: { courseId: number; teacherId: number }) {
+  const course = useResource<Course>(scoped("/teacher/catalog", courseId));
+  const editor = useActivityEditor(courseId, course.reload, course.data);
   const { open, chapter, error, edit } = editor;
   const reading = editor.kind === "reading" || editor.kind === "lesson";
-  const materials = useResource<Material[]>(open && reading ? scoped("/teacher/materials", classroomId) : null);
-  const questions = useResource<QuestionCandidate[]>(open && !reading && chapter ? scoped(`/teacher/chapters/${chapter}/question-candidates`, classroomId) : null);
+  const materials = useResource<Material[]>(open && reading ? scoped("/teacher/materials", courseId) : null);
+  const questions = useResource<QuestionCandidate[]>(open && !reading && chapter ? scoped(`/teacher/chapters/${chapter}/question-candidates`, courseId) : null);
 
   const [query, setQuery] = useState(""),
     [chapterFilter, setChapterFilter] = useState("all"),
     [typeFilter, setTypeFilter] = useState("all");
   const deletion = useTableDelete<Activity>(
     (a) =>
-      scoped(`/teacher/activities/${encodeURIComponent(a.id)}`, classroomId),
+      scoped(`/teacher/activities/${encodeURIComponent(a.id)}`, courseId),
     course.reload,
-    { classroomId, kind: () => "activity" },
+    { courseId, kind: () => "activity" },
   );
   const candidates = (questions.data ?? []).filter(
     (q) => q.status === "ready" &&

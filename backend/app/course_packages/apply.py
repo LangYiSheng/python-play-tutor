@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.course_content.snapshot import FIELDS, content_rows, row_key, stable_id
 from app.course_exchange_models import CoursePackageState
@@ -19,7 +19,6 @@ from app.models import (
     Chapter,
     ChapterRelease,
     CourseExample,
-    CourseInstance,
     KnowledgePoint,
     Material,
     MaterialChapter,
@@ -58,23 +57,17 @@ def _delete_content(db, instance, incoming):
     db.flush()
 
 
-def import_bundle(db, classroom, instance, bundle, root):
+def import_bundle(db, instance, bundle, root):
     """Caller holds exclusive classroom gate; caller owns the single commit/rollback."""
     manifest, data = bundle["manifest"], bundle["data"]
-    replace = instance is not None and instance.package_id != manifest["package_id"]
-    if instance is None:
-        instance = CourseInstance(
-            classroom_id=classroom.id,
-            package_id=manifest["package_id"],
-            name=manifest["name"],
-            package_version=manifest["package_version"],
-            created_at=datetime.fromisoformat(manifest["created_at"]),
-            revision=0,
-        )
-        db.add(instance)
-        db.flush()
+    replace = instance.package_id != manifest["package_id"]
     incoming = {kind: {row["id"] for row in rows} if not replace else set() for kind, rows in data.items()}
-    db.execute(delete(ChapterRelease).where(ChapterRelease.classroom_id == instance.classroom_id))
+    chapters = list(db.scalars(select(Chapter).where(Chapter.course_instance_id == instance.id)))
+    removed_chapters = [row.id for row in chapters if stable_id(row) not in incoming["chapter"]]
+    db.execute(delete(ChapterRelease).where(ChapterRelease.chapter_id.in_(removed_chapters)))
+    for chapter in chapters:
+        chapter.prerequisite_chapter_id = None
+    db.flush()
     if replace:
         _delete_content(db, instance, incoming)
         instance.created_at = datetime.fromisoformat(manifest["created_at"])
@@ -99,7 +92,7 @@ def import_bundle(db, classroom, instance, bundle, root):
                     if field in values:
                         values[field] = {}
                 if hasattr(model, "owner_id"):
-                    values["owner_id"] = classroom.teacher_id
+                    values["owner_id"] = instance.teacher_id
                 if model in {Question, Npc, Activity, QuestDefinition, StoryDefinition}:
                     values["key" if model is Npc else "id"] = f"c{instance.id}-{uuid4().hex[:16]}"
                 row = model(course_instance_id=instance.id, stable_id=source["id"], **values)
@@ -181,10 +174,9 @@ def import_bundle(db, classroom, instance, bundle, root):
     if not replace:
         db.flush()
         _delete_content(db, instance, incoming)
-    for source in bundle["course"]["releases"]:
+    for source in bundle["course"]["prerequisites"]:
         values = remap_references(source, maps)
-        values["opens_at"] = datetime.fromisoformat(values["opens_at"]) if values["opens_at"] else None
-        db.add(ChapterRelease(classroom_id=classroom.id, **values))
+        db.get(Chapter, values["chapter_id"]).prerequisite_chapter_id = values["prerequisite_chapter_id"]
     state = db.get(CoursePackageState, instance.id)
     if state is None:
         state = CoursePackageState(course_instance_id=instance.id)

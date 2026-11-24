@@ -25,21 +25,21 @@ from .teacher_scope import teacher_instance_id
 router = APIRouter(tags=["character-assets"])
 
 
-@router.get("/teacher/classrooms/{classroom_id}/character-assets")
-def list_assets(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+@router.get("/teacher/courses/{course_id}/character-assets")
+def list_assets(course_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    instance_id = teacher_instance_id(db, user, course_id)
     assets = stored_assets(db, instance_id)
-    return builtin_assets() + [asset_descriptor("asset:" + row["id"], row["character_kind"], assets, classroom_id)
+    return builtin_assets() + [asset_descriptor("asset:" + row["id"], row["character_kind"], assets, course_id=course_id)
                               for row in assets if row.get("character_kind")]
 
 
-@router.post("/teacher/classrooms/{classroom_id}/character-assets", status_code=201)
-def upload_asset(classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
+@router.post("/teacher/courses/{course_id}/character-assets", status_code=201)
+def upload_asset(course_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)],
                        file: Annotated[UploadFile, File()], kind: Annotated[str, Form()],
                        owner_npc_id: Annotated[str, Form()], expected_revision: Annotated[int, Form()],
                        frame_width: Annotated[int, Form()] = 16, frame_height: Annotated[int, Form()] = 20,
                        ):
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     if not 1 <= len(owner_npc_id.strip()) <= 100:
         raise HTTPException(422, "角色ID无效")
     if db.get(CourseInstance, instance_id).revision != expected_revision:
@@ -73,7 +73,7 @@ def upload_asset(classroom_id: int, db: Annotated[Session, Depends(get_db)], use
     config["_assets"] = [*config.get("_assets", []), row]
     state.configuration = config
     db.commit()
-    return asset_descriptor("asset:" + asset_id, kind, [row], classroom_id)
+    return asset_descriptor("asset:" + asset_id, kind, [row], course_id=course_id)
 
 
 def retire_unused_assets(state, npcs, *, expired_only=False):
@@ -93,19 +93,19 @@ def retire_unused_assets(state, npcs, *, expired_only=False):
     state.configuration = config
 
 
-def cleanup_character_assets(classroom_id=None):
+def cleanup_character_assets(course_id=None):
     """Retry durable deletions and expire abandoned uploads, under the course lock."""
     from sqlalchemy import select
     from .db import SessionLocal
-    from .course_scope import lock_course
+    from .course_scope import lock_course_content
     with SessionLocal() as db:
-        query = select(CourseInstance.id, CourseInstance.classroom_id)
-        if classroom_id is not None:
-            query = query.where(CourseInstance.classroom_id == classroom_id)
-        instances = list(db.execute(query))
-    for instance_id, cid in instances:
+        query = select(CourseInstance.id)
+        if course_id is not None:
+            query = query.where(CourseInstance.id == course_id)
+        instances = list(db.scalars(query))
+    for instance_id in instances:
         with SessionLocal() as db:
-            lock_course(db, cid, exclusive=True)
+            lock_course_content(db, instance_id, exclusive=True)
             state = db.get(CoursePackageState, instance_id)
             if not state:
                 continue
@@ -113,7 +113,7 @@ def cleanup_character_assets(classroom_id=None):
                     for npc in db.scalars(select(Npc).where(Npc.course_instance_id == instance_id))]
             retire_unused_assets(state, npcs, expired_only=True)
             db.commit()
-            lock_course(db, cid, exclusive=True)
+            lock_course_content(db, instance_id, exclusive=True)
             db.refresh(state)
             drain_character_garbage(db, state)
 
@@ -156,3 +156,13 @@ def read_asset(classroom_id: int, asset_id: str, db: Annotated[Session, Depends(
     return StreamingResponse(get_storage().chunks(row["storage_key"], 0, row["size_bytes"] - 1),
                              media_type=row["media_type"], headers={"Cache-Control": "private, no-store",
                                                                   "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/teacher/courses/{course_id}/character-assets/{asset_id}")
+def teacher_asset(course_id: int, asset_id: str, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]):
+    teacher_instance_id(db, user, course_id)
+    row = next((a for a in stored_assets(db, course_id) if a["id"] == asset_id and a.get("character_kind")), None)
+    if not row:
+        raise HTTPException(404, "角色素材不存在")
+    return StreamingResponse(get_storage().chunks(row["storage_key"], 0, row["size_bytes"] - 1),
+                             media_type=row["media_type"], headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})

@@ -10,7 +10,6 @@ class ContentDeletionPreview(Base):
     __tablename__ = "content_deletion_previews"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id"), index=True)
     course_instance_id: Mapped[int] = mapped_column(ForeignKey("course_instances.id"))
     revision: Mapped[int] = mapped_column(Integer)
     targets: Mapped[list] = mapped_column(JSON)

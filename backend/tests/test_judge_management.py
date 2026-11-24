@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 from conftest import stage_server_submission
 import asyncio
 import json
@@ -100,7 +101,7 @@ def test_teacher_evidence_private_and_class_scoped(client, db, teacher, student,
     assert client.get(f"/api/teacher/judge/submissions?classroom_id={classroom['id']}", headers=headers).status_code == 403
     assert client.get(f"/api/teacher/judge/service?classroom_id={classroom['id']}", headers=headers).status_code == 403
     # A teacher's second class must not reveal a submission by guessed ID.
-    second = client.post("/api/classrooms", json={"name": "另一个班"}, headers=teacher["headers"]).json()
+    second = create_test_class(client, json={"name": "另一个班"}, headers=teacher["headers"]).json()
     assert client.get(f"/api/teacher/judge/submissions/{submission}?classroom_id={second['id']}", headers=teacher["headers"]).status_code == 404
     # Preserve genuine legacy public evidence, without inventing old hidden output.
     db.delete(db.get(SubmissionDiagnostic, submission))

@@ -1,3 +1,4 @@
+from course_fixtures import empty_course
 from copy import deepcopy
 from uuid import uuid4
 
@@ -7,17 +8,20 @@ from sqlalchemy import event, select
 from app.content_relations import set_material_chapters, set_question_chapters, set_question_knowledge_points
 from app.course_content.presentation import progress_payload
 from app.models import (
-    Activity, ActivityProgress, AssessmentAttempt, Chapter, ChapterRelease, Classroom, CourseInstance, KnowledgePoint,
+    Activity, ActivityProgress, AssessmentAttempt, Chapter, ChapterRelease, Classroom, KnowledgePoint,
     LearningRecord, Material, Membership, Npc, PlayerQuest, Question, QuestDefinition, StoryDefinition, Submission, User,
 )
 
 
 @pytest.fixture
 def course(db, teacher, student):
-    classroom = Classroom(name="模板测试", join_code=uuid4().hex[:24], teacher_id=teacher["id"])
+    classroom = Classroom(name="模板测试", join_code=uuid4().hex[:24], course=empty_course(teacher["id"]))
     db.add(classroom)
     db.flush()
-    instance = CourseInstance(classroom_id=classroom.id, package_id="quick-test", name="选课", package_version="1")
+    instance = classroom.course
+    instance.package_id = "quick-test"
+    instance.name = "选课"
+    instance.package_version = "1"
     db.add(instance)
     db.add(Membership(user_id=student["id"], classroom_id=classroom.id))
     db.flush()
@@ -42,7 +46,7 @@ def course(db, teacher, student):
             set_question_knowledge_points(db, q.id, [point.id])
         selections.append({"chapter_id": key, "material_ids": [material.stable_id], "knowledge_point_ids": [point.stable_id]})
     db.commit()
-    url = f"/api/teacher/classrooms/{classroom.id}/quick-orchestration"
+    url = f"/api/teacher/courses/{classroom.course_id}/quick-orchestration"
     recipe = {"template_id": "learn-practice-quiz", "chapters": selections, "practice_count": 1, "quiz_count": 1}
     return url, {"expected_revision": instance.revision, "recipe": recipe}, instance
 
@@ -238,8 +242,8 @@ def test_native_content_repeat_and_reorder(client, db, teacher, student, course)
     latest, _, _ = generate(client, teacher, url, next_draft)
     assert latest == revision + 1 and db.get(Npc, npc.key).name == "张老师"
     chapters = {row.stable_id: row for row in db.scalars(select(Chapter).where(Chapter.course_instance_id == instance.id))}
-    assert db.get(ChapterRelease, (instance.classroom_id, chapters["one"].id)).prerequisite_chapter_id == chapters["two"].id
-    assert db.get(ChapterRelease, (instance.classroom_id, chapters["two"].id)).prerequisite_chapter_id is None
+    assert chapters["one"].prerequisite_chapter_id == chapters["two"].id
+    assert chapters["two"].prerequisite_chapter_id is None
     activities = list(db.scalars(select(Activity).where(Activity.course_instance_id == instance.id)))
     assert len(activities) == 6 and len({a.id for a in activities}) == 6
     assert client.post(url+"/apply", headers=headers, json=receipt).status_code == 409
@@ -255,6 +259,7 @@ def test_upgrading_and_changing_the_tour_trigger_preserves_granted_quest(client,
     from app.teaching.quick_template.room_itinerary import shelf_tour_definition
 
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     stable = chapter_prefix("one") + "-shelves"
     def old_tour(result, prefix, owned_quests):
         result["quest"].append(shelf_tour_definition(prefix, quest_id=stable, chapter_id="one"))
@@ -264,14 +269,14 @@ def test_upgrading_and_changing_the_tour_trigger_preserves_granted_quest(client,
         draft["expected_revision"], _, _ = generate(client, teacher, url, draft)
     old = db.scalar(select(QuestDefinition).where(QuestDefinition.stable_id == stable))
     old_key = old.id
-    player = PlayerQuest(user_id=student["id"], classroom_id=instance.classroom_id, quest_id=old_key, status=status)
+    player = PlayerQuest(user_id=student["id"], classroom_id=room_id, quest_id=old_key, status=status)
     db.add(player)
     db.flush()
     player_id = player.id
     if status == "complete":
         evidence = {"object_id": "library_shelf"}
         db.add(NodeState(player_quest_id=player_id, node_id="open-shelf", evidence=evidence))
-        db.add(LearningEvent(event_id="visited", user_id=student["id"], classroom_id=instance.classroom_id,
+        db.add(LearningEvent(event_id="visited", user_id=student["id"], classroom_id=room_id,
                              player_quest_id=player_id, node_id="open-shelf", evidence=evidence))
     db.commit()
     for chapter_id in ("one", "two"):
@@ -284,7 +289,7 @@ def test_upgrading_and_changing_the_tour_trigger_preserves_granted_quest(client,
         db.expire_all()
         assert db.get(QuestDefinition, old_key).chapter_id is None
         assert db.get(PlayerQuest, player_id).status == status
-        world = client.get("/api/world", params={"classroom_id": instance.classroom_id}, headers=student["headers"]).json()
+        world = client.get("/api/world", params={"classroom_id": room_id}, headers=student["headers"]).json()
         [shown] = [q for q in world["quests"] if q["kind"] == "side"]
         assert shown["id"] == old_key and shown["status"] == status and shown["chapter_id"] is None
         if status == "complete":
@@ -294,20 +299,21 @@ def test_upgrading_and_changing_the_tour_trigger_preserves_granted_quest(client,
 
 def test_author_can_publish_a_town_quest_before_any_chapter_opens(client, db, teacher, student, course):
     _, _, instance = course
-    params = {"classroom_id": instance.classroom_id}
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
+    params = {"classroom_id": room_id}
     definition = {"id": "visit-the-library", "title": "认识图书馆", "chapter_id": None, "kind": "side",
                   "nodes": [{"id": "shelf", "type": "INTERACT_OBJECT", "target": "library_shelf", "title": "看一看书架"}]}
     controls = {"headers": teacher["headers"], "params": params}
-    without_chapter = client.post("/api/teacher/quests/validate", **controls, json={"definition": {**definition, "kind": "main"}})
+    without_chapter = client.post(f"/api/teacher/courses/{instance.id}/quests/validate", **controls, json={"definition": {**definition, "kind": "main"}})
     assert without_chapter.status_code == 422
-    response = client.post("/api/teacher/quests", **controls, json={"definition": definition})
+    response = client.post(f"/api/teacher/courses/{instance.id}/quests", **controls, json={"definition": definition})
     assert response.status_code == 201, response.text
     world = client.get("/api/world", params=params, headers=student["headers"]).json()
     assert not any(ch["available"] for ch in world["chapters"])
     assert [(q["title"], q["chapter_id"]) for q in world["quests"]] == [("认识图书馆", None)]
     foreign_activity = db.get(Activity, "ch1-lesson")
     assert foreign_activity.course_instance_id != instance.id
-    foreign = client.post("/api/teacher/quests/validate", **controls, json={
+    foreign = client.post(f"/api/teacher/courses/{instance.id}/quests/validate", **controls, json={
         "definition": {**definition, "when": {"activity_completed": foreign_activity.id}},
     })
     assert foreign.status_code == 404
@@ -344,6 +350,7 @@ def test_publish_remove_and_restore_optional_features_and_final_chapter(client, 
 
 def test_switch_template_requires_current_impact_and_preserves_attempt(client, db, teacher, student, course):
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     rev, _, _ = generate(client, teacher, url, draft)
     headers = teacher["headers"]
     draft.update(expected_revision=rev)
@@ -351,7 +358,7 @@ def test_switch_template_requires_current_impact_and_preserves_attempt(client, d
     preview = client.post(url+"/preview", headers=headers, json=draft).json()
     assert preview["token"] and preview["reset_impact"] is None
     quest = db.scalar(select(QuestDefinition).where(QuestDefinition.course_instance_id == instance.id))
-    learner = PlayerQuest(user_id=student["id"], classroom_id=instance.classroom_id, quest_id=quest.id, status="active")
+    learner = PlayerQuest(user_id=student["id"], classroom_id=room_id, quest_id=quest.id, status="active")
     db.add(learner)
     db.commit()
     refused = client.post(url+"/apply", headers=headers, json={**draft, "token": preview["token"]})
@@ -359,7 +366,7 @@ def test_switch_template_requires_current_impact_and_preserves_attempt(client, d
     preview = client.post(url+"/preview", headers=headers, json=draft).json()
     assert preview["reset_impact"]["students"] == 1
     quiz = db.scalar(select(Activity).where(Activity.course_instance_id == instance.id, Activity.kind == "assessment"))
-    attempt = AssessmentAttempt(activity_id=quiz.id, classroom_id=instance.classroom_id, user_id=student["id"])
+    attempt = AssessmentAttempt(activity_id=quiz.id, classroom_id=room_id, user_id=student["id"])
     db.add(attempt)
     db.commit()
     assert client.post(url+"/apply", headers=headers, json={**draft, "token": preview["token"]}).status_code == 409
@@ -391,10 +398,11 @@ def test_preserves_quiz_with_formal_submissions_before_paper_recovery(client, db
     from app.content_relations import activity_questions
 
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     draft["expected_revision"], _, _ = generate(client, teacher, url, draft)
     quiz = db.scalar(select(Activity).where(Activity.course_instance_id == instance.id, Activity.kind == "assessment"))
     question = activity_questions(db, quiz)[0]
-    db.add(Submission(user_id=student["id"], classroom_id=instance.classroom_id, activity_id=quiz.id,
+    db.add(Submission(user_id=student["id"], classroom_id=room_id, activity_id=quiz.id,
                       question_id=question.id, idempotency_key="legacy-quiz", mode="submit", status="accepted", feedback={}))
     db.commit()
     draft["recipe"]["quiz_count"] = 2
@@ -407,11 +415,12 @@ def test_deselecting_a_retired_chapter_does_not_restore_its_old_release(client, 
     from test_activity_deletion import confirm, preview
 
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     chapter = db.scalar(select(Chapter).where(Chapter.course_instance_id == instance.id, Chapter.stable_id == "two"))
-    db.add(ChapterRelease(classroom_id=instance.classroom_id, chapter_id=chapter.id, status="published"))
+    db.add(ChapterRelease(classroom_id=room_id, chapter_id=chapter.id, status="published"))
     db.commit()
     generate(client, teacher, url, draft)
-    classroom = {"id": instance.classroom_id}
+    classroom = {"course_id": instance.id, "id": room_id}
     deletion = preview(client, teacher, classroom, "chapter", chapter.id)
     assert not deletion["blockers"], deletion["blockers"]
     response = confirm(client, teacher, classroom, deletion)
@@ -424,13 +433,14 @@ def test_deselecting_a_retired_chapter_does_not_restore_its_old_release(client, 
 
 def test_adjusting_learning_content_rechecks_new_objectives_but_keeps_old_evidence(client, db, teacher, student, course):
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     draft["recipe"]["chapters"] = draft["recipe"]["chapters"][:1]
     draft["recipe"].update(template_id="learn-practice", quiz_count=0)
     rev, _, _ = generate(client, teacher, url, draft)
     activities = {row.kind: row for row in db.scalars(select(Activity).where(Activity.course_instance_id == instance.id))}
     lesson, practice = activities["lesson"], activities["practice"]
     learner = db.get(User, student["id"])
-    scope = {"classroom_id": instance.classroom_id, "user_id": learner.id}
+    scope = {"classroom_id": room_id, "user_id": learner.id}
     original = lesson.resources[0].material_id
     # Both slides have page number and page ID 1. Evidence must remain attached to the original material.
     replacement = Material(stable_id="new-slides", title="新课件", kind="pdf", status="ready", storage_key="private/new.pdf",
@@ -442,15 +452,15 @@ def test_adjusting_learning_content_rechecks_new_objectives_but_keeps_old_eviden
     progress = ActivityProgress(activity_id=lesson.id, page_no=1, completed=True,
                                 visited_pages=[1], media_progress={"reading_pages": {str(original): [1]}}, **scope)
     from app.practice_sessions import open_session
-    session = open_session(db, learner, instance.classroom_id, practice)
+    session = open_session(db, learner, room_id, practice)
     session.items = [{**item, "status": "accepted"} for item in session.items]
     answer = Submission(activity_id=practice.id, question_id=session.items[0]["question_id"], idempotency_key="answer", status="accepted", **scope)
     quest = db.scalar(select(QuestDefinition).where(QuestDefinition.course_instance_id == instance.id))
     completed = PlayerQuest(quest_id=quest.id, status="complete", **scope)
     db.add_all([record, progress, answer, completed])
     db.commit()
-    assert progress_payload(db, learner, instance.classroom_id, lesson)["completed"]
-    assert progress_payload(db, learner, instance.classroom_id, practice)["completed"]
+    assert progress_payload(db, learner, room_id, lesson)["completed"]
+    assert progress_payload(db, learner, room_id, practice)["completed"]
     draft.update(expected_revision=rev)
     draft["recipe"]["practice_count"] = 2
     protected = client.post(url + "/preview", headers=teacher["headers"], json=draft).json()
@@ -462,12 +472,13 @@ def test_adjusting_learning_content_rechecks_new_objectives_but_keeps_old_eviden
     db.expire_all()
     assert not db.scalar(select(PlayerQuest).where(PlayerQuest.quest_id == quest.id))
     assert db.get(LearningRecord, record.id) and db.get(Submission, answer.id)
-    assert not progress_payload(db, learner, instance.classroom_id, lesson)["completed"]
-    assert progress_payload(db, learner, instance.classroom_id, practice)["completed"]
+    assert not progress_payload(db, learner, room_id, lesson)["completed"]
+    assert progress_payload(db, learner, room_id, practice)["completed"]
 
 
 def test_filters_other_teacher_sources_and_preserves_manual_release(client, db, teacher, admin_account, course):
     url, draft, instance = course
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == instance.id))
     foreign = User(student_id="1230000999", name="另一教师", role="teacher", password_hash="test")
     db.add(foreign)
     db.flush()
@@ -478,8 +489,9 @@ def test_filters_other_teacher_sources_and_preserves_manual_release(client, db, 
         assert client.get(url, headers=headers).json()["chapters"][0]["knowledge_points"] == []
         assert client.post(url+"/preview", json=draft, headers=headers).json()["token"] is None
     point.owner_id = teacher["id"]
-    db.add(ChapterRelease(classroom_id=instance.classroom_id, chapter_id=point.chapter_id, status="paused"))
+    db.add(ChapterRelease(classroom_id=room_id, chapter_id=point.chapter_id, status="paused"))
     db.commit()
     original = client.post(url+"/preview", json=draft, headers=teacher["headers"]).json()
-    assert original["token"] is None and "已有独立设置" in "".join(original["blockers"])
-    assert db.get(ChapterRelease, (instance.classroom_id, point.chapter_id)).status == "paused"
+    assert original["token"] and not original["blockers"]
+    generate(client, teacher, url, draft)
+    assert db.get(ChapterRelease, (room_id, point.chapter_id)).status == "paused"

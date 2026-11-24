@@ -1,5 +1,6 @@
 """Opt-in PostgreSQL contention test. Creates only a temporary schema in Reborn DB."""
 
+from course_fixtures import empty_course
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -41,7 +42,7 @@ def test_postgres_duplicate_events_under_contention():
             student = User(student_id="870446112008", name="student", role="student", password_hash="unused")
             db.add_all([teacher, student])
             db.flush()
-            classroom = Classroom(name="isolated contention", teacher_id=teacher.id, join_code=uuid4().hex[:20])
+            classroom = Classroom(name="isolated contention", course=empty_course(teacher.id), join_code=uuid4().hex[:20])
             db.add(classroom)
             db.flush()
             db.add(Membership(user_id=student.id, classroom_id=classroom.id))

@@ -1,4 +1,5 @@
 """Two-stage, classroom-scoped retirement with impact review and retained evidence."""
+from app.course_scope import course_class_ids
 from copy import deepcopy
 from datetime import timedelta
 from hashlib import sha256
@@ -14,13 +15,13 @@ from .auth import as_utc, require_teacher
 from .db import Base, get_db
 from .deletion_models import ContentDeletionPreview
 from .models import (
-    Activity, ActivityQuestion, Chapter, ChapterRelease, CourseInstance, KnowledgePoint,
+    Activity, ActivityQuestion, Chapter, ChapterRelease, Classroom, CourseInstance, KnowledgePoint,
     Material, MaterialChapter, Npc, PlayerQuest, Question, QuestionChapter, QuestionKnowledgePoint,
     QuestDefinition, StoryDefinition, StorySession, User, now,
 )
 from .teacher_scope import commit_content, require_scope, teacher_instance_id
 
-router = APIRouter(prefix="/teacher/content-deletions", tags=["content-deletions"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/content-deletions", tags=["content-deletions"])
 MODELS = {"chapter": Chapter, "material": Material, "question": Question, "activity": Activity,
           "knowledge_point": KnowledgePoint, "quest": QuestDefinition, "story": StoryDefinition}
 LABELS = {"chapter": "章节", "material": "资料", "question": "题目", "activity": "活动",
@@ -38,13 +39,11 @@ class Target(BaseModel):
 
 class PreviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    classroom_id: int = Field(gt=0)
     targets: list[Target] = Field(min_length=1, max_length=100)
 
 
 class ConfirmInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    classroom_id: int = Field(gt=0)
     confirmation: str = Field(min_length=1, max_length=200)
     confirmed: Literal[True]
 
@@ -130,7 +129,7 @@ def plan_deletion(db, user, instance, targets):
         from .models import PracticeSession
         from .practice_rules import allocate_initial, candidate_pool
 
-        sessions = db.scalars(select(PracticeSession).where(PracticeSession.classroom_id == instance.classroom_id))
+        sessions = db.scalars(select(PracticeSession).where(PracticeSession.classroom_id.in_(course_class_ids(instance.id))))
         for session in sessions:
             if session.activity_id not in retiring["activity"] and any(item["question_id"] in retiring["question"] for item in session.items):
                 blockers.append({"message": "题目已进入保留练习的学生个人题单", "kind": "activity", "id": session.activity_id})
@@ -187,8 +186,7 @@ def plan_deletion(db, user, instance, targets):
     for key, row in rows["question"].items():
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             unlink("question", key, "清除已删除资料的来源引用与页码；题目保留")
-    releases = list(db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id == instance.classroom_id)))
-    pause_releases = [r.chapter_id for r in releases if str(r.chapter_id) not in retiring["chapter"]
+    pause_releases = [r.id for r in rows["chapter"].values() if str(r.id) not in retiring["chapter"]
                       and str(r.prerequisite_chapter_id) in retiring["chapter"]]
     for key in pause_releases:
         unlink("chapter", key, "解除已删除的前置章节并暂停发布，待教师重新确认开放规则")
@@ -242,7 +240,7 @@ def plan_deletion(db, user, instance, targets):
             preserved.append({"kind": "history", "title": {"activity_progress": "活动进度", "learning_records": "学习记录",
                 "submissions": "提交与评测记录", "assessment_attempts": "试卷与成绩", "assistant_sessions": "助教会话",
                 "player_quests": "任务进度"}.get(table.name, "关联历史记录"), "count": len(found)})
-    players = list(db.scalars(select(PlayerQuest).where(PlayerQuest.classroom_id == instance.classroom_id,
+    players = list(db.scalars(select(PlayerQuest).where(PlayerQuest.classroom_id.in_(course_class_ids(instance.id)),
                                                        PlayerQuest.quest_id.in_(retiring["quest"]))))
     if players:
         evidence["player_quests"] = [{c.name: getattr(p, c.name) for c in PlayerQuest.__table__.columns} for p in players]
@@ -251,7 +249,7 @@ def plan_deletion(db, user, instance, targets):
         for table in Base.metadata.sorted_tables:
             if "player_quest_id" in table.c:
                 evidence[table.name] = [dict(r) for r in db.execute(select(table).where(table.c.player_quest_id.in_([p.id for p in players]))).mappings()]
-    sessions = list(db.scalars(select(StorySession).where(StorySession.classroom_id == instance.classroom_id).order_by(StorySession.id)))
+    sessions = list(db.scalars(select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(instance.id))).order_by(StorySession.id)))
     sessions = [r for r in sessions if r.story_id in retiring["story"] or r.pending_activity_id in retiring["activity"]]
     closing = [r.id for r in sessions if r.status in {"active", "waiting"}]
     if sessions:
@@ -270,7 +268,16 @@ def plan_deletion(db, user, instance, targets):
             for content_id in sorted(keys):
                 if content_id in rows[kind] and content_id not in retiring[kind]:
                     preserved.append({"kind": kind, "id": content_id, "title": title(rows[kind][content_id]), "count": 1})
-    public = {"remove": retiring_rows, "detach": detach, "preserve": list({json.dumps(x, sort_keys=True): x for x in preserved}.values()),
+    learners_by_class = {}
+    for records in evidence.values():
+        for record in records:
+            if record.get("classroom_id") is not None and record.get("user_id") is not None:
+                learners_by_class.setdefault(record["classroom_id"], set()).add(record["user_id"])
+    classrooms = [{"id": cid, "name": name, "students": len(learners_by_class[cid]),
+                   "ending_sessions": sum(s.classroom_id == cid and s.status in {"active", "waiting"} for s in sessions)}
+                  for cid, name in db.execute(select(Classroom.id, Classroom.name)
+                      .where(Classroom.id.in_(learners_by_class)).order_by(Classroom.id))]
+    public = {"classrooms": classrooms, "remove": retiring_rows, "detach": detach, "preserve": list({json.dumps(x, sort_keys=True): x for x in preserved}.values()),
               "blockers": blockers, "affected_students": len(learners), "ending_sessions": len(closing),
               "history_policy": "学生提交、试卷、成绩、阅读及任务历史全部保留；删除内容退出当前教学，历史所需文件保留。"}
     # Hash actual evidence too: newly submitted work or session progress invalidates a stale preview.
@@ -280,14 +287,14 @@ def plan_deletion(db, user, instance, targets):
 
 
 @router.post("/preview")
-def preview_deletion(body: PreviewInput, user: Teacher, db: Database):
-    instance_id = teacher_instance_id(db, user, body.classroom_id, exclusive=True)
+def preview_deletion(course_id: int, body: PreviewInput, user: Teacher, db: Database):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     instance = db.get(CourseInstance, instance_id)
     targets = list({(t.kind, t.id): t.model_dump() for t in body.targets}.values())
     plan, fingerprint, *_ = plan_deletion(db, user, instance, targets)
     first = next(item for item in plan["remove"] if item["kind"] == targets[0]["kind"] and item["id"] == targets[0]["id"])
     confirmation = first["title"] if len(targets) == 1 else f"删除所选{len(targets)}项"
-    preview = ContentDeletionPreview(teacher_id=user.id, classroom_id=body.classroom_id, course_instance_id=instance_id,
+    preview = ContentDeletionPreview(teacher_id=user.id, course_instance_id=instance_id,
                                      revision=instance.revision, targets=targets, fingerprint=fingerprint, confirmation=confirmation)
     db.add(preview)
     db.commit()
@@ -296,10 +303,10 @@ def preview_deletion(body: PreviewInput, user: Teacher, db: Database):
 
 
 @router.post("/{preview_id}/confirm")
-def confirm_deletion(preview_id: str, body: ConfirmInput, user: Teacher, db: Database):
-    instance_id = teacher_instance_id(db, user, body.classroom_id, exclusive=True)
+def confirm_deletion(course_id: int, preview_id: str, body: ConfirmInput, user: Teacher, db: Database):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     preview = db.scalar(select(ContentDeletionPreview).where(ContentDeletionPreview.id == preview_id).with_for_update())
-    if not preview or preview.teacher_id != user.id or preview.classroom_id != body.classroom_id or preview.course_instance_id != instance_id:
+    if not preview or preview.teacher_id != user.id or preview.course_instance_id != instance_id:
         raise HTTPException(404, "删除预览不存在")
     if body.confirmation != preview.confirmation:
         raise HTTPException(422, "确认文字不匹配")
@@ -334,11 +341,11 @@ def confirm_deletion(preview_id: str, body: ConfirmInput, user: Teacher, db: Dat
     for key, row in rows["question"].items():
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             row.source = {k: v for k, v in row.source.items() if k not in {"material_id", "page_no"}}
-    for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id == body.classroom_id)):
+    for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id.in_(course_class_ids(course_id)))):
         if release.chapter_id in chapter_ids or release.chapter_id in pauses:
             release.status = "paused"
-        if release.chapter_id in pauses:
-            release.prerequisite_chapter_id = None
+    for chapter_id in pauses:
+        db.get(Chapter, chapter_id).prerequisite_chapter_id = None
     for session in db.scalars(select(StorySession).where(StorySession.id.in_(closing))):
         session.status = "ended"
         session.revision += 1

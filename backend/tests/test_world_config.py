@@ -1,3 +1,4 @@
+from course_fixtures import create_test_class
 import app.teaching.world.rules as teaching_world_rules
 from copy import deepcopy
 from uuid import uuid4
@@ -150,7 +151,7 @@ def test_historical_library_save_without_old_flag_loads_moves_and_exits_without_
 
 
 def test_transition_does_not_accept_another_classroom(client, student, teacher, classroom):
-    other = client.post("/api/classrooms", json={"name": "Other"}, headers=teacher["headers"]).json()
+    other = create_test_class(client, json={"name": "Other"}, headers=teacher["headers"]).json()
     response = client.post("/api/world/transition", json={"classroom_id": other["id"], "portal_id": "library_door"}, headers=student["headers"])
     assert response.status_code == 403
 

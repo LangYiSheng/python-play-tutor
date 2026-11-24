@@ -1,6 +1,7 @@
 """Validate and manage reusable questions while preserving private answer data."""
 
 from fastapi import HTTPException
+from app.course_scope import course_class_ids
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,7 +14,6 @@ from app.models import (
     ActivityQuestion,
     AssessmentAttempt,
     Chapter,
-    CourseInstance,
     KnowledgePoint,
     Question,
     QuestionChapter,
@@ -22,7 +22,7 @@ from app.models import (
     Submission,
     User,
 )
-from app.teacher_scope import commit_content, require_scope, scoped_key, teacher_course_scope, teacher_instance_id
+from app.teacher_scope import commit_content, require_scope, scoped_key, own_course, teacher_instance_id
 
 
 def validate_question_links(db, user, body, instance_id=None):
@@ -143,7 +143,7 @@ def stage_question(db, user, question, body):
                 for attempt in db.scalars(
                     select(AssessmentAttempt).where(
                         AssessmentAttempt.classroom_id.in_(
-                            select(CourseInstance.classroom_id).where(CourseInstance.id == question.course_instance_id)
+                            course_class_ids(question.course_instance_id)
                         )
                     )
                 )
@@ -184,16 +184,17 @@ def save_question(db, user, question, body):
         raise HTTPException(409, "题目标识冲突或内容同时更新，请刷新后重试") from exc
 
 
-def create_question(body: QuestionInput, db: Session, user: User, classroom_id: int | None = None):
-    classroom, instance_id = teacher_course_scope(db, user, classroom_id, exclusive=True)
+def create_question(body: QuestionInput, db: Session, user: User, course_id: int | None = None):
+    course = own_course(db, user, course_id, exclusive=True)
+    instance_id = course.id
     runtime_id = scoped_key(instance_id, "question", body.id)
     if db.get(Question, runtime_id, execution_options={"include_deleted": True}):
         raise HTTPException(409, "题目ID已存在")
-    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=classroom.teacher_id), body)
+    return save_question(db, user, Question(id=runtime_id, stable_id=body.id, course_instance_id=instance_id, owner_id=course.teacher_id), body)
 
 
-def visible_questions(db, user, classroom_id, *, reviewable=False):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def visible_questions(db, user, course_id, *, reviewable=False):
+    instance_id = teacher_instance_id(db, user, course_id)
     if reviewable:
         return select(Question).where(*question_scope(instance_id, user))
     query = select(Question).where(Question.course_instance_id == instance_id)
@@ -202,18 +203,18 @@ def visible_questions(db, user, classroom_id, *, reviewable=False):
     return query
 
 
-def list_questions(db: Session, user: User, classroom_id: int | None = None):
-    query = visible_questions(db, user, classroom_id)
+def list_questions(db: Session, user: User, course_id: int | None = None):
+    query = visible_questions(db, user, course_id)
     return [teacher_question_payload(db, item, user) for item in db.scalars(query.order_by(Question.id))]
 
 
-def question_page(db, user, classroom_id, page, size, search, kind, status, source, knowledge_point_id=None, *, reviewable=False):
+def question_page(db, user, course_id, page, size, search, kind, status, source, knowledge_point_id=None, *, reviewable=False):
     from app.course_content.catalog import page_window, point_detail
 
-    query = visible_questions(db, user, classroom_id, reviewable=reviewable).with_only_columns(
+    query = visible_questions(db, user, course_id, reviewable=reviewable).with_only_columns(
         Question.id, Question.title, Question.kind, Question.source_type, Question.status)
     if knowledge_point_id is not None:
-        point_detail(db, user, classroom_id, knowledge_point_id)
+        point_detail(db, user, course_id, knowledge_point_id)
         linked = select(QuestionKnowledgePoint.question_id).where(QuestionKnowledgePoint.knowledge_point_id == knowledge_point_id)
         query = query.where(Question.id.in_(linked))
     if search.strip():
@@ -235,17 +236,17 @@ def question_page(db, user, classroom_id, page, size, search, kind, status, sour
     return {**meta, "items": items}
 
 
-def question_detail(db, user, classroom_id, question_id):
-    question = db.scalar(visible_questions(db, user, classroom_id).where(Question.id == question_id))
+def question_detail(db, user, course_id, question_id):
+    question = db.scalar(visible_questions(db, user, course_id).where(Question.id == question_id))
     if question is None:
         raise HTTPException(404, "题目不存在")
     return teacher_question_payload(db, question, user)
 
 
-def chapter_candidates(db, user, classroom_id, chapter_id):
+def chapter_candidates(db, user, course_id, chapter_id):
     from app.course_content.catalog import visible_points
 
-    instance_id = teacher_instance_id(db, user, classroom_id)
+    instance_id = teacher_instance_id(db, user, course_id)
     query = select(Question).join(QuestionChapter, QuestionChapter.question_id == Question.id).join(
         Chapter, Chapter.id == QuestionChapter.chapter_id).where(
         Question.course_instance_id == instance_id, Chapter.course_instance_id == instance_id, Chapter.id == chapter_id)
@@ -281,17 +282,17 @@ def updated_question_input(db, question, user, body):
         raise HTTPException(422, "题目配置无效：" + "; ".join(error["msg"] for error in exc.errors())) from exc
 
 
-def update_question(question_id: str, body: QuestionUpdate, db: Session, user: User, classroom_id: int | None = None):
+def update_question(question_id: str, body: QuestionUpdate, db: Session, user: User, course_id: int | None = None):
     from app.curriculum import editable
 
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     question = editable(db.scalar(select(Question).where(Question.id == question_id).with_for_update()), user, instance_id)
     return save_question(db, user, question, updated_question_input(db, question, user, body))
 
 
-def delete_question(question_id: str, db: Session, user: User, classroom_id: int | None = None):
+def delete_question(question_id: str, db: Session, user: User, course_id: int | None = None):
     from app.curriculum import editable
 
-    instance_id = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     editable(db.scalar(select(Question).where(Question.id == question_id).with_for_update()), user, instance_id)
     raise HTTPException(409, "请先预览删除影响并完成二次确认")

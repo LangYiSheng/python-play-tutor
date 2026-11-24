@@ -1,5 +1,6 @@
 # ruff: noqa: F811 -- imported pytest fixture
 """Unified character identity, staged private assets and placement protection."""
+from course_fixtures import empty_course
 from copy import deepcopy
 from io import BytesIO
 import asyncio
@@ -29,7 +30,7 @@ def image_bytes(size=(48, 80), format="PNG"):
 
 
 def upload(client, teacher, scene, kind="sprite", content=None):
-    return client.post(f"/api/teacher/classrooms/{scene['classroom'].id}/character-assets", headers=teacher["headers"],
+    return client.post(f"/api/teacher/courses/{scene['classroom'].course_id}/character-assets", headers=teacher["headers"],
                        data={"kind": kind, "owner_npc_id": "resident", "expected_revision": draft(client, teacher, scene)["expected_revision"]},
                        files={"file": ("test.png", content or image_bytes(), "image/png")})
 
@@ -90,15 +91,17 @@ def test_private_upload_publish_and_package_roundtrip(client, db, teacher, stude
     asset = first.json()
     url = asset["url"]
     assert client.get(url, headers=teacher["headers"]).status_code == 200
-    assert client.get(url, headers=student["headers"]).status_code == 404
+    learner_url = url.replace(f"/teacher/courses/{scene['instance'].id}/", f"/classrooms/{scene['classroom'].id}/")
+    assert client.get(url, headers=student["headers"]).status_code == 403
+    assert client.get(learner_url, headers=student["headers"]).status_code == 404
     assert client.get(url).status_code == 401
     body = draft(client, teacher, scene)
     body["npcs"][0]["sprite"] = asset["id"]
     save(client, teacher, scene, body)
-    assert client.get(url, headers=student["headers"]).content == image_bytes()
+    assert client.get(learner_url, headers=student["headers"]).content == image_bytes()
     from app.characters import presentation
     identity = presentation(db, scene["classroom"].id, db.get(Npc, scene["npc"].key))
-    assert identity["sprite"]["url"] == url
+    assert identity["sprite"]["url"] == learner_url
     assert identity["sprite"]["frame_width"] == 16
     assert identity["sprite"]["frame_height"] == 20
     # An unused staged upload is excluded from the exported course.
@@ -110,16 +113,16 @@ def test_private_upload_publish_and_package_roundtrip(client, db, teacher, stude
     bundle = load_bundle(root)
     assert len(bundle["assets"]) == 1
     assert bundle["manifest"]["schema_version"] == 3
-    target = Classroom(name="隔离导入", teacher_id=teacher["id"], join_code="characters-test")
+    target = Classroom(name="隔离导入", course=empty_course(teacher["id"]), join_code="characters-test")
     db.add(target)
     db.flush()
-    instance = import_bundle(db, target, None, bundle, root)
+    instance = import_bundle(db, target.course, bundle, root)
     db.commit()
-    import_bundle(db, target, instance, bundle, root)
+    import_bundle(db, instance, bundle, root)
     db.commit()
     mapped = content_mapping(db, instance)
     assert db.get(Npc, mapped["npc"]["resident"]).sprite == asset["id"]
-    assert client.get(url.replace(f"/{scene['classroom'].id}/", f"/{target.id}/"), headers=student["headers"]).status_code == 403
+    assert client.get(learner_url.replace(f"/{scene['classroom'].id}/", f"/{target.id}/"), headers=student["headers"]).status_code == 403
     again = tmp_path / "again"
     again.mkdir()
     write_package(db, instance, again)
@@ -240,7 +243,7 @@ def test_upload_waiting_for_course_lock_keeps_api_responsive(client, teacher, sc
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as api:
             started = monotonic()
             pending = asyncio.create_task(api.post(
-                f"/api/teacher/classrooms/{scene['classroom'].id}/character-assets", headers=teacher["headers"],
+                f"/api/teacher/courses/{scene['classroom'].course_id}/character-assets", headers=teacher["headers"],
                 data={"kind": "sprite", "owner_npc_id": "resident", "expected_revision": scene["instance"].revision},
                 files={"file": ("sprite.png", image_bytes(), "image/png")},
             ))

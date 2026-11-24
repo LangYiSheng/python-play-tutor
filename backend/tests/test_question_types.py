@@ -53,7 +53,7 @@ def test_ready_definition_validation(change):
 
 
 def create_multi(client, db, teacher, classroom):
-    response = client.post(f"/api/teacher/questions?classroom_id={classroom['id']}",
+    response = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions",
                            headers=teacher["headers"], json=definition())
     assert response.status_code == 201, response.text
     question_id = response.json()["id"]

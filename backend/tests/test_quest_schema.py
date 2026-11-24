@@ -52,9 +52,9 @@ def invalid_definitions():
 
 @pytest.mark.parametrize("definition", invalid_definitions())
 def test_invalid_task_json_is_rejected_before_publication(client, teacher, definition, classroom):
-    response = client.post("/api/teacher/quests/validate", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    response = client.post(f"/api/teacher/courses/{classroom['course_id']}/quests/validate", json={"definition": definition}, headers=teacher["headers"])
     assert response.status_code == 422, response.text
-    assert client.post("/api/teacher/quests", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]}).status_code == 422
+    assert client.post(f"/api/teacher/courses/{classroom['course_id']}/quests", json={"definition": definition}, headers=teacher["headers"]).status_code == 422
 
 
 def test_kind_default_and_side_are_valid():
@@ -66,13 +66,16 @@ def test_kind_default_and_side_are_valid():
 
 def test_unfinished_side_quest_does_not_block_next_main_chapter(client, db, teacher, student, classroom, branching_course):
     definition = {**basic_definition(), "id": "unfinished-side", "kind": "side"}
-    created = client.post("/api/teacher/quests", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    created = client.post(f"/api/teacher/courses/{classroom['course_id']}/quests", json={"definition": definition}, headers=teacher["headers"])
     assert created.status_code == 201
     definition["id"] = created.json()["id"]
     complete_first_chapter(client, db, student, teacher, classroom)
+    from app.models import Chapter
+    db.get(Chapter, 180).prerequisite_chapter_id = 179
+    db.commit()
     response = client.put(
         f"/api/teacher/classrooms/{classroom['id']}/releases/180",
-        json={"status": "published", "prerequisite_chapter_id": 179},
+        json={"status": "published"},
         headers=teacher["headers"],
     )
     assert response.status_code == 200
@@ -82,10 +85,10 @@ def test_unfinished_side_quest_does_not_block_next_main_chapter(client, db, teac
 
 
 def test_chapter_with_only_side_quests_does_not_automatically_satisfy_prerequisite(client, db, teacher, student, classroom, branching_course):
-    chapter = client.post("/api/teacher/chapters", json={"title": "Only side activities"}, headers=teacher["headers"], params={"classroom_id": classroom["id"]}).json()
+    chapter = client.post(f"/api/teacher/courses/{classroom['course_id']}/chapters", json={"title": "Only side activities"}, headers=teacher["headers"]).json()
     definition = {**basic_definition(), "id": "only-side", "kind": "side", "chapter_id": chapter["id"]}
     definition["nodes"][0].update(type="REACH_LOCATION", target="town_square")
-    created = client.post("/api/teacher/quests", json={"definition": definition}, headers=teacher["headers"], params={"classroom_id": classroom["id"]})
+    created = client.post(f"/api/teacher/courses/{classroom['course_id']}/quests", json={"definition": definition}, headers=teacher["headers"])
     assert created.status_code == 201
     definition["id"] = created.json()["id"]
     assert (
@@ -111,10 +114,13 @@ def test_chapter_with_only_side_quests_does_not_automatically_satisfy_prerequisi
     )
     assert result.status_code == 200, result.text
     assert next(q for q in result.json()["world"]["quests"] if q["id"] == definition["id"])["status"] == "complete"
+    from app.models import Chapter
+    db.get(Chapter, 180).prerequisite_chapter_id = chapter["id"]
+    db.commit()
     assert (
         client.put(
             f"/api/teacher/classrooms/{classroom['id']}/releases/180",
-            json={"status": "published", "prerequisite_chapter_id": chapter["id"]},
+            json={"status": "published"},
             headers=teacher["headers"],
         ).status_code
         == 200

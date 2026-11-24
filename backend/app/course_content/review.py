@@ -22,31 +22,31 @@ from app.narration import repository
 from app.narration.models import PageNarration
 from app.teacher_scope import commit_content, teacher_instance_id
 
-router = APIRouter(prefix="/teacher/classrooms/{classroom_id}/content-review", tags=["classrooms"])
+router = APIRouter(prefix="/teacher/courses/{course_id}/content-review", tags=["classrooms"])
 Db = Annotated[Session, Depends(get_db)]
 Teacher = Annotated[User, Depends(require_teacher)]
 
 
 @router.get("/summary")
-def summary(classroom_id: int, db: Db, user: Teacher):
-    return draft_summary(db, teacher_instance_id(db, user, classroom_id), user)
+def summary(course_id: int, db: Db, user: Teacher):
+    return draft_summary(db, teacher_instance_id(db, user, course_id), user)
 
 
 @router.get("/materials")
-def materials(classroom_id: int, db: Db, user: Teacher, page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
-    return material_draft_page(db, teacher_instance_id(db, user, classroom_id), user, page, size)
+def materials(course_id: int, db: Db, user: Teacher, page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
+    return material_draft_page(db, teacher_instance_id(db, user, course_id), user, page, size)
 
 
 @router.get("/groups")
-def chapter_groups(classroom_id: int, db: Db, user: Teacher, kind: Kind | None = None,
+def chapter_groups(course_id: int, db: Db, user: Teacher, kind: Kind | None = None,
                    page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
-    return grouped_page(db, teacher_instance_id(db, user, classroom_id), user, kind, None, page, size)
+    return grouped_page(db, teacher_instance_id(db, user, course_id), user, kind, None, page, size)
 
 
 @router.get("/groups/{chapter_id}/materials")
-def material_groups(classroom_id: int, chapter_id: int, db: Db, user: Teacher, kind: Kind | None = None,
+def material_groups(course_id: int, chapter_id: int, db: Db, user: Teacher, kind: Kind | None = None,
                     page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
-    return grouped_page(db, teacher_instance_id(db, user, classroom_id), user, kind, chapter_id, page, size)
+    return grouped_page(db, teacher_instance_id(db, user, course_id), user, kind, chapter_id, page, size)
 
 
 def narration_revisions(db: Session, ids: list[int]) -> dict[str, str]:
@@ -61,10 +61,10 @@ def narration_revisions(db: Session, ids: list[int]) -> dict[str, str]:
 
 
 @router.get("")
-def queue(classroom_id: int, db: Db, user: Teacher, kind: Kind | None = None,
+def queue(course_id: int, db: Db, user: Teacher, kind: Kind | None = None,
           chapter_id: int | None = Query(None, ge=0), material_id: int | None = Query(None, ge=0),
           page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
-    instance = teacher_instance_id(db, user, classroom_id)
+    instance = teacher_instance_id(db, user, course_id)
     rows = draft_rows(db, instance, user, kind)
     query = select(rows)
     extra = {}
@@ -104,8 +104,8 @@ def narration_row(db, instance, user, row_id, *, lock=False):
 
 
 @router.get("/narrations/{row_id}")
-def narration_detail(classroom_id: int, row_id: str, db: Db, user: Teacher):
-    row, material = narration_row(db, teacher_instance_id(db, user, classroom_id), user, row_id)
+def narration_detail(course_id: int, row_id: str, db: Db, user: Teacher):
+    row, material = narration_row(db, teacher_instance_id(db, user, course_id), user, row_id)
     page = repository.page_map(material).get(row.page_no)
     digest = repository.content_row(db, material.id, row.page_no)
     return {**repository.snapshot(material, row, page, digest), "revision": repository.revision(row),
@@ -153,12 +153,12 @@ def apply_decision(db: Session, instance: int, user: User, items: list[ReviewIte
 
 
 @router.post("/decisions")
-def decide(classroom_id: int, body: Decision, db: Db, user: Teacher):
+def decide(course_id: int, body: Decision, db: Db, user: Teacher):
     if len({(item.kind, item.id) for item in body.items}) != len(body.items):
         raise HTTPException(422, "审批范围包含重复项")
     if body.text is not None and (len(body.items) != 1 or body.items[0].kind != "narration" or body.decision != "accept"):
         raise HTTPException(422, "仅支持修改并接受一页讲解稿")
-    instance = teacher_instance_id(db, user, classroom_id, exclusive=True)
+    instance = teacher_instance_id(db, user, course_id, exclusive=True)
     return apply_decision(db, instance, user, body.items, body.decision, body.text)
 
 
@@ -185,8 +185,8 @@ def chapter_selection(db: Session, instance: int, user: User, chapter_id: int, k
 
 
 @router.get("/groups/{chapter_id}/preview")
-def chapter_preview(classroom_id: int, chapter_id: int, db: Db, user: Teacher, kind: Kind | None = None):
-    instance = teacher_instance_id(db, user, classroom_id)
+def chapter_preview(course_id: int, chapter_id: int, db: Db, user: Teacher, kind: Kind | None = None):
+    instance = teacher_instance_id(db, user, course_id)
     preview, _ = chapter_selection(db, instance, user, chapter_id, kind)
     return preview
 
@@ -198,8 +198,8 @@ class ChapterConfirmation(BaseModel):
 
 
 @router.post("/groups/{chapter_id}/accept")
-def accept_chapter(classroom_id: int, chapter_id: int, body: ChapterConfirmation, db: Db, user: Teacher):
-    instance = teacher_instance_id(db, user, classroom_id, exclusive=True)
+def accept_chapter(course_id: int, chapter_id: int, body: ChapterConfirmation, db: Db, user: Teacher):
+    instance = teacher_instance_id(db, user, course_id, exclusive=True)
     preview, items = chapter_selection(db, instance, user, chapter_id, body.kind)
     if body.expected_count != preview["count"] or body.token != preview["token"]:
         raise HTTPException(409, "章节的待审范围或草稿内容已变化，请重新预览后确认")

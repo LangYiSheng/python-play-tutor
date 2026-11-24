@@ -8,7 +8,7 @@ import { GlobalOverview } from "@/features/management/overview";
 import { RecordViewer } from "@/pages/teaching";
 
 const row = { id: 7, name: "一班", teacher_id: 12, teacher_name: "任老师", status: "active", student_count: 2, has_learning_records: true };
-const props = { userId: 12, onCreate: vi.fn(), onOpen: vi.fn(), onChanged: vi.fn() };
+const props = { courseId: 3, userId: 12, onCreate: vi.fn(), onOpen: vi.fn(), onChanged: vi.fn() };
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 it("keeps classes with learning records available for archiving while limiting formal deletion to administrators", async () => {

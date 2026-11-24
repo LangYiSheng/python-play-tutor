@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import (
     Activity, ActivityMaterial, ActivityProgress, ActivityQuestion, AssessmentAttempt, Chapter, ChapterRelease,
-    Classroom, CourseExample, CourseInstance, KnowledgePoint, LearningEvent, LearningRecord,
+    Classroom, CourseExample, KnowledgePoint, LearningEvent, LearningRecord,
     Material, MaterialChapter, NodeState, Npc, PlayerQuest, Question, QuestionChapter,
     QuestionKnowledgePoint, QuestionSecret, QuestDefinition, StoryDefinition, StorySession,
     Submission, WorldFlag, WORLD_FLAG_KEY_MAX_LENGTH,
@@ -28,7 +28,7 @@ class CourseCloneError(ValueError):
 
 
 def classroom_course(db, classroom_id):
-    return db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == classroom_id))
+    return db.get(Classroom, classroom_id).course
 
 
 def content_mapping(db, instance):
@@ -226,7 +226,6 @@ def _learner_records(db, classroom_id, maps):
         flag.key = new
     for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id == classroom_id).order_by(ChapterRelease.chapter_id).with_for_update()):
         release.chapter_id = _lookup(maps, "chapter", release.chapter_id)
-        release.prerequisite_chapter_id = _lookup(maps, "chapter", release.prerequisite_chapter_id)
     db.flush()
 
 
@@ -245,7 +244,7 @@ def clone_current_course(db, classroom, *, package_id="legacy-current", name="�
     if locked is None:
         raise CourseCloneError("班级不存在")
     existing = classroom_course(db, classroom_id)
-    if existing:
+    if db.scalar(select(Chapter.id).where(Chapter.course_instance_id == existing.id).limit(1)):
         return existing
     if db.scalar(select(AssistantCall.id).where(AssistantCall.classroom_id == classroom_id,
             AssistantCall.status.in_(["running", "cancel_requested"]))):
@@ -265,7 +264,8 @@ def clone_current_course(db, classroom, *, package_id="legacy-current", name="�
         material_ids = {_key(row) for row in sources[Material]}
         sources[CourseExample] = [row for row in sources[CourseExample]
             if row.content.get("document_id") is None or row.content["document_id"] in material_ids]
-        instance = CourseInstance(classroom_id=classroom_id, package_id=package_id, name=name, package_version=package_version)
+        instance = existing
+        instance.package_id, instance.name, instance.package_version = package_id, name, package_version
         instance._teacher_id = locked.teacher_id
         db.add(instance)
         db.flush()
@@ -300,6 +300,7 @@ def configure_fixture_world(db, instance):
     state = CoursePackageState(course_instance_id=instance.id, configuration={"world": {"interactions": interactions},
         "buildings": {"library": {"enabled": True, "default_unlocked": False, "blocked_message": "请先与镇长交谈，了解图书馆。"}}, "assistant": {"default_npc_id": "librarian_doc"}, "editor": {}})
     db.add(state)
-    for user_id in db.scalars(select(WorldFlag.user_id).where(WorldFlag.classroom_id == instance.classroom_id, WorldFlag.key == "library_unlocked")):
-        if not db.get(BuildingUnlock, (user_id, instance.classroom_id, instance.id, "library")):
-            db.add(BuildingUnlock(user_id=user_id, classroom_id=instance.classroom_id, course_instance_id=instance.id, building_id="library"))
+    for user_id, classroom_id in db.execute(select(WorldFlag.user_id, WorldFlag.classroom_id).join(
+            Classroom, Classroom.id == WorldFlag.classroom_id).where(Classroom.course_id == instance.id, WorldFlag.key == "library_unlocked")):
+        if not db.get(BuildingUnlock, (user_id, classroom_id, instance.id, "library")):
+            db.add(BuildingUnlock(user_id=user_id, classroom_id=classroom_id, course_instance_id=instance.id, building_id="library"))

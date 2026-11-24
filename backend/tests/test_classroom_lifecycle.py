@@ -3,7 +3,7 @@ from sqlalchemy import inspect, select, text
 
 from app.auth import issue
 from app.models import (
-    Activity, AssessmentAttempt, Chapter, Classroom, CourseInstance, LearningRecord, Membership,
+    Activity, AssessmentAttempt, Chapter, Classroom, LearningRecord, Membership,
     PracticeSession, Question, Submission, User,
 )
 from test_curriculum_migration import migrate, sqlite_engine
@@ -67,13 +67,13 @@ def test_transfer_moves_content_and_revokes_old_preview(client, db, classroom, t
     _, admin_headers = staff(db, "88812", "admin")
     successor, new_headers = staff(db, "88813", "teacher")
     preview_token = client.post(path + "/town-session", headers=teacher["headers"]).json()["access_token"]
-    course = db.scalar(select(CourseInstance).where(CourseInstance.classroom_id == class_id))
+    course = db.get(Classroom, class_id).course
     chapter = db.scalar(select(Chapter).where(Chapter.course_instance_id == course.id).limit(1))
     chapter.owner_id = teacher["id"]
     db.commit()
-    assert client.post(path + "/transfer", json={"teacher_id": successor.id}, headers=teacher["headers"]).status_code == 403
-    assert client.post(path + "/transfer", json={"teacher_id": student["id"]}, headers=admin_headers).status_code == 422
-    assert client.post(path + "/transfer", json={"teacher_id": successor.id}, headers=admin_headers).is_success
+    assert client.post(f"/api/teacher/courses/{course.id}/transfer", json={"teacher_id": successor.id}, headers=teacher["headers"]).status_code == 403
+    assert client.post(f"/api/teacher/courses/{course.id}/transfer", json={"teacher_id": student["id"]}, headers=admin_headers).status_code == 422
+    assert client.post(f"/api/teacher/courses/{course.id}/transfer", json={"teacher_id": successor.id}, headers=admin_headers).is_success
     assert chapter.owner_id == successor.id and db.get(Classroom, class_id).teacher_id == successor.id
     assert client.get(path + "/students", headers=teacher["headers"]).status_code == 403
     assert client.get("/api/auth/me", headers={"Authorization": "Bearer " + preview_token}).status_code == 403
@@ -115,7 +115,7 @@ def test_previous_schema_upgrade_preserves_class(tmp_path, previous_head):
         with engine.connect() as conn:
             assert inspect(conn).has_table("practice_sessions")
             assert conn.execute(text("SELECT COUNT(*) FROM alembic_version")).scalar_one() == 1
-            assert conn.execute(text("SELECT status, teacher_id FROM classrooms WHERE id=42")).one() == ("active", 71)
+            assert conn.execute(text("SELECT r.status, c.teacher_id FROM classrooms r JOIN course_instances c ON c.id=r.course_id WHERE r.id=42")).one() == ("active", 71)
             assert conn.execute(text("SELECT id,owner_id FROM chapters ORDER BY id")).all() == [(90, 71), (91, 72)]
     finally:
         engine.dispose()

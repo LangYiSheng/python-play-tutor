@@ -74,7 +74,7 @@ async function enterTown() {
     departing.value = true;
     await new Promise(resolve => setTimeout(resolve, 450));
     await router.push("/world");
-  } else window.location.assign("/teacher/classes");
+  } else window.location.assign("/teacher/courses");
 }
 async function continueAfterPassword() {
   if (busy.value) return;

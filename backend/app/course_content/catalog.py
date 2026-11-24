@@ -23,15 +23,15 @@ def point_payload(point):
     return {"id": point.id, "chapter_id": point.chapter_id, "title": point.title, "content": point.content, "owner_id": point.owner_id}
 
 
-def point_detail(db, user, classroom_id, point_id):
-    point = db.scalar(visible_points(teacher_instance_id(db, user, classroom_id), user).where(KnowledgePoint.id == point_id))
+def point_detail(db, user, course_id, point_id):
+    point = db.scalar(visible_points(teacher_instance_id(db, user, course_id), user).where(KnowledgePoint.id == point_id))
     if point is None:
         raise HTTPException(404, "知识点不存在")
     return point_payload(point)
 
 
-def selected_point_labels(db, user, classroom_id, ids):
-    query = visible_points(teacher_instance_id(db, user, classroom_id), user).where(KnowledgePoint.id.in_(ids)).with_only_columns(
+def selected_point_labels(db, user, course_id, ids):
+    query = visible_points(teacher_instance_id(db, user, course_id), user).where(KnowledgePoint.id.in_(ids)).with_only_columns(
         KnowledgePoint.id, KnowledgePoint.chapter_id, KnowledgePoint.title)
     return [dict(row) for row in db.execute(query).mappings()]
 
@@ -43,8 +43,8 @@ def page_window(db, query, page, size, *, total=None):
     return {"page": current, "total": total}, query.limit(size).offset((current - 1) * size)
 
 
-def point_page(db, user, classroom_id, page, size, search, chapter_id):
-    query = visible_points(teacher_instance_id(db, user, classroom_id), user)
+def point_page(db, user, course_id, page, size, search, chapter_id):
+    query = visible_points(teacher_instance_id(db, user, course_id), user)
     if search.strip():
         query = query.where(KnowledgePoint.title.icontains(search.strip(), autoescape=True))
     if chapter_id is not None:
@@ -53,10 +53,10 @@ def point_page(db, user, classroom_id, page, size, search, chapter_id):
     return {**meta, "items": [point_payload(point) for point in db.scalars(window)]}
 
 
-def teacher_courses(db: Session, user: User, classroom_id: int | None = None, view="full"):
-    instance_id = teacher_instance_id(db, user, classroom_id)
+def teacher_courses(db: Session, user: User, course_id: int | None = None, view="full"):
+    instance_id = teacher_instance_id(db, user, course_id)
     chapters = [
-        {"id": c.id, "title": c.title, "order_index": c.order_index, "owner_id": c.owner_id}
+        {"id": c.id, "title": c.title, "order_index": c.order_index, "prerequisite_chapter_id": c.prerequisite_chapter_id, "owner_id": c.owner_id}
         for c in db.scalars(
             select(Chapter)
             .where(Chapter.course_instance_id == instance_id)

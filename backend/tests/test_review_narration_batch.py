@@ -11,7 +11,7 @@ def test_approving_many_pages_reads_each_deck_once(client, db, classroom, teache
     for page in pages:
         repository.upsert(db, deck, page["page_no"], text="讲解")
     db.commit()
-    base = f"/api/teacher/classrooms/{classroom['id']}/content-review"
+    base = f"/api/teacher/courses/{classroom['course_id']}/content-review"
     headers = teacher["headers"]
     drafts = client.get(base, params={"kind": "narration", "size": 100}, headers=headers).json()["items"]
     selected = [{"id": row["id"], "kind": row["kind"], "revision": row["revision"]}

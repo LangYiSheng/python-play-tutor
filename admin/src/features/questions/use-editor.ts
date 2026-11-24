@@ -10,7 +10,7 @@ import { isInteractiveValue } from "../../../../shared/interactiveValues";
 import { validateInteractiveSource } from "./validate-interactive";
 
 const emptyInteractiveSource = { html: "", css: "", js: "" };
-export function useQuestionEditor(classroomId: number, onSaved: () => void) {
+export function useQuestionEditor(courseId: number, onSaved: () => void) {
   const [editing, setEditing] = useState<Question | null>(null),
     [open, setOpen] = useState(false),
     [id, setId] = useState(""),
@@ -36,7 +36,7 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
     [dirty, setDirty] = useState(false);
   useDraft(open && dirty);
   const activeSave = useRef<AbortController | null>(null);
-  useEffect(() => () => activeSave.current?.abort(), [classroomId]);
+  useEffect(() => () => activeSave.current?.abort(), [courseId]);
   function edit(q: Question | null) {
     if (activeSave.current) return;
     setEditing(q);
@@ -129,11 +129,11 @@ export function useQuestionEditor(classroomId: number, onSaved: () => void) {
       };
       if (editing)
         await api.put(
-          scoped(`/teacher/questions/${encodeURIComponent(id)}`, classroomId),
+          scoped(`/teacher/questions/${encodeURIComponent(id)}`, courseId),
           body,
         );
       else
-        await api.post(scoped("/teacher/questions", classroomId), {
+        await api.post(scoped("/teacher/questions", courseId), {
           id,
           ...body,
         });

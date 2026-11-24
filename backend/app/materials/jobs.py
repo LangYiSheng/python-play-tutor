@@ -19,11 +19,11 @@ from app.teacher_scope import commit_content
 
 
 def _material_course_lock(db, material_id):
-    from app.course_scope import lock_course
+    from app.course_scope import lock_course_content
 
     instance = db.scalar(select(CourseInstance).join(Material, Material.course_instance_id == CourseInstance.id).where(Material.id == material_id))
     if instance:
-        lock_course(db, instance.classroom_id)
+        lock_course_content(db, instance.id)
     return instance.id if instance else None
 
 
@@ -75,7 +75,7 @@ def process_material(material_id: int):
 
 def _recover_material_jobs():
     with SessionLocal() as db:
-        from app.course_scope import lock_course
+        from app.course_scope import lock_course_content
 
         instances = list(
             db.scalars(
@@ -83,11 +83,11 @@ def _recover_material_jobs():
                 .join(Material, Material.course_instance_id == CourseInstance.id)
                 .where(Material.status == "processing")
                 .distinct()
-                .order_by(CourseInstance.classroom_id)
+                .order_by(CourseInstance.id)
             )
         )
         for instance in instances:
-            lock_course(db, instance.classroom_id)
+            lock_course_content(db, instance.id)
         changed = list(
             db.scalars(update(Material).where(Material.status == "processing").values(status="queued").returning(Material.course_instance_id))
         )

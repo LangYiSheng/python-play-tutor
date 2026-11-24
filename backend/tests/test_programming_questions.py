@@ -25,7 +25,7 @@ def test_old_server_run_is_rejected():
 
 
 def test_authoring_persists_programming_metadata(client, teacher, student, classroom):
-    url = f"/api/teacher/questions?classroom_id={classroom['id']}"
+    url = f"/api/teacher/courses/{classroom['course_id']}/questions"
     body = dict(id="python-echo", title="Echo", kind="python", prompt="Print input", hints=["Read a line"],
                 starter_code="name = input()", chapter_ids=[179], status="ready",
                 samples=[{"input": "hello", "output": "hello"}], hidden_cases=[{"input": "private", "output": "private"}])
@@ -34,7 +34,7 @@ def test_authoring_persists_programming_metadata(client, teacher, student, class
     q = result.json()
     assert q["hints"] == body["hints"] and q["starter_code"] == body["starter_code"]
     assert client.get(url, headers=student["headers"]).status_code == 403
-    update = client.put(f"/api/teacher/questions/{q['id']}?classroom_id={classroom['id']}",
+    update = client.put(f"/api/teacher/courses/{classroom['course_id']}/questions/{q['id']}",
                         headers=teacher["headers"], json={"hints": ["Try print()"], "starter_code": "print(input())"})
     assert update.status_code == 200, update.text
     assert update.json()["hints"] == ["Try print()"]

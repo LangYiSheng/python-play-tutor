@@ -23,7 +23,7 @@ const question: Question = {
 function Host({ initial = question }: { initial?: Question } = {}) {
   const editor = useQuestionEditor(1, () => {});
   return <><button onClick={() => editor.edit(initial)}>打开</button><p>{editor.savedWarning}</p>
-    <QuestionDialog editor={editor} classroomId={1} course={{ data: null }} materials={{ data: [] }} /></>;
+    <QuestionDialog editor={editor} courseId={1} course={{ data: null }} materials={{ data: [] }} /></>;
 }
 
 it('keeps selected answers when renaming options, removes deleted answers and saves arrays', async () => {
@@ -40,7 +40,7 @@ it('keeps selected answers when renaming options, removes deleted answers and sa
   await user.click(screen.getByLabelText('选项1为正确答案'));
   await user.click(screen.getByLabelText('删除选项2'));
   await user.click(screen.getByText('保存题目'));
-  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/questions/q'), expect.objectContaining({
+  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/courses/1/questions/q'), expect.objectContaining({
     options: ['integer', 'str'], answer: ['integer'], kind: 'multiple_choice',
   }));
 });
@@ -95,7 +95,7 @@ it('restores structured private targets intact, rejects malformed JSON and saves
   await user.clear(answer);
   await user.type(answer, '0');
   await user.click(screen.getByText('保存题目'));
-  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/questions/q'), expect.objectContaining({
+  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/courses/1/questions/q'), expect.objectContaining({
     kind: 'interactive', answer: 0, interactive: { ...exampleSource, html: '<p>新题面</p>' },
   }));
 });
@@ -117,7 +117,7 @@ it('applies a template only after confirmation and keeps source editable', async
   expect(confirm).toHaveBeenCalledTimes(2);
   expect(screen.getByLabelText('HTML 源码')).toHaveValue(template.source.html);
   await user.click(screen.getByText('保存题目'));
-  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/questions/q'), expect.objectContaining({
+  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/courses/1/questions/q'), expect.objectContaining({
     kind: 'interactive', prompt: template.prompt, answer: template.target, interactive: template.source,
   }));
 });

@@ -22,7 +22,7 @@ export type ContentAction = {
   chapterId?: number;
   pageNo?: number;
 };
-type Props = { classroomId: number; action: ContentAction; onClose: (saved: boolean) => void };
+type Props = { courseId: number; action: ContentAction; onClose: (saved: boolean) => void };
 
 function Pending({ error, onClose }: { error?: string; onClose: () => void }) {
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
@@ -33,23 +33,23 @@ function Pending({ error, onClose }: { error?: string; onClose: () => void }) {
   </Dialog>;
 }
 
-function StructureAction({ classroomId, action, onClose }: Props) {
-  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
+function StructureAction({ courseId, action, onClose }: Props) {
+  const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
   const point = useResource<Point>(action.kind === "point" && action.mode === "edit"
-    ? scoped("/teacher/knowledge-points/" + action.id, classroomId) : null);
+    ? scoped("/teacher/knowledge-points/" + action.id, courseId) : null);
   if (!course.data || point.loading) return <Pending error={course.error || point.error} onClose={() => onClose(false)} />;
   const item = action.kind === "chapter" ? course.data.chapters.find(row => row.id === Number(action.id)) : point.data;
-  if (!item && action.mode === "edit") return <Pending error={point.error || "当前班级中找不到这条内容。"} onClose={() => onClose(false)} />;
-  return <CurriculumDialog classroomId={classroomId} tab={action.kind === "chapter" ? "chapters" : "points"}
+  if (!item && action.mode === "edit") return <Pending error={point.error || "当前课程中找不到这条内容。"} onClose={() => onClose(false)} />;
+  return <CurriculumDialog courseId={courseId} tab={action.kind === "chapter" ? "chapters" : "points"}
     chapters={course.data.chapters} editing={item ?? null} chapterId={action.chapterId} onClose={onClose} />;
 }
 
-function MaterialAction({ classroomId, action, onClose }: Props) {
+function MaterialAction({ courseId, action, onClose }: Props) {
   const material = useResource<Material & MaterialPreview>(action.mode !== "create"
-    ? scoped("/teacher/materials/" + action.id, classroomId) : null);
+    ? scoped("/teacher/materials/" + action.id, courseId) : null);
   const editing = action.mode === "edit" || action.mode === "create";
-  const course = useResource<Course>(editing ? scoped("/teacher/courses?view=chapters", classroomId) : null);
-  const editor = useMaterialEditor(classroomId, () => onClose(true));
+  const course = useResource<Course>(editing ? scoped("/teacher/catalog?view=chapters", courseId) : null);
+  const editor = useMaterialEditor(courseId, () => onClose(true));
   useEffect(() => {
     if (editing && (material.data || action.mode === "create")) {
       editor.edit(material.data);
@@ -65,16 +65,16 @@ function MaterialAction({ classroomId, action, onClose }: Props) {
   if (!material.data) return null;
   const row = material.data;
   if (action.mode === "preview") return <MaterialViewer material={row} onClose={() => onClose(false)} />;
-  if (action.mode === "audio") return <NarrationPlayer classroomId={classroomId} materialId={row.id} title={row.title} onClose={() => onClose(false)} />;
-  return <NarrationReview classroomId={classroomId} materialId={row.id} title={row.title} initialPage={action.pageNo} onClose={() => onClose(true)} />;
+  if (action.mode === "audio") return <NarrationPlayer courseId={courseId} materialId={row.id} title={row.title} onClose={() => onClose(false)} />;
+  return <NarrationReview courseId={courseId} materialId={row.id} title={row.title} initialPage={action.pageNo} onClose={() => onClose(true)} />;
 }
 
-function QuestionAction({ classroomId, action, onClose }: Props) {
+function QuestionAction({ courseId, action, onClose }: Props) {
   const row = useResource<Question>(action.mode === "edit"
-    ? scoped("/teacher/questions/" + encodeURIComponent(String(action.id)), classroomId) : null);
-  const course = useResource<Course>(scoped("/teacher/courses?view=chapters", classroomId));
-  const materials = useResource<Material[]>(scoped("/teacher/materials", classroomId));
-  const editor = useQuestionEditor(classroomId, () => onClose(true));
+    ? scoped("/teacher/questions/" + encodeURIComponent(String(action.id)), courseId) : null);
+  const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
+  const materials = useResource<Material[]>(scoped("/teacher/materials", courseId));
+  const editor = useQuestionEditor(courseId, () => onClose(true));
   useEffect(() => {
     if (row.data || action.mode === "create") editor.edit(row.data);
   }, [row.data, action.mode]);
@@ -83,11 +83,11 @@ function QuestionAction({ classroomId, action, onClose }: Props) {
   }
   return <QuestionDialog editor={{ ...editor, setOpen: value => {
     if (value === false) onClose(false); else editor.setOpen(value);
-  } }} classroomId={classroomId} course={course} materials={materials} />;
+  } }} courseId={courseId} course={course} materials={materials} />;
 }
 
 export function ContentActionDialog(props: Props) {
-  const { action, classroomId } = props;
+  const { action, courseId } = props;
   const Action = action.kind === "material" ? MaterialAction : action.kind === "question" ? QuestionAction : StructureAction;
-  return <Action key={[classroomId, action.kind, action.mode, action.id, action.chapterId].join(":")} {...props} />;
+  return <Action key={[courseId, action.kind, action.mode, action.id, action.chapterId].join(":")} {...props} />;
 }
