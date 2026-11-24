@@ -151,6 +151,11 @@ export function Packages({ classroomId }: { classroomId: number }) {
   const available = useResource<AvailablePackages>("/teacher/course/packages");
   const [deleting, setDeleting] = useState<AvailablePackages["items"][number] | null>(null);
   const [packageSearch, setPackageSearch] = useState("");
+  const packages = available.data?.items ?? [];
+  const packageQuery = packageSearch.trim().toLowerCase();
+  const visiblePackages = packages.filter((item) =>
+    (item.name + " " + item.directory).toLowerCase().includes(packageQuery),
+  );
   const pending = useRef<AbortController | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null),
     [requestKey, setRequestKey] = useState(""),
@@ -275,7 +280,6 @@ export function Packages({ classroomId }: { classroomId: number }) {
       </Dialog>
       <PageHeader
         title="课程包"
-        description="将共享课程包导入当前班级，或将本班课程导出供其他班级使用。管理员可删除共享导出包。"
       >
         <Button
           variant="outline"
@@ -299,7 +303,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
           <div>
             <h2 className="font-semibold">导入课程包</h2>
             <p className="text-sm text-muted-foreground">
-              先查看差异，再确认应用到当前班级。
+              导入前可预览课程包对本班课程的改动。
             </p>
           </div>
         </div>
@@ -317,9 +321,7 @@ export function Packages({ classroomId }: { classroomId: number }) {
               <TableHead>文件夹</TableHead><TableHead className="text-right">操作</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {(available.data?.items ?? []).filter((item) =>
-                (item.name + " " + item.directory).toLowerCase().includes(packageSearch.trim().toLowerCase()),
-              ).map((item) => <TableRow key={item.key}>
+              {visiblePackages.map((item) => <TableRow key={item.key}>
                 <TableCell className="min-w-48 max-w-80 whitespace-normal break-words font-medium">{item.name}</TableCell>
                 <TableCell>{item.created_at ? formatTimestamp(item.created_at) : "—"}</TableCell>
                 <TableCell className="tabular-nums">{item.chapter_count ?? "—"}</TableCell>
@@ -334,7 +336,9 @@ export function Packages({ classroomId }: { classroomId: number }) {
             </TableBody>
           </Table>
           {available.loading ? <p role="status" className="hint">正在加载课程包…</p> : null}
-          {!available.loading && !available.error && !available.data?.items.length ? <p className="hint">暂无课程包。请将解压后的课程包目录放入 data/course，再刷新列表。</p> : null}
+          {!available.loading && !available.error && !visiblePackages.length ? (
+            <p className="hint" role="status">{packages.length ? "没有找到匹配的课程包。" : "还没有可导入的课程包。将解压后的课程包放入服务器的 data/course，再刷新列表。"}</p>
+          ) : null}
           {available.data?.unavailable ? <p className="hint">有 {available.data.unavailable} 份课程包暂不可用，请检查包格式。</p> : null}
         </div>
         <ErrorNotice message={error?.phase === "validating" ? error.message : ""} />

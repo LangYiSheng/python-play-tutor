@@ -14,14 +14,14 @@
             <button v-for="quest in quests" :key="quest.id" class="quest-card" :class="{'is-current': selectedQuest?.id === quest.id}" :aria-pressed="selectedQuest?.id === quest.id" @click="selectedId = quest.id">
               <small>{{ questKind(quest) }} <span v-if="quest.status === 'complete'">· 已完成</span></small><strong>{{ quest.title }}</strong><GameIcon name="chevron"/>
             </button>
-            <p v-if="!quests.length" class="empty-directory">没有委托</p>
+            <p v-if="!quests.length" class="empty-directory">{{ session.world?.quests.length ? '没有符合筛选条件的委托' : '没有委托' }}</p>
           </div>
         </div>
       </aside>
       <article v-if="selectedQuest" :key="selectedQuest.id" class="journal-entry quest-detail">
         <div class="quest-detail-content">
         <header><div><span class="eyebrow">{{ questKind(selectedQuest) }} · {{ selectedQuest.status === 'complete' ? '已完成' : '进行中' }}</span><h3>{{ selectedQuest.title }}</h3></div></header>
-        <section class="journal-objectives"><div><h4 class="game-card-title"><GameIcon name="chart"/>目标进度</h4><span>{{ completedNodes }} / {{ requiredNodes.length }}</span></div><progress :value="completedNodes" :max="Math.max(1, requiredNodes.length)" aria-label="目标进度"/><p>{{ selectedQuest.status === 'complete' ? '这段故事已完成，探索的足迹会留在这里。' : '循着线索，一步步完成这段小镇故事。' }}</p></section>
+        <section class="journal-objectives"><div><h4 class="game-card-title"><GameIcon name="chart"/>目标进度</h4><span>{{ completedNodes }} / {{ requiredNodes.length }}</span></div><progress :value="completedNodes" :max="Math.max(1, requiredNodes.length)" aria-label="目标进度"/></section>
         <h4 class="checklist-heading game-card-title"><GameIcon name="journal"/>任务清单</h4>
         <ol>
           <li v-for="(node,index) in selectedQuest.nodes" :key="node.id" :class="node.status">
@@ -37,7 +37,7 @@
         </div>
         <footer class="quest-detail-footer"><span>{{ selectedQuest.status === 'complete' ? '故事已收录' : session.trackedQuest === selectedQuest.id ? '此委托已显示在小镇任务栏' : '追踪委托，在小镇查看当前目标' }}</span><button v-if="selectedQuest.status !== 'complete'" class="track-quest primary" :aria-pressed="session.trackedQuest === selectedQuest.id" @click="session.trackedQuest=selectedQuest.id; notify('已追踪此委托')"><GameIcon name="compass"/>{{ session.trackedQuest === selectedQuest.id ? '正在追踪' : '追踪任务' }}</button></footer>
       </article>
-      <div v-else class="journal-empty"><p>没有委托</p></div>
+      <div v-else class="journal-empty" aria-hidden="true"></div>
     </div>
   </section>
 </template>
@@ -70,7 +70,7 @@ const session = useSession(),
   stateName = {
     ready: "当前可进行",
     complete: "已完成",
-    locked: "等待前置",
+    locked: "需先完成前面的步骤",
     skipped: "未选择的分支",
   };
 const quests = computed(
@@ -116,7 +116,6 @@ const completedNodes = computed(() => requiredNodes.value.filter(n => n.status =
 .journal-objectives span { color:var(--game-muted); font-size:var(--game-caption-size); }
 .journal-objectives progress { display:block; width:100%; height:8px; appearance:none; border:0; border-radius:4px; overflow:hidden; background:var(--game-line); }
 .journal-objectives progress::-webkit-progress-bar { background:var(--game-line); }.journal-objectives progress::-webkit-progress-value { background:var(--game-forest); }.journal-objectives progress::-moz-progress-bar { background:var(--game-forest); }
-.journal-objectives p { margin:8px 0 0; color:var(--game-muted); font-size:var(--game-caption-size); line-height:1.6; }
 .quest-detail ol { display:flex; flex-direction:column; gap:8px; list-style:none; padding:0; margin:12px 0 16px; }
 .quest-detail li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px; border:1px solid var(--game-line); border-radius:var(--game-control-radius); background:#eee9dd; }
 .quest-detail li.complete { background:#e8eddf; border-color:#c5d0bb; }.quest-detail li.ready { background:#f9efd6; border-color:#cbb47d; }
@@ -132,6 +131,6 @@ const completedNodes = computed(() => requiredNodes.value.filter(n => n.status =
 .quest-detail-footer { display:flex; flex-shrink:0; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:12px var(--game-panel-padding); border-top:1px solid var(--game-line); background:var(--game-paper); }
 .quest-detail-footer > span { color:var(--game-muted); font-size:var(--game-caption-size); line-height:1.6; }
 .journal-empty { display:grid; place-items:center; min-width:0; min-height:0; padding:24px; overflow:auto; }
-.journal-empty p,.empty-directory { margin:0; color:var(--game-muted); font-size:var(--game-body-size); line-height:1.7; text-align:center; }
+.empty-directory { margin:0; color:var(--game-muted); font-size:var(--game-body-size); line-height:1.7; text-align:center; }
 @media(max-width:760px) { .journal-book { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(190px,35%) minmax(0,1fr); }.quest-detail-content,.quest-detail-footer { padding:12px; }.quest-detail li .step-icon { display:none; }.quest-detail li > button { width:100%; }.step-done { margin-left:auto; } }
 </style>

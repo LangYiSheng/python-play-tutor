@@ -160,7 +160,6 @@ export function Students({ classroomId }: { classroomId: number }) {
     <>
       <PageHeader
         title="学生账号"
-        description="管理当前班级的学生，保留他们的学习记录。"
       >
         <Button onClick={() => open("import")}>
           <Upload />
@@ -244,10 +243,10 @@ export function Students({ classroomId }: { classroomId: number }) {
         <ErrorNotice message={list.error || (!modal ? error : "")} />
         {list.loading ? (
           <Loading />
-        ) : rows.length === 0 ? (
+        ) : !list.data ? null : rows.length === 0 ? (
           <Empty
-            title="没有匹配的学生"
-            description="导入学生或调整搜索条件。"
+            title={list.data.length ? "没有匹配的学生" : "本班还没有学生"}
+            description={list.data.length ? "调整搜索词或学生状态。" : undefined}
           />
         ) : (
           <Table>

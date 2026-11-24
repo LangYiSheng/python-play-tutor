@@ -46,16 +46,10 @@ export function Login({ onLogin }: { onLogin: (user: User) => void }) {
           <br />
           变成探索的旅程。
         </h1>
-        <p>
-          组织课程内容，连接教学流程，
-          <br />
-          在同一个工作台里照看每个班级。
-        </p>
         <small>教师教学工作台</small>
       </div>
       <div className="login-form">
         <form onSubmit={submit}>
-          <p className="eyebrow">TEACHING STUDIO</p>
           <h2>登录工作台</h2>
           <p className="text-muted-foreground mb-8">
             使用你的教师或管理员账号。

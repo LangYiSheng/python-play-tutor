@@ -275,7 +275,7 @@ function GraphPage({ classroomId, initialReview }: GraphProps) {
         {panel && <aside id={inspectorId} className="cg-inspector" ref={inspector} tabIndex={-1} aria-label={panelName}
           onKeyDown={e => { if (e.key === "Escape" && !e.defaultPrevented && e.currentTarget.contains(e.target as Node)) { e.preventDefault(); closePanel(); } }}>
           <div className="cg-inspector-top"><span><Icon size={16}/>
-            {panel === "node" && selection ? kindNames[selection.kind] : panel === "tasks" ? "生成任务" : "课程草稿"}</span>
+            {panel === "node" && selection ? kindNames[selection.kind] : null}</span>
             <Button aria-label="关闭详情栏" size="icon-xs" variant="ghost" onClick={closePanel}><X/></Button></div>
           <h2>{panel === "node" && selection ? selectedTitle ?? kindNames[selection.kind] : panelName}</h2>
           {panel !== "review" && commands.feedback}

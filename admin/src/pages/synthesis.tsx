@@ -56,7 +56,7 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
   return <>
     {classroomId === undefined
       ? actionsTarget && createPortal(refreshButton, actionsTarget)
-      : <PageHeader title="资料合成管理" description="跟踪本班讲稿生成、校准与配音任务，查看每次执行的结果和失败原因。">{refreshButton}</PageHeader>}
+      : <PageHeader title="资料合成管理">{refreshButton}</PageHeader>}
     <Tabs value={view} onValueChange={v => { setView(v as string); setStatus('all'); setPage(1); }} className="mb-4">
       <TabsList><TabsTrigger value="running"><Activity />正在执行{data ? `（${data.counts.running}）` : ''}</TabsTrigger><TabsTrigger value="history"><History />历史记录</TabsTrigger></TabsList>
     </Tabs>
@@ -89,7 +89,7 @@ function SynthesisPage({ actionsTarget, classroomId }: { actionsTarget?: HTMLDiv
           </div></TableCell>
         </TableRow>)}</TableBody>
       </Table>
-      {!data.items.length && <Empty title={view === 'running' ? '当前没有正在执行的任务' : '暂无符合条件的执行记录'} description={view === 'running' ? '可在历史记录中查看之前的执行结果。' : '每次执行独立保留记录，重试不会覆盖上一次结果。'} />}
+      {!data.items.length && <Empty title={view === 'running' ? '没有进行中的任务' : '没有符合条件的执行记录'} />}
       <Pager total={data.total} page={page} size={size} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} />
     </div>}
     <p className="hint mt-3">每 5 秒更新执行状态。</p>

@@ -81,7 +81,6 @@ export function ClassOverview({
     <>
       <PageHeader
         title={classroom.name}
-        description="当前班级的课程与教学安排。"
       >
         <Button variant="outline" onClick={() => editName("classroom", classroom.name)}><Pencil />修改班级名</Button>
       </PageHeader>

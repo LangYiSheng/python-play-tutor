@@ -13,11 +13,11 @@
         <template v-if="section === 'current'">
           <section v-if="currentClass" class="town-section current-classroom" aria-label="当前班级">
             <div class="current-classroom-header"><div class="classroom-emblem" aria-hidden="true"><GameIcon name="people" /></div><div><span class="classroom-status">当前班级</span><h3>{{ currentClass.name }}</h3><p v-if="currentClass.teacher_name">授课教师：{{ currentClass.teacher_name }}</p></div></div>
-            <dl class="classroom-details"><div><dt>课程</dt><dd>Python 语言基础</dd></div><div><dt>学习者</dt><dd>{{ session.user?.name }}</dd></div><div><dt>章节</dt><dd>{{ availableChapters }} 章已开放 · {{ completedChapters }} 章已完成</dd></div></dl>
+            <dl class="classroom-details"><div><dt>课程</dt><dd>{{ currentClass.course_name || '尚未安排课程' }}</dd></div><div><dt>学习者</dt><dd>{{ session.user?.name }}</dd></div><div><dt>章节</dt><dd>{{ availableChapters }} 章已开放 · {{ completedChapters }} 章已完成</dd></div></dl>
           </section>
           <div v-else class="town-empty classroom-no-current"><GameIcon name="people" /><h3>尚未选择班级</h3><p>选择已加入的班级，或使用教师提供的加入码加入新班级。</p><div class="classroom-actions"><button v-if="session.classes.length" class="town-primary" @click="selectSection('switch')">选择班级</button><button class="town-secondary" @click="selectSection('join')">加入班级</button></div></div>
           <section v-if="currentClass" class="town-section classroom-learning" aria-label="当前学习进度">
-            <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="chart" />学习进度</h3><span>{{ completedMainQuests }} / {{ mainQuests.length }} 项主线已完成</span></div>
+            <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="chart" />学习进度</h3><span v-if="mainQuests.length">{{ completedMainQuests }} / {{ mainQuests.length }} 项主线已完成</span></div>
             <template v-if="currentQuest">
               <div class="classroom-quest-heading"><h4>{{ currentQuest.title }}</h4><span class="classroom-status" :class="{ 'is-complete': currentQuest.status === 'complete' }">{{ currentQuest.status === 'complete' ? '已完成' : '进行中' }}</span></div>
               <div class="classroom-progress-caption"><span>任务步骤</span><strong>{{ currentQuest.status === 'complete' ? '已完成' : `${completedSteps} / ${requiredSteps.length} 步` }}</strong></div>
@@ -26,11 +26,11 @@
               <p v-else-if="currentQuest.status === 'complete'" class="classroom-progress-note">当前主线已完成，学习记录已保存在这个班级。</p>
               <p v-else class="classroom-progress-note">任务开放后，可在小镇继续学习。</p>
             </template>
-            <p v-else class="town-empty">当前班级还没有已开放的主线任务。</p>
+            <p v-else class="town-empty">本班还没有开放主线任务。</p>
           </section>
         </template>
         <section v-else-if="section === 'switch'" class="town-section classroom-switch" aria-label="切换班级">
-          <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="people"/>切换班级</h3><span>{{ session.classes.length }} 个已加入班级</span></div><p class="classroom-section-note">选择一个班级，继续该班级的学习。</p>
+          <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="people"/>切换班级</h3><span>{{ session.classes.length }} 个已加入班级</span></div>
           <div v-if="session.classes.length" class="classroom-options">
             <button v-for="classroom in session.classes" :key="classroom.id" class="classroom-option" :class="{ 'is-current': session.classroomId === classroom.id }" :disabled="busy || session.classroomId === classroom.id" :aria-label="`${session.classroomId === classroom.id ? '当前班级' : '切换到'}：${classroom.name}`" @click="switchClass(classroom.id)"><span class="classroom-option-icon"><GameIcon name="people" /></span><span class="classroom-option-details"><strong>{{ classroom.name }}</strong><small v-if="classroom.teacher_name">{{ classroom.teacher_name }}</small></span><span class="classroom-option-action">{{ switchingId === classroom.id ? '正在切换…' : session.classroomId === classroom.id ? '当前班级' : '切换' }}</span><GameIcon v-if="session.classroomId !== classroom.id" name="arrowRight" /></button>
           </div>

@@ -33,7 +33,7 @@
           </template>
         </PracticeQuestionCard>
       </div>
-      <p v-else-if="!loading && activity" class="learning-empty">此活动尚未绑定公开题目，请联系教师。</p>
+      <p v-else-if="!loading && activity" class="learning-empty">这个活动还没有可作答的题目，请联系老师。</p>
 
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="assistantState.code ?? ''" :assistant-state="assistantState" :read-interactive-state="current?.kind === 'interactive' ? readInteractiveState : undefined" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
@@ -44,7 +44,7 @@
             <button v-if="storySessionId && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
           </div>
           <div class="support-goal-progress">
-            <span>活动进度 · 已通过 {{ passedCount }} / {{ questions.length }} 题</span>
+            <span>已通过 {{ passedCount }} / {{ questions.length }} 题</span>
             <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
           </div>
         </section>
@@ -59,7 +59,7 @@
               <strong class="assessment-score" role="status">{{ paper.score }} / {{ paper.max_score }} 分</strong>
               <span class="assessment-answer-count">答对 {{ paper.correct_count }} / {{ paper.total }} 题</span>
             </template>
-            <p v-else class="assessment-status" role="status">{{ paper.status === 'attention' ? '判定需要教师处理' : '正在判定试卷…' }}</p>
+            <p v-else class="assessment-status" role="status">{{ paper.status === 'attention' ? '试卷需要老师核查' : '正在批改试卷…' }}</p>
             <p class="assessment-lock-state"><GameIcon name="check" /> 已交卷，答案已锁定</p>
           </template>
           <template v-else>
@@ -123,7 +123,7 @@ const questions = computed(() => {
     const known = available.find(question => question.id === id);
     if (known) return known;
     const submitted = paper.value?.answers.find(answer => answer.question_id === id);
-    return { id, title: '题目已调整', kind: submitted?.code ? 'python' : typeof submitted?.answer === 'boolean' ? 'boolean' : Array.isArray(submitted?.answer) ? 'multiple_choice' : 'fill', prompt: '原题内容已调整，以下保留已提交答案和判定结果。', options: Array.isArray(submitted?.answer) ? submitted.answer : [], samples: [] } as Question;
+    return { id, title: '题目已调整', kind: submitted?.code ? 'python' : typeof submitted?.answer === 'boolean' ? 'boolean' : Array.isArray(submitted?.answer) ? 'multiple_choice' : 'fill', prompt: '题目已更改。你仍可查看交卷时的答案和批改结果。', options: Array.isArray(submitted?.answer) ? submitted.answer : [], samples: [] } as Question;
   });
 });
 const actionTarget = computed(() => viewMode.value === 'single' && props.toolbarTarget ? '#practice-question-actions' : undefined);

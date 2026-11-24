@@ -108,6 +108,7 @@ it("shows request errors and supports a refresh", async () => {
   const user = userEvent.setup();
   render(<Judge classroomId={1} canManage={false} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("数据库暂不可用");
+  expect(within(screen.getByRole("region", { name: "评测服务状态" })).queryByRole("status")).not.toBeInTheDocument();
   fail = false;
   await user.click(screen.getByRole("button", { name: "刷新" }));
   expect(await screen.findByText("没有匹配的提交")).toBeVisible();

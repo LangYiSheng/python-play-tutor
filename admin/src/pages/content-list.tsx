@@ -49,7 +49,7 @@ export function ContentListPage({ classroomId }: { classroomId: number }) {
     });
   }
   return <>
-    <PageHeader title="内容列表" description="在当前班级课程中查找、添加和编辑教学内容。" />
+    <PageHeader title="内容列表" />
     <Tabs value={view.tab} onValueChange={value => show(value as Tab)} className="gap-4">
       <TabsList variant="line" aria-label="课程内容类型">
         {Object.entries(tabs).map(([id, title]) => <TabsTrigger key={id} value={id}>{title}</TabsTrigger>)}

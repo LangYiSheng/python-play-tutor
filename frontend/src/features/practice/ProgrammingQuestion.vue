@@ -29,7 +29,7 @@
           <div class="coding-run-progress" role="status">正在判题…<button v-if="running" class="stop-run" @click="controller?.abort()"><GameIcon name="stop" />停止运行</button></div>
           <div class="result-skeleton" aria-hidden="true"><i class="skeleton-heading"></i><div class="skeleton-tabs"><i></i><i></i><i></i></div><template v-for="n in 3" :key="n"><i class="skeleton-label"></i><i class="skeleton-block"></i></template></div>
         </template>
-        <p v-else-if="tab === 'results' && !outcome" class="coding-empty-result">请先执行代码</p>
+        <p v-else-if="tab === 'results' && !outcome" class="coding-empty-result">运行代码后可查看样例结果</p>
         <template v-else>
           <template v-if="tab === 'results' && outcome">
             <p class="result-origin">{{ resultSource === 'submission' ? '正式提交' : '公开样例 · 不计成绩' }}</p>

@@ -90,6 +90,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   const service = useJudgePolling<Service>(`/teacher/judge/service?${scope}${dateQuery.slice(1)}`);
   const submissions = useJudgePolling<{ items: Submission[]; total: number }>(`/teacher/judge/submissions?${scope}q=${encodeURIComponent(query)}&status=${status}&page=${page}&size=${size}${dateQuery}`);
   const state = service.data;
+  const sharedLoadError = service.error === submissions.error ? service.error : "";
   function applyDates(next: JudgeDates | null, choice: typeof preset) {
     try {
       const nextQuery = judgeDateQuery(next);
@@ -117,7 +118,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
   return <>
     {classroomId === undefined
       ? actionsTarget && createPortal(refreshButton, actionsTarget)
-      : <PageHeader title="评测管理" description="查看服务状态与本班 Python 提交，定位学生遇到的评测问题。">{refreshButton}</PageHeader>}
+      : <PageHeader title="评测管理">{refreshButton}</PageHeader>}
     <section className="surface mb-4 judge-date-filter" aria-label="评测日期筛选">
       <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">统计日期</span>
         {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
@@ -131,14 +132,15 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
       </form>
       <ErrorNotice message={dateError} />
     </section>
-    <ErrorNotice message={service.error || submissions.error || (control === null ? error : "")} />
+    <ErrorNotice message={sharedLoadError} />
+    <ErrorNotice message={control === null ? error : ""} />
     <section className="surface judge-service" aria-label="评测服务状态">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 className="flex items-center gap-2 font-semibold"><ShieldCheck size={18} />评测服务</h2>
           {state ? <><p className="mt-3 font-medium">{state.health.status === "healthy" ? "连接正常" : "需要检查"} · {state.paused ? "派发已暂停" : "自动派发"}</p>
             {state.health.status !== "healthy" ? <p className="mt-1 text-sm judge-fail">{state.health.detail ?? "等待首次检测"}</p> : null}
             {!state.worker_alive ? <p className="mt-1 text-sm judge-fail">队列处理器未收到近期心跳</p> : null}
-          </> : <Loading />}
+          </> : service.error ? null : <Loading />}
         </div>
         {canManage ? <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void operate("probe")}><Activity />立即检测</Button>
@@ -147,6 +149,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
           </Button>
         </div> : null}
       </div>
+      <ErrorNotice message={sharedLoadError ? "" : service.error} />
       {state ? <div className="judge-metrics">
         {[['等待评测', state.counts.prepared ?? 0], ['正在评测', state.counts.dispatching ?? 0], ['结果待核查', state.counts.submission_unknown ?? 0], ['服务异常', state.counts.infrastructure_error ?? 0]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
       </div> : null}
@@ -171,6 +174,7 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
         </SelectField>
         <Button variant="outline" type="submit"><Search />搜索</Button>
       </form>
+      <ErrorNotice message={sharedLoadError ? "" : submissions.error} />
       {!submissions.data ? submissions.error ? null : <Loading /> : submissions.data.items.length ? <>
         <Table aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
           <TableBody>{submissions.data.items.map(row => <TableRow key={row.id}>
@@ -180,8 +184,8 @@ function JudgePage({ actionsTarget, classroomId, canManage }: JudgeProps) {
             <TableCell>{timestamp(row.created_at)}</TableCell>
             <TableCell><Button variant="outline" size="sm" onClick={() => setSelected(row.id)} aria-label={`查看 ${row.student_name} 的提交 ${row.id}`}>查看提交</Button></TableCell>
           </TableRow>)}</TableBody></Table>
-      </> : <Empty title="没有匹配的提交" description="这里只记录正式 Python 提交；学生浏览器中的公开样例运行不会上传。" />}
-      {submissions.data ? <Pager page={page} size={size} total={submissions.data.total} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} /> : null}
+      </> : <Empty title="没有匹配的提交" description="这里只显示正式提交的 Python 答案。" />}
+      {submissions.data && submissions.data.total > 0 ? <Pager page={page} size={size} total={submissions.data.total} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} /> : null}
     </section>
     <Dialog open={control !== null} onOpenChange={open => { if (!open && !busy) setControl(null); }}>
       <DialogContent><DialogHeader><DialogTitle>{control ? "暂停全站评测派发" : "恢复全站评测派发"}</DialogTitle><DialogDescription>此操作影响所有班级。已在执行的提交继续完成；成绩和待核查结果保持不变。</DialogDescription></DialogHeader>

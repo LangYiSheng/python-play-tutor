@@ -165,7 +165,6 @@ export function Teaching({ classroomId }: { classroomId: number }) {
     <>
       <PageHeader
         title="教学管理"
-        description="安排章节开放，并查看本班真实学习记录。"
       />
       <ErrorNotice
         message={

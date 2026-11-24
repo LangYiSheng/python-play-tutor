@@ -8,7 +8,7 @@
             <GameIcon name="grid"/><span>全部章节</span><small>{{ materials.length }}</small>
           </button>
           <button v-for="item in chapters" :key="item.id" class="town-directory-item" :class="{ 'is-current': chapter === item.id }" :aria-pressed="chapter === item.id" @click="selectChapter(item.id)">
-            <span class="library-chapter-number" aria-hidden="true">{{ item.order === Number.MAX_SAFE_INTEGER ? '·' : String(item.order).padStart(2, '0') }}</span>
+            <GameIcon name="book"/>
             <span>{{ item.title }}</span><small>{{ item.materials.length }}</small>
           </button>
         </nav>
@@ -139,7 +139,6 @@ onBeforeUnmount(() => { saveView(); disposed = true; generation++; });
 .library-sidebar .town-directory-item > span:nth-child(2) { line-height:1.6; }
 .library-sidebar .town-directory-item > small { align-self:center; font-size:.875rem; opacity:.7; }
 .library-sidebar .town-directory-item > svg { width:16px; height:16px; }
-.library-chapter-number { align-self:center; font-size:.875rem; font-variant-numeric:tabular-nums; opacity:.7; }
 .library-toolbar { align-items:flex-end; gap:10px; margin-bottom:16px; }
 .library-search { flex:1; min-width:min(240px,100%); max-width:520px; }
 .library-search > span { display:block; margin-bottom:8px; font-size:.875rem; color:#76604c; }
@@ -164,5 +163,5 @@ onBeforeUnmount(() => { saveView(); disposed = true; generation++; });
 .library-empty > svg { width:28px; height:28px; color:#9e8b68; }
 .library-empty p { margin:16px 0 20px; }
 @media(max-width:1000px) { .library-toolbar { gap:14px; }.library-result-count { padding-top:0; }.library-workspace .library-list > .library-card { padding:12px; } }
-@media(max-width:700px) { .library-directory-label { display:none; }.library-sidebar .town-directory-item { display:flex; align-items:center; min-width:max-content; }.library-sidebar .town-directory-item > span:nth-child(2) { max-width:200px; white-space:normal; }.library-sidebar .town-directory-item > svg,.library-chapter-number { display:none; }.library-search { max-width:none; flex-basis:100%; }.library-toolbar { margin-bottom:16px; }.library-result-count { margin-left:auto; }.library-list { grid-template-columns:minmax(0,1fr); }.library-workspace .library-list > .library-card { min-height:112px; } }
+@media(max-width:700px) { .library-directory-label { display:none; }.library-sidebar .town-directory-item { display:flex; align-items:center; min-width:max-content; }.library-sidebar .town-directory-item > span:nth-child(2) { max-width:200px; white-space:normal; }.library-sidebar .town-directory-item > svg { display:none; }.library-search { max-width:none; flex-basis:100%; }.library-toolbar { margin-bottom:16px; }.library-result-count { margin-left:auto; }.library-list { grid-template-columns:minmax(0,1fr); }.library-workspace .library-list > .library-card { min-height:112px; } }
 </style>

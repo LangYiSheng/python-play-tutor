@@ -330,7 +330,7 @@ test("seven game workspaces share the real shell, controls and readable 100–20
   await panel(page).getByRole("group", { name: "任务状态", exact: true }).getByRole("button", { name: "已完成", exact: true }).click();
   await panel(page).getByRole("combobox", { name: "任务类型", exact: true }).selectOption("side");
   await expect(panel(page).locator(".empty-directory")).toHaveText("没有委托");
-  await expect(panel(page).locator(".journal-empty")).toHaveText("没有委托");
+  await expect(panel(page).locator(".journal-empty")).toBeEmpty();
   await shot(page, info, "01-journal-empty");
   await panel(page).getByRole("combobox", { name: "任务类型", exact: true }).selectOption("all");
   await panel(page).getByRole("group", { name: "任务状态", exact: true }).getByRole("button", { name: "进行中", exact: true }).click();

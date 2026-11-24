@@ -104,7 +104,7 @@ describe("quest journal main and side classification", () => {
     expect(wrapper.getComponent(GameSelect).props("options")).toHaveLength(3);
     expect(wrapper.get(".quest-directory").classes()).toContain("is-empty");
     expect(wrapper.get(".quest-directory").text()).toBe("没有委托");
-    expect(wrapper.get(".journal-empty").text()).toBe("没有委托");
+    expect(wrapper.get(".journal-empty").text()).toBe("");
     expect(wrapper.find(".directory-label").exists()).toBe(false);
     expect(wrapper.find(".journal-empty svg").exists()).toBe(false);
     wrapper.getComponent(GameSelect).vm.$emit("update:modelValue", "side");

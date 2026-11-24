@@ -145,7 +145,7 @@ it("blocks an incomplete preview, preserves the draft after a conflict and clear
   view.rerender(<QuickOrchestration classroomId={3} />);
   expect(await screen.findByRole("tab", { name: "模板与功能", selected: true })).toBeVisible();
   await step(user, "授课章节");
-  expect(await screen.findByText("先为这门课程添加章节")).toBeVisible();
+  expect(await screen.findByText("这门课程还没有章节")).toBeVisible();
   expect(nextToQuestions()).toBeDisabled();
   expect(pendingSignal?.aborted).toBe(true);
   expect(screen.queryByText("基础知识")).not.toBeInTheDocument();

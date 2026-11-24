@@ -38,16 +38,11 @@
 
       <strong class="arrival-brand">PYTHONTOPIA</strong>
       <div class="arrival-panel">
-      <p class="eyebrow">居民证已就绪</p>
-      <h1>先加入你的班级</h1>
-      <p>向教师领取加入码，开放的章节会出现在小镇里。</p>
+      <h1>加入班级</h1>
+      <p>向老师领取班级加入码。</p>
       <form @submit.prevent="join">
-        <input
-          v-model="joinCode"
-          aria-label="班级加入码"
-          placeholder="输入加入码"
-          required
-        /><button class="primary">加入班级</button>
+        <label>班级加入码<input v-model="joinCode" required /></label>
+        <button class="primary">加入班级</button>
       </form>
       <button class="text-button" @click="logout">退出账号</button>
       </div>

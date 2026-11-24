@@ -26,14 +26,14 @@
             <GameIcon :name="target.category === 'person' ? 'people' : target.category === 'building' ? 'building' : 'compass'"/>
             <span><strong>{{ target.label }}</strong></span><GameIcon name="chevron"/>
           </button>
-          <p v-if="!visibleTargets.length" class="map-empty">这张地图没有此类标记。</p>
+          <p v-if="!visibleTargets.length" class="map-empty">{{ filter === 'people' ? '这张地图上没有人物' : filter === 'buildings' ? '这张地图上没有建筑' : '这张地图上没有可选地点' }}</p>
         </div>
         <section class="map-target-detail" aria-label="所选地图目标">
           <template v-if="selected">
             <h3 class="game-card-title"><GameIcon name="compass"/>{{ selected.label }}</h3><p>{{ selected.description }}</p>
             <p v-if="navigationBlock" class="map-access-message">{{ navigationBlock }}</p>
           </template>
-          <button class="primary" aria-label="前往所选目标" :disabled="!selected || Boolean(navigationBlock)" @click="go"><GameIcon name="compass"/>前往</button>
+          <button v-if="selected" class="primary" aria-label="前往所选目标" :disabled="Boolean(navigationBlock)" @click="go"><GameIcon name="compass"/>前往</button>
         </section>
       </aside>
     </div>

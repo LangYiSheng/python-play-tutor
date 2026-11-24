@@ -48,7 +48,7 @@ export function QuickOrchestration({ classroomId }: { classroomId: number }) {
 function ClassQuickOrchestration({ path }: { path: string }) {
   const catalog = useResource<QuickCatalog>(path);
   return <>
-    <PageHeader title="快速编排" description="设置小镇功能，选择授课内容，预览并生成课程流程。" />
+    <PageHeader title="快速编排" />
     {catalog.loading ? <Loading /> : catalog.error ? <>
       <ErrorNotice message={catalog.error} /><Button variant="outline" onClick={catalog.reload}>重新加载</Button>
     </> : catalog.data && <RecipeEditor path={path} initial={catalog.data} />}
@@ -221,7 +221,7 @@ function RecipeEditor({ path, initial }: { path: string; initial: QuickCatalog }
         {chapters.length || recipe.chapters.length
           ? <ChapterPicker chapters={chapters} selected={recipe.chapters} problems={problems} withQuiz={withQuiz} finalId={recipe.final_chapter_id}
             onChange={changeChapterOrder} onRefresh={() => void run("refresh")} refreshing={pending === "refresh"} />
-          : <div className="surface"><Empty title="先为这门课程添加章节" description="在「课程结构」中创建章节和知识点，再到「资料库」关联课件。" />
+          : <div className="surface"><Empty title="这门课程还没有章节" />
             <div className="flex justify-center gap-3 pb-5">
               <a href="/teacher/content-list?tab=chapters" className="text-sm underline underline-offset-2">前往章节列表</a>
               <Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={() => void run("refresh")}><RefreshCw />刷新章节</Button>
