@@ -36,12 +36,12 @@ def delete_account_data(db, account, classroom_ids):
     for model in LEARNER_ROWS:
         db.execute(delete(model).where(or_(model.user_id.in_(removed_users), model.classroom_id.in_(classroom_ids))))
     course_ids = list(db.scalars(select(CourseInstance.id).where(CourseInstance.teacher_id == account.id)))
-    for model, scope in ((ContentDeletionPreview, ContentDeletionPreview.course_instance_id), (CourseImportPreview, CourseImportPreview.course_id)):
-        db.execute(delete(model).where(or_(model.teacher_id.in_(removed_users), scope.in_(course_ids))))
+    for model in (ContentDeletionPreview, CourseImportPreview):
+        db.execute(delete(model).where(model.teacher_id.in_(removed_users)))
     db.execute(delete(TownPreviewStudent).where(TownPreviewStudent.student_user_id.in_(removed_users)))
 
     if course_ids:
-        _delete_courses(db, classroom_ids, course_ids)
+        delete_course_data(db, classroom_ids, course_ids)
 
     # Attribution in surviving courses and retained import sources is optional.
     for model in CONTENT_MODELS:
@@ -53,9 +53,12 @@ def delete_account_data(db, account, classroom_ids):
     db.execute(delete(User).where(User.id.in_(removed_users)))
 
 
-def _delete_courses(db, classroom_ids, instance_ids):
+def delete_course_data(db, classroom_ids, instance_ids):
+    """Remove course definitions after callers have resolved classroom and history references."""
     question_ids = select(Question.id).where(Question.course_instance_id.in_(instance_ids)).execution_options(include_deleted=True)
     db.execute(delete(ChapterRelease).where(ChapterRelease.classroom_id.in_(classroom_ids)))
+    db.execute(delete(ContentDeletionPreview).where(ContentDeletionPreview.course_instance_id.in_(instance_ids)))
+    db.execute(delete(CourseImportPreview).where(CourseImportPreview.course_id.in_(instance_ids)))
     db.execute(delete(CoursePackageState).where(CoursePackageState.course_instance_id.in_(instance_ids)))
     db.execute(delete(QuestionSecret).where(QuestionSecret.question_id.in_(question_ids)).execution_options(include_deleted=True))
     # Activity deletion cascades its material and question links. Chapter comes after its definitions.

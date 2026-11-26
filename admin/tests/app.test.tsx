@@ -256,6 +256,50 @@ it("searches transfer candidates and requires selecting a teacher from the curre
   await waitFor(() => expect(transfer).toHaveBeenCalledWith({teacher_id: 8}));
 });
 
+it("previews course deletion and requires the full name, while courses with teaching history are blocked", async () => {
+  setToken("teacher-session");
+  const courses = [
+    { id: 31, name: "空白课", revision: 3, teacher_id: 7 },
+    { id: 32, name: "已开课", revision: 2, teacher_id: 7 },
+  ];
+  const remove = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/auth/me")) return json({id: 7, name: "林老师", role: "teacher"});
+    if (url.endsWith("/teacher/courses")) return json(remove.mock.calls.length ? courses.slice(1) : courses);
+    if (url.endsWith("/deletion-preview")) {
+      const course = courses[url.includes("/31/") ? 0 : 1]!;
+      const canDelete = course.id === 31;
+      return json({name: course.name, revision: course.revision, confirmation: "preview/+=", can_delete: canDelete,
+        blocked_reason: canDelete ? null : "课程存在历史教学班",
+        counts: {classrooms: canDelete ? 0 : 1, chapters: 2, materials: 1, knowledge_points: 3, questions: 4, activities: 1}});
+    }
+    if (init.method === "DELETE") {
+      remove(url);
+      return new Response(null, {status: 204});
+    }
+    return json([]);
+  }));
+  const user = userEvent.setup();
+  render(<App/>);
+  await user.click(await screen.findByRole("button", {name:"已开课的更多操作"}));
+  await user.click(await screen.findByRole("menuitem", {name:"删除课程"}));
+  expect(await screen.findByText("课程存在历史教学班")).toBeVisible();
+  expect(screen.queryByRole("button", {name:"确认删除课程"})).not.toBeInTheDocument();
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", {name:"取消"}));
+
+  await user.click(await screen.findByRole("button", {name:"空白课的更多操作"}));
+  await user.click(await screen.findByRole("menuitem", {name:"删除课程"}));
+  const input = await screen.findByRole("textbox", {name:"输入课程全名确认"});
+  const confirmation = screen.getByRole("button", {name:"确认删除课程"});
+  await user.type(input, "空白");
+  expect(confirmation).toBeDisabled();
+  await user.type(input, "课");
+  await user.click(confirmation);
+  await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith("/api/teacher/courses/31?expected_revision=3&confirmation=preview%2F%2B%3D"));
+  await waitFor(() => expect(screen.queryByRole("heading", {name:"空白课"})).not.toBeInTheDocument());
+});
+
 
 it("remembers a roster selection per course and normalizes invalid class links", async () => {
   setToken("teacher-session");

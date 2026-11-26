@@ -99,6 +99,7 @@
 | ADMIN-07 | 教师可按日期查询本班服务器Python评测和授权诊断，排除练习浏览器提交，管理员可检测、暂停和恢复全站派发。实时队列不受历史筛选影响；未知派发先对账，不伪造诊断、不重判旧成绩。 | [后台](design/teacher-interface.md#评测管理)、[接口](api-contract.md#评测管理) |
 | ADMIN-08 | 两类练习可用固定题单或知识点规则出题。教授的练习包括客观题与交互题，教练的练习只收 Python 题。 | [内容规范](content-authoring.md)、[产品说明](product.md) |
 | ADMIN-09 | 学生可跨已开放章节切换学习，任务日志和右上角目标追踪按章展示当前任务。 | [内容规范](content-authoring.md)、[产品说明](product.md) |
+| ADMIN-13 | 管理员和课程负责人可在预览影响并确认后删除从未开设教学班的课程。有在用、归档或已删除的教学班时保留课程供查阅历史。 | [后台规范](design/teacher-interface.md)、[接口契约](api-contract.md#session-and-classes) |
 
 ## 开发与协作
 

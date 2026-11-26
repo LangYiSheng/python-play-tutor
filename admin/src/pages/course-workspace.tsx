@@ -2,8 +2,8 @@ import { PaginatedRows } from "@/components/paginated-rows";
 import { SelectField } from "@/components/select-field";
 import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,9 +11,11 @@ import { ListEmpty, TableSearch, ErrorNotice, Loading, PageHeader } from "@/comp
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { api, errorMessage, request } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 import { useResource } from "@/lib/use-resource";
 import type { Classroom, CourseInstance } from "@/lib/types";
 import { CreateCourseDialog } from "./create-course-dialog";
+import { CourseDeleteDialog } from "./course-delete-dialog";
 import { RecordViewer } from "./teaching";
 
 type CourseList = ReturnType<typeof useResource<CourseInstance[]>>;
@@ -24,6 +26,7 @@ export function CoursePicker({courses, items, classes, onOpen, admin, exporting,
   const [mode, setMode] = useState<"rename" | "transfer" | null>(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<CourseInstance>();
+  const [deleting, setDeleting] = useState<CourseInstance | null>(null);
   const [value, setValue] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const teachers = useResource<{total: number; items: {id: number; name: string; student_id: string; disabled: boolean}[]}>(
@@ -59,12 +62,19 @@ export function CoursePicker({courses, items, classes, onOpen, admin, exporting,
               <DropdownMenuItem onClick={() => edit("rename", c)}>修改课程名称</DropdownMenuItem>
               <DropdownMenuItem disabled={exporting !== null} onClick={() => void exportCourse(c)}>导出课程包</DropdownMenuItem>
               {admin && <DropdownMenuItem onClick={() => edit("transfer", c)}>转交整门课程</DropdownMenuItem>}
+              <DropdownMenuSeparator/>
+              <DropdownMenuItem variant="destructive" disabled={exporting === c.id} onClick={() => setDeleting(c)}><Trash2/>删除课程</DropdownMenuItem>
             </DropdownMenuContent></DropdownMenu></div>
         {rooms && <p className="hint line-clamp-2" title={rooms}>教学班 · {rooms}</p>}
         <div className="hub-card-footer"><Button onClick={() => onOpen(c.id)}>进入课程</Button>
           {exporting === c.id && <span role="status" className="hint">正在导出…</span>}</div>
       </article>})}</div>
     {creating && <CreateCourseDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); courses.reload(); }}/>}
+    {deleting && <CourseDeleteDialog course={deleting} onClose={() => setDeleting(null)} onDeleted={() => {
+      setDeleting(null);
+      courses.reload();
+      toast.add({ title: "课程已删除", type: "success" });
+    }}/>}
     {mode && <Dialog open onOpenChange={open => {if (!open && !busy) setMode(null);}}><DialogContent><DialogHeader>
       <DialogTitle>{mode === "rename" ? "修改课程名称" : "转交课程及全部教学班"}</DialogTitle>
     </DialogHeader><form className="space-y-4" onSubmit={save}><ErrorNotice message={error || teachers.error}/>
