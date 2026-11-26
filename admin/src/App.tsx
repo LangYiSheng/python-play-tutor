@@ -12,6 +12,8 @@ import {
   CalendarDays,
   ClipboardList,
   Network,
+  BookOpen,
+  FileQuestionMark,
   List,
   ChevronDown,
   ChevronLeft,
@@ -58,7 +60,8 @@ import { LearningTasks } from "@/features/activities/activities-page";
 import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
-const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
+const Courseware = lazy(() => import("@/features/courseware/courseware-page").then(module => ({ default: module.CoursewarePage })));
+const Assessments = lazy(() => import("@/features/assessments/assessments-page").then(module => ({ default: module.AssessmentsPage })));
 import { Packages } from "@/pages/packages";
 import { Teaching } from "@/pages/teaching";
 const Synthesis = lazy(() => import("@/pages/synthesis").then(module => ({ default: module.Synthesis })));
@@ -84,7 +87,8 @@ const classNav = [
 ] as const;
 const contentNav = [
   { key: "content-graph", title: "知识图谱", icon: Network },
-  { key: "content-list", title: "内容列表", icon: List },
+  { key: "courseware", title: "章节与课件", icon: BookOpen },
+  { key: "assessments", title: "题库与组卷", icon: FileQuestionMark },
   { key: "activities", title: "学习任务", icon: ClipboardList },
 ] as const;
 const settingsNav = [
@@ -99,9 +103,10 @@ type Page = (typeof pages)[number]["key"];
 const courseScreens = {
   activities: LearningTasks,
   synthesis: Synthesis,
-  "content-list": ContentList,
+  courseware: Courseware,
+  assessments: Assessments,
 };
-const legacyContentTabs = new Map([["curriculum", "chapters"], ["materials", "materials"], ["questions", "questions"]]);
+const legacyCoursewareRoutes = ["curriculum", "materials", "content-list"];
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
   if (part === "packages" && location.search) history.replaceState({}, "", "/teacher/packages");
@@ -119,13 +124,14 @@ function currentPage(): Page {
     history.replaceState(history.state, "", url);
     return "classes";
   }
-  const legacyTab = legacyContentTabs.get(part);
-  if (legacyTab) {
+  if (part === "questions" || legacyCoursewareRoutes.includes(part)) {
     const url = new URL(location.href);
-    url.pathname = "/teacher/content-list";
-    url.searchParams.set("tab", legacyTab);
+    const next = part === "questions" || url.searchParams.get("tab") === "questions" ? "assessments" : "courseware";
+    url.pathname = `/teacher/${next}`;
+    if (next === "assessments") url.searchParams.set("tab", "bank");
+    else url.searchParams.delete("tab");
     history.replaceState(history.state, "", url);
-    return "content-list";
+    return next;
   }
   return pages.some((n) => n.key === part) ? (part as Page) : "courses";
 }
@@ -297,14 +303,6 @@ function Workbench() {
   }
   function changeClass(id: number) {
     if (id === classroomId || !canLeave()) return;
-    if (page === "content-list") {
-      const url = new URL(location.href);
-      for (const filter of ["point", "pointName"]) url.searchParams.delete(filter);
-      history.replaceState(history.state, "", url);
-    }
-    if (page === "content-graph" && history.state?.initialReview) {
-      history.replaceState({ ...history.state, initialReview: {} }, "");
-    }
     setRequestedClass(id);
     history.pushState({}, "", pageUrl(page, courseId, id));
     setError("");
@@ -571,7 +569,8 @@ function Workbench() {
             {openingTown ? <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" /> : <ExternalLink data-icon="inline-end" />}
           </Button>}
         </header>
-        <main className={page === "content-graph" && course ? "main-content graph-main" : "main-content"}>
+        <main className={course && page === "content-graph" ? "main-content graph-main"
+          : course && page === "courseware" ? "main-content courseware-main" : "main-content"}>
           <ErrorNotice message={error} />
           <Suspense key={`${user.id}:${classPage ? classroomId : courseId}:${page}`} fallback={<Loading />}>
             <TablePreferences>{renderPage()}</TablePreferences>

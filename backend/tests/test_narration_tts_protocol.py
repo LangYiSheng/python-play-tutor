@@ -159,12 +159,49 @@ def test_status_codes_map_to_readable_errors(monkeypatch):
 
         return FakeClient
 
+    monkeypatch.setattr(tts, "_sleep", lambda _s: None)
     monkeypatch.setenv("REBORN_TTS_BASE_URL", "https://api.deepseek.com")
     monkeypatch.setenv("REBORN_TTS_PROTOCOL", "deepseek")
     for status, fragment in ((400, "内容审核"), (429, "并发"), (503, "繁忙"), (504, "繁忙")):
         monkeypatch.setattr(tts.httpx, "Client", respond(status))
         with pytest.raises(tts.SpeechFailed, match=fragment):
             tts.synthesize("这一页讲变量。")
+
+
+def test_tts_retries_429_and_recovers(monkeypatch):
+    payload = wav_bytes(1.0)
+    statuses = [429, 503, 200]
+    attempts = 0
+
+    class FakeResponse:
+        def __init__(self, code: int):
+            self.status_code = code
+            self.headers = {}
+            self.content = payload if code == 200 else b"{}"
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            nonlocal attempts
+            attempts += 1
+            return FakeResponse(statuses.pop(0))
+
+    monkeypatch.setattr(tts, "_sleep", lambda _s: None)
+    monkeypatch.setattr(tts.httpx, "Client", FakeClient)
+    monkeypatch.setenv("REBORN_TTS_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("REBORN_TTS_PROTOCOL", "deepseek")
+
+    audio = tts.synthesize("这一页讲变量。")
+    assert attempts == 3
+    assert audio[:4] == b"RIFF"
 
 
 def test_dashscope_posts_native_body_and_downloads_the_audio(monkeypatch):
@@ -232,3 +269,4 @@ def test_dashscope_rejects_a_format_or_speed_it_cannot_use(monkeypatch):
 def test_endpoint_accepts_a_full_dashscope_url():
     root = "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
     assert tts.endpoint(root, "/api/v1/services/audio/tts/SpeechSynthesizer") == root
+    assert tts.endpoint("  https://workspace.cn-beijing.maas.aliyuncs.com  ", "/api/v1/services/audio/tts/SpeechSynthesizer") == root

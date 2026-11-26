@@ -128,8 +128,6 @@ def validate_bundle(bundle, root):
                 if not preview_asset or preview_asset["media_type"] != "application/pdf":
                     raise PackageError("转换预览必须引用实际PDF资源")
                 validate_upload(root / preview_asset["path"], ".pdf")
-            if row["kind"] == "presentation" and row["status"] == "ready" and not row["preview_asset_id"]:
-                raise PackageError("已就绪演示文稿缺少转换预览PDF")
             if row["kind"] != "text" and row["asset_id"] is None:
                 raise PackageError("完整课程包不能包含缺失媒体")
             pages = row["content"].get("pages", [])
@@ -163,6 +161,10 @@ def validate_bundle(bundle, root):
                 suffix = Path(asset["path"]).suffix.lower()
                 if KINDS.get(suffix) != row["kind"]:
                     raise PackageError("资料类型与资源文件不匹配")
+                if row["kind"] == "presentation" and row["status"] == "ready" and not row["preview_asset_id"]:
+                    text_only = suffix == ".pptx" and any(isinstance(page.get("text"), str) and page["text"].strip() for page in pages)
+                    if not text_only:
+                        raise PackageError("已就绪演示文稿缺少转换预览PDF或可读页文本")
                 validate_upload(root / asset["path"], suffix)
         for key, row in converted["question"].items():
             QuestionInput.model_validate({**row, **{field: secret_map[key][field] for field in ("answer", "hidden_cases")}}, strict=True)
@@ -206,9 +208,11 @@ def validate_bundle(bundle, root):
         _object(course, {"schema_version", "title"}, {"schema_version", "title"})
         if course["schema_version"] != 4 or not _short(course["title"], 200):
             raise PackageError("课程目录格式无效")
+        from app.course_packages.exams import validate_exams
         from app.course_packages.narration_contract import validate_narrations
 
         validate_narrations(bundle, root)
+        validate_exams(bundle)
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
         if isinstance(exc, PackageError):
             raise

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from .account_deletion import delete_course_data
 from .auth import require_teacher
 from .db import get_db
+from .lectio.jobs import has_active_course_jobs
+from .lectio.models import LectioExam
 from .models import (
     Activity, ActivityMaterial, ActivityQuestion, Chapter, Classroom, CourseInstance, KnowledgePoint, Material, MaterialChapter,
     MaterialParticipation, Question, QuestionChapter, QuestionKnowledgePoint, User,
@@ -90,6 +92,8 @@ def _deletion_confirmation(course, user):
 def _deletion_blocker(db, course_id, classroom_count):
     if classroom_count:
         return "课程有现有或历史教学班，无法删除。"
+    if has_active_course_jobs(db, course_id):
+        return "课程还有备课任务在处理，请等待任务结束后重试。"
     materials = _course_rows(Material, course_id)
     chapters = _course_rows(Chapter, course_id)
     questions = _course_rows(Question, course_id)
@@ -134,7 +138,8 @@ def deletion_preview(course_id: int, db: Db, user: Teacher):
     classrooms = db.scalar(select(func.count()).select_from(Classroom).where(Classroom.course_id == course_id))
     counts = {"classrooms": classrooms}
     for key, model in {
-        "chapters": Chapter, "materials": Material, "knowledge_points": KnowledgePoint, "questions": Question, "activities": Activity,
+        "chapters": Chapter, "materials": Material, "knowledge_points": KnowledgePoint, "questions": Question,
+        "activities": Activity, "exam_drafts": LectioExam,
     }.items():
         counts[key] = db.scalar(select(func.count()).select_from(_course_rows(model, course_id).subquery()).execution_options(include_deleted=True))
     blocked_reason = _deletion_blocker(db, course_id, classrooms)

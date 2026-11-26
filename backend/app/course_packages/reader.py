@@ -43,6 +43,10 @@ def load_bundle(root):
         "content/secrets/answers.jsonl",
         *JSONL_FILES.values(),
     }
+    from app.course_packages.exams import EXAMS_FILE
+
+    if (root / EXAMS_FILE).is_file():
+        accepted.add(EXAMS_FILE)
     patterns = (
         "curriculum/chapters/*/chapter.yaml",
         "content/activities/*.yaml",
@@ -79,5 +83,8 @@ def load_bundle(root):
         bundle["narrations"].extend(pages)
     if len(bundle["narrations"]) > 10000:
         raise PackageError("课程讲稿页数超限")
+    exams_path = root / EXAMS_FILE
+    bundle["exams_present"] = exams_path.is_file()
+    bundle["exams"] = _load(exams_path, json_lines=True) if bundle["exams_present"] else []
     validate_bundle(bundle, root)
     return bundle

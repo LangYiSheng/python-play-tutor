@@ -35,6 +35,9 @@ class ConnectionInput(BaseModel):
 
     @model_validator(mode="after")
     def valid_connection(self):
+        self.base_url = self.base_url.strip()
+        if self.api_key is not None:
+            self.api_key = self.api_key.strip()
         url = urlparse(self.base_url)
         if self.base_url and (url.scheme not in {"http", "https"} or not url.hostname
                               or url.username or url.password or url.query or url.fragment):
@@ -52,6 +55,14 @@ class AuthoringInput(ConnectionInput):
     max_tokens: int = Field(default=8000, ge=128, le=65536)
     daily_pages: int = Field(default=300, ge=1, le=10000)
 
+    @model_validator(mode="after")
+    def strip_models(self):
+        self.model = self.model.strip()
+        self.vision_model = self.vision_model.strip()
+        if not self.model or not self.vision_model:
+            raise ValueError("模型名称不能为空")
+        return self
+
 
 class SpeechInput(ConnectionInput):
     protocol: Literal["openai", "deepseek", "dashscope"] = "openai"
@@ -62,14 +73,18 @@ class SpeechInput(ConnectionInput):
 
     @model_validator(mode="after")
     def valid_speech(self):
+        self.model = self.model.strip()
+        self.voice = self.voice.strip()
+        if not self.voice:
+            raise ValueError("请填写音色名称或 ID")
         if self.protocol == "deepseek" and (self.format not in {"wav", "pcm"} or self.speed != 1):
             raise ValueError("DeepSeek 语音使用 wav/pcm，合成语速固定为 1")
-        if self.protocol == "openai" and not self.model.strip():
+        if self.protocol == "openai" and not self.model:
             raise ValueError("请填写语音模型")
         if self.protocol == "dashscope":
             if "compatible-mode" in self.base_url:
                 raise ValueError("阿里原生语音接口请填业务空间域名，不要带 /compatible-mode/v1")
-            if not self.model.strip():
+            if not self.model:
                 raise ValueError("请填写阿里语音模型")
             if self.format not in {"mp3", "wav", "pcm", "opus"}:
                 raise ValueError("阿里语音使用 mp3/wav/pcm/opus")

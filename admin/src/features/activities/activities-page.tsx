@@ -41,10 +41,10 @@ export function LearningTasks({ courseId }: { courseId: number }) {
       </nav>
       <div key={chapter.id} className="min-w-0 space-y-4">
         <h2 className="text-xl font-semibold">{chapter.title}</h2>
-        <ChapterMaterials courseId={courseId} chapter={chapter} editRequirements/>
+        <ChapterMaterials courseId={courseId} chapter={chapter}/>
         <ChapterActivities courseId={courseId} chapter={chapter} course={course.data} reload={course.reload}/>
       </div>
-    </div> : !course.error && <Empty title="暂无章节" description="请先在内容列表中创建章节。" />}
+    </div> : !course.error && <Empty title="暂无章节" description="请先在「章节与课件」中创建章节。" />}
   </div>;
 }
 

@@ -16,7 +16,7 @@ from ..models import Material, User, now
 from ..teacher_scope import require_scope, teacher_instance_id
 from . import audio, calibrate, jobs, task_commands
 from .access import teacher_material, require_narratable, require_page
-from .request_contracts import NarrationInput, DigestInput, GenerateInput, RangeInput, PageGenerateInput
+from .request_contracts import NarrationInput, DigestInput, GenerateInput, RangeInput, PageGenerateInput, PipelineInput
 from . import render, repository, service
 from . import tts
 from .contracts import AppliedCalibration, AudioRecord, GeneratedPage, Quota
@@ -58,9 +58,10 @@ def generate_range(course_id: int, material_id: int, body: GenerateInput,
 
 @router.post("/pipeline", status_code=202)
 def pipeline_deck(course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
-                  user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+                  user: Annotated[User, Depends(require_teacher)],
+                  body: PipelineInput | None = None) -> dict[str, Any]:
     """一键梳理：整理原文 → 校准 → 应用修正 → 生成讲解稿，后台逐段跑。"""
-    job = task_commands.pipeline_deck(course_id=course_id, material_id=material_id, db=db, user=user)
+    job = task_commands.pipeline_deck(course_id=course_id, material_id=material_id, db=db, user=user, body=body)
     return {"job": jobs.state(material_id, job)}
 
 
@@ -170,24 +171,48 @@ def author_narration(page_no: int, course_id: int, material_id: int, body: Narra
 @router.put("/{page_no}/content")
 def author_content(page_no: int, course_id: int, material_id: int, body: DigestInput,
                    db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
-    """老师手工改整理稿的标题/主题/标签；正文改动仍走讲解稿编辑。"""
+    """老师手工改整理稿的标题/主题/标签/正文；尚未整理时也允许手工录入。"""
+    from .models import PageContent
+
     material = teacher_material(db, user, course_id, material_id, exclusive=True)
     require_page(material, page_no)
     row = repository.content_row(db, material.id, page_no)
     if row is None:
-        raise HTTPException(404, "这页还没有整理稿，请先梳理文本")
-    if body.title is not None:
-        row.title = body.title.strip()[:80]
-    if body.topic is not None:
-        row.topic = body.topic.strip()[:200]
-    if body.tags is not None:
-        row.tags = repository.clean_tags(body.tags)
-    row.source = "teacher"
-    row.updated_at = now()
+        if body.text is None or not body.text.strip():
+            raise HTTPException(404, "这页还没有整理稿，请先梳理文本或填写整理稿正文")
+        raw = repository.page_text(material, page_no) or ""
+        row = PageContent(
+            material_id=material.id,
+            page_no=page_no,
+            raw_text_hash=repository.text_hash(raw),
+            title=(body.title or "").strip()[:80],
+            topic=(body.topic or "").strip()[:200],
+            tags=repository.clean_tags(body.tags) if body.tags is not None else [],
+            text=body.text.strip(),
+            status="accepted",
+            source="teacher",
+            image_state="policy",
+        )
+        db.add(row)
+    else:
+        if body.title is not None:
+            row.title = body.title.strip()[:80]
+        if body.topic is not None:
+            row.topic = body.topic.strip()[:200]
+        if body.tags is not None:
+            row.tags = repository.clean_tags(body.tags)
+        if body.text is not None:
+            cleaned = body.text.strip()
+            if not cleaned:
+                raise HTTPException(422, "整理稿正文不能为空")
+            row.text = cleaned
+        row.source = "teacher"
+        row.updated_at = now()
+    db.flush()
     repository.sync_staleness(db, material)
     db.commit()
     return {"page_no": page_no, "title": row.title, "topic": row.topic, "tags": row.tags,
-            "source": row.source}
+            "text": row.text, "source": row.source}
 
 
 @router.post("/{page_no}/accept")
@@ -270,11 +295,33 @@ def read_page_image(page_no: int, course_id: int, material_id: int, db: Annotate
                     user: Annotated[User, Depends(require_teacher)]) -> Response:
     """The same rendered page the model saw, so review can compare wording against the slide."""
     material = teacher_material(db, user, course_id, material_id)
-    image = render.render_page(material, page_no)
+    try:
+        image = render.render_page(material, page_no)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
     if image is None:
         raise HTTPException(404, "本页没有可预览的页面图像")
     return Response(content=image, media_type="image/jpeg",
                     headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/{page_no}/page-pdf")
+def read_page_pdf(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
+                  user: Annotated[User, Depends(require_teacher)]) -> Response:
+    """Single-page PDF slice fallback so browser rendering stays locked to the exact page number."""
+    material = teacher_material(db, user, course_id, material_id)
+    pdf_bytes = render.render_page_pdf(material, page_no)
+    if pdf_bytes is None:
+        raise HTTPException(404, "本页没有可预览的 PDF 页面")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="page-{page_no}.pdf"',
+        },
+    )
+
 
 @router.post("/audio-batch", status_code=202)
 def synthesize_audio_batch(course_id: int, material_id: int,
@@ -353,7 +400,10 @@ def read_student_page_image(page_no: int, material_id: int, classroom_id: int,
     from app.course_content.access import authorize_material
 
     material = authorize_material(db, user, classroom_id, material_id)
-    image = render.render_page(material, page_no)
+    try:
+        image = render.render_page(material, page_no)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
     if image is None:
         raise HTTPException(404, "本页没有可预览的页面图像")
     return Response(content=image, media_type="image/jpeg",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -11,8 +12,9 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.config import ENVIRONMENT
 from app.db import SessionLocal
-from app.materials.conversion import convert_presentation, parse_bounded
+from app.materials.conversion import convert_presentation, convert_presentation_local_windows, parse_bounded
 from app.materials.storage import get_storage, storage_root
 from app.models import CourseInstance, Material
 from app.teacher_scope import commit_content
@@ -51,11 +53,25 @@ def process_material(material_id: int):
                 result = {"pages": [], "notice": "教师上传的视频；观看参与记录不等同于掌握"}
             else:
                 if source.suffix in {".ppt", ".pptx"}:
-                    source = convert_presentation(source, tmp)
-                    preview_key = f"previews/{uuid4().hex}.pdf"
-                    adapter.put(preview_key, source)
-                    metadata["preview_key"] = preview_key
+                    has_converter = bool(os.getenv("REBORN_CONVERTER_URL") or os.getenv("REBORN_CONVERTER_IMAGE"))
+                    converted_pdf: Path | None = None
+                    if has_converter:
+                        converted_pdf = convert_presentation(source, tmp)
+                    elif ENVIRONMENT == "development" and os.name == "nt" and os.getenv("REBORN_LOCAL_PPT_PREVIEW") == "1":
+                        converted_pdf = convert_presentation_local_windows(source, tmp)
+                    if converted_pdf is not None:
+                        source = converted_pdf
+                        preview_key = f"previews/{uuid4().hex}.pdf"
+                        adapter.put(preview_key, source)
+                        metadata["preview_key"] = preview_key
+                        metadata.pop("notice", None)
+                    elif source.suffix == ".ppt":
+                        source = convert_presentation(source, tmp)
+                    else:
+                        metadata["notice"] = "当前课件按幻灯片正文展示。配置 PDF 转换后可查看原版式。"
                 result = parse_bounded(source, tmp)
+                if source.suffix == ".pptx" and not any(page["text"].strip() for page in result["pages"]):
+                    raise ValueError("演示文稿没有可读的正文，请配置 PDF 转换后重试")
         status, error = "ready", None
         metadata.update(result)
     except Exception as exc:

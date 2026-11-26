@@ -18,36 +18,59 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..auth import as_utc
 from ..db import SessionLocal
 from ..models import Material
-from . import repository, task_commands
+from . import repository, task_commands, task_progress
 from .models import NarrationJob
 
 log = logging.getLogger(__name__)
 
 CONCURRENCY = 3
 POLL_SECONDS = 2
+_RETRYABLE_OPERATIONS = {"generate_page", "generate_range", "audio_page", "audio_batch", "calibrate", "digest", "pipeline"}
 
 
 def state(material_id: int, job: NarrationJob | None) -> dict[str, Any]:
     """前端轮询用的任务快照；入队与 `GET /job` 共用这一份形状。"""
     progress = (job.progress or {}) if job else {}
     request = progress.get("request") or {}
+    operation = request.get("operation")
+    status = (
+        "interrupted"
+        if job and job.status == "running" and not repository.job_running(job)
+        else job.status
+        if job
+        else "idle"
+    )
+    can_resume = status == "cancelled" or (status == "interrupted" and bool(progress.get("never_started")))
+    retryable = bool(
+        job
+        and (status == "failed" or can_resume)
+        and operation in _RETRYABLE_OPERATIONS
+        and progress.get("retry_fingerprint")
+    )
+    if status == "failed" and operation in {"generate_range", "audio_batch"} and not progress.get("retry_pages"):
+        retryable = False
+    described = task_progress.describe(job, status, None) if job else {}
     return {
         "id": job.id if job else None,
         "material_id": material_id,
         "kind": job.kind if job else "",
-        "status": "interrupted" if job and job.status == "running" and not repository.job_running(job)
-        else job.status if job else "idle",
+        "status": status,
         "running": bool(job and repository.job_running(job)),
         "queued": bool(job and (job.progress or {}).get("queued")),
         "done": progress.get("done", 0),
         "total": progress.get("total", 0),
-        "message": job.message if job else "",
-        "failed": progress.get("failed", []),
-        "stage": progress.get("stage", ""),
+        "percent": described.get("percent"),
+        "position": described.get("position", ""),
+        "progress_unit": described.get("progress_unit"),
+        "message": described.get("message", job.message if job else ""),
+        "failed": described.get("failed", progress.get("failed", [])),
+        "stage": described.get("stage") or progress.get("stage", ""),
         "chain": progress.get("chain") or request.get("chain") or [],
-        "started_at": job.started_at.isoformat() if job and job.started_at else None,
+        "retryable": retryable,
+        "started_at": as_utc(job.started_at).isoformat() if job and job.started_at else None,
     }
 
 

@@ -60,8 +60,8 @@ export async function setup(
       cid: classroom.id,
     },
   );
-  await page.goto("/teacher/content-list?course="+course.id+"&class="+classroom.id);
-  await expect(page.getByRole("heading",{name:"内容列表"})).toBeVisible();
+  await page.goto("/teacher/courseware?course="+course.id+"&class="+classroom.id);
+  await expect(page.getByRole("heading",{name:"章节与课件"})).toBeVisible();
   return {
     headers,
     cid: classroom.id,
@@ -72,12 +72,8 @@ export async function setup(
   };
 }
 export async function go(page: Page, name: string) {
-  if (["章节", "资料", "知识点", "题目"].includes(name)) {
-    await page.getByRole("link", { name: "内容列表", exact: true }).click();
-    await page.getByRole("tab", { name, exact: true }).click();
-    return;
-  }
-  await page.getByRole("link", { name, exact: true }).click();
+  const names: Record<string, string> = { 章节: "章节与课件", 资料: "章节与课件", 知识点: "知识图谱", 题目: "题库与组卷" };
+  await page.getByRole("link", { name: names[name] ?? name, exact: true }).click();
 }
 export function pdf() {
   const items = [

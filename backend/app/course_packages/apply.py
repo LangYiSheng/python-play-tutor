@@ -56,7 +56,7 @@ def _delete_content(db, instance, incoming):
 
 
 def import_bundle(db, instance, bundle, root):
-    """Caller holds exclusive classroom gate; caller owns the single commit/rollback."""
+    """Caller holds exclusive course gate; caller owns the single commit/rollback."""
     manifest, data = bundle["manifest"], bundle["data"]
     replace = instance.package_id != manifest["package_id"]
     incoming = {kind: {row["id"] for row in rows} if not replace else set() for kind, rows in data.items()}
@@ -132,9 +132,11 @@ def import_bundle(db, instance, bundle, root):
                 if source["preview_asset_id"]:
                     row.content = {**row.content, "preview_key": assets[source["preview_asset_id"]]["storage_key"]}
     db.flush()
+    from app.course_packages.exams import import_exams
     from app.course_packages.narrations import import_narrations
 
     import_narrations(db, bundle, maps, assets)
+    import_exams(db, instance, bundle, replace=replace)
     relations = (
         (Question, QuestionChapter, "question_id", "chapter_ids", "chapter_id", "chapter"),
         (Question, QuestionKnowledgePoint, "question_id", "knowledge_point_ids", "knowledge_point_id", "knowledge_point"),

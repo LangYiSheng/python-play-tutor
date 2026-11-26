@@ -278,7 +278,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml --profile documents up --build -d
 ```
 
-API与converter通过私有 conversion 网络通信，主 API 不挂 Docker socket。转换器使用受限 LibreOffice 容器；未配置、损坏文件或转换失败均显示失败，不将原 PPT 当作已生成 PDF。
+API 与 converter 通过私有 conversion 网络通信，转换器使用受限的 LibreOffice 容器。缺少转换服务时，可提取正文的 PPTX 支持[按页阅读文字](content-authoring.md#媒体与安全)。开发环境在 Windows 上可显式设置 `REBORN_LOCAL_PPT_PREVIEW=1`，启用禁用宏的本机 PowerPoint 或 WPS 生成 PDF。配置了隔离转换服务时优先使用该服务。
 
 本机 API 可选择一次性 Docker 转换模式：先构建 `deploy/converter`，设置 `REBORN_CONVERTER_IMAGE=pythontopia-reborn-converter:local`，保持 `REBORN_CONVERTER_URL` 为空。此模式需要本机 Docker，并由代码启动禁网、非 root、只读输入、512MiB/1CPU/pids64限制的唯一容器。
 

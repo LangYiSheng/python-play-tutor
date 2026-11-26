@@ -14,7 +14,7 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - GET /classrooms returns authorized classroom summaries {id,name,course_id,course_name,teacher_id,teacher_name}; only active classrooms are returned. Teachers see their own classrooms and students see their memberships. Teacher names are returned without work numbers. join_code is included only for the owning teacher/admin, never for student members. POST /teacher/courses/{course_id}/classrooms {name} (teacher); POST /classrooms/join {join_code}; DELETE /teacher/classrooms/{id}/members/{user_id} (owner/admin). Authorized teacher progress/member details use `student_id` instead of email (nullable only for unassigned legacy users).
 - 班级管理列表 `GET /teacher/classrooms/management` 按任课范围返回班级。改名使用 `PATCH /teacher/classrooms/{id}`，归档使用同路径下的 `POST /archive`，仅管理员可调用 `POST /teacher/courses/{course_id}/transfer` 转交整门课。正式删除使用 `DELETE /teacher/classrooms/{id}`，有学习记录时仅管理员可执行。归档保留成员关系。正式删除解除成员关系并保留历史，原班任课教师及管理员通过管理列表的 `?deleted=true` 查找已删除班级，使用 `GET /teacher/classrooms/{id}/history` 和 `/history/{student_id}` 只读查阅。这里的 student_id 路径参数是学生内部用户 ID。
 - `PATCH /teacher/courses/{course_id}` 接收 `name` 和 `expected_revision`，由管理员或课程负责人修改课程名。成功后返回课程实例，版本不匹配且名称有变化时返回 409。
-- `GET /teacher/courses/{course_id}/deletion-preview` 由管理员或课程负责人查看删除影响，返回 `name`、`revision`、`confirmation`、`can_delete`、`blocked_reason` 和 `counts`。确认后调用 `DELETE /teacher/courses/{course_id}`，在查询参数中带上 `expected_revision` 和预览返回的 `confirmation`，成功返回 204。预览过期、课程有在用或历史教学班、存在阻止安全删除的引用时返回 409。
+- `GET /teacher/courses/{course_id}/deletion-preview` 由管理员或课程负责人查看删除影响，返回 `name`、`revision`、`confirmation`、`can_delete`、`blocked_reason` 和 `counts`。确认后调用 `DELETE /teacher/courses/{course_id}`，在查询参数中带上 `expected_revision` 和预览返回的 `confirmation`，成功返回 204。预览过期、课程有在用或历史教学班、正在处理的备课任务或阻止安全删除的引用时返回 409。
 - 全站账号列表 `GET /admin/accounts?role=teacher|student` 返回含 `disabled` 的可分页记录，支持查询 `q` 和 `classroom_id`。创建教师 `POST /admin/teachers {student_id,name,password?}`，省略密码则使用工号，工号不足8位时须设置密码，重复工号返回409。以 `/admin/accounts/{user_id}` 为基址，`PUT /name {name}` 修改姓名，`PUT /status {disabled}` 停用或启用，`POST /reset-password {password?}` 设置临时密码（教师须提供密码），`DELETE` 永久删除并返回204。停用撤销现有会话。删除事务与关联记录一并提交，管理员和体验账号禁止单独删除。全局概览 `GET /admin/overview` 汇总各班学习任务、资料合成及代码评测。以上路由均须管理员身份。
 - `GET /world?classroom_id=…` 返回学生位置、四个固定 NPC、已开放章节及建筑入口。位置和交互点来自平台地图，角色展示取自全站角色配置。
 - `PUT /world/position` 接收 `classroom_id,map_key,tile_x,tile_y,direction`，校验当前地图和边界。`POST /world/transition` 接收 `classroom_id,portal_id`，校验班级、所在地图和与门的距离，返回更新的位置和世界状态。
@@ -63,8 +63,8 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - `GET` 基础路径接受 `page`、`size`、`kind`、`chapter_id` 和 `material_id`，返回分页草稿与审阅版本。 `GET /narrations/{id}` 返回单页讲解草稿及来源详情。 `POST /decisions` 接收 1 至 100 个明确的对象（类型、标识、版本）、`accept` 或 `reject` 决定，以及接受单页讲稿时的可选修订文本。
 - `GET /groups/{chapter_id}/preview` 返回该章在当前类型筛选下可通过的草稿数、题目数、讲稿页数、须单独审阅的数量和确认令牌。 `POST /groups/{chapter_id}/accept` 接收 `kind`、`expected_count`、`token`，一次事务覆盖已预览的所有页。成员或版本变化返回 409，需重新预览。交互练习题须在编辑器中试答后单独通过。
 
-- GET /teacher/courses/{course_id}/catalog -> {chapters,knowledge_points,activities,npcs}, restricted to the selected authorized classroom CourseInstance. Passing view=chapters returns chapter metadata alone.
-- GET /teacher/courses/{course_id}/questions with page returns {items,total,page}. Items contain id, title, kind, status, source_type and chapter_ids. Search matches title or prompt. The kind, status and source filters apply before pagination. `reviewable=true` restricts results to drafts the current teacher can review in this class. GET /teacher/courses/{course_id}/questions/{id} returns one authorized teacher detail. GET /teacher/courses/{course_id}/chapters/{chapter_id}/question-candidates returns chapter-scoped selection metadata and public sample availability.
+- GET /teacher/courses/{course_id}/catalog -> {chapters,knowledge_points,activities,npcs}, restricted to the authorized course. Passing view=chapters returns chapter metadata alone.
+- GET /teacher/courses/{course_id}/questions with page returns {items,total,page}. Items contain id, title, kind, status, source_type and chapter_ids. Search matches title or prompt. The kind, status and source filters apply before pagination. `reviewable=true` restricts results to drafts the current teacher can review in this course. GET /teacher/courses/{course_id}/questions/{id} returns one authorized teacher detail. GET /teacher/courses/{course_id}/chapters/{chapter_id}/question-candidates returns chapter-scoped selection metadata and public sample availability.
 - GET /teacher/courses/{course_id}/knowledge-points accepts page, size, search and chapter_id and returns {items,total,page}. Both paginated lists default to 10 rows and accept up to 100. GET /teacher/courses/{course_id}/knowledge-point-labels returns id, title and chapter_id for up to 65 selected IDs passed as repeated ids query parameters.
 - `POST /teacher/courses/{course_id}/chapters` 使用 `title,order_index?` 创建章节，同路径下 `PUT /{id}` 更新章节。知识点由 `/knowledge-points` 管理。删除章节使用级联预览。
 - `POST /teacher/courses/{course_id}/activities` 接收 `id,chapter_id,title,kind,practice_kind?,required?,order_index?,published?,knowledge_point_ids?,question_ids?,practice_rules?`，同路径下 `PUT /{id}` 修改。`kind=practice` 时选择 `objective` 或 `programming` 并设置必做或选做。`kind=assessment` 的测验均为必做。固定题单和按知识点抽题按活动类型校验。
@@ -74,6 +74,8 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - PUT /teacher/classrooms/{id}/releases/{chapter_id} {status:published|paused,opens_at:ISO8601|null}. GET /teacher/classrooms/{id}/releases. Server-time evaluation is immediate. Classroom releases control visibility and schedule; all students use current definitions.
 - `GET /teacher/classrooms/{id}/progress` 汇总成员的章节任务进度。`GET /teacher/classrooms/{id}/students/{student_id}` 提供个人章节、资料、作答及测验记录。已完成章节按当前开放章节的必读资料、必做练习和测验计算。
 - POST /teacher/courses/{course_id}/materials/upload multipart {chapter_ids?:JSON-encoded integer array,title,material_id?,file} -> {id,status,title}; omitted chapter_ids creates an unclassified upload, or preserves existing links on replacement. PUT /teacher/courses/{course_id}/materials/{id} {title?,chapter_ids?} edits metadata and multiple chapter links. GET /teacher/courses/{course_id}/materials lists authorized metadata; GET /teacher/courses/{course_id}/materials/{id} and /file provide owner/admin preview, including unclassified material, without classroom publication. DELETE /teacher/courses/{course_id}/materials/{id} requires the cascade preview protocol (409). queued/processing/ready/failed processing states persist. Student access requires an association to a chapter open in the current classroom. Same material_id replaces the current file while preserving type; chapter links determine its presence in each chapter.
+
+- `POST /teacher/courses/{course_id}/materials/upload-batch` 支持多文件和课件 ZIP，接收 multipart 的 `files`、`chapter_ids?`，返回 `created,skipped`。含课程包清单的 ZIP 须经课程包导入流程。
 
 ## Active teaching assistant
 
@@ -120,12 +122,22 @@ Pausing a chapter suspends learner access. Reopening it restores access to the c
 
 讲解、审校、音频与提问均不改变成绩、解锁、任务进度或阅读完成；翻页、播放与浏览不产生模型调用。课程包携带讲稿状态及有效配音，详见内容规范的交换契约。
 
+### Lectio 课程创作与智能组卷
+
+以下路径位于 `/api/teacher/courses/{course_id}/lectio`，课程负责人及管理员可在未开班时使用（学生 403，未配置作者期模型触发 AI 任务返回 409）。
+
+- 讲稿节奏与导出：`GET /materials/{material_id}/pacing?section_minutes=10&chapter_minutes=90` 测算页级与小节口播字数/时长；`GET /materials/{material_id}/export?kind=source|script&fmt=docx|md` 导出整理稿或口播讲稿。
+- 知识点抽取与图谱导出：`GET /knowledge` 返回按章分组的课件与知识点结构（含课件来源页码）；`POST /chapters/{chapter_id}/knowledge/extract` 提交后台抽取任务（202 `JobSnapshot`）；`GET /knowledge/export?fmt=xmind|xlsx|docx&chapter_id?` 导出思维导图、Excel 清单或 Word 大纲。
+- AI 智能出题与学习通导出：`POST /chapters/{chapter_id}/exercises/generate`（202 `JobSnapshot`）基于章节资料生成严格四类客观题（`single`/`multiple`/`true_false`/`fill_blank` 单空）草稿写入题目表（`status="draft", source_type="ai_generated"`），非客观题/简答题返回 422；教师审校改为 `ready` 后可用于小镇练习与组卷。`GET /exercises/validate` 与 `GET /exercises/export?fmt=xuexitong_xlsx|xuexitong_txt|xlsx` 执行学习通模板校验并导出客观题（自动跳过非客观题）。
+- 智能组卷：`GET /exams` 列出课程备课试卷；`POST /exams/gaps` 核查蓝图四类客观题及 A/B 卷重复率上限下的缺口；`POST /exams/fill-gaps`（202 `JobSnapshot`）按章节补齐客观题草稿；`POST /exams/generate`（201）抽题生成并持久化试卷快照；`GET/PATCH/DELETE /exams/{exam_id}` 与 `GET /exams/{exam_id}/candidates` 支持元信息编辑、调分、上下移、换题与移出；`GET /exams/{exam_id}/export?kind=student_docx|teacher_docx|blueprint_xlsx|xuexitong_xlsx|xuexitong_txt|zip&variant=A|B` 导出学生卷、解析卷、双向细目表、学习通导入或整包 ZIP。组卷草稿独立于学生在小镇作答的章节测验。
+- 任务轮询与取消：`GET /jobs?limit=20`、`POST /jobs/{job_id}/cancel`。
+
 ## 班级课程与包交换
 
 课程接口在路径中指定 `course_id`。班级开放与学生数据另按 `classroom_id` 鉴权。包内使用稳定标识，导入后以服务端返回的标识访问课程实体。
 
 - `GET /teacher/courses/{course_id}` 返回课程名称、负责人、包标识和修订。`GET /teacher/courses/{course_id}/ids` 查询稳定标识与运行标识的映射。
-- 格式 4 导入章节、资料任务条件、知识点、题库、两类练习、测验及媒体。预检拒绝格式 3 及更早的包。固定地图、平台角色和答疑配置由部署提供。
+- 格式 4 导入章节、资料任务条件、知识点、题库、两类练习、测验及媒体。可选的 `content/exams.jsonl` 保存组卷草稿，预览在 `diff.exams` 展示差异。预检拒绝格式 3 及更早的包。固定地图、平台角色和答疑配置由部署提供。
 - `POST /teacher/courses/{course_id}/imports/available/preview` 接收 `package_key`，校验私有目录副本并返回差异、阻断项、学习记录影响和过期时间。
 - `POST /teacher/courses/{course_id}/imports/{preview_id}/apply` 接收 `request_id,expected_revision`，提交前复核内容指纹、课程修订与影响，重复请求返回原回执。
 - `GET /teacher/courses/{course_id}/export` 在私有交换目录生成完整课程包，返回 `directory,path`。题目答案与课件媒体只供授权教师交换。账号、成员关系、学习记录及部署密钥均属于当前平台。
@@ -169,8 +181,8 @@ GET /teacher/course/packages 返回个人导出及历史共享目录。DELETE /t
 
 ## Content deletion preview and confirmation
 
-- POST /teacher/courses/{course_id}/content-deletions/preview {classroom_id,targets:[{kind:chapter|material|question|activity,id:string}]} authorizes all targets and returns {id,revision,confirmation,expires_at,remove:[{kind,id,title,reason}],detach:[{kind,id,title,reason}],preserve:[{kind,id?,title,count}],blockers:[{message,kind,id,path?,target?}],affected_students,ending_sessions,history_policy}. Targets are deduplicated, 1–100 per request. Preview changes no teaching content or learner history; it stores a private teacher/class/course-bound receipt, valid for15 minutes.
-- POST /teacher/courses/{course_id}/content-deletions/{preview_id}/confirm {classroom_id,confirmation:string,confirmed:true} requires exact confirmation text. Under the exclusive course lock and preview row lock, revalidate revision, history/impact fingerprint, permissions and blockers. Success returns {ok:true,removed:int,detached:int,history_preserved:true}, atomically retires definitions, unlinks relationships, and increments course revision once. A repeated successful request returns the stored result, including after expiry. Expired/changed/blocked preview:409; invalid confirmation:422; wrong actor/class preview:404; unauthorized classroom/owner:403.
+- `POST /teacher/courses/{course_id}/content-deletions/preview` 接收 1 至 100 项 `targets`，每项含 `kind`（`chapter|material|question|activity|knowledge_point`）和 `id`。可用 `include_related_questions` 将符合条件的关联题纳入删除范围。返回 `id,revision,confirmation,expires_at,remove,detach,preserve,blockers,affected_students,ending_sessions,history_policy,related_question_count`，预览绑定发起人和课程，有效期 15 分钟。
+- `POST /teacher/courses/{course_id}/content-deletions/{preview_id}/confirm` 接收 `confirmation` 和 `confirmed:true`。提交时复查权限、课程修订和影响范围，在同一事务中撤下内容并解除关联。成功返回 `{ok:true,removed,detached,history_preserved:true}`，重复确认返回原回执。过期、变更或受阻返回 409，确认文字不匹配返回 422，预览不属于当前课程或发起人时返回 404。
 - Retired content is excluded from current teaching and export. Learner evidence and required private files remain. Judge history queries explicitly include retired question/activity metadata; student GET /submissions/{id} can read only their own retained receipt in an authorized class, with existing hidden-case redaction. A still-current submitted assessment retains its original questions, even if those questions were retired from the bank. No restore, purge, regrade or arbitrary force-delete endpoint is introduced.
 
 

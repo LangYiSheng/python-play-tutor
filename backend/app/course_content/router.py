@@ -112,10 +112,10 @@ def create_question(
 def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None,
                    page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
                    kind: str | None = None, status: str | None = None, source: str | None = None,
-                   knowledge_point_id: int | None = None, reviewable: bool = False):
-    if page is not None or knowledge_point_id is not None or reviewable:
+                   knowledge_point_id: int | None = None, chapter_id: int | None = None, reviewable: bool = False):
+    if page is not None or knowledge_point_id is not None or chapter_id is not None or reviewable:
         return question_page(db, user, course_id, page or 1, size, search, kind, status, source,
-                             knowledge_point_id, reviewable=reviewable)
+                             knowledge_point_id, chapter_id, reviewable=reviewable)
     return _list_questions(db=db, user=user, course_id=course_id)
 
 

@@ -44,6 +44,7 @@
         :key="material.id"
         :material="material"
         :file-url="fileUrl"
+        :uses-pdf-reader="usesPdfReader"
         :pdf-page="pdfPage"
         :page-index="pageIndex"
         :media-blob="mediaBlob"
@@ -136,6 +137,7 @@ const {
   mediaBlob,
   mediaError,
   currentPage,
+  usesPdfReader,
   readingKey,
   fileUrl,
   currentOwner,
@@ -177,7 +179,9 @@ const sample = computed<ParticipationSample | null>(() => {
   const item = material.value;
   if (loading.value || item?.status !== "ready" || item.id !== props.materialId || (compact.value && showAssistant.value)) return null;
   if (item.kind === "video") return video.videoElement.value ? {visible:true,position:video.videoTime.value,playing:playing.value,playback_rate:playbackRate.value} : null;
-  const page = item.kind === "text" ? currentPage.value : item.pages.find(p => p.page_no === renderedPage.value && p.page_no === pdfPage.value);
+  const page = usesPdfReader.value
+    ? item.pages.find(p => p.page_no === renderedPage.value && p.page_no === pdfPage.value)
+    : currentPage.value;
   return page ? {visible:true,page_id:Number(page.id)} : null;
 });
 const {error: chapterError, retry: retryChapter} = useChapterParticipation(resolvedChapterId.value, props.materialId, sample);
@@ -185,9 +189,7 @@ const {videoTime, seekVideo} = video;
 const currentContext = computed(() =>
   ({ ...learningContext(
     material.value,
-    material.value && ["pdf", "presentation"].includes(material.value.kind)
-      ? pdfPage.value
-      : currentPage.value?.page_no,
+    usesPdfReader.value ? pdfPage.value : currentPage.value?.page_no,
     videoTime.value,
   ), material_id: material.value?.id }),
 );

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime, timedelta, timezone
 
+from app.materials.presentation import authoring_page_text
 from ..models import Material, User, now
 from .models import (CONTENT_SOURCES, CONTENT_STATUSES, IMAGE_STATES, VISIBLE_STATUSES, MaterialTagDict,
                      NarrationJob, NarrationRun, PageContent, PageNarration)
@@ -32,7 +33,7 @@ def page_map(material: Material) -> dict[int, dict[str, Any]]:
             continue
         page_no = item.get("page_no") or item.get("id")
         if isinstance(page_no, int):
-            result[page_no] = item
+            result[page_no] = {**item, "text": authoring_page_text(item)} if item.get("speaker_notes") else item
     return result
 
 

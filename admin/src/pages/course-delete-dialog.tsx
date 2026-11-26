@@ -17,6 +17,7 @@ const countLabels = {
   knowledge_points: "知识点",
   questions: "题目",
   activities: "练习与测验",
+  exam_drafts: "组卷草稿",
 } as const;
 type CourseDeletionPreview = {
   name: string;
@@ -24,7 +25,7 @@ type CourseDeletionPreview = {
   confirmation: string;
   can_delete: boolean;
   blocked_reason: string | null;
-  counts: Record<keyof typeof countLabels, number>;
+  counts: Partial<Record<keyof typeof countLabels, number>>;
 };
 
 export function CourseDeleteDialog({course, onClose, onDeleted}: {
@@ -33,13 +34,16 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
   const path = `/teacher/courses/${course.id}`;
   const {data: preview, loading, error: previewError, reload} = useResource<CourseDeletionPreview>(`${path}/deletion-preview`);
   const [confirmation, setConfirmation] = useState("");
+  const [outdatedPreview, setOutdatedPreview] = useState<CourseDeletionPreview | null>(null);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   useDraft(busy);
-  const canDelete = Boolean(preview?.can_delete && !loading && !stale && confirmation === preview.name);
+  const outdated = Boolean(preview && preview === outdatedPreview);
+  const canDelete = Boolean(preview?.can_delete && !loading && !stale && !outdated && !previewError && confirmation === preview.name);
 
   function refresh() {
+    setOutdatedPreview(preview);
     setConfirmation("");
     setError("");
     setStale(false);
@@ -77,7 +81,7 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
         <ErrorNotice message={error || previewError}/>
         {loading && <Loading/>}
         {preview && <dl aria-label="课程删除影响" className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-3 text-sm sm:grid-cols-3">
-          {(Object.keys(countLabels) as (keyof typeof countLabels)[]).map(key => <div key={key}>
+          {(Object.keys(countLabels) as (keyof typeof countLabels)[]).filter(key => preview.counts[key] !== undefined).map(key => <div key={key}>
             <dt className="text-muted-foreground">{countLabels[key]}</dt>
             <dd className="font-semibold tabular-nums">{preview.counts[key]}</dd>
           </div>)}
@@ -87,7 +91,7 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
           <div className="field">
             <Label htmlFor="course-delete-name">输入课程全名确认</Label>
             <Input id="course-delete-name" autoComplete="off" maxLength={200} value={confirmation}
-              onChange={event => setConfirmation(event.target.value)} disabled={busy || stale} required/>
+              onChange={event => setConfirmation(event.target.value)} disabled={busy || stale || outdated || Boolean(previewError)} required/>
           </div>
         </> : <p className="text-sm text-destructive">{preview.blocked_reason ?? "此课程暂不可删除。"}</p>)}
         <DialogFooter>

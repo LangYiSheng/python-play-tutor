@@ -17,10 +17,11 @@ from sqlalchemy.orm import Session
 
 from ..models import Material
 from . import client as model_client
-from . import input_policy, render, repository
+from . import defaults, input_policy, render, repository
 from .contracts import AuthoringSettings, ChatReply
 
 WINDOW = 4
+WINDOW_WORKERS = defaults.worker_count("REBORN_NARRATION_WORKERS", 4)
 DIGEST_VERSION = "digest-v1"
 # 单页原文上限：整理只需要识别层面的信息，不把整页长文本塞满窗口。
 PAGE_TEXT_LIMIT = 6000
@@ -83,29 +84,41 @@ def pending_windows(db: Session, material: Material, settings: AuthoringSettings
     return page_windows(pending(db, material, settings, effort))
 
 
-def _prefix(material: Material) -> str:
-    return "\n".join([TEMPLATE, f"材料：{material.title}",
+def _prefix(material: Material | str) -> str:
+    title = material if isinstance(material, str) else material.title
+    return "\n".join([TEMPLATE, f"材料：{title}",
                       "输出字段：pages[].page_no、title、topic、tags、text。"])
 
 
 def _payload(material: Material, page_nos: list[int], db: Session) -> tuple[str, dict[int, str], list[dict[str, Any]]]:
     """构建一窗的输入；返回 (文本, 每页页图状态, 图片 parts)。"""
+    content, states, images, _ = prepare_window(db, material, page_nos)
+    return content, states, images
+
+
+def prepare_window(
+    db: Session, material: Material, page_nos: list[int]
+) -> tuple[str, dict[int, str], list[dict[str, Any]], dict[int, tuple[dict[str, Any], list[dict[str, Any]]]]]:
+    """主线程构建一窗与单页补漏用的输入；返回 (文本, 页图状态, 图片 parts, 按页明细)。"""
     pages = repository.page_map(material)
     rows = repository.content_map(db, material.id)
     body: dict[str, Any] = {"pages": []}
     states: dict[int, str] = {}
     images: list[dict[str, Any]] = []
+    per_page: dict[int, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for page_no in page_nos:
         raw = str(pages.get(page_no, {}).get("text") or "")
         row = rows.get(page_no)
-        body["pages"].append({
+        page_item = {
             "page_no": page_no,
             "current_title": row.title if row else "",
             "current_tags": row.tags if row else [],
             "text": raw[:PAGE_TEXT_LIMIT],
             "truncated": len(raw) > PAGE_TEXT_LIMIT,
-        })
+        }
+        body["pages"].append(page_item)
         state = "policy"
+        page_images: list[dict[str, Any]] = []
         if input_policy.prefers_image(material, raw, purpose="digest") and render.source_key(material):
             try:
                 image = render.render_page(material, page_no)
@@ -115,21 +128,25 @@ def _payload(material: Material, page_nos: list[int], db: Session) -> tuple[str,
             if image is None:
                 raise ValueError(f"第 {page_no} 页没有可读的页面来源，无法整理")
             state = "sent"
-            images.extend([{"type": "text", "text": f"第 {page_no} 页原图"},
-                           {"type": "image_url",
-                            "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")}}])
+            page_images = [
+                {"type": "text", "text": f"第 {page_no} 页原图"},
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")}},
+            ]
+            images.extend(page_images)
         states[page_no] = state
+        per_page[page_no] = (page_item, page_images)
     before = page_nos[0] - 1
     if before in pages:
         previous = rows.get(before)
-        body["previous_tail"] = (previous.text if previous else "").strip()[-PREVIOUS_TAIL:]
+        prev_text = previous.text if previous and previous.text.strip() else str(pages[before].get("text") or "")
+        body["previous_tail"] = prev_text.strip()[-PREVIOUS_TAIL:]
     after = page_nos[-1] + 1
     if after in pages:
         body["next_head"] = str(pages[after].get("text") or "").strip()[:NEXT_HEAD]
-    return _prefix(material) + "\n\n" + json.dumps(body, ensure_ascii=False, sort_keys=True), states, images
+    return _prefix(material) + "\n\n" + json.dumps(body, ensure_ascii=False, sort_keys=True), states, images, per_page
 
 
-def _call(material: Material, content: str, images: list[dict[str, Any]],
+def _call(material: Material | str, content: str, images: list[dict[str, Any]],
           settings: AuthoringSettings, effort: str) -> ChatReply:
     user: Any = [{"type": "text", "text": content}, *images] if images else content
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
@@ -149,16 +166,37 @@ def _clean(item: dict[str, Any], page_no: int) -> dict[str, Any]:
             "tags": tags[:TAGS_MAX], "text": text}
 
 
-def parse(reply: ChatReply, expected: list[int]) -> list[dict[str, Any]]:
-    """页号必须与窗口完全一致；缺页/多页整窗失败，不写半截。"""
+def _coerce_page_no(raw_no: Any) -> int | None:
+    if isinstance(raw_no, bool):
+        return None
+    if isinstance(raw_no, int):
+        return raw_no
+    if isinstance(raw_no, str) and raw_no.strip().isdigit():
+        return int(raw_no.strip())
+    return None
+
+
+def _extract_found(reply: ChatReply, *, single_expected: int | None = None) -> dict[int, dict[str, Any]]:
     raw = reply.get("raw") or {}
     items = raw.get("pages")
     if not isinstance(items, list):
+        if single_expected is not None and isinstance(raw, dict) and str(raw.get("text") or "").strip():
+            coerced = _coerce_page_no(raw.get("page_no")) or single_expected
+            return {coerced: {**raw, "page_no": coerced}}
         raise ValueError("整理结果格式不正确：缺少 pages 数组")
     found: dict[int, dict[str, Any]] = {}
     for item in items:
-        if isinstance(item, dict) and isinstance(item.get("page_no"), int):
-            found[item["page_no"]] = item
+        if not isinstance(item, dict):
+            continue
+        pno = _coerce_page_no(item.get("page_no"))
+        if pno is not None:
+            found[pno] = {**item, "page_no": pno}
+    return found
+
+
+def parse(reply: ChatReply, expected: list[int]) -> list[dict[str, Any]]:
+    """页号必须与窗口完全一致；缺页/多页整窗失败，不写半截。"""
+    found = _extract_found(reply, single_expected=expected[0] if len(expected) == 1 else None)
     missing = sorted(set(expected) - set(found))
     extra = sorted(set(found) - set(expected))
     if missing or extra:
@@ -167,20 +205,90 @@ def parse(reply: ChatReply, expected: list[int]) -> list[dict[str, Any]]:
     return [_clean(found[page_no], page_no) for page_no in expected]
 
 
-def run_window(db: Session, material: Material, page_nos: list[int],
-               settings: AuthoringSettings, effort: str) -> tuple[list[int], dict[str, int]]:
-    """整理一窗并落库；返回写入的页码与本窗用量。"""
-    content, states, images = _payload(material, page_nos, db)
+def _usage_dict(reply: ChatReply) -> dict[str, int]:
+    usage = reply.get("usage") or {}
+    return {
+        key: int(usage.get(key) or 0)
+        for key in ("prompt_tokens", "completion_tokens", "cache_hit_tokens", "cache_miss_tokens")
+    }
+
+
+def call_window(
+    material: Material | str,
+    page_nos: list[int],
+    content: str,
+    images: list[dict[str, Any]],
+    settings: AuthoringSettings,
+    effort: str,
+    *,
+    per_page: dict[int, tuple[dict[str, Any], list[dict[str, Any]]]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int], str]:
+    """线程安全的纯模型调用与解析；多页窗偶发漏页时逐页补调缺失页。"""
     reply = _call(material, content, images, settings, effort)
-    pages = parse(reply, page_nos)
+    spent = _usage_dict(reply)
+    model_name = str(reply.get("model") or "")
+    try:
+        return parse(reply, page_nos), spent, model_name
+    except ValueError:
+        if not per_page or len(page_nos) <= 1:
+            raise
+        found = _extract_found(reply)
+        missing = sorted(set(page_nos) - set(found))
+        extra = sorted(set(found) - set(page_nos))
+        if not missing or extra or len(missing) >= len(page_nos):
+            raise
+        for miss_no in missing:
+            repair_body = {"pages": [per_page[miss_no][0]]}
+            repair_images = list(per_page[miss_no][1])
+            repair_content = _prefix(material) + "\n\n" + json.dumps(repair_body, ensure_ascii=False, sort_keys=True)
+            repair_reply = _call(material, repair_content, repair_images, settings, effort)
+            repair_spent = _usage_dict(repair_reply)
+            for key in spent:
+                spent[key] += repair_spent.get(key, 0)
+            found.update(_extract_found(repair_reply, single_expected=miss_no))
+        still_missing = sorted(set(page_nos) - set(found))
+        still_extra = sorted(set(found) - set(page_nos))
+        if still_missing or still_extra:
+            detail = "，".join(
+                filter(
+                    None,
+                    [
+                        f"缺少第 {still_missing} 页" if still_missing else "",
+                        f"多出第 {still_extra} 页" if still_extra else "",
+                    ],
+                )
+            )
+            raise ValueError(f"整理结果页码与输入不一致：{detail}")
+        return [_clean(found[page_no], page_no) for page_no in page_nos], spent, model_name
+
+
+def commit_window(
+    db: Session,
+    material: Material,
+    pages: list[dict[str, Any]],
+    states: dict[int, str],
+    model_name: str,
+    settings: AuthoringSettings,
+    effort: str,
+) -> list[int]:
+    """主线程将一窗整理结果落库。"""
     for page in pages:
         repository.upsert_content(
             db, material, page["page_no"], title=page["title"], topic=page["topic"], tags=page["tags"],
             text=page["text"], source="ai", image_state=states[page["page_no"]],
-            model=str(reply.get("model") or ""), prompt_version=DIGEST_VERSION,
+            model=model_name, prompt_version=DIGEST_VERSION,
             input_hash=input_hash(material, page["page_no"], settings, effort))
     db.commit()
-    usage = reply.get("usage") or {}
-    return [page["page_no"] for page in pages], {
-        key: int(usage.get(key) or 0)
-        for key in ("prompt_tokens", "completion_tokens", "cache_hit_tokens", "cache_miss_tokens")}
+    return [page["page_no"] for page in pages]
+
+
+def run_window(db: Session, material: Material, page_nos: list[int],
+               settings: AuthoringSettings, effort: str) -> tuple[list[int], dict[str, int]]:
+    """整理一窗并落库；返回写入的页码与本窗用量。"""
+    content, states, images, per_page = prepare_window(db, material, page_nos)
+    pages, spent, model_name = call_window(material, page_nos, content, images, settings, effort, per_page=per_page)
+    written = commit_window(db, material, pages, states, model_name, settings, effort)
+    return written, spent
+
+
+_DEFAULT_RUN_WINDOW = run_window

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import ColumnElement, Row, Select, case, func, select
 from sqlalchemy.orm import Session, load_only
 
-from ..auth import require_admin, require_teacher
+from ..auth import as_utc, require_admin, require_teacher
 from ..db import get_db
 from ..materials.access import teacher_material as visible_material
 from ..models import CourseInstance, Material, User, now
@@ -52,8 +52,8 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, can
     return {"id": job.id if job else None, "material_id": material.id, "title": material.title, "material_kind": material.kind,
             "kind": job.kind if job else "", "status": status, "running": running,
             **task_progress.describe(job, status, latest_db), "queue_dismissed": dismissed,
-            "started_at": job.started_at.isoformat() if job and job.started_at else None,
-            "finished_at": job.finished_at.isoformat() if job and job.finished_at else None,
+            "started_at": as_utc(job.started_at).isoformat() if job and job.started_at else None,
+            "finished_at": as_utc(job.finished_at).isoformat() if job and job.finished_at else None,
             "cancellable": cancellable, "retryable": retryable, "retry_note": note}
 
 

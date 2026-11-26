@@ -214,11 +214,14 @@ def list_questions(db: Session, user: User, course_id: int | None = None):
     return [teacher_question_payload(db, item, user) for item in db.scalars(query.order_by(Question.id))]
 
 
-def question_page(db, user, course_id, page, size, search, kind, status, source, knowledge_point_id=None, *, reviewable=False):
+def question_page(db, user, course_id, page, size, search, kind, status, source, knowledge_point_id=None, chapter_id=None, *, reviewable=False):
     from app.course_content.catalog import page_window, point_detail
 
     query = visible_questions(db, user, course_id, reviewable=reviewable).with_only_columns(
         Question.id, Question.title, Question.kind, Question.source_type, Question.status)
+    if chapter_id is not None:
+        linked_ch = select(QuestionChapter.question_id).where(QuestionChapter.chapter_id == chapter_id)
+        query = query.where(Question.id.in_(linked_ch))
     if knowledge_point_id is not None:
         point_detail(db, user, course_id, knowledge_point_id)
         linked = select(QuestionKnowledgePoint.question_id).where(QuestionKnowledgePoint.knowledge_point_id == knowledge_point_id)

@@ -39,6 +39,8 @@ def material_file(material_id: int, classroom_id: int, request: Request, user: U
     from app.course_content.access import authorize_material
 
     item = authorize_material(db, user, classroom_id, material_id)
+    if item.status == "ready" and item.kind == "presentation" and not item.content.get("preview_key"):
+        raise HTTPException(404, "此演示文稿仅提供已提取的页正文")
     return stream_material(item, request)
 
 

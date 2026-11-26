@@ -35,6 +35,7 @@ def has_learning_history(db, course_id):
 
 
 def preview_impact(db, instance, bundle):
+    from app.course_packages.exams import current_rows as current_exam_rows, preview_exams
     from app.course_packages.narrations import preview_narrations, revision
 
     narration_revision = revision(db, instance)
@@ -52,6 +53,8 @@ def preview_impact(db, instance, bundle):
     for kind, incoming in bundle["data"].items():
         compare(kind, {row["id"]: row for row in previous[kind]}, {row["id"]: row for row in incoming})
     diff["narrations"] = preview_narrations(db, instance, bundle)
+    if current_exam_rows(db, instance) or bundle.get("exams_present") or bundle.get("exams"):
+        diff["exams"] = preview_exams(db, instance, bundle)
     compare("answers", {row["id"]: row for row in snapshot[1]} if snapshot else {}, {row["id"]: row for row in bundle["secrets"]})
     old_config = snapshot[2] if snapshot else {}
     old_assets = {row["id"]: row["sha256"] for row in old_config.get("_assets", [])}
@@ -76,7 +79,10 @@ def preview_impact(db, instance, bundle):
     blockers, learning_impact = [], []
     if instance:
         from app.db import RetirableContent
+        from app.lectio.jobs import has_active_course_jobs
 
+        if has_active_course_jobs(db, instance.id):
+            blockers.append("课程备课任务仍在处理，请完成后重新预览")
         for model in PACKAGE_MODELS:
             if not issubclass(model, RetirableContent):
                 continue

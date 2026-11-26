@@ -5,7 +5,7 @@
   <template v-else>
     <PdfReader @ready="emit('pageReady', $event)"
       @timeline="emit('timeline', $event)"
-      v-if="['pdf', 'presentation'].includes(material.kind)"
+      v-if="usesPdfReader"
       :url="fileUrl"
       :page="pdfPage"
       :title="material.title"
@@ -17,14 +17,22 @@
       <div class="lesson-reading-card">
         <GamePanelHeader class="reader-card-title" :title="material.kind === 'video' ? '视频浏览' : '文本浏览'" :icon="material.kind === 'video' ? 'video' : 'book'" :detail="material.title" heading />
         <article
-          v-if="material.kind === 'text' && currentPage"
+          v-if="material.kind !== 'video' && currentPage"
           class="lesson-text"
           aria-label="当前课件文本"
           tabindex="0"
         >
           <h3 v-if="currentPage.title">{{ currentPage.title }}</h3>
-          <p>{{ currentPage.text }}</p>
+          <p>{{ currentPage.text || "本页没有可显示的文本。" }}</p>
         </article>
+        <LectureStage
+          v-if="material.kind === 'presentation' && currentPage"
+          :material-id="material.id"
+          :page-no="currentPage.page_no"
+          :total-pages="material.pages.length"
+          @page="openLecturePage"
+          @timeline="emit('timeline', $event)"
+        />
         <video
           v-if="material.kind === 'video' && mediaBlob"
           :ref="setVideoElement"
@@ -47,7 +55,7 @@
         </p>
       </div>
       <nav
-        v-if="material.kind === 'text' && material.pages.length"
+        v-if="material.kind !== 'video' && material.pages.length"
         class="reader-toolbar lesson-pagination"
         aria-label="课件分页"
       >
@@ -90,9 +98,11 @@ import type { Material } from "../../shared/types";
 import type { LectureSegment } from "../../shared/lectureTimeline";
 import type { useLessonVideo } from "./useLessonVideo";
 const PdfReader = defineAsyncComponent(() => import("./PdfReader.vue"));
+const LectureStage = defineAsyncComponent(() => import("./LectureStage.vue"));
 const props = defineProps<{
   material: Material;
   fileUrl: string;
+  usesPdfReader: boolean;
   pdfPage: number;
   pageIndex: number;
   mediaBlob: string;
@@ -109,5 +119,9 @@ const emit = defineEmits<{
 const currentPage = computed(() => props.material.pages[props.pageIndex]);
 function setVideoElement(element: Element | ComponentPublicInstance | null) {
   emit("videoElement", element instanceof HTMLVideoElement ? element : undefined);
+}
+function openLecturePage(pageNo: number) {
+  const index = props.material.pages.findIndex(page => page.page_no === pageNo);
+  if (index >= 0) emit("index", index);
 }
 </script>

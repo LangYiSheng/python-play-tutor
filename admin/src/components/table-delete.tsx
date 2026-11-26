@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -80,7 +80,13 @@ export function useTableDelete<T extends Row>(url: (row: T) => string, reload: (
   return { selected, isSelected, toggle, togglePage, ask, confirm, targets, busy, errors, completed, cascade, cascadeDone, clear: () => setSelected([]) };
 }
 
-export function DeleteSelection<T extends Row>({ actions }: { actions: ReturnType<typeof useTableDelete<T>> }) {
+export function DeleteSelection<T extends Row>({
+  actions,
+  extraActions,
+}: {
+  actions: ReturnType<typeof useTableDelete<T>>;
+  extraActions?: ReactNode;
+}) {
   const { selected, targets, busy, errors, completed, clear, ask, confirm } = actions;
   return (
     <>
@@ -88,9 +94,12 @@ export function DeleteSelection<T extends Row>({ actions }: { actions: ReturnTyp
         <div className="selection-bar">
           <span>已选择 {selected.length} 条</span>
           <Button variant="ghost" size="sm" disabled={busy} onClick={clear}>取消选择</Button>
-          <Button className="ml-auto" variant="destructive" size="sm" disabled={busy} onClick={() => ask(selected)}>
-            <Trash2 />批量删除
-          </Button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {extraActions}
+            <Button variant="destructive" size="sm" disabled={busy} onClick={() => ask(selected)}>
+              <Trash2 />批量删除
+            </Button>
+          </div>
         </div>
       )}
       {actions.cascade && targets.length > 0 && targets.every(row => actions.cascade!.kind(row)) ?

@@ -25,7 +25,11 @@ def configuration(service: Service, db: Session | None = None, *, include_key=Tr
             value["api_key"] = ""
         return value
     try:
-        key = cipher().decrypt(row.encrypted_key.encode()).decode() if include_key and row.encrypted_key else ""
+        key = cipher().decrypt(row.encrypted_key.encode()).decode().strip() if include_key and row.encrypted_key else ""
     except InvalidToken:
         raise HTTPException(503, "服务密钥无法解密，请恢复对应主密钥文件") from None
-    return {**row.configuration, "api_key": key}
+    merged = {**row.configuration, "api_key": key}
+    for field in ("base_url", "model", "vision_model", "voice"):
+        if isinstance(merged.get(field), str):
+            merged[field] = merged[field].strip()
+    return merged

@@ -75,7 +75,7 @@ export interface Material {
   kind: string;
   status: string;
   pages: Page[];
-  media_url?: string;
+  media_url?: string | null;
   notice?: string;
   chapter_id?: number;
   chapter_ids?: number[];

@@ -180,7 +180,7 @@ def test_batch_dependency_closure_and_old_delete_cannot_bypass(client, db, teach
     chapter, material, _, questions, activity = authored
     for path in (f'chapters/{chapter.id}', f'materials/{material.id}', f'questions/{questions[0].id}', f'activities/{activity.id}'):
         assert client.delete(f"/api/teacher/courses/{classroom['course_id']}/{path}", headers=teacher['headers']).status_code == 409
-    result = client.post(f'/api/teacher/courses/{classroom['course_id']}/content-deletions/preview', headers=teacher['headers'], json={
+    result = client.post(f"/api/teacher/courses/{classroom['course_id']}/content-deletions/preview", headers=teacher['headers'], json={
         'targets': [{'kind': 'question', 'id': q.id} for q in questions]})
     assert result.status_code == 200, result.text
     plan = result.json()
@@ -223,3 +223,107 @@ def test_package_import_cannot_hard_delete_parent_of_retired_content(client, db,
     impact = preview_impact(db, instance, bundle)
     assert any('历史保留内容引用' in message for message in impact['blockers'])
     assert db.scalar(select(Chapter).where(Chapter.id == chapter.id))
+
+
+def test_material_delete_retires_sole_source_lectio_points_and_trims_shared(client, db, teacher, classroom):
+    owner = teacher['id']
+    chapter = Chapter(id=9101, title='删除测试章', order_index=101, owner_id=owner)
+    mat_a = Material(id=9101, stable_id='mat-del-a', title='旧课件A', owner_id=owner, content={'pages': []})
+    mat_b = Material(id=9102, stable_id='mat-del-b', title='保留课件B', owner_id=owner, content={'pages': []})
+    kp_sole = KnowledgePoint(
+        id=9101,
+        chapter_id=9101,
+        title='仅来自A的知识点',
+        owner_id=owner,
+        content={'lectio': {'section': '1.1', 'brief': 'A独有', 'sources': [{'material_stable_id': 'mat-del-a', 'pages': [1, 2]}]}},
+    )
+    kp_shared = KnowledgePoint(
+        id=9102,
+        chapter_id=9101,
+        title='A和B共有的知识点',
+        owner_id=owner,
+        content={
+            'lectio': {
+                'section': '1.2',
+                'brief': '共有',
+                'sources': [
+                    {'material_stable_id': 'mat-del-a', 'pages': [3]},
+                    {'material_stable_id': 'mat-del-b', 'pages': [5]},
+                ],
+            }
+        },
+    )
+    kp_manual = KnowledgePoint(id=9103, chapter_id=9101, title='手工知识点', owner_id=owner, content={'summary_markdown': ''})
+    db.add_all([chapter, mat_a, mat_b, kp_sole, kp_shared, kp_manual])
+    db.flush()
+    db.add_all([MaterialChapter(material_id=9101, chapter_id=9101), MaterialChapter(material_id=9102, chapter_id=9101)])
+    db.commit()
+
+    plan = preview(client, teacher, classroom, 'material', mat_a.id)
+    assert not plan['blockers'], plan
+    assert {(r['kind'], r['id']) for r in plan['remove']} == {('material', '9101'), ('knowledge_point', '9101')}
+    assert any(d['kind'] == 'knowledge_point' and d['id'] == '9102' for d in plan['detach'])
+
+    res = confirm(client, teacher, classroom, plan)
+    assert res.status_code == 200, res.text
+    assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9101)) is None
+    kept_shared = db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9102))
+    assert kept_shared is not None
+    assert kept_shared.content['lectio']['sources'] == [{'material_stable_id': 'mat-del-b', 'pages': [5]}]
+    assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9103)) is not None
+
+
+def test_direct_knowledge_point_deletion_unlinks_questions_and_preserves_them(client, db, teacher, classroom, authored):
+    _, _, point, questions, _ = authored
+    plan = preview(client, teacher, classroom, 'knowledge_point', point.id)
+    assert not plan['blockers'], plan
+    assert {(r['kind'], r['id']) for r in plan['remove']} == {('knowledge_point', str(point.id))}
+    assert any(d['kind'] == 'question' and d['id'] == questions[0].id for d in plan['detach'])
+
+    res = confirm(client, teacher, classroom, plan)
+    assert res.status_code == 200, res.text
+    assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == point.id)) is None
+    assert db.scalar(select(Question).where(Question.id == questions[0].id)) is not None
+    assert db.get(QuestionKnowledgePoint, (questions[0].id, point.id)) is None
+
+
+def test_knowledge_point_deletion_can_opt_in_to_delete_sole_related_questions(client, db, teacher, classroom):
+    owner = teacher['id']
+    chapter = Chapter(id=9201, title='可选删题章', order_index=102, owner_id=owner)
+    kp_del = KnowledgePoint(id=9201, chapter_id=9201, title='待删知识点', owner_id=owner)
+    kp_keep = KnowledgePoint(id=9202, chapter_id=9201, title='保留知识点', owner_id=owner)
+    q_sole = Question(id='opt-del-sole', title='独属题', kind='boolean', prompt='判断1', owner_id=owner, status='ready')
+    q_shared = Question(id='opt-del-shared', title='共享题', kind='boolean', prompt='判断2', owner_id=owner, status='ready')
+    db.add_all([chapter, kp_del, kp_keep, q_sole, q_shared])
+    db.flush()
+    db.add_all([
+        QuestionChapter(question_id='opt-del-sole', chapter_id=9201),
+        QuestionChapter(question_id='opt-del-shared', chapter_id=9201),
+        QuestionKnowledgePoint(question_id='opt-del-sole', knowledge_point_id=9201),
+        QuestionKnowledgePoint(question_id='opt-del-shared', knowledge_point_id=9201),
+        QuestionKnowledgePoint(question_id='opt-del-shared', knowledge_point_id=9202),
+    ])
+    db.commit()
+
+    # Default preview reports 1 sole related question without removing it
+    base_plan = preview(client, teacher, classroom, 'knowledge_point', kp_del.id)
+    assert base_plan['related_question_count'] == 1
+    assert {(r['kind'], r['id']) for r in base_plan['remove']} == {('knowledge_point', '9201')}
+
+    # Opt-in preview includes only the sole-linked question, keeping the shared question detached & preserved
+    opt_res = client.post(
+        f"/api/teacher/courses/{classroom['course_id']}/content-deletions/preview",
+        headers=teacher['headers'],
+        json={'targets': [{'kind': 'knowledge_point', 'id': '9201'}], 'include_related_questions': True},
+    )
+    assert opt_res.status_code == 200, opt_res.text
+    opt_plan = opt_res.json()
+    assert opt_plan['related_question_count'] == 1
+    assert {(r['kind'], r['id']) for r in opt_plan['remove']} == {('knowledge_point', '9201'), ('question', 'opt-del-sole')}
+    assert any(d['kind'] == 'question' and d['id'] == 'opt-del-shared' for d in opt_plan['detach'])
+
+    conf = confirm(client, teacher, classroom, opt_plan)
+    assert conf.status_code == 200, conf.text
+    assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9201)) is None
+    assert db.scalar(select(Question).where(Question.id == 'opt-del-sole')) is None
+    assert db.scalar(select(Question).where(Question.id == 'opt-del-shared')) is not None

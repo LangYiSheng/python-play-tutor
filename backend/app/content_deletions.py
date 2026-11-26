@@ -25,7 +25,7 @@ MODELS = {"chapter": Chapter, "material": Material, "question": Question, "activ
           "knowledge_point": KnowledgePoint}
 LABELS = {"chapter": "章节", "material": "资料", "question": "题目", "activity": "活动",
           "knowledge_point": "知识点"}
-Kind = Literal["chapter", "material", "question", "activity"]
+Kind = Literal["chapter", "material", "question", "activity", "knowledge_point"]
 Teacher = Annotated[User, Depends(require_teacher)]
 Database = Annotated[Session, Depends(get_db)]
 
@@ -39,6 +39,7 @@ class Target(BaseModel):
 class PreviewInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     targets: list[Target] = Field(min_length=1, max_length=100)
+    include_related_questions: bool = False
 
 
 class ConfirmInput(BaseModel):
@@ -49,6 +50,16 @@ class ConfirmInput(BaseModel):
 
 def title(row):
     return row.title
+
+
+def lectio_sources(point):
+    metadata = (point.content or {}).get("lectio")
+    sources = metadata.get("sources") if isinstance(metadata, dict) else None
+    return sources if isinstance(sources, list) else []
+
+
+def material_source_id(source):
+    return str(source.get("material_stable_id") or "") if isinstance(source, dict) else ""
 
 
 def plan_deletion(db, user, instance, targets):
@@ -72,7 +83,7 @@ def plan_deletion(db, user, instance, targets):
         require_scope(row, instance.id)
         if user.role != "admin" and row.owner_id != user.id:
             raise HTTPException(403, "只能删除自己管理的内容，共享课程由管理员维护")
-        add(target["kind"], target["id"], "本次选择")
+        add(target["kind"], target["id"], target.get("reason") or "本次选择")
 
     selections = list(db.scalars(select(ActivityQuestion).where(ActivityQuestion.activity_id.in_([r.id for r in rows["activity"].values()]))))
     questions_by_activity = {key: {str(link.question_id) for link in selections if str(link.activity_id) == key} for key in rows["activity"]}
@@ -84,6 +95,21 @@ def plan_deletion(db, user, instance, targets):
     for key, selected in questions_by_activity.items():
         if selected and selected <= set(retiring["question"]):
             add("activity", key, "删除所选题目后活动将为空")
+    retired_material_ids = {str(rows["material"][key].stable_id) for key in retiring["material"] if rows["material"][key].stable_id}
+    live_material_ids = {str(row.stable_id) for row in rows["material"].values() if row.stable_id} - retired_material_ids
+    retained_sources = {}
+    for key, row in rows["knowledge_point"].items():
+        if key in retiring["knowledge_point"] or not retired_material_ids:
+            continue
+        sources = lectio_sources(row)
+        remaining = [source for source in sources if material_source_id(source) not in retired_material_ids]
+        if len(remaining) == len(sources):
+            continue
+        has_summary = str((row.content or {}).get("summary_markdown") or "").strip()
+        if not has_summary and not any(material_source_id(source) in live_material_ids for source in remaining):
+            add("knowledge_point", key, "仅来源于本次删除的课件，将同步移除")
+        else:
+            retained_sources[key] = remaining
 
     if retiring["question"]:
         from .models import PracticeSession
@@ -124,7 +150,10 @@ def plan_deletion(db, user, instance, targets):
     point_ids = {int(key) for key in retiring["knowledge_point"]}
     for key, row in rows["activity"].items():
         if key not in retiring["activity"] and point_ids & set(row.content.get("knowledge_point_ids", [])):
-            unlink("activity", key, "解除已删除知识点的关联")
+            if row.content.get("practice_rules"):
+                blockers.append({"message": f"练习「{row.title}」仍使用待删除的知识点，请先调整练习目标", "kind": "activity", "id": key})
+            else:
+                unlink("activity", key, "解除已删除知识点的关联")
     for link in db.scalars(select(QuestionKnowledgePoint).where(QuestionKnowledgePoint.knowledge_point_id.in_(point_ids))):
         key = str(link.question_id)
         if key in rows["question"] and key not in retiring["question"]:
@@ -132,6 +161,8 @@ def plan_deletion(db, user, instance, targets):
     for key, row in rows["question"].items():
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             unlink("question", key, "清除已删除资料的来源引用与页码；题目保留")
+    for key in retained_sources:
+        unlink("knowledge_point", key, "移除已删除课件的页码来源；知识点保留")
     # Retain full rows/files, including records referenced only through JSON snapshots.
     evidence, learners = {}, set()
     association_tables = {"activity_questions", "material_chapters", "question_chapters", "question_knowledge_points", "question_secrets", "chapter_releases"}
@@ -185,20 +216,82 @@ def plan_deletion(db, user, instance, targets):
     return public, fingerprint, retiring, rows
 
 
+def _find_related_questions(db: Session, user: User, retiring: dict[str, dict[str, str]], rows: dict[str, dict[str, object]]) -> dict[str, str]:
+    """Identify editable questions exclusively tied to retiring KPs/chapters or sourced from retiring materials."""
+    q_rows = rows["question"]
+    if not q_rows:
+        return {}
+    editable_qids = {
+        qid for qid, q in q_rows.items()
+        if qid not in retiring["question"] and (user.role == "admin" or getattr(q, "owner_id", None) == user.id)
+    }
+    if not editable_qids:
+        return {}
+
+    related: dict[str, str] = {}
+    if retiring["knowledge_point"]:
+        live_kp_ids = {int(k) for k in rows["knowledge_point"]}
+        retiring_kp_ids = {int(k) for k in retiring["knowledge_point"]}
+        kp_by_q: dict[str, set[int]] = {}
+        for qid, kpid in db.execute(
+            select(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.knowledge_point_id).where(
+                QuestionKnowledgePoint.question_id.in_(editable_qids)
+            )
+        ):
+            if kpid in live_kp_ids:
+                kp_by_q.setdefault(str(qid), set()).add(kpid)
+        for qid, kp_set in kp_by_q.items():
+            if (kp_set & retiring_kp_ids) and kp_set <= retiring_kp_ids:
+                related[qid] = "仅关联本次删除的知识点，已勾选同步删除"
+
+    if retiring["material"]:
+        for qid in editable_qids:
+            q = q_rows[qid]
+            if str((getattr(q, "source", None) or {}).get("material_id")) in retiring["material"]:
+                related.setdefault(qid, "来源于本次删除的课件，已勾选同步删除")
+
+    if retiring["chapter"]:
+        live_ch_ids = {int(k) for k in rows["chapter"]}
+        retiring_ch_ids = {int(k) for k in retiring["chapter"]}
+        ch_by_q: dict[str, set[int]] = {}
+        for qid, cid in db.execute(
+            select(QuestionChapter.question_id, QuestionChapter.chapter_id).where(
+                QuestionChapter.question_id.in_(editable_qids)
+            )
+        ):
+            if cid in live_ch_ids:
+                ch_by_q.setdefault(str(qid), set()).add(cid)
+        for qid, ch_set in ch_by_q.items():
+            if (ch_set & retiring_ch_ids) and ch_set <= retiring_ch_ids:
+                related.setdefault(qid, "仅属于本次删除的章节，已勾选同步删除")
+
+    return related
+
+
 @router.post("/preview")
 def preview_deletion(course_id: int, body: PreviewInput, user: Teacher, db: Database):
     instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     instance = db.get(CourseInstance, instance_id)
-    targets = list({(t.kind, t.id): t.model_dump() for t in body.targets}.values())
-    plan, fingerprint, *_ = plan_deletion(db, user, instance, targets)
-    first = next(item for item in plan["remove"] if item["kind"] == targets[0]["kind"] and item["id"] == targets[0]["id"])
-    confirmation = first["title"] if len(targets) == 1 else f"删除所选{len(targets)}项"
+    base_targets = list({(t.kind, t.id): t.model_dump() for t in body.targets}.values())
+    plan, fingerprint, retiring, rows = plan_deletion(db, user, instance, base_targets)
+    related = _find_related_questions(db, user, retiring, rows)
+    related_count = len(related)
+    targets = base_targets
+    if body.include_related_questions and related:
+        targets = [
+            *base_targets,
+            *({"kind": "question", "id": qid, "reason": reason} for qid, reason in sorted(related.items())),
+        ]
+        plan, fingerprint, *_ = plan_deletion(db, user, instance, targets)
+    first = next(item for item in plan["remove"] if item["kind"] == base_targets[0]["kind"] and item["id"] == base_targets[0]["id"])
+    confirmation = first["title"] if len(base_targets) == 1 else f"删除所选{len(base_targets)}项"
     preview = ContentDeletionPreview(teacher_id=user.id, course_instance_id=instance_id,
                                      revision=instance.revision, targets=targets, fingerprint=fingerprint, confirmation=confirmation)
     db.add(preview)
     db.commit()
     return {"id": preview.id, "revision": preview.revision, "confirmation": confirmation,
-            "expires_at": as_utc(preview.created_at) + timedelta(minutes=15), **plan}
+            "expires_at": as_utc(preview.created_at) + timedelta(minutes=15),
+            "related_question_count": related_count, **plan}
 
 
 @router.post("/{preview_id}/confirm")
@@ -240,6 +333,14 @@ def confirm_deletion(course_id: int, preview_id: str, body: ConfirmInput, user: 
     for key, row in rows["question"].items():
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             row.source = {k: v for k, v in row.source.items() if k not in {"material_id", "page_no"}}
+    retired_material_ids = {str(rows["material"][key].stable_id) for key in retiring["material"] if rows["material"][key].stable_id}
+    for key, row in rows["knowledge_point"].items():
+        if key in retiring["knowledge_point"] or not retired_material_ids:
+            continue
+        sources = lectio_sources(row)
+        remaining = [source for source in sources if material_source_id(source) not in retired_material_ids]
+        if len(remaining) != len(sources):
+            row.content = {**row.content, "lectio": {**row.content["lectio"], "sources": remaining}}
     for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id.in_(course_class_ids(course_id)))):
         if release.chapter_id in chapter_ids:
             release.status = "paused"

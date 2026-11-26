@@ -31,7 +31,6 @@ it('keeps selected answers when renaming options, removes deleted answers and sa
   const user = userEvent.setup();
   render(<Host />);
   await user.click(screen.getByText('打开'));
-  await user.click(screen.getByRole('tab',{name:'答案'}));
   expect(screen.getByLabelText('选项1为正确答案')).toBeChecked();
   expect(screen.getByLabelText('选项2为正确答案')).toBeChecked();
   await user.clear(screen.getByLabelText('选项1'));
@@ -39,10 +38,46 @@ it('keeps selected answers when renaming options, removes deleted answers and sa
   // An empty option removes its selection; the teacher explicitly chooses the new value.
   await user.click(screen.getByLabelText('选项1为正确答案'));
   await user.click(screen.getByLabelText('删除选项2'));
+  await user.type(screen.getByLabelText('答案解析（可选）'), 'int 和 float 是数字类型');
   await user.click(screen.getByText('保存题目'));
   expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/courses/1/questions/q'), expect.objectContaining({
     options: ['integer', 'str'], answer: ['integer'], kind: 'multiple_choice',
+    source: { explanation: 'int 和 float 是数字类型' },
   }));
+});
+
+it('supports approving with keyboard shortcut A and ArrowRight/ArrowLeft queue navigation', async () => {
+  const put = vi.spyOn(api, 'put').mockResolvedValue({});
+  const onApproved = vi.fn();
+  const onPrev = vi.fn();
+  const onNext = vi.fn();
+  const user = userEvent.setup();
+  function QueueHost() {
+    const editor = useQuestionEditor(1, () => {});
+    return (
+      <>
+        <button onClick={() => editor.edit({ ...question, kind: 'single_choice', options: ['A', 'B'], answer: 'A' })}>打开</button>
+        <QuestionDialog
+          editor={editor}
+          courseId={1}
+          course={{ data: null }}
+          materials={{ data: [] }}
+          queue={{ index: 1, total: 3, hasPrev: true, hasNext: true, onPrev, onNext, onApproved }}
+        />
+      </>
+    );
+  }
+  render(<QueueHost />);
+  await user.click(screen.getByText('打开'));
+  await user.keyboard('{ArrowRight}');
+  expect(onNext).toHaveBeenCalledTimes(1);
+  await user.keyboard('{ArrowLeft}');
+  expect(onPrev).toHaveBeenCalledTimes(1);
+  await user.keyboard('a');
+  expect(put).toHaveBeenCalledWith(expect.stringContaining('/teacher/courses/1/questions/q'), expect.objectContaining({
+    status: 'ready',
+  }));
+  expect(onApproved).toHaveBeenCalledTimes(1);
 });
 
 it('preserves public and private cases independently across tabs', async () => {

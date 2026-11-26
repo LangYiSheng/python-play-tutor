@@ -100,6 +100,32 @@ resources: []});
     wrapper.unmount();
   });
 
+  it("renders a presentation without a PDF preview and records the displayed text pages", async () => {
+    const { pinia } = setup();
+    vi.spyOn(api, "get").mockResolvedValue({
+      id: 186, title: "演示文稿", kind: "presentation", status: "ready", media_url: null,
+      pages: [
+        { id: 101, page_no: 1, title: "变量", text: "为名称赋值" },
+        { id: 102, page_no: 2, title: "类型", text: "区分文本和数字" },
+      ],
+    });
+    const record = vi.spyOn(api, "post").mockResolvedValue({ id: "presentation-task" });
+    const wrapper = mount(LessonWorkspace, {
+      props: { materialId: 186, chapterId: 179 },
+      global: { plugins: [pinia], stubs: { AssistantPanel: true } },
+    });
+    await flushPromises();
+    expect(wrapper.get(".lesson-text").text()).toContain("为名称赋值");
+    await wrapper.findAll("button").find(button => button.text().trim() === "下一页")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".lesson-text").text()).toContain("区分文本和数字");
+    expect(record.mock.calls.map(([path, body]) => [path, (body as {page_id: number}).page_id])).toEqual([
+      ["/chapters/179/materials/186/participation?classroom_id=2", 101],
+      ["/chapters/179/materials/186/participation?classroom_id=2", 102],
+    ]);
+    wrapper.unmount();
+  });
+
   it("makes inactive compact regions hidden and inert while preserving reading position across the assistant view", async () => {
     const { pinia } = setup(true);
     vi.spyOn(api, "get").mockResolvedValue({

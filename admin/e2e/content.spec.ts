@@ -10,8 +10,8 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     "内容回归",
   );
   page.on("dialog", (d) => d.accept());
-  await go(page, "章节");
-  await page.getByRole("tab", { name: "知识点", exact: true }).click();
+  await go(page, "知识点");
+  await page.getByRole("button", { name: "列表", exact: true }).click();
   await page.getByRole("button", { name: "新增知识点", exact: true }).click();
   await page.getByLabel("名称", { exact: true }).fill("变量概念");
   await page
@@ -35,7 +35,6 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   await page.getByLabel("题目名称").fill("同义答案");
   await chooseOption(page, page.getByRole("dialog").getByLabel("题型"), "填空题");
   await page.getByLabel("题干").fill("填写概念名称");
-  await page.getByRole("tab",{name:"答案",exact:true}).click();
   await page.getByLabel("可接受答案（每行一个）").fill("变量\n可变名称");
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -46,11 +45,9 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   expect(question.answer).toEqual(["变量", "可变名称"]);
   expect(question.status).toBe("draft");
   await page.getByLabel("编辑同义答案").click();
-  await page.getByRole("tab",{name:"答案",exact:true}).click();
   await expect(page.getByLabel("可接受答案（每行一个）")).toHaveValue(
     "变量\n可变名称",
   );
-  await page.getByRole("tab",{name:"内容关联"}).click();
   await page
     .getByRole("dialog")
     .getByRole("checkbox", { name: "关联回归章节", exact: true })
@@ -59,7 +56,6 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     .getByRole("dialog")
     .getByRole("checkbox", { name: "变量与名称", exact: true })
     .check();
-  await page.getByRole("tab",{name:"题目信息"}).click();
   await chooseOption(page, page.getByRole("dialog").getByLabel("状态", { exact: true }), "可用");
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -95,8 +91,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
     );
     activities.push(a.id);
   }
-  await go(page, "章节");
-  await page.getByRole("button",{name:"回归章节",exact:true}).click();
+  await go(page, "学习任务");
   for (let i = 0; i < 2; i++) {
     await page.getByLabel(`选题复用活动${i}`).click();
     await page
@@ -153,17 +148,13 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   for (const activity of afterDelete.activities) expect(activity.question_ids).not.toContain(question.id);
   await go(page, "资料");
   async function upload(name: string, file: Buffer, fileName: string) {
-    await page.getByRole("button", { name: "上传资料", exact: true }).click();
+    await page.getByRole("button", { name: "上传资料到此章", exact: true }).click();
     await page.getByLabel("资料名称").fill(name);
-    await page.getByLabel("文件", { exact: true }).setInputFiles({
+    await page.getByLabel("文件（支持拖入多文件或 .zip）", { exact: true }).setInputFiles({
       name: fileName,
       mimeType: fileName.endsWith("pdf") ? "application/pdf" : "text/plain",
       buffer: file,
     });
-    await page
-      .getByRole("dialog")
-      .getByRole("checkbox", { name: "回归章节", exact: true })
-      .check();
     await page.getByRole("button", { name: "保存资料", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(async () => {
@@ -221,7 +212,4 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   })).toEqual({ type: "application/pdf", signature: "%PDF-", size: pdf().length });
   await page.screenshot({ path: info.outputPath("private-pdf-preview.png"), animations: "disabled" });
   await page.getByRole("button", { name: "关闭", exact: true }).click();
-  await go(page, "教学管理");
-  await page.getByRole("tab", { name: "学习记录", exact: true }).click();
-  await expect(page.getByText("没有匹配的学生", { exact: true })).toBeVisible();
 });

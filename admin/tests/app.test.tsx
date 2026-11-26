@@ -3,9 +3,9 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../src/App";
 import { setToken } from "../src/lib/api";
-vi.mock("../src/pages/content-list", async () => {
+vi.mock("../src/features/courseware/courseware-page", async () => {
   const { useDraft } = await import("../src/lib/drafts");
-  return { ContentListPage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
+  return { CoursewarePage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
 });
 vi.mock("../src/features/content-workspace/knowledge-graph", () => ({
   KnowledgeGraph: ({ courseId, initialReview }: { courseId: number; initialReview?: { materialId?: number } }) =>
@@ -36,7 +36,7 @@ it("cancelling draft discard prevents class creation and keeps the current class
   const user = userEvent.setup();
   render(<App />);
   await screen.findByLabelText("未保存资料");
-  expect(location.pathname + location.search).toBe("/teacher/content-list?course=1&tab=materials");
+  expect(location.pathname + location.search).toBe("/teacher/courseware?course=1");
   expect(screen.queryByRole("button", { name: "创建班级" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "班级管理" }));
   expect(window.confirm).toHaveBeenCalled();
@@ -92,7 +92,7 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   await screen.findByRole("heading", { name: "图谱课程 3" });
   expect(screen.queryByLabelText("待审批")).not.toBeInTheDocument();
   for (const group of [
-    ["班级管理", "学情统计", "定时开放"], ["内容列表", "设置"],
+    ["班级管理", "学情统计", "定时开放"], ["章节与课件", "题库与组卷", "学习任务", "设置"],
   ]) {
     const icons = group.map(name => {
       const role = ["学情统计", "设置"].includes(name) ? "button" : "link";
@@ -271,7 +271,7 @@ it("previews course deletion and requires the full name, while courses with teac
       const canDelete = course.id === 31;
       return json({name: course.name, revision: course.revision, confirmation: "preview/+=", can_delete: canDelete,
         blocked_reason: canDelete ? null : "课程存在历史教学班",
-        counts: {classrooms: canDelete ? 0 : 1, chapters: 2, materials: 1, knowledge_points: 3, questions: 4, activities: 1}});
+        counts: {classrooms: canDelete ? 0 : 1, chapters: 2, materials: 1, knowledge_points: 3, questions: 4, activities: 1, exam_drafts: 1}});
     }
     if (init.method === "DELETE") {
       remove(url);

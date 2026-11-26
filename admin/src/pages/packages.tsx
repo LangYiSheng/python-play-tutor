@@ -63,6 +63,7 @@ const labels: Record<string, string> = {
   releases: "发布安排",
   assets: "资源文件",
   narrations: "逐页讲稿与配音",
+  exams: "课程试卷",
   manifest: "包信息",
   answers: "答案与用例",
 };

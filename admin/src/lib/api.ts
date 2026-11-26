@@ -59,6 +59,8 @@ export const api = {
   get: <T>(p: string, signal?: AbortSignal) => request<T>(p, { signal }),
   post: <T>(p: string, b: unknown) =>
     request<T>(p, { method: "POST", body: JSON.stringify(b) }),
+  patch: <T>(p: string, b: unknown) =>
+    request<T>(p, { method: "PATCH", body: JSON.stringify(b) }),
   put: <T>(p: string, b: unknown) =>
     request<T>(p, { method: "PUT", body: JSON.stringify(b) }),
   delete: (p: string) => request<void>(p, { method: "DELETE" }),
@@ -93,6 +95,9 @@ export function download(blob: Blob, name: string) {
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

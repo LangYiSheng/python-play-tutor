@@ -6,19 +6,15 @@ test("教师真实视频私有预览与播放", async ({ page, request }, info) 
   // 14 self-authored 320×180 canvas frames with alternating colors and a counter, encoded as VP8.
   const bytes = await readFile(new URL("./fixtures/teacher-preview.webm", import.meta.url));
   await go(page, "资料");
-  await page.getByRole("button", { name: "上传资料", exact: true }).click();
+  await page.getByRole("button", { name: "上传资料到此章", exact: true }).click();
   await page.getByLabel("资料名称").fill("自制验收视频");
   await page
-    .getByLabel("文件", { exact: true })
+    .getByLabel("文件（支持拖入多文件或 .zip）", { exact: true })
     .setInputFiles({
       name: "test-video.webm",
       mimeType: "video/webm",
       buffer: bytes,
     });
-  await page
-    .getByRole("dialog")
-    .getByLabel("回归章节", { exact: true })
-    .check();
   await page.getByRole("button", { name: "保存资料", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(async () => {
@@ -52,10 +48,10 @@ test("外部转换器配置后 PPTX 转换为私有 PDF", async ({ page, request
   test.setTimeout(180000);
   await setup(page, request, "PPT回归");
   await go(page, "资料");
-  await page.getByRole("button", { name: "上传资料", exact: true }).click();
+  await page.getByRole("button", { name: "上传资料到此章", exact: true }).click();
   await page.getByLabel("资料名称").fill("自制演示文稿");
   await page
-    .getByLabel("文件", { exact: true })
+    .getByLabel("文件（支持拖入多文件或 .zip）", { exact: true })
     .setInputFiles(process.env.ADMIN_E2E_PPTX!);
   await page.getByRole("button", { name: "保存资料", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

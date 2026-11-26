@@ -32,6 +32,8 @@ export function useLessonSource(context: LessonSourceContext) {
   const currentOwner = () => !disposed && context.currentOwner();
   const current = (request: number) => currentOwner() && request === generation;
   const currentPage = computed(() => material.value?.pages[pageIndex.value]);
+  const usesPdfReader = computed(() => material.value?.kind === "pdf"
+    || (material.value?.kind === "presentation" && material.value.media_url !== null));
   const readingKey = computed(
     () =>
       `read:${context.userId}:${context.classroomId}:${`material-${material.value?.id ?? context.materialId()}`}`,
@@ -157,6 +159,7 @@ export function useLessonSource(context: LessonSourceContext) {
     mediaBlob,
     mediaError,
     currentPage,
+    usesPdfReader,
     readingKey,
     fileUrl,
     currentOwner,

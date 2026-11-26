@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ..models import Material, now
 from app.materials.storage import get_storage, storage_root
 from . import repository, tts
-from .contracts import AudioRecord
+from .contracts import AudioRecord, SpeechSettings
 from .models import PageNarration
 
 MEDIA_TYPES = {
@@ -73,8 +73,10 @@ def needs_audio(db: Session, material: Material, page_no: int) -> bool:
     return current_audio(db, material, page_no) is None
 
 
-def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecord:
-    """Speak one approved page. Refuses unapproved wording instead of speaking a draft."""
+def prepare_page_tts(
+    db: Session, material: Material, page_no: int
+) -> tuple[AudioRecord | None, tuple[str, str, SpeechSettings] | None]:
+    """主线程校验单页可合成性；返回 (已复用结果, None) 或 (None, (text, digest, engine))。"""
     reason = tts.unavailable_reason(db)
     if reason:
         raise tts.SpeechUnavailable(reason)
@@ -89,12 +91,36 @@ def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecor
         raise ValueError("讲解为空，无法生成音频")
     digest = repository.text_hash(item.text)
     if item.audio_key and item.audio_text_hash == digest:
-        return AudioRecord(page_no=page_no, reused=True, key=item.audio_key,
-                           seconds=item.audio_seconds or _duration_seconds(item.text))
-    engine = tts.settings(db)
-    spoken = tts.synthesize(item.text, settings_override=engine)
-    seconds = _duration_seconds(item.text, spoken)
+        return AudioRecord(
+            page_no=page_no,
+            reused=True,
+            key=item.audio_key,
+            seconds=item.audio_seconds or _duration_seconds(item.text),
+        ), None
+    return None, (item.text, digest, tts.settings(db))
+
+
+def synthesize_audio_bytes(text: str, engine: SpeechSettings) -> tuple[bytes, str, int]:
+    """线程安全的纯 TTS 合成与可选转码；返回 (payload, format, seconds)。"""
+    spoken = tts.synthesize(text, settings_override=engine)
+    seconds = _duration_seconds(text, spoken)
     payload, stored_format = _stored_audio(spoken, engine["format"])
+    return payload, stored_format, seconds
+
+
+def commit_synthesized_page(
+    db: Session,
+    material: Material,
+    page_no: int,
+    digest: str,
+    payload: bytes,
+    stored_format: str,
+    seconds: int,
+) -> AudioRecord:
+    """主线程将合成好的音频落盘并写入数据库。"""
+    item = repository.row(db, material.id, page_no)
+    if item is None:
+        raise LookupError("本页还没有讲解")
     repository.ensure_lease(db, material.id)
     db.refresh(material, with_for_update=True)
     db.refresh(item, with_for_update=True)
@@ -109,7 +135,6 @@ def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecor
         storage.put(key, local)
     previous = item.audio_key
     if previous and previous != key:
-        # Replace rather than accumulate: one page keeps exactly one current recording.
         try:
             storage.delete(previous)
         except Exception:  # noqa: BLE001 -- a leftover object must not fail the new recording
@@ -120,6 +145,17 @@ def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecor
     item.audio_created_at = now()
     db.flush()
     return AudioRecord(page_no=page_no, reused=False, key=key, seconds=seconds)
+
+
+def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecord:
+    """Speak one approved page. Refuses unapproved wording instead of speaking a draft."""
+    reused, pending = prepare_page_tts(db, material, page_no)
+    if reused is not None:
+        return reused
+    assert pending is not None
+    text, digest, engine = pending
+    payload, stored_format, seconds = synthesize_audio_bytes(text, engine)
+    return commit_synthesized_page(db, material, page_no, digest, payload, stored_format, seconds)
 
 
 def _stored_audio(audio: bytes, fmt: str | None = None) -> tuple[bytes, str]:

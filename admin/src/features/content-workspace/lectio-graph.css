@@ -1,0 +1,404 @@
+.workspace:has(> .graph-main) {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.workspace:has(> .graph-main) > .topbar {
+  flex: none;
+}
+.main-content.graph-main {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lg-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.lg-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.lg-toolbar-left,
+.lg-toolbar-right {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lg-title-group {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-right: 4px;
+}
+
+.lg-title-group h1 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.lg-title-stats {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.lg-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(310px, 31%, 390px);
+}
+
+.lg-body.lg-list-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lg-body.lg-list-mode.lg-list-with-panel {
+  grid-template-columns: minmax(0, 1fr) clamp(310px, 31%, 390px);
+}
+
+.lg-canvas-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+}
+
+.lg-svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background-color: color-mix(in oklch, var(--muted) 32%, var(--background));
+  background-image: radial-gradient(circle, color-mix(in oklch, var(--border) 90%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.lg-svg.grabbing {
+  cursor: grabbing;
+}
+
+.lg-orbits .lg-orbit-glow {
+  fill: color-mix(in srgb, #0c7483 6%, transparent);
+  pointer-events: none;
+}
+
+.lg-orbits .lg-orbit-ring {
+  fill: none;
+  stroke: var(--border);
+  stroke-opacity: 0.72;
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+  pointer-events: none;
+}
+
+.lg-edges path {
+  fill: none;
+  stroke: var(--edge-color, #94a3b8);
+  stroke-opacity: 0.45;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transition: stroke 140ms, stroke-width 140ms, stroke-opacity 140ms, opacity 140ms;
+}
+
+.lg-edges.dimmed path:not(.hot) {
+  opacity: 0.18;
+}
+
+.lg-edges path.to-chapter {
+  stroke-width: 2.5;
+  stroke-opacity: 0.72;
+}
+
+.lg-edges path.to-section {
+  stroke-width: 1.9;
+  stroke-opacity: 0.64;
+}
+
+.lg-edges path.hot {
+  stroke: var(--edge-color, #0c7483);
+  stroke-opacity: 1;
+  stroke-width: 2.5;
+}
+
+.lg-node {
+  cursor: pointer;
+  transition: opacity 140ms;
+}
+
+.lg-node.dim {
+  opacity: 0.32;
+}
+
+.lg-node .lg-dot {
+  stroke-width: 1.6;
+  transition: stroke 140ms, stroke-width 140ms, filter 140ms, fill 140ms;
+}
+
+.lg-node .lg-halo,
+.lg-pill-halo {
+  fill: color-mix(in srgb, #d97706 16%, transparent);
+  stroke: #d97706;
+  stroke-width: 1.4;
+  pointer-events: none;
+}
+
+.lg-hub-aura {
+  fill: color-mix(in srgb, #0c7483 12%, transparent);
+  stroke: color-mix(in srgb, #0c7483 28%, transparent);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.lg-hub-pill {
+  fill: #0c7483;
+  stroke: color-mix(in srgb, #ffffff 30%, #0c7483);
+  stroke-width: 1.5;
+}
+
+.lg-node text.lg-hub-text {
+  fill: #ffffff;
+  stroke: none;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.lg-card-pill {
+  fill: var(--card);
+  stroke: color-mix(in srgb, var(--node-color, #0c7483) 50%, var(--border));
+  stroke-width: 1.4;
+}
+
+.lg-pill-gem {
+  fill: var(--node-color, #0c7483);
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+
+.lg-node text.lg-pill-text {
+  fill: var(--foreground);
+  stroke: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.lg-k-chapter text.lg-pill-text {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.lg-leaf-pill {
+  fill: var(--card);
+  stroke: color-mix(in srgb, var(--node-color, #0c7483) 35%, var(--border));
+  stroke-width: 1;
+}
+
+.lg-node.empty .lg-leaf-pill {
+  fill: var(--background);
+  stroke: var(--border);
+  stroke-dasharray: 3 3;
+}
+
+.lg-node text.lg-leaf-text {
+  fill: var(--foreground);
+  stroke: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lg-node.empty text.lg-leaf-text {
+  fill: var(--muted-foreground);
+}
+
+.view-radial .lg-k-point .lg-dot {
+  fill: var(--node-color, #0c7483);
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+
+.view-radial .lg-node.empty .lg-dot {
+  fill: var(--background);
+  stroke: var(--muted-foreground);
+  stroke-dasharray: 2 2;
+}
+
+.lg-node:hover .lg-card-pill,
+.lg-node.path:not(.on) .lg-card-pill {
+  fill: color-mix(in srgb, var(--node-color, #0c7483) 10%, var(--card));
+  stroke: var(--node-color, #0c7483);
+  stroke-width: 1.8;
+}
+
+.lg-node:hover .lg-leaf-pill,
+.lg-node.path:not(.on) .lg-leaf-pill {
+  fill: color-mix(in srgb, var(--node-color, #0c7483) 12%, var(--card));
+  stroke: var(--node-color, #0c7483);
+  stroke-width: 1.3;
+}
+
+.lg-node.on .lg-card-pill,
+.lg-node.on .lg-leaf-pill {
+  fill: color-mix(in srgb, #d97706 14%, var(--card));
+  stroke: #d97706;
+  stroke-width: 1.8;
+}
+
+.view-tree .lg-k-course .lg-dot {
+  fill: #0c7483;
+  stroke: #0c7483;
+  stroke-width: 2;
+}
+
+.view-tree .lg-k-chapter .lg-dot {
+  fill: var(--node-color, #0c7483);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.view-tree .lg-k-section .lg-dot {
+  fill: var(--card);
+  stroke: var(--node-color, #0c7483);
+  stroke-width: 2;
+}
+
+.view-tree .lg-k-point .lg-dot {
+  fill: color-mix(in srgb, var(--node-color, #0c7483) 22%, var(--card));
+  stroke: var(--node-color, #0c7483);
+}
+
+.view-tree .lg-node.empty .lg-dot {
+  fill: var(--background);
+  stroke: var(--muted-foreground);
+  stroke-dasharray: 2.5 2;
+}
+
+.view-tree .lg-node.on .lg-dot {
+  fill: #d97706;
+  stroke: var(--card);
+  stroke-width: 2.2;
+}
+
+.view-tree .lg-node text {
+  fill: var(--foreground);
+  font-size: 13.5px;
+  paint-order: stroke;
+  stroke: color-mix(in oklch, var(--muted) 32%, var(--background));
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.view-tree .lg-k-course text {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.view-tree .lg-k-chapter text {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.view-tree .lg-k-section text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lg-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 4;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--card) 90%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.lg-leg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lg-leg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.lg-zoom {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--card) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.lg-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 960px) {
+  .lg-body,
+  .lg-body.lg-list-mode.lg-list-with-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(360px, 55%) minmax(240px, 1fr);
+  }
+  .lg-canvas-wrap {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

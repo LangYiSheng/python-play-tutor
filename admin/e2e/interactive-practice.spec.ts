@@ -7,14 +7,15 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname;
     const data = path === "/api/auth/me" ? { id: 1, role: "teacher", name: "预览教师", must_change_password: false }
-      : path === "/api/classrooms" ? [{ id: 1, name: "预览班级", teacher_id: 1 }]
-      : path === "/api/teacher/courses" ? { chapters: [{ id: 1, title: "测试章节" }], knowledge_points: [], activities: [], npcs: [] } : [];
+      : path === "/api/classrooms" ? [{ id: 1, name: "预览班级", teacher_id: 1, course_id: 1 }]
+      : path === "/api/teacher/courses" ? [{ id: 1, teacher_id: 1, name: "预览课程" }]
+      : path === "/api/teacher/courses/1/catalog" ? { chapters: [{ id: 1, title: "测试章节" }], knowledge_points: [], activities: [], npcs: [] } : [];
     await route.fulfill({ json: data });
   });
 });
 
 test("教师在隔离预览内试答两种模板并检查脚本与私有答案是否一致", async ({ page }) => {
-  await page.goto("/teacher/questions");
+  await page.goto("/teacher/questions?course=1");
   await page.getByRole("button", { name: "新增题目" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "题型" }).click();
@@ -68,7 +69,7 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
     answer: 1, interactive: { html: "<p>练习内容</p>", css: "", js },
   };
   const writes: string[] = [];
-  await page.route(/\/api\/teacher\/questions(?:[/?]|$)/, async route => {
+  await page.route(/\/api\/teacher\/courses\/1\/questions(?:[/?]|$)/, async route => {
     if (route.request().method() === "PUT") {
       const body = route.request().postDataJSON();
       Object.assign(question, body);
@@ -77,7 +78,7 @@ test("旧题可试答和保留草稿，修复状态与判定回调后才能设�
     } else await route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/old")
       ? question : {items: [question], total: 1, page: 1} });
   });
-  await page.goto("/teacher/questions");
+  await page.goto("/teacher/questions?course=1");
   await page.getByRole("button", { name: "编辑已有交互题" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("tab", {name:"编写与试答"}).click();

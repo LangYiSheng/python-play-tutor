@@ -129,7 +129,8 @@ def get_service(user: Teacher, db: Database, period: DateRange, classroom_id: in
     row = db.get(JudgeService, 1)
     heartbeat = row.worker_seen_at if row else None
     return {"paused": bool(row and row.paused), "health": row.health if row else {},
-            "checked_at": row.checked_at if row else None, "worker_seen_at": heartbeat,
+            "checked_at": as_utc(row.checked_at) if row and row.checked_at else None,
+            "worker_seen_at": as_utc(heartbeat) if heartbeat else None,
             "worker_alive": bool(heartbeat and (now() - as_utc(heartbeat)).total_seconds() < 180),
             "counts": queue_counts(db, classroom_id, period),
             "global_counts": queue_counts(db) if user.role == "admin" else None,

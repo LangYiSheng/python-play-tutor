@@ -1,11 +1,14 @@
+import { useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { narrationApi } from "@/features/materials/narration/api";
 import { errorMessage, fileBlob } from "@/lib/api";
+import { useDraft } from "@/lib/drafts";
 import {
   AlertTriangle,
   Check,
+  ChevronRight,
   Play,
   Save,
   Sparkles,
@@ -41,9 +44,45 @@ export function NarrationPageEditor({
     run,
     busyNow,
     audioPage,
+    setPageNo,
+    next,
   } = review;
   const { clip, setClip, audioGeneration } = media;
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  useDraft(dirty);
+  useEffect(() => {
+    if (clip && audioElRef.current) {
+      audioElRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [clip]);
   if (!page || !data) return null;
+
+  const isAccepted = page.narration?.status === "accepted";
+  const nextDraftPage =
+    data.pages.find((item) => item.page_no > page.page_no && item.narration?.status === "draft")?.page_no ??
+    data.pages.find((item) => item.page_no !== page.page_no && item.narration?.status === "draft")?.page_no ??
+    next;
+
+  async function acceptAndNext() {
+    if (!page || busyNow || !draft.trim()) return;
+    if (isAccepted && !dirty) {
+      if (nextDraftPage) setPageNo(nextDraftPage);
+      return;
+    }
+    await run(
+      "accept",
+      async () => {
+        if (dirty) {
+          await narrationApi.save(courseId, materialId, page.page_no, draft);
+          ++audioGeneration.current;
+          setClip("");
+        }
+        await narrationApi.accept(courseId, materialId, page.page_no);
+        if (nextDraftPage) setPageNo(nextDraftPage);
+      },
+      nextDraftPage ? `第 ${page.page_no} 页已接受，已切至第 ${nextDraftPage} 页` : "本页讲解已接受",
+    );
+  }
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -71,7 +110,7 @@ export function NarrationPageEditor({
         {audioPage?.seconds ? ` · 实际音频 ${audioPage.seconds} 秒` : ""}
       </p>
       {page.narration?.anchors?.length ? (
-        <p className="hint">anchors：{page.narration.anchors.join(" / ")}</p>
+        <p className="hint">要点锚点：{page.narration.anchors.join(" / ")}</p>
       ) : null}
       <div className="flex flex-wrap gap-2">
         <Button
@@ -85,22 +124,27 @@ export function NarrationPageEditor({
                   courseId,
                   materialId,
                   page.page_no,
+                  undefined,
+                  review.scriptOptions(),
                 ),
-              "本页草稿已生成",
+              "本页讲稿草稿已生成",
             )
           }
         >
-          <Sparkles /> {busy === "generate" ? "生成中…" : "生成本页"}
+          <Sparkles /> {busy === "generate" ? "生成中…" : "生成本页讲稿"}
         </Button>
         <Button
           size="sm"
           variant="outline"
-          disabled={Boolean(busy) || !dirty}
+          disabled={busyNow || !dirty}
           onClick={() =>
             void run(
               "save",
-              () =>
-                narrationApi.save(courseId, materialId, page.page_no, draft),
+              async () => {
+                await narrationApi.save(courseId, materialId, page.page_no, draft);
+                ++audioGeneration.current;
+                setClip("");
+              },
               "已保存修改",
             )
           }
@@ -110,10 +154,10 @@ export function NarrationPageEditor({
         <Button
           size="sm"
           disabled={
-            Boolean(busy) ||
+            busyNow ||
             dirty ||
             !draft.trim() ||
-            page.narration?.status === "accepted"
+            isAccepted
           }
           title={dirty ? "先保存修改再接受" : undefined}
           onClick={() =>
@@ -126,10 +170,21 @@ export function NarrationPageEditor({
         >
           <Check /> 接受
         </Button>
+        {nextDraftPage && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busyNow || (!isAccepted && !draft.trim())}
+            title={isAccepted && !dirty ? "跳到下一待审页" : "自动保存修改、接受本页并跳到下一待审页"}
+            onClick={() => void acceptAndNext()}
+          >
+            {isAccepted && !dirty ? "下一待审页" : "接受并下一页"} <ChevronRight />
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
-          disabled={Boolean(busy) || dirty || !page.narration}
+          disabled={busyNow || dirty || !page.narration}
           onClick={() =>
             void run(
               "reject",
@@ -143,7 +198,7 @@ export function NarrationPageEditor({
         <Button
           size="sm"
           variant="ghost"
-          disabled={Boolean(busy) || !page.narration}
+          disabled={busyNow || !page.narration}
           onClick={() =>
             void run(
               "remove",
@@ -176,12 +231,12 @@ export function NarrationPageEditor({
             size="sm"
             variant="outline"
             disabled={
-              Boolean(busy) ||
+              busyNow ||
               audioState?.available === false ||
-              page.narration?.status !== "accepted"
+              !isAccepted
             }
             title={
-              page.narration?.status !== "accepted"
+              !isAccepted
                 ? "先接受本页讲解再生成音频"
                 : undefined
             }
@@ -212,7 +267,7 @@ export function NarrationPageEditor({
           <Button
             size="sm"
             variant="ghost"
-            disabled={Boolean(busy) || !audioPage?.ready}
+            disabled={busyNow || !audioPage?.ready}
             onClick={() =>
               void (async () => {
                 const ticket = ++audioGeneration.current;
@@ -232,16 +287,17 @@ export function NarrationPageEditor({
                   if (ticket === audioGeneration.current)
                     setError(errorMessage(e));
                 } finally {
-                  setBusy("");
+                  if (ticket === audioGeneration.current) setBusy("");
                 }
               })()
             }
           >
-            <Play /> 试听
+            <Play /> {busy === "listen" ? "加载中…" : "试听"}
           </Button>
         </div>
         {clip && (
           <audio
+            ref={audioElRef}
             controls
             autoPlay
             src={clip}

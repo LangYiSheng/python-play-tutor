@@ -4,10 +4,9 @@ import { setup, go, pdf } from "./helpers";
 test("从章节上传 PDF 并发布整份必读任务点", async ({page,request}) => {
   const {chapterId, scoped, headers}=await setup(page,request,"章节任务点");
   await go(page,"章节");
-  await page.getByRole("button",{name:"回归章节",exact:true}).click();
-  await page.getByRole("button",{name:"上传资料",exact:true}).click();
+  await page.getByRole("button",{name:"上传资料到此章",exact:true}).click();
   await page.getByLabel("资料名称").fill("单页讲义");
-  await page.getByLabel("文件",{exact:true}).setInputFiles({name:"单页讲义.pdf",mimeType:"application/pdf",buffer:pdf()});
+  await page.getByLabel("文件（支持拖入多文件或 .zip）",{exact:true}).setInputFiles({name:"单页讲义.pdf",mimeType:"application/pdf",buffer:pdf()});
   await page.getByRole("button",{name:"保存资料"}).click();
   await expect(page.getByRole("checkbox",{name:"单页讲义必读"})).toHaveCount(0);
   await page.getByRole("link",{name:"管理本章学习任务"}).click();

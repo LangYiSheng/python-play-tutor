@@ -218,7 +218,29 @@ def point_detail(point_id: int, course_id: int, db: Db, user: Teacher):
     evidence = defaultdict(list)
     for mid, page_no in source_pages(db, instance, user, page_refs(point.content.get("page_refs"))).values():
         evidence[mid].append(page_no)
+    lectio_meta = (point.content or {}).get("lectio")
+    if isinstance(lectio_meta, dict) and isinstance(lectio_meta.get("sources"), list):
+        stable_ids = [
+            src.get("material_stable_id")
+            for src in lectio_meta["sources"]
+            if isinstance(src, dict) and isinstance(src.get("material_stable_id"), str) and src.get("material_stable_id")
+        ]
+        if stable_ids:
+            mat_by_stable = {
+                row.stable_id: row.id
+                for row in db.scalars(
+                    visible(Material, instance, user)
+                    .where(Material.stable_id.in_(stable_ids))
+                    .options(load_only(Material.id, Material.stable_id))
+                )
+            }
+            for src in lectio_meta["sources"]:
+                if not isinstance(src, dict):
+                    continue
+                mid = mat_by_stable.get(src.get("material_stable_id"))
+                if mid is not None and isinstance(src.get("pages"), list):
+                    evidence[mid].extend(p for p in src["pages"] if type(p) is int and p > 0)
     questions = (visible(Question, instance, user).join(QuestionKnowledgePoint)
                  .where(QuestionKnowledgePoint.knowledge_point_id == point_id).with_only_columns(func.count(Question.id)))
     return {"id": point.id, "title": point.title, "chapter_id": point.chapter_id, "questions": db.scalar(questions),
-            "sources": [{"material_id": mid, "pages": sorted(pages)} for mid, pages in evidence.items()]}
+            "sources": [{"material_id": mid, "pages": sorted(set(pages))} for mid, pages in evidence.items()]}

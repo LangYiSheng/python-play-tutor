@@ -9,9 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { api, errorMessage, scoped } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
-import type { Chapter, Material } from "@/lib/types";
-import { MaterialDialog } from "@/features/materials/editor-dialog";
-import { useMaterialEditor } from "@/features/materials/use-editor";
+import type { Chapter } from "@/lib/types";
 
 interface Segment {start_seconds: number; end_seconds: number; label: string}
 interface Rule {scope?: "all" | "range" | "count"; start_page?: number; end_page?: number; count?: number; minimum_seconds?: number; segments?: Segment[]}
@@ -77,14 +75,9 @@ function readingRequirement({kind, rule}: Task) {
   return conditions.join("，") || "完整观看";
 }
 
-export function ChapterMaterials({courseId, chapter, editRequirements = false}: {
-  courseId: number; chapter: Chapter; editRequirements?: boolean;
-}) {
+export function ChapterMaterials({courseId, chapter}: { courseId: number; chapter: Chapter }) {
   const path = scoped(`/teacher/chapters/${chapter.id}/material-tasks`,courseId);
   const tasks = useResource<{items:Task[]}>(path);
-  const [attach,setAttach] = useState(false), [choice,setChoice] = useState("");
-  const materials = useResource<Material[]>(attach ? scoped("/teacher/materials",courseId) : null);
-  const editor = useMaterialEditor(courseId,tasks.reload);
   const [advanced,setAdvanced] = useState<Task|null>(null), [error,setError] = useState(""), [busy,setBusy] = useState(false);
   async function put(item: Pick<Task,"material_id"|"required"|"rule"|"order_index">) {
     await api.put(path+"/"+item.material_id,{required:item.required,rule:item.rule,order_index:item.order_index});
@@ -92,32 +85,26 @@ export function ChapterMaterials({courseId, chapter, editRequirements = false}: 
   }
   async function change(item: Parameters<typeof put>[0]) {
     setBusy(true); setError("");
-    try {await put(item); setAttach(false); setChoice("");} catch (err) {setError(errorMessage(err));}
+    try {await put(item);} catch (err) {setError(errorMessage(err));}
     finally {setBusy(false);}
   }
   const rows = tasks.data?.items ?? [];
   return <section className="surface p-4"><div className="mb-3 flex flex-wrap items-center gap-2">
     <h2 className="mr-auto font-semibold">学习资料</h2>
-    {!editRequirements && <><Button variant="outline" disabled={tasks.loading || Boolean(tasks.error)} onClick={()=>setAttach(true)}>关联已有资料</Button>
-    <Button variant="outline" onClick={()=>{editor.edit(null);editor.setChapterIds([chapter.id]);}}>上传资料</Button></>}</div>
-    <ErrorNotice message={error || tasks.error || materials.error}/>
-    {!editRequirements && attach && <div className="mb-3 flex gap-2"><SelectField aria-label="选择课程资料" value={choice} onValueChange={setChoice}>
-      <option value="">选择课程资料</option>{materials.data?.filter(m=>!rows.some(row=>row.material_id===m.id)).map(m=><option key={m.id} value={m.id}>{m.title}</option>)}
-    </SelectField><Button disabled={busy || !choice} onClick={()=>void change({material_id:Number(choice),required:false,rule:{},order_index:rows.length+1})}>关联</Button>
-    <Button variant="ghost" onClick={()=>setAttach(false)}>取消</Button></div>}
+    </div>
+    <ErrorNotice message={error || tasks.error}/>
     {tasks.loading ? <Loading/> : !rows.length && <p className="hint">本章暂无学习资料。</p>}
     {rows.map(row=><div key={row.material_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t py-3">
       <div className="min-w-0 flex-1 break-words"><p>{row.title}</p>
-        {editRequirements && row.required && <p className="hint">{readingRequirement(row)}</p>}
+        {row.required && <p className="hint">{readingRequirement(row)}</p>}
       </div>
-      {editRequirements ? <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <label className="inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm hover:bg-muted">
           <Checkbox aria-label={row.title+"必读"} checked={row.required} disabled={busy} onCheckedChange={required=>void change({...row,required})}/>必读
         </label>
         <Button size="sm" variant="ghost" aria-label={row.title+"高级设置"} onClick={()=>setAdvanced(row)}><SlidersHorizontal/>高级设置</Button>
-      </div> : <small className="hint">{row.required ? "必读" : "选读"}</small>}
+      </div>
     </div>)}
     {advanced && <MaterialOptions item={advanced} onSave={put} onClose={()=>setAdvanced(null)}/>}
-    {!editRequirements && <MaterialDialog course={{data:{chapters:[chapter]}}} editor={editor} fixedChapter/>}
   </section>;
 }
