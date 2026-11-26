@@ -15,8 +15,10 @@ type ModelSettings = {
   enabled: boolean; revision: number; base_url: string; model: string; reasoning_effort: string;
   context_window: number; compression_threshold: number; output_tokens: number;
   model_calls: number; tool_calls: number; timeout_seconds: number; request_tokens: number;
+  user_daily_requests: number;
   key_configured: boolean; key_mask: string; source: string; token_counting: string;
 };
+type ModelSettingsDraft = Omit<ModelSettings, 'user_daily_requests'> & { user_daily_requests: number | '' };
 const numbers = [
   ['context_window', '上下文上限（tokens）', 8192, 2000000],
   ['compression_threshold', '压缩阈值（tokens）', 4096, 1900000],
@@ -28,10 +30,12 @@ const numbers = [
 ] as const;
 
 export function AssistantModelSettings({ onSaved, actionsTarget, active }: SettingsActionPlacement & { onSaved?: (limits: Record<string, number>) => void }) {
-  const [saved, setSaved] = useState<ModelSettings>(), [draft, setDraft] = useState<ModelSettings>();
+  const [saved, setSaved] = useState<ModelSettings>(), [draft, setDraft] = useState<ModelSettingsDraft>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const dirty = !!saved && (JSON.stringify(saved) !== JSON.stringify(draft) || !!key || clearKey);
+  const dailyLimit = draft?.user_daily_requests;
+  const validDailyLimit = typeof dailyLimit === 'number' && Number.isSafeInteger(dailyLimit) && dailyLimit >= 0;
   useDraft(dirty);
   useEffect(() => {
     const controller = new AbortController();
@@ -41,11 +45,12 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
     return () => controller.abort();
   }, []);
   async function save() {
-    if (!draft || !saved || busy) return;
+    if (!draft || !saved || busy || !validDailyLimit) return;
     setBusy(true); setError('');
     try {
       const value = await api.put<ModelSettings>('/teacher/assistant/model', {
         enabled: draft.enabled, expected_revision: saved.revision, base_url: draft.base_url, model: draft.model, reasoning_effort: draft.reasoning_effort,
+        user_daily_requests: dailyLimit,
         ...Object.fromEntries(numbers.map(([name]) => [name, draft[name]])), api_key: key || null, clear_key: clearKey,
       });
       setSaved(value); setDraft(value); setKey(''); setClearKey(false);
@@ -61,13 +66,22 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <section className="space-y-4 py-4">
-    <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
+    <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} saveDisabled={!validDailyLimit} onSave={() => void save()} onCancel={() => {
       if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
     }} />
     <p className="hint">适用范围：全站学生答疑。由管理员维护，学习与练习共用此连接。保存设置不会调用模型。</p>
     <ErrorNotice message={error} />
     {draft && <fieldset disabled={busy} className="space-y-4">
       <Label className="gap-2"><Checkbox checked={draft.enabled} onCheckedChange={v => setDraft({ ...draft, enabled: Boolean(v) })} />开放全平台学生答疑</Label>
+      <div className="field max-w-md">
+        <Label htmlFor="model-user-daily-requests">每名学生每日提问上限</Label>
+        <Input id="model-user-daily-requests" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1}
+          aria-invalid={!validDailyLimit} aria-describedby="model-user-daily-requests-hint" value={draft.user_daily_requests}
+          onChange={e => setDraft({ ...draft, user_daily_requests: e.target.value === '' ? '' : e.target.valueAsNumber })} />
+        <p id="model-user-daily-requests-hint" className="hint">{validDailyLimit
+          ? '同一学生跨班共用，按北京时间每天 08:00 重置。设为 0 时学生无法提问。'
+          : '请输入大于或等于 0 的整数。'}</p>
+      </div>
       <div><Button variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void test()}><PlugZap />测试已保存连接</Button><p className="hint mt-2">测试会发送一次短请求；有未保存修改时，请先保存或取消。</p></div>
       <div className="grid items-start gap-4 md:grid-cols-2">
         <div className="field"><Label htmlFor="model-url">API 地址</Label><Input id="model-url" value={draft.base_url} onChange={e => setDraft({ ...draft, base_url: e.target.value })} /></div>

@@ -38,6 +38,7 @@ class ModelInput(BaseModel):
     output_tokens: int = Field(default=2048, ge=128, le=8192)
     timeout_seconds: int = Field(default=120, ge=10, le=300)
     request_tokens: int = Field(default=262144, ge=8192, le=2000000)
+    user_daily_requests: int | None = Field(default=None, strict=True, ge=0, le=9_007_199_254_740_991)
 
     @model_validator(mode="after")
     def valid(self):
@@ -75,15 +76,18 @@ def cipher(create=False):
 
 def configuration(db=None, *, include_key=True):
     row = db.get(AssistantModelSettings, 1) if db is not None else None
+    config = {**DEFAULTS, **(row.configuration if row is not None else {})}
+    if "user_daily_requests" not in config:
+        config["user_daily_requests"] = int(os.getenv("REBORN_AI_USER_DAILY_REQUESTS", "12"))
     if row is None:
-        return {**DEFAULTS, "base_url": os.getenv("REBORN_AI_BASE_URL", "https://api.openai.com/v1"),
+        return {**config, "base_url": os.getenv("REBORN_AI_BASE_URL", "https://api.openai.com/v1"),
                 "model": os.getenv("REBORN_AI_MODEL", ""), "api_key": os.getenv("REBORN_AI_API_KEY", "") if include_key else "",
                 "reasoning_effort": os.getenv("REBORN_AI_REASONING_EFFORT", "")}
     try:
         key = cipher().decrypt(row.encrypted_key.encode()).decode() if row.encrypted_key and include_key else ""
     except InvalidToken:
         raise HTTPException(503, "模型密钥无法解密，请恢复对应主密钥文件") from None
-    return {**DEFAULTS, **row.configuration, "api_key": key}
+    return {**config, "api_key": key}
 
 
 def model_kwargs(config, output_tokens):
@@ -120,7 +124,10 @@ def save_model(body: ModelInput, db: Annotated[Session, Depends(get_db)], user: 
     if row is None:
         row = AssistantModelSettings(id=1, revision=0)
         db.add(row)
-    row.configuration = body.model_dump(exclude={"expected_revision", "api_key", "clear_key"})
+    config = body.model_dump(exclude={"expected_revision", "api_key", "clear_key"}, exclude_none=True)
+    if "user_daily_requests" in (row.configuration or {}):
+        config.setdefault("user_daily_requests", row.configuration["user_daily_requests"])
+    row.configuration = config
     row.encrypted_key = cipher(create=True).encrypt(key.encode()).decode() if key else ""
     row.revision += 1
     db.commit()

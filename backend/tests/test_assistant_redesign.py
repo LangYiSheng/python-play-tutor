@@ -227,6 +227,7 @@ def test_cancelled_tool_pairs_are_not_replayed():
 
 def test_admin_model_settings_encrypted_and_teacher_denied(client, db, teacher, student, tmp_path, monkeypatch):
     monkeypatch.setenv("REBORN_AI_MASTER_KEY_FILE", str(tmp_path / "master.key"))
+    monkeypatch.setenv("REBORN_AI_USER_DAILY_REQUESTS", "17")
     path = "/api/teacher/assistant/model"
     assert client.get(path, headers=teacher["headers"]).status_code == 403
     assert client.get(path, headers=student["headers"]).status_code == 403
@@ -236,9 +237,12 @@ def test_admin_model_settings_encrypted_and_teacher_denied(client, db, teacher, 
     body = {"expected_revision": 0, "base_url": "https://example.invalid/v1", "model": "test", "api_key": secret}
     rejected = client.put(path, json={**body, "compression_threshold": 32000}, headers=teacher["headers"])
     assert rejected.status_code == 422 and secret not in rejected.text
+    for invalid_limit in (-1, 1.5, True):
+        assert client.put(path, json={**body, "user_daily_requests": invalid_limit}, headers=teacher["headers"]).status_code == 422
     response = client.put(path, json=body, headers=teacher["headers"])
     assert response.status_code == 200, response.text
     assert secret not in response.text and response.json()["key_configured"]
+    assert response.json()["user_daily_requests"] == 17
     db.expire_all()
     row = db.get(AssistantModelSettings, 1)
     assert secret not in row.encrypted_key and secret not in json.dumps(row.configuration)
@@ -246,9 +250,12 @@ def test_admin_model_settings_encrypted_and_teacher_denied(client, db, teacher, 
     monkeypatch.setenv("REBORN_AI_API_KEY", "different-environment-key")
     assert configuration(db)["api_key"] == secret
     assert client.put(path, json=body, headers=teacher["headers"]).status_code == 409
-    body.update(expected_revision=1, api_key=None, clear_key=True)
+    body.update(expected_revision=1, api_key=None, clear_key=True, user_daily_requests=25)
     assert client.put(path, json=body, headers=teacher["headers"]).status_code == 200
     assert not configuration(db)["api_key"]
+    body.pop("user_daily_requests")
+    response = client.put(path, json={**body, "expected_revision": 2}, headers=teacher["headers"])
+    assert response.status_code == 200 and response.json()["user_daily_requests"] == 25
 
 
 def test_model_settings_validate_context_headroom():

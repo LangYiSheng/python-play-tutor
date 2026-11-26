@@ -45,12 +45,13 @@ def test_retrieval_only_returns_real_scoped_pages():
     assert "error" in retrieval.excerpt(186, 999)
 
 
-def test_sse_records_current_material_session_and_daily_budget(client, db, student, classroom, monkeypatch):
+def test_sse_records_current_material_session_and_daily_budget(client, db, student, classroom, admin_account, tmp_path, monkeypatch):
     from langchain_core.messages import AIMessageChunk
 
     monkeypatch.setenv("REBORN_AI_API_KEY", "test-only-credential")
     monkeypatch.setenv("REBORN_AI_MODEL", "explicit-test-provider")
     monkeypatch.setenv("REBORN_AI_USER_DAILY_REQUESTS", "1")
+    monkeypatch.setenv("REBORN_AI_MASTER_KEY_FILE", str(tmp_path / "master.key"))
     monkeypatch.setattr(assistant, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
 
     class ExplicitFakeAgent:
@@ -78,7 +79,21 @@ def test_sse_records_current_material_session_and_daily_budget(client, db, stude
     assert log.status == "complete" and log.tokens == 28 and log.model_calls == 1
     session = db.get(AssistantSession, sid)
     assert session.user_id == student["id"] and session.classroom_id == classroom["id"] and session.material_id == 186
-    assert client.post(f"/api/assistant/sessions/{sid}/messages", json={"message": "再问一次"}, headers=student["headers"]).status_code == 429
+    messages = f"/api/assistant/sessions/{sid}/messages"
+    assert client.post(messages, json={"message": "再问一次"}, headers=student["headers"]).status_code == 429
+
+    model_path = "/api/teacher/assistant/model"
+    headers = admin_account["headers"]
+    configured = client.get(model_path, headers=headers).json()
+    assert configured["user_daily_requests"] == 1
+    settings = {"expected_revision": configured["revision"], "base_url": configured["base_url"], "model": configured["model"]}
+    saved = client.put(model_path, json={**settings, "user_daily_requests": 2}, headers=headers)
+    assert saved.status_code == 200 and saved.json()["user_daily_requests"] == 2
+    assert client.post(messages, json={"message": "再问一次"}, headers=student["headers"]).status_code == 200
+    assert client.post(messages, json={"message": "第三次提问"}, headers=student["headers"]).status_code == 429
+    saved = client.put(model_path, json={**settings, "expected_revision": saved.json()["revision"], "user_daily_requests": 0}, headers=headers)
+    assert saved.status_code == 200 and saved.json()["user_daily_requests"] == 0
+    assert client.post(messages, json={"message": "关闭后提问"}, headers=student["headers"]).status_code == 429
 
 
 def test_foreign_page_and_client_privilege_fields_rejected(client, student, classroom, monkeypatch):
