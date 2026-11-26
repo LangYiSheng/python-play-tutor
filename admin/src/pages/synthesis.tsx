@@ -1,10 +1,13 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { useEffect, useState } from 'react';
 import { Eye, Headphones, NotebookPen, RefreshCw } from 'lucide-react';
-import { PageHeader, ErrorNotice, Loading, Empty, Pager } from '@/components/common';
+import { PageHeader, ErrorNotice, Loading, Pager } from '@/components/common';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SelectField } from '@/components/select-field';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { NarrationReview } from '@/features/materials/narration/review';
 import { NarrationPlayer } from '@/features/materials/narration/player';
@@ -32,7 +35,7 @@ export function Synthesis({ courseId }: { courseId?: number }) {
 function SynthesisPage({ courseId }: { courseId?: number }) {
   const [query, setQuery] = useState(''), [status, setStatus] = useState('all');
   const [view, setView] = useState('running');
-  const [page, setPage] = useState(1), [size, setSize] = useState(25), [refresh, setRefresh] = useState(0);
+  const [page, setPage] = useState(1), [size, setSize] = useState(DEFAULT_PAGE_SIZE), [refresh, setRefresh] = useState(0);
   const [data, setData] = useState<Overview>(), [error, setError] = useState('');
   const [review, setReview] = useState<Task>(), [listen, setListen] = useState<Task>(), [selected, setSelected] = useState<Task>();
   const commands = useTaskCommands(courseId, () => setRefresh(n => n + 1));
@@ -64,9 +67,9 @@ function SynthesisPage({ courseId }: { courseId?: number }) {
         <option value="all">全部状态</option>{Object.entries(statuses).filter(([key]) => key !== 'running' && key !== 'cancelling').map(([key, label]) => <option value={key} key={key}>{label}</option>)}
       </SelectField>}
       {data && <span className="hint">处理中 {data.counts.running} · 失败 {data.counts.failed} · 待核查 {data.counts.interrupted}</span>}
-    </div>
-    {!data ? !error && <Loading /> : <div className="surface overflow-hidden">
-      <Table><TableHeader><TableRow><TableHead>任务 / 资料</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+    <span id="synthesis-columns-0" className="ml-auto" /></div>
+    {!data ? !error && <Loading /> : <div>
+      {data.items.length > 0 && <ManagementTable toolsId="synthesis-columns-0" pageSize={{value:size,total:data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow><TableHead>任务 / 资料</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
         <TableBody>{data.items.map(item => <TableRow key={item.id}>
           <TableCell><span className="font-medium">{item.title}</span><div className="hint">{item.material_kind === 'pdf' ? 'PDF' : '演示文稿'}{courseId === undefined && item.course_name && ` · ${item.course_name}`}</div></TableCell>
           <TableCell>{taskTitle(item)}<div className="hint">{item.scope}</div><div className="hint">任务 #{item.id} · {item.requested_by}</div></TableCell>
@@ -85,8 +88,8 @@ function SynthesisPage({ courseId }: { courseId?: number }) {
             </>}
           </div></TableCell>
         </TableRow>)}</TableBody>
-      </Table>
-      {!data.items.length && <Empty title={view === 'running' ? '没有进行中的任务' : '没有符合条件的执行记录'} />}
+      </ManagementTable>}
+      {!data.items.length && <ListEmpty title={view === "running" ? "没有进行中的任务" : "暂无执行记录"} filtered={Boolean(query.trim()) || status !== "all"} reset={() => { setQuery(""); setStatus("all"); setPage(1); }} />}
       <Pager total={data.total} page={page} size={size} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} />
     </div>}
     <p className="hint mt-3">每 5 秒更新执行状态。</p>

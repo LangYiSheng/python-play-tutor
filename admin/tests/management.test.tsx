@@ -8,7 +8,7 @@ import { GlobalOverview } from "@/features/management/overview";
 import { RecordViewer } from "@/pages/teaching";
 
 const row = { id: 7, name: "一班", teacher_id: 12, teacher_name: "任老师", status: "active", student_count: 2, has_learning_records: true };
-const props = { courseId: 3, userId: 12, onCreate: vi.fn(), onOpen: vi.fn(), onChanged: vi.fn() };
+const props = { courseId: 3, onCreate: vi.fn(), onOpen: vi.fn(), onChanged: vi.fn() };
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 it("keeps classes with learning records available for archiving while limiting formal deletion to administrators", async () => {
@@ -85,4 +85,16 @@ it("includes completed wrong answers and timeouts in the overview", async () => 
   render(<GlobalOverview onOpen={vi.fn()} />);
   expect(await screen.findByText("共 7 次提交")).toBeVisible();
   expect(screen.getByText(/解答错误 3/)).toHaveTextContent("运行超时 1");
+});
+
+it("copies the class join code and opens its student roster", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json([{...row, join_code: "test-code"}])));
+  const user = userEvent.setup();
+  render(<ClassroomManagement {...props} isAdmin={false} />);
+  await user.click(await screen.findByRole("button", { name: "复制一班的加入码" }));
+  expect(await navigator.clipboard.readText()).toBe("test-code");
+  await user.click(screen.getByRole("button", { name: "学生管理" }));
+  expect(props.onOpen).toHaveBeenCalledWith(row.id);
+  expect(screen.queryByRole("columnheader", { name: "任课教师" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "学习记录" })).toBeNull();
 });

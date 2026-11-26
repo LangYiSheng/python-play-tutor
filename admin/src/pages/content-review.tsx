@@ -1,3 +1,4 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, FileQuestionMark, FileText, Presentation, RefreshCw } from "lucide-react";
 import { Empty, ErrorNotice, Loading } from "@/components/common";
@@ -19,7 +20,7 @@ type Props = {
   onOpenMaterial: (materialId: number, pageNo: number) => void;
 };
 
-const pageSize = 25;
+const pageSize = DEFAULT_PAGE_SIZE;
 
 export function ContentReviewPanel(props: Props) {
   return <PendingContent key={props.courseId} {...props}/>;

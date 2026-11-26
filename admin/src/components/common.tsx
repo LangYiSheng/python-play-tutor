@@ -1,5 +1,6 @@
+import { Empty as EmptyRoot, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "./ui/empty";
 import { SelectField } from "@/components/select-field";
-import { AlertCircle, LoaderCircle, Search } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 export function ErrorNotice({ message }: { message: string }) {
@@ -21,16 +22,31 @@ export function Loading() {
 export function Empty({
   title,
   description,
+  children,
+  icon,
 }: {
   title: string;
   description?: string;
+  children?: React.ReactNode;
+  icon?: React.ReactNode;
 }) {
   return (
-    <div className="empty">
-      <p className="font-medium text-foreground">{title}</p>
-      {description ? <p>{description}</p> : null}
-    </div>
+    <EmptyRoot>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">{icon ?? <Inbox aria-hidden />}</EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        {description && <EmptyDescription>{description}</EmptyDescription>}
+      </EmptyHeader>
+      {children && <EmptyContent>{children}</EmptyContent>}
+    </EmptyRoot>
   );
+}
+export function ListEmpty({ title, filtered, reset, action, description, filteredTitle = "没有匹配的结果" }: {
+  title: string; filtered: boolean; reset: () => void; filteredTitle?: string; action?: React.ReactNode; description?: string;
+}) {
+  return <Empty title={filtered ? filteredTitle : title} description={filtered ? "调整搜索词或筛选条件后再试。" : description}>
+    {filtered ? <Button type="button" size="sm" variant="ghost" onClick={reset}>重置筛选</Button> : action}
+  </Empty>;
 }
 export function PageHeader({
   title,
@@ -83,9 +99,10 @@ export function Pager({
   onSize: (size: number) => void;
 }) {
   const pages = Math.max(1, Math.ceil(total / size));
+  if (pages === 1 && page === 1) return null;
   return (
     <div className="pager">
-      <span>共 {total} 条</span>
+      <span>第 {(page - 1) * size + 1}–{Math.min(page * size, total)} 条，共 {total} 条</span>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           每页{" "}
@@ -101,23 +118,23 @@ export function Pager({
           条
         </div>
         <Button
-          variant="outline"
-          size="sm"
-          disabled={page <= 1}
+          variant="ghost"
+          size="icon-sm"
+          aria-label="上一页" disabled={page <= 1}
           onClick={() => onPage(page - 1)}
         >
-          上一页
+          <ChevronLeft />
         </Button>
         <span>
           {page} / {pages}
         </span>
         <Button
-          variant="outline"
-          size="sm"
-          disabled={page >= pages}
+          variant="ghost"
+          size="icon-sm"
+          aria-label="下一页" disabled={page >= pages}
           onClick={() => onPage(page + 1)}
         >
-          下一页
+          <ChevronRight />
         </Button>
       </div>
     </div>

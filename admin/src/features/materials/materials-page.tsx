@@ -1,5 +1,7 @@
+import { MoreFilters } from "@/components/more-filters";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import {
-  Empty,
   ErrorNotice,
   Loading,
   Pager,
@@ -15,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -116,6 +117,7 @@ export function Materials({ courseId }: { courseId: number }) {
             <option value="text">文本</option>
             <option value="video">视频</option>
           </SelectField>
+<MoreFilters>
           <SelectField
             aria-label="资料状态"
             value={status}
@@ -130,15 +132,16 @@ export function Materials({ courseId }: { courseId: number }) {
             <option value="converting">转换中</option>
             <option value="failed">转换失败</option>
           </SelectField>
+          </MoreFilters>
           <div className="ml-auto"><Button onClick={() => edit(null)}><Upload />上传资料</Button></div>
-        </div>
+        <span id="materials-page-columns-0" /></div>
         <DeleteSelection actions={deletion} />
         {list.loading ? (
           <Loading />
-        ) : !visible.length ? (
-          <Empty title="没有匹配的资料" />
+        ) : list.error ? null : !visible.length ? (
+          <ListEmpty title="暂无课程资料" filtered={Boolean(query.trim()) || kind !== "all" || status !== "all"} reset={() => { setQuery(""); setKind("all"); setStatus("all"); list.firstPage(); deletion.clear(); }} action={<Button onClick={() => edit(null)}>上传第一份资料</Button>} />
         ) : (
-          <Table>
+          <ManagementTable pageSize={{value:list.pager.size,total:list.pager.total,change:list.pager.onSize}} toolsId="materials-page-columns-0">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
@@ -246,7 +249,7 @@ export function Materials({ courseId }: { courseId: number }) {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ManagementTable>
         )}
         <Pager {...list.pager} />
       </div>

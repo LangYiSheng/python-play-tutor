@@ -1,18 +1,21 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { DeleteSelection, SelectTablePage, SelectTableRow, useTableDelete } from "@/components/table-delete";
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CurriculumDialog } from "@/features/content-workspace/curriculum-dialog";
-import { Pager, ErrorNotice, Loading, Empty, TableSearch } from "@/components/common";
+import { Pager, ErrorNotice, Loading, TableSearch } from "@/components/common";
 import { scoped } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useCatalogPage } from "@/lib/use-catalog-page";
 import type { Course, Chapter, Point } from "@/lib/types";
 export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters" | "points" }) {
   const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
-  const [page, setPage] = useState(1), [size, setSize] = useState(10),
+  const [page, setPage] = useState(1), [size, setSize] = useState(DEFAULT_PAGE_SIZE),
     [query, setQuery] = useState(""),
     [pointChapter, setPointChapter] = useState("all"),
     [editing, setEditing] = useState<Chapter | Point | null>(null),
@@ -41,10 +44,10 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
             </SelectField>
           )}
           <div className="ml-auto">{add}</div>
-        </div>
+        <span id="curriculum-columns-0" /></div>
         <DeleteSelection actions={deletion} />
-        {course.loading || (tab === "points" && points.loading) ? <Loading /> : !rows.length ? <Empty title="没有匹配的内容" /> : (
-          <Table>
+        {course.loading || (tab === "points" && points.loading) ? <Loading /> : (tab === "points" ? points.error : course.error) ? null : !rows.length ? <ListEmpty title={tab === "chapters" ? "暂无章节" : "暂无知识点"} filtered={Boolean(query.trim()) || (tab === "points" && pointChapter !== "all")} reset={() => { setQuery(""); setPointChapter("all"); setPage(1); points.firstPage(); deletion.clear(); }} action={add} /> : (
+          <ManagementTable pageSize={tab === "points" ? {value:points.pager.size,total:points.pager.total,change:points.pager.onSize} : {value:size,total:filtered.length,change:v => {setSize(v);setPage(1);}}} toolsId="curriculum-columns-0">
             <TableHeader><TableRow>
               <TableHead className="w-12"><SelectTablePage actions={deletion} rows={rows} /></TableHead>
               <TableHead>名称</TableHead>
@@ -69,7 +72,7 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ManagementTable>
         )}
         {tab === "points" ? <Pager {...points.pager} /> : <Pager page={currentPage} size={size} total={filtered.length} onPage={setPage} onSize={next => { setSize(next); setPage(1); }} />}
       </div>

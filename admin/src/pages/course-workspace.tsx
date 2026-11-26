@@ -1,10 +1,13 @@
+import { PaginatedRows } from "@/components/paginated-rows";
+import { SelectField } from "@/components/select-field";
+import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
 import { MoreHorizontal, Plus } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
+import { ListEmpty, TableSearch, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { api, errorMessage, request } from "@/lib/api";
@@ -135,21 +138,34 @@ function grade(result?: Result) {
 export function ClassReport({classroomId, grades}: {classroomId: number; grades: boolean}) {
   const report = useResource<Report>(`/teacher/classrooms/${classroomId}/activity-report?grades=${grades}`);
   const [activity, setActivity] = useState(""), [learner, setLearner] = useState<number | null>(null);
+  const [query,setQuery] = useState(""), [scope,setScope] = useState("all");
   const d = report.data, selected = d?.activities.find(a => a.id === activity);
   if (!d) return report.loading ? <Loading/> : <ErrorNotice message={report.error}/>;
+  const needle = query.trim().toLowerCase();
+  const students = d.students.filter(s => (s.name + " " + s.student_id).toLowerCase().includes(needle)
+    && (scope === "all" || (scope === "active") === s.enrolled));
+  const activities = d.activities.filter(a => (a.chapter + " " + a.title).toLowerCase().includes(needle)
+    && (scope === "all" || (scope === "active") === a.opened));
   return <><PageHeader title={grades ? "学生成绩" : "任务点明细"}/>
-    {grades ? <div className="surface overflow-x-auto"><Table><TableHeader><TableRow><TableHead>学生</TableHead>
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <TableSearch label={grades ? "搜索学生姓名或学号" : "搜索章节或活动"} value={query} onValueChange={setQuery}/>
+      <SelectField aria-label={grades ? "在班状态" : "开放状态"} value={scope} onValueChange={setScope}>
+        <option value="all">全部状态</option><option value="active">{grades ? "在班" : "已开放"}</option>
+        <option value="inactive">{grades ? "已离班" : "尚未开放"}</option>
+      </SelectField>
+      <span id="report-columns" className="ml-auto"/>
+    </div>
+    {(!d.activities.length || !(grades ? students : activities).length) ? <ListEmpty title={!d.activities.length ? (grades ? "课程暂无测验" : "课程暂无活动") : "暂无学生成绩"} filtered={Boolean(needle) || scope !== "all"} reset={() => {setQuery(""); setScope("all");}} /> : grades ? <div className="surface overflow-x-auto"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>学生</TableHead>
       {d.activities.map(a => <TableHead key={a.id}>{a.chapter} · {a.title}</TableHead>)}</TableRow></TableHeader><TableBody>
-      {d.students.map(s => <TableRow key={s.id}><TableCell><Button variant="link" onClick={() => setLearner(s.id)}>{s.name} · {s.student_id}{!s.enrolled && "（已离班）"}</Button></TableCell>
-        {d.activities.map(a => <TableCell key={a.id}>{grade(a.results[s.id])}</TableCell>)}</TableRow>)}</TableBody></Table></div>
-    : <div className="surface"><Table><TableHeader><TableRow><TableHead>章节</TableHead><TableHead>活动</TableHead><TableHead>开放状态</TableHead><TableHead>完成人数</TableHead></TableRow></TableHeader>
-      <TableBody>{d.activities.map(a => <TableRow key={a.id}><TableCell>{a.chapter}</TableCell><TableCell><Button variant="link" onClick={() => setActivity(a.id)}>{a.title}</Button></TableCell>
-        <TableCell>{a.opened ? "已开放" : "尚未开放"}</TableCell><TableCell>{a.completed} / {d.students.length}</TableCell></TableRow>)}</TableBody></Table></div>}
-    {!d.activities.length && <Empty title={grades ? "课程暂无测验" : "课程暂无活动"}/>}
+      {students.map(s => <TableRow key={s.id}><TableCell><Button variant="link" onClick={() => setLearner(s.id)}>{s.name} · {s.student_id}{!s.enrolled && "（已离班）"}</Button></TableCell>
+        {d.activities.map(a => <TableCell key={a.id}>{grade(a.results[s.id])}</TableCell>)}</TableRow>)}</TableBody></ManagementTable></div>
+    : <div className="surface"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>章节</TableHead><TableHead>活动</TableHead><TableHead>开放状态</TableHead><TableHead>完成人数</TableHead></TableRow></TableHeader>
+      <TableBody>{activities.map(a => <TableRow key={a.id}><TableCell>{a.chapter}</TableCell><TableCell><Button variant="link" onClick={() => setActivity(a.id)}>{a.title}</Button></TableCell>
+        <TableCell>{a.opened ? "已开放" : "尚未开放"}</TableCell><TableCell>{a.completed} / {d.students.length}</TableCell></TableRow>)}</TableBody></ManagementTable></div>}
     {selected && <Dialog open onOpenChange={open => {if (!open) setActivity("");}}><DialogContent><DialogHeader><DialogTitle>{selected.title}</DialogTitle></DialogHeader>
-      <div className="max-h-[60vh] overflow-auto"><Table><TableHeader><TableRow><TableHead>学生</TableHead><TableHead>实际进度</TableHead></TableRow></TableHeader>
-      <TableBody>{d.students.map(s => <TableRow key={s.id}><TableCell>{s.name} · {s.student_id}</TableCell><TableCell>{progress(selected.results[s.id])}
+      <div className="max-h-[60vh] overflow-auto"><PaginatedRows rows={d.students}>{visible => <Table><TableHeader><TableRow><TableHead>学生</TableHead><TableHead>实际进度</TableHead></TableRow></TableHeader>
+      <TableBody>{visible.map(s => <TableRow key={s.id}><TableCell>{s.name} · {s.student_id}</TableCell><TableCell>{progress(selected.results[s.id])}
         {selected.results[s.id]?.resources?.map(r => <p className="hint" key={r.material_id}>{selected.material_titles[r.material_id]} · {
-          r.read_total ? `已读 ${r.read_count} / ${r.read_total} 页` : `已观看 ${Math.floor(r.watched_seconds)} 秒`}</p>)}</TableCell></TableRow>)}</TableBody></Table></div>
+          r.read_total ? `已读 ${r.read_count} / ${r.read_total} 页` : `已观看 ${Math.floor(r.watched_seconds)} 秒`}</p>)}</TableCell></TableRow>)}</TableBody></Table>}</PaginatedRows></div>
     </DialogContent></Dialog>}{learner !== null && <RecordViewer showGrades history={d.students.some(s => s.id === learner && !s.enrolled)} classroomId={classroomId} studentId={learner} onClose={() => setLearner(null)}/>}</>;
 }

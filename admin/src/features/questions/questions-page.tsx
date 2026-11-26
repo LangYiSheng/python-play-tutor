@@ -1,5 +1,7 @@
+import { MoreFilters } from "@/components/more-filters";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import {
-  Empty,
   ErrorNotice,
   Loading,
   Pager,
@@ -15,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -100,22 +101,7 @@ export function Questions({ courseId, pointId, clearPoint, status, onStatusChang
               }}
             />
           </div>
-          <SelectField
-            aria-label="题目类型"
-            value={kindFilter}
-            onValueChange={(value) => {
-              setKindFilter(value);
-              list.firstPage();
-              deletion.clear();
-            }}
-          >
-            <option value="all">全部题型</option>
-            {Object.entries(kinds).map(([key, value]) => (
-              <option key={key} value={key}>
-                {value}
-              </option>
-            ))}
-          </SelectField>
+
           <SelectField
             aria-label="题目状态"
             value={status}
@@ -128,6 +114,23 @@ export function Questions({ courseId, pointId, clearPoint, status, onStatusChang
             <option value="all">全部状态</option>
             <option value="reviewable">待我审核</option>
             {Object.entries(statuses).map(([key, value]) => (
+              <option key={key} value={key}>
+                {value}
+              </option>
+            ))}
+          </SelectField>
+<MoreFilters>
+          <SelectField
+            aria-label="题目类型"
+            value={kindFilter}
+            onValueChange={(value) => {
+              setKindFilter(value);
+              list.firstPage();
+              deletion.clear();
+            }}
+          >
+            <option value="all">全部题型</option>
+            {Object.entries(kinds).map(([key, value]) => (
               <option key={key} value={key}>
                 {value}
               </option>
@@ -146,15 +149,16 @@ export function Questions({ courseId, pointId, clearPoint, status, onStatusChang
             <option value="imported">导入</option>
             <option value="ai_generated">AI 生成</option>
           </SelectField>
+          </MoreFilters>
           <div className="ml-auto"><Button onClick={() => edit(null)}><Plus />新增题目</Button></div>
-        </div>
+        <span id="questions-page-columns-0" /></div>
         <DeleteSelection actions={deletion} />
         {list.loading ? (
           <Loading />
-        ) : !visible.length ? (
-          <Empty title="没有匹配的题目" />
+        ) : list.error ? null : !visible.length ? (
+          <ListEmpty title="暂无题目" filtered={Boolean(query.trim() || pointId) || status !== "all" || sourceFilter !== "all" || kindFilter !== "all"} reset={() => { setQuery(""); setKindFilter("all"); setSourceFilter("all"); clearPoint(); onStatusChange("all"); deletion.clear(); list.firstPage(); }} action={<Button onClick={() => edit(null)}>新增第一道题目</Button>} />
         ) : (
-          <Table>
+          <ManagementTable pageSize={{value:list.pager.size,total:list.pager.total,change:list.pager.onSize}} toolsId="questions-page-columns-0">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
@@ -222,7 +226,7 @@ export function Questions({ courseId, pointId, clearPoint, status, onStatusChang
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ManagementTable>
         )}
         <Pager {...list.pager} />
       </div>

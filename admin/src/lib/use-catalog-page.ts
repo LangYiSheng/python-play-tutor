@@ -1,3 +1,4 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { useEffect, useState } from "react";
 import { scoped } from "./api";
 import { useResource } from "./use-resource";
@@ -7,7 +8,7 @@ type CatalogPage<T> = { items: T[]; page: number; total: number };
 export function useCatalogPage<T>(path: string, courseId: number, query: string,
   filters: Record<string, string>, enabled = true) {
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(10);
+  const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState(query);
   useEffect(() => {
     const timeout = setTimeout(() => setSearch(query), 200);

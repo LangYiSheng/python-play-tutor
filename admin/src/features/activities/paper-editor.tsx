@@ -1,3 +1,4 @@
+import { ListEmpty } from "@/components/common";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +66,6 @@ export function PaperEditor({candidates, questions, points, selected, assessment
     <ScrollArea label="可选题目" key={active}><div className="paper-rows">{visible.map(q=><label className="paper-row cursor-pointer hover:bg-muted" key={q.id}>
       <input type="checkbox" aria-label={q.title} checked={selectedSet.has(q.id)} disabled={!selectedSet.has(q.id) && selected.length>=limit}
         onChange={e=>toggle([q.id],e.target.checked)} /><span>{q.title}</span><small>{kinds[q.kind]}</small></label>)}
-      {!visible.length && <p className="hint p-2">当前范围没有可选题目。</p>}</div></ScrollArea>
+      {!visible.length && <ListEmpty title="当前范围没有可选题目。" filtered={Boolean(search.trim() || kind)} reset={() => {setSearch("");setKind("");}} />}</div></ScrollArea>
     </section></div>;
 }

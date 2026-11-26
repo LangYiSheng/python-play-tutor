@@ -190,7 +190,7 @@ function RecipeEditor({ path, courseId, initial }: { path: string; courseId: num
         </TabsTrigger>)}
       </TabsList>
       <TabsContent value="template">
-          {template ? <section aria-label="课程模板" className="surface space-y-3" inert={Boolean(pending)}>
+          {template ? <section aria-label="课程模板" className="space-y-3" inert={Boolean(pending)}>
             <h2 className="text-lg">课程模板</h2>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <span className="text-sm font-semibold">每章必做</span>

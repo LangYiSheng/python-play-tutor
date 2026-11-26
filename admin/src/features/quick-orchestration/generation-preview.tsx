@@ -1,3 +1,4 @@
+import { PaginatedRows } from "@/components/paginated-rows";
 import { Fragment, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,12 +74,12 @@ export function GenerationPreview({ preview, chapters, recipe, withQuiz, feature
       <h3 className="mb-2 font-semibold">首章开场对白</h3>
       <blockquote className="whitespace-pre-line rounded-md bg-muted/60 px-3 py-2">{preview.welcome_dialogue}</blockquote>
     </div>}
-    <Table>
+    <PaginatedRows rows={recipe.chapters}>{(visible, offset) => <Table>
       <TableHeader><TableRow>
         <TableHead>授课顺序</TableHead><TableHead>课件</TableHead><TableHead>知识点</TableHead>
         {stages.map(stage => <TableHead key={stage}>{stageNames[stage]}总题数</TableHead>)}
       </TableRow></TableHeader>
-      <TableBody>{recipe.chapters.map((row, index) => {
+      <TableBody>{visible.map((row, index) => {
         const chapter = chapters.find(item => item.id === row.chapter_id);
         const paper = actual.get(row.chapter_id);
         const open = expanded === row.chapter_id;
@@ -86,7 +87,7 @@ export function GenerationPreview({ preview, chapters, recipe, withQuiz, feature
           <TableRow>
             <TableCell className="whitespace-normal"><Button variant="link" size="sm" className="h-auto whitespace-normal px-0 text-left"
               aria-expanded={open} onClick={() => setExpanded(open ? undefined : row.chapter_id)}>
-              <ChevronDown className={open ? "rotate-180" : ""} />{index + 1}. {chapter?.title ?? "已移出的章节"}
+              <ChevronDown className={open ? "rotate-180" : ""} />{offset + index + 1}. {chapter?.title ?? "已移出的章节"}
             </Button></TableCell>
             <TableCell>{row.material_ids.length} 份</TableCell><TableCell>{row.knowledge_point_ids.length} 个</TableCell>
             {stages.map(stage => {
@@ -111,7 +112,7 @@ export function GenerationPreview({ preview, chapters, recipe, withQuiz, feature
           </TableCell></TableRow>}
         </Fragment>;
       })}</TableBody>
-    </Table>
+    </Table>}</PaginatedRows>
     {!!townQuests?.length && <section aria-label="全镇支线" className="space-y-2">
       <h3 className="font-semibold">全镇支线</h3>
       {townQuests.map(quest => <div key={quest.id}>

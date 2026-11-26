@@ -1,3 +1,4 @@
+import { PaginatedRows } from "@/components/paginated-rows";
 import type { CalibrationIssue, CalibrationReport } from "./api";
 
 function kindLabel(kind: string): string {
@@ -96,7 +97,7 @@ export function CalibrationPanel({
             原文修正（{report.fixes!.length} 处，已自动应用）
           </summary>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <PaginatedRows rows={report.fixes!}>{visible => <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b">
                   <th className="py-1 pr-2">页</th>
@@ -106,7 +107,7 @@ export function CalibrationPanel({
                 </tr>
               </thead>
               <tbody>
-                {report.fixes!.map((fix) => (
+                {visible.map((fix) => (
                   <tr key={fix.page_no} className="border-b align-top">
                     <td className="py-1 pr-2">
                       <button
@@ -127,7 +128,7 @@ export function CalibrationPanel({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table>}</PaginatedRows>
           </div>
         </details>
       )}
@@ -143,7 +144,7 @@ export function CalibrationPanel({
               </p>
             )}
             <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <PaginatedRows rows={tagRows}>{visible => <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b">
                   <th className="py-1 pr-2">标准名</th>
@@ -151,14 +152,14 @@ export function CalibrationPanel({
                 </tr>
               </thead>
               <tbody>
-                {tagRows.map(([canonical, aliases]) => (
+                {visible.map(([canonical, aliases]) => (
                   <tr key={canonical} className="border-b align-top">
                     <td className="py-1 pr-2 font-medium">{canonical}</td>
                     <td className="py-1">{aliases.join("、")}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table>}</PaginatedRows>
           </div>
           </div>
         </details>

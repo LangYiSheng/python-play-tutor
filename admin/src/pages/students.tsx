@@ -1,3 +1,6 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { useState, type FormEvent } from "react";
 import {
@@ -6,7 +9,6 @@ import {
   Search,
   KeyRound,
   UserMinus,
-  Ellipsis,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,13 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import {
-  Table,
   TableHeader,
   TableHead,
   TableBody,
@@ -40,7 +35,6 @@ import {
   PageHeader,
   ErrorNotice,
   Loading,
-  Empty,
   Pager,
 } from "@/components/common";
 import { api, errorMessage } from "@/lib/api";
@@ -54,7 +48,7 @@ export function Students({ classroomId }: { classroomId: number }) {
     [status, setStatus] = useState("all"),
     [sort, setSort] = useState("student_id"),
     [page, setPage] = useState(1),
-    [size, setSize] = useState(25),
+    [size, setSize] = useState(DEFAULT_PAGE_SIZE),
     [selected, setSelected] = useState<string[]>([]),
     [targets, setTargets] = useState<string[]>([]),
     [modal, setModal] = useState<
@@ -159,7 +153,7 @@ export function Students({ classroomId }: { classroomId: number }) {
   return (
     <>
       <PageHeader
-        title="学生账号"
+        title="学生管理"
       >
         <Button onClick={() => open("import")}>
           <Upload />
@@ -204,7 +198,7 @@ export function Students({ classroomId }: { classroomId: number }) {
           >
             <RefreshCw />
           </Button>
-        </div>
+        <span id="students-columns-0" className="ml-auto" /></div>
         {selected.length > 0 ? (
           <div className="selection-bar">
             <span>已选择 {selected.length} 名学生</span>
@@ -244,12 +238,9 @@ export function Students({ classroomId }: { classroomId: number }) {
         {list.loading ? (
           <Loading />
         ) : !list.data ? null : rows.length === 0 ? (
-          <Empty
-            title={list.data.length ? "没有匹配的学生" : "本班还没有学生"}
-            description={list.data.length ? "调整搜索词或学生状态。" : undefined}
-          />
+          <ListEmpty title="本班还没有学生" filtered={Boolean(list.data.length)} reset={() => { filter("query",""); filter("status","all"); }} action={<Button onClick={() => open("import")}>导入学生名册</Button>} />
         ) : (
-          <Table>
+          <ManagementTable toolsId="students-columns-0" pageSize={{value:size,total:rows.length,change:v => {setSize(v);setPage(1);}}}>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">
@@ -309,24 +300,18 @@ export function Students({ classroomId }: { classroomId: number }) {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`${s.name}（${s.student_id}）的操作`} />}>
-                        <Ellipsis />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openAction("reset-password", [s.student_id])}>
-                          <KeyRound />重置密码
-                        </DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => openAction("remove", [s.student_id])}>
-                          <UserMinus />移出班级
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button variant="ghost" size="icon-sm" title="重置密码" aria-label={`重置${s.name}（${s.student_id}）的密码`} onClick={() => openAction("reset-password", [s.student_id])}>
+                      <KeyRound />
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" title="移出班级" aria-label={`将${s.name}（${s.student_id}）移出班级`} onClick={() => openAction("remove", [s.student_id])}>
+                      <UserMinus />
+                    </Button>
+
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ManagementTable>
         )}
         <Pager
           page={safePage}

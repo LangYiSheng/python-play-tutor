@@ -1,13 +1,17 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
+import { Activity, Eye, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
+import { TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { SelectField } from "@/components/select-field";
-import { PageHeader, ErrorNotice, Empty, Loading, Pager } from "@/components/common";
+import { PageHeader, ErrorNotice, Loading, Pager } from "@/components/common";
 import { api, errorMessage, request, token } from "@/lib/api";
 import { formatTimestamp } from "@/lib/time";
 import { judgeDateQuery, recentJudgeDates, type JudgeDates } from "@/lib/judge-dates";
@@ -80,7 +84,7 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
   const [dateQuery, setDateQuery] = useState(() => judgeDateQuery(recentJudgeDates(7)));
   const [preset, setPreset] = useState<number | "all" | "custom">(7), [dateError, setDateError] = useState("");
   const [search, setSearch] = useState(""), [query, setQuery] = useState(""), [status, setStatus] = useState("");
-  const [page, setPage] = useState(1), [size, setSize] = useState(25), [selected, setSelected] = useState<string | null>(null);
+  const [page, setPage] = useState(1), [size, setSize] = useState(DEFAULT_PAGE_SIZE), [selected, setSelected] = useState<string | null>(null);
   const [control, setControl] = useState<boolean | null>(null), [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const action = useRef<AbortController | null>(null);
@@ -116,19 +120,6 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
   const refreshButton = <Button variant="outline" onClick={() => { service.reload(); submissions.reload(); }}><RefreshCw />刷新</Button>;
   return <>
     <PageHeader title="评测管理">{refreshButton}</PageHeader>
-    <section className="surface mb-4 judge-date-filter" aria-label="评测日期筛选">
-      <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">统计日期</span>
-        {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
-        <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
-      </div>
-      <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
-        <Input className="w-auto" aria-label="开始日期" id="judge-date-start" type="date" required value={preset === "all" ? "" : draftDates.start} onChange={e => { setPreset("custom"); setDraftDates(v => ({ ...v, start: e.target.value })); }} />
-        <span className="text-muted-foreground" aria-hidden="true">至</span>
-        <Input className="w-auto" aria-label="结束日期" id="judge-date-end" type="date" required value={preset === "all" ? "" : draftDates.end} onChange={e => { setPreset("custom"); setDraftDates(v => ({ ...v, end: e.target.value })); }} />
-        <Button type="submit" size="sm" variant="outline">应用日期</Button>
-      </form>
-      <ErrorNotice message={dateError} />
-    </section>
     <ErrorNotice message={sharedLoadError} />
     <ErrorNotice message={control === null ? error : ""} />
     <section className="surface judge-service" aria-label="评测服务状态">
@@ -162,26 +153,38 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
         <ol className="judge-events">{[...state.events].reverse().map((e, i) => <li key={`${e.at}-${i}`}><time>{timestamp(e.at)}</time><span>{e.message}</span></li>)}</ol>
       </details> : null}
     </section>
-    <section className="surface judge-submissions" aria-label={classroomId === undefined ? "全站提交记录" : "本班提交记录"}>
+    <section className="judge-submissions" aria-label={classroomId === undefined ? "全站提交记录" : "本班提交记录"}>
       <h2 className="font-semibold">提交记录</h2>
-      <form className="my-4 flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
+    <section className="judge-date-filter" aria-label="评测日期筛选">
+      <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">提交日期</span>
+        {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
+        <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
+      </div>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
+        <DateRangePicker start={preset === "all" ? "" : draftDates.start} end={preset === "all" ? "" : draftDates.end}
+          change={(start,end) => { setPreset("custom"); setDraftDates({ start,end }); }} />
+        <Button type="submit" size="sm" variant="outline">应用日期</Button>
+      </form>
+      <ErrorNotice message={dateError} />
+    </section>
+      <form className="mb-4 flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
         <Input className="max-w-sm" aria-label="搜索提交" placeholder="学生姓名、学号、题目或提交编号" value={search} maxLength={100} onChange={e => setSearch(e.target.value)} />
+        <Button variant="ghost" type="submit"><Search />搜索</Button>
         <SelectField aria-label="评测状态" value={status || "all"} onValueChange={v => { setStatus(v === "all" ? "" : v); setPage(1); }}>
           <option value="all">全部状态</option>{Object.entries(statuses).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
         </SelectField>
-        <Button variant="outline" type="submit"><Search />搜索</Button>
-      </form>
+      <span id="judge-columns-0" className="ml-auto" /></form>
       <ErrorNotice message={sharedLoadError ? "" : submissions.error} />
       {!submissions.data ? submissions.error ? null : <Loading /> : submissions.data.items.length ? <>
-        <Table aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
+        <ManagementTable toolsId="judge-columns-0" pageSize={{value:size,total:submissions.data.total,change:v => {setSize(v);setPage(1);}}} aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
           <TableBody>{submissions.data.items.map(row => <TableRow key={row.id}>
             <TableCell><span className="font-medium">{row.student_name}</span><p className="text-xs text-muted-foreground">{row.student_id ?? "无学号"}{classroomId === undefined && row.classroom_name && ` · ${row.classroom_name}`}</p></TableCell>
             <TableCell className="max-w-xs whitespace-normal"><span>{row.question_title}</span><p className="text-xs text-muted-foreground">{row.activity_title}</p></TableCell>
             <TableCell><Status value={row.status} />{row.total_count != null ? <p className="text-xs text-muted-foreground">{row.passed_count} / {row.total_count} 通过</p> : null}</TableCell>
             <TableCell>{timestamp(row.created_at)}</TableCell>
-            <TableCell><Button variant="outline" size="sm" onClick={() => setSelected(row.id)} aria-label={`查看 ${row.student_name} 的提交 ${row.id}`}>查看提交</Button></TableCell>
-          </TableRow>)}</TableBody></Table>
-      </> : <Empty title="没有匹配的提交" description="这里只显示正式提交的 Python 答案。" />}
+            <TableCell><Button variant="outline" size="sm" onClick={() => setSelected(row.id)} aria-label={`查看 ${row.student_name} 的提交 ${row.id}`}><Eye />查看提交</Button></TableCell>
+          </TableRow>)}</TableBody></ManagementTable>
+      </> : <ListEmpty filteredTitle="没有匹配的提交" title="暂无正式提交" description="这里只显示正式提交的 Python 答案。" filtered={Boolean(query || status) || preset !== "all"} reset={() => { setQuery(""); setSearch(""); setStatus(""); applyDates(null,"all"); }} />}
       {submissions.data && submissions.data.total > 0 ? <Pager page={page} size={size} total={submissions.data.total} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} /> : null}
     </section>
     <Dialog open={control !== null} onOpenChange={open => { if (!open && !busy) setControl(null); }}>

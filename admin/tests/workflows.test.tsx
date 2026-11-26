@@ -69,9 +69,8 @@ it("requires explicit confirmation and sends only selected students for removal"
   const user = userEvent.setup();
   render(<Students classroomId={31} />);
   await user.click(await screen.findByLabelText("选择0001"));
-  screen.getByRole("button", { name: "学生乙（0002）的操作" }).focus();
+  screen.getByRole("button", { name: "重置学生乙（0002）的密码" }).focus();
   await user.keyboard("{Enter}");
-  await user.click(await screen.findByRole("menuitem", { name: "重置密码" }));
   expect(screen.getByRole("dialog")).toHaveTextContent("0002");
   await user.click(screen.getByRole("button", { name: "确认操作" }));
   await waitFor(() => expect(mutation).toHaveBeenCalledWith({
@@ -80,6 +79,9 @@ it("requires explicit confirmation and sends only selected students for removal"
   }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   mutation.mockClear();
+  await user.click(screen.getByRole("button", { name: "将学生乙（0002）移出班级" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("0002");
+  await user.click(screen.getByRole("button", { name: "取消" }));
   await user.click(screen.getByRole("button", { name: "移出班级" }));
   expect(mutation).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "确认操作" }));

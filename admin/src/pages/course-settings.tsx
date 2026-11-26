@@ -51,7 +51,7 @@ export function CourseSettings({ courseId }: { courseId: number }) {
       }} />
     </PageHeader>
     <ErrorNotice message={error} />
-    {!saved ? (!error && <Loading />) : <fieldset disabled={busy} aria-busy={busy} className="surface space-y-6 p-6">
+    {!saved ? (!error && <Loading />) : <fieldset disabled={busy} aria-busy={busy} className="min-w-0 space-y-6">
       <p className="hint">本课程的所有教学班共用默认角色、答疑开关与请求预算。保存设置不会调用模型。</p>
       <Label className="gap-2"><Checkbox checked={draft.enabled ?? true} onCheckedChange={enabled => setDraft({ ...draft, enabled })} />开放课程 AI 答疑</Label>
       <div className="field max-w-lg">

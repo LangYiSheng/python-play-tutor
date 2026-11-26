@@ -1,6 +1,9 @@
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
 import { Ban, CircleCheck, Ellipsis, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
-import { Empty, ErrorNotice, Loading, PageHeader, Pager, TableSearch } from "@/components/common";
+import { ErrorNotice, Loading, PageHeader, Pager, TableSearch } from "@/components/common";
 import { PasswordInput } from "@/components/password-input";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { api, errorMessage, token } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
@@ -36,7 +39,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
   const teacher = role === "teacher";
   const numberLabel = teacher ? "工号" : "学号";
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1), [size, setSize] = useState(25);
+  const [page, setPage] = useState(1), [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = useState<AccountEdit | null>(null);
   const [selectedClass, setSelectedClass] = useState("all");
   const classes = useResource<{ id: number; name: string; teacher_name: string; status: string }[]>(
@@ -55,12 +58,12 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
         <option value="all">全部班级</option>
         {classes.data?.map(c => <option key={c.id} value={c.id}>{`${c.teacher_name} | ${c.name}${c.status === "archived" ? "（已归档）" : ""}`}</option>)}
       </SelectField>}
-    </div>
+    <span id="accounts-columns-0" className="ml-auto" /></div>
     <ErrorNotice message={classes.error} />
     <ErrorNotice message={accounts.error} />
     {accounts.loading && <Loading />}
     {accounts.data && <div className="overflow-hidden rounded-lg border bg-background">
-      <Table><TableHeader><TableRow>
+      <ManagementTable toolsId="accounts-columns-0" pageSize={{value:size,total:accounts.data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow>
         <TableHead>姓名 / {numberLabel}</TableHead><TableHead>{teacher ? "负责班级" : "所在班级"}</TableHead>
         <TableHead>账号状态</TableHead><TableHead className="text-right">操作</TableHead>
       </TableRow></TableHeader><TableBody>{accounts.data.items.map(row => <TableRow key={row.id}>
@@ -80,8 +83,8 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
             </DropdownMenuContent>
           </DropdownMenu>
         </div>}</TableCell>
-      </TableRow>)}</TableBody></Table>
-      {!accounts.data.items.length && <Empty title="没有匹配的账号" />}
+      </TableRow>)}</TableBody></ManagementTable>
+      {!accounts.data.items.length && <ListEmpty title={teacher ? "暂无教师账号" : "暂无学生账号"} filtered={Boolean(query.trim()) || selectedClass !== "all"} reset={() => { setQuery(""); setSelectedClass("all"); setPage(1); }} action={teacher && <Button onClick={() => setEditing({action:"create"})}>创建教师账号</Button>} />}
       <Pager total={accounts.data.total} page={page} size={size} onPage={setPage} onSize={v => { setPage(1); setSize(v); }} />
     </div>}
     {editing && <AccountDialog edit={editing} onClose={() => setEditing(null)} onSaved={message => {

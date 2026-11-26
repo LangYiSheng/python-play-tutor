@@ -23,7 +23,7 @@ it("lists both course materials once and opens their existing editor at the firs
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(list.getByRole("link", {name:/待审题目.*3 道题目草稿/})).toHaveAttribute("href","/teacher/content-list?course=7&tab=questions&status=draft&reviewable=true");
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch.mock.calls[0]).toEqual(["/api/teacher/courses/7/content-review/materials?page=1&size=25",expect.anything()]);
+  expect(fetch.mock.calls[0]).toEqual(["/api/teacher/courses/7/content-review/materials?page=1&size=10",expect.anything()]);
 });
 
 it("refreshes material counts after authoring, leaving question-only and empty queues distinct", async () => {
@@ -46,13 +46,13 @@ it("refreshes material counts after authoring, leaving question-only and empty q
 it("pages large material collections on demand and resets position when switching class", async () => {
   const fetch = vi.fn(async (url: string) => {
     const { pathname, searchParams } = new URL(url, "http://localhost");
-    expect(searchParams.get("size")).toBe("25");
+    expect(searchParams.get("size")).toBe("10");
     if (pathname.includes("/courses/8/")) {
       expect(searchParams.get("page")).toBe("1");
       return Response.json(drafts([], 4));
     }
     const page = Number(searchParams.get("page"));
-    return Response.json(drafts(page === 1 ? [ppt] : [pdf], 0, page, 26));
+    return Response.json(drafts(page === 1 ? [ppt] : [pdf], 0, page, 11));
   });
   vi.stubGlobal("fetch", fetch);
   const user = userEvent.setup(), open = vi.fn();

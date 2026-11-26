@@ -405,7 +405,9 @@ it("narrows a twelve-chapter course by knowledge point and reviews the actual ge
   expect(totals).toHaveTextContent("119 个已选知识点");
   expect(totals).toHaveTextContent("练习共 36 题（个人抽题按首批计算）");
   expect(totals).toHaveTextContent("测验共 12 题");
-  expect(review.getAllByRole("row")).toHaveLength(13);
+  expect(review.getAllByRole("row")).toHaveLength(11);
+  await user.click(review.getByRole("button", { name: "下一页" }));
+  expect(review.getAllByRole("row")).toHaveLength(3);
   const last = within(review.getByRole("row", { name: /12\. 单元12/ }));
   expect(last.getByText("9 个")).toBeVisible();
   expect(await last.findByText("3 题")).toBeVisible();

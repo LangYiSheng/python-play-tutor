@@ -92,10 +92,11 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   await screen.findByRole("heading", { name: "图谱课程 3" });
   expect(screen.queryByLabelText("待审批")).not.toBeInTheDocument();
   for (const group of [
-    ["班级管理", "班级概况", "章节开放安排"], ["教学流程", "课程答疑设置"],
+    ["班级管理", "学情统计", "定时开放"], ["教学流程", "设置"],
   ]) {
     const icons = group.map(name => {
-      const icon = screen.getByRole("link", { name }).querySelector("svg");
+      const role = ["学情统计", "设置"].includes(name) ? "button" : "link";
+      const icon = screen.getByRole(role, { name }).querySelector("svg");
       expect(icon).toHaveAttribute("aria-hidden", "true");
       return icon!.innerHTML;
     });
@@ -106,7 +107,13 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toContainElement(screen.getByRole("navigation", { name: "课程导航" }));
   await user.click(toggle);
   expect(screen.getByRole("button", { name: "展开导航" })).toHaveAttribute("aria-expanded", "false");
-  await user.click(toggle);
+  const stats = screen.getByRole("button", { name: "学情统计" });
+  await user.click(stats);
+  expect(stats).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("link", { name: "学生成绩" })).toBeVisible();
+  await user.click(stats);
+  expect(screen.queryByRole("link", { name: "学生成绩" })).toBeNull();
+  expect(location.pathname).toBe("/teacher/content-graph");
   expect(screen.getByRole("button", { name: "收起导航" })).toHaveAttribute("aria-expanded", "true");
 });
 it("counts the class teacher's practice pool when an administrator creates an activity", async () => {
@@ -173,9 +180,7 @@ it("课程洞察汇总两班，成绩页按所选班级显示零分、待判定�
   expect(await screen.findByText("200")).toBeVisible();
   expect(screen.queryByLabelText("当前班级")).toBeNull();
   await user.click(screen.getByRole("link", {name: "学生成绩"}));
-  screen.getByRole("combobox", {name: "当前班级"}).focus();
-  await user.keyboard("{ArrowDown}");
-  await user.click(await screen.findByRole("option", {name: "下午班"}));
+  expect(screen.getByRole("combobox", {name:"当前班级"})).toHaveTextContent("下午班");
   expect(await screen.findByRole("cell", {name: "0"})).toBeVisible();
   expect(screen.getByRole("cell", {name: "待判定"})).toBeVisible();
   screen.getByRole("combobox", {name: "当前班级"}).focus();
@@ -275,4 +280,30 @@ it("searches transfer candidates and requires selecting a teacher from the curre
   await user.click(await screen.findByRole("radio", {name:/张老师.*0008/}));
   await user.click(confirm);
   await waitFor(() => expect(transfer).toHaveBeenCalledWith({teacher_id: 8}));
+});
+
+
+it("remembers a roster selection per course and normalizes invalid class links", async () => {
+  setToken("teacher-session");
+  sessionStorage.setItem("classroom:17:30","32");
+  history.replaceState({}, "", "/teacher/students?course=30&class=999");
+  const rooms = [{id:31,course_id:30,name:"甲班"}, {id:32,course_id:30,name:"乙班"}, {id:41,course_id:40,name:"丙班"}];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/auth/me")) return json({id:17,name:"老师",role:"teacher"});
+    if (url.endsWith("/teacher/courses")) return json([{id:30,name:"甲课"},{id:40,name:"乙课"},{id:50,name:"新课"}]);
+    if (url.endsWith("/classrooms")) return json(rooms);
+    if (url.endsWith('/students')) return json([]);
+    return json({items:[],total:0, students:[],activities:[]});
+  }));
+  render(<App/>);
+  expect(await screen.findByRole("combobox",{name:"当前班级"})).toHaveTextContent("乙班");
+  expect(location.search).toBe("?course=30&class=32");
+  expect(screen.getByRole("link",{name:"班级管理"})).toHaveAttribute("aria-current","location");
+  expect(screen.getByRole("link",{name:"返回班级列表"})).toBeVisible();
+  await act(async()=>{ history.pushState({},"","/teacher/grades?course=40"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(await screen.findByLabelText("当前班级")).toHaveTextContent("丙班");
+  expect(screen.queryByRole("combobox",{name:"当前班级"})).toBeNull();
+  await act(async()=>{ history.pushState({},"","/teacher/grades?course=50"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(await screen.findByText("本课程尚未创建班级")).toBeVisible();
+  expect(screen.getByRole("button",{name:"创建班级"})).toBeEnabled();
 });

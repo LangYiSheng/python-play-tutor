@@ -1,3 +1,4 @@
+import { ListEmpty } from "@/components/common";
 import { useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 import { Empty, ErrorNotice, TableSearch } from "@/components/common";
@@ -47,7 +48,7 @@ function ContentChoices({ title, options, selected, empty, searchable, onChange 
         <input type="checkbox" checked onChange={() => onChange(selected.filter(item => item !== id))} />
         已移出本章，取消勾选即可移除
       </label>)}
-      {!visible.length && <p className="hint">{needle ? "没有匹配的知识点。" : empty}</p>}
+      {!visible.length && <ListEmpty title={empty} filtered={Boolean(needle)} reset={() => setFilter("")} />}
     </div>
   </fieldset>;
 }
@@ -196,7 +197,7 @@ export function ChapterPicker({ chapters, selected, problems, withQuiz, finalId,
               {current && <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
             </li>;
           })}
-          {!visible.length && <li className="p-3 text-sm text-muted-foreground">没有匹配的章节。</li>}
+          {!visible.length && <li><ListEmpty title="暂无章节" filteredTitle="没有匹配的章节。" filtered={Boolean(needle)} reset={() => setFilter("")} /></li>}
         </ul>
       </div>
       <div className="min-w-0 rounded-lg border p-4">

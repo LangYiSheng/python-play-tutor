@@ -1,3 +1,4 @@
+import { PaginatedRows } from "@/components/paginated-rows";
 import { useEffect, useId, useRef, useState } from "react";
 import { MoreHorizontal, RefreshCw, Search, LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import type { CourseInstance } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ErrorNotice } from "@/components/common";
+import { ListEmpty, ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { errorMessage, request, token } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
@@ -302,7 +303,7 @@ export function Packages({ courses, onCreated, revision = 0 }: { revision?: numb
         <p className="hint break-all">{item.directory}</p>
         <div className="hub-card-footer"><Button disabled={busy || Boolean(preview)} onClick={() => choose(item, "create")}>以此创建课程</Button></div>
       </article>)}</div>
-      {!available.loading && !available.error && !visiblePackages.length && <p role="status" className="hint grid min-h-48 place-items-center px-5 py-8 text-center">{packageQuery ? "没有找到匹配的课程包。" : scope === "mine" ? "还没有导出的课程包。可在课程卡片的更多操作中选择「导出课程包」。" : "暂无共享课程包。"}</p>}
+      {!available.loading && !available.error && !visiblePackages.length && <ListEmpty title={scope === "mine" ? "还没有导出的课程包" : "暂无共享课程包"} description={scope === "mine" ? "可在课程卡片的更多操作中选择「导出课程包」。" : undefined} filtered={Boolean(packageQuery)} reset={() => setPackageSearch("")} />}
       {available.data?.unavailable ? <p className="hint">有 {available.data.unavailable} 份课程包暂不可用。</p> : null}
       <Dialog open={action !== null} onOpenChange={open => { if (!open && !busy) setAction(null); }}>
         <DialogContent showCloseButton={!busy}><DialogHeader><DialogTitle>{action === "create" ? "从课程包创建课程" : "更新已有课程"}</DialogTitle>
@@ -346,7 +347,7 @@ export function Packages({ courses, onCreated, revision = 0 }: { revision?: numb
               <option value="removed">有移除</option>
             </SelectField>
           </div>
-          <Table>
+          <PaginatedRows rows={rows}>{visible => <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>内容</TableHead>
@@ -356,7 +357,7 @@ export function Packages({ courses, onCreated, revision = 0 }: { revision?: numb
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(([key, row]) => (
+              {visible.map(([key, row]) => (
                 <TableRow key={key}>
                   <TableCell>{labels[key] ?? key}</TableCell>
                   <TableCell>{row.added.length}</TableCell>
@@ -372,7 +373,7 @@ export function Packages({ courses, onCreated, revision = 0 }: { revision?: numb
                 </TableRow>
               ) : null}
             </TableBody>
-          </Table>
+          </Table>}</PaginatedRows>
           {preview.learning_impact?.length ? (
             <div className="p-5 border-t">
               <h3 className="font-semibold mb-3">学习记录影响</h3>

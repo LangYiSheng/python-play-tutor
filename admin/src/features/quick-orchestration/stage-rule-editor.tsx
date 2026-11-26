@@ -1,3 +1,4 @@
+import { ListEmpty } from "@/components/common";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +83,7 @@ function PointRules({ points, catalog, stage, onChange }: {
             <span className="min-w-0 flex-1 break-words">{titles.get(row.knowledge_point_id)}</span>
             <span className="shrink-0 text-muted-foreground">{Number.isFinite(row.count) ? row.count : "—"} 题</span>
           </button>)}
-          {!visible.length && <p className="hint p-2">{points.length ? "没有匹配的知识点。" : "请先在章节中勾选知识点。"}</p>}
+          {!visible.length && <ListEmpty title="请先在章节中勾选知识点。" filtered={Boolean(search.trim())} reset={() => setSearch("")} />}
         </div>
       </div>
       {point && <div className="min-w-0 p-3" key={point.knowledge_point_id}>

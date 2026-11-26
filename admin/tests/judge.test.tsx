@@ -1,6 +1,7 @@
+import { judgeDateQuery, recentJudgeDates } from "../src/lib/judge-dates";
 import { render } from "./render-with-toasts";
 import { afterEach, expect, it, vi } from "vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Judge } from "../src/pages/judge";
 
@@ -24,19 +25,16 @@ it("applies the same inclusive dates to statistics and submissions and allows al
   await screen.findByText("没有匹配的提交");
   expect(screen.getByRole("button", { name: "近七天" })).toHaveAttribute("aria-pressed", "true");
   expect(urls.every(url => url.includes("since=") && url.includes("until="))).toBe(true);
-  fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-11-10" } });
-  fireEvent.change(screen.getByLabelText("结束日期"), { target: { value: "2026-11-12" } });
+  await user.click(screen.getByRole("button", { name: /至/ }));
+  await user.click(screen.getByRole("button", { name: "最近30天" }));
   await user.click(screen.getByRole("button", { name: "应用日期" }));
   await waitFor(() => expect(urls.length).toBe(4));
+  const expected = new URLSearchParams(judgeDateQuery(recentJudgeDates(30)).slice(1));
   for (const url of urls.slice(-2)) {
     const params = new URL(url, "http://test").searchParams;
-    expect(params.get("since")).toBe("2026-11-09T16:00:00.000Z");
-    expect(params.get("until")).toBe("2026-11-12T16:00:00.000Z");
+    expect(params.get("since")).toBe(expected.get("since"));
+    expect(params.get("until")).toBe(expected.get("until"));
   }
-  fireEvent.change(screen.getByLabelText("开始日期"), { target: { value: "2026-11-15" } });
-  await user.click(screen.getByRole("button", { name: "应用日期" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("结束日期不能早于开始日期");
-  expect(urls.length).toBe(4);
   await user.click(screen.getByRole("button", { name: "全部时间" }));
   await waitFor(() => expect(urls.length).toBe(6));
   expect(urls.slice(-2).every(url => !url.includes("since=") && !url.includes("until="))).toBe(true);
@@ -112,4 +110,24 @@ it("shows request errors and supports a refresh", async () => {
   fail = false;
   await user.click(screen.getByRole("button", { name: "刷新" }));
   expect(await screen.findByText("没有匹配的提交")).toBeVisible();
+});
+
+it("loads the next page of submissions after ten results", async () => {
+  const records = Array.from({ length: 13 }, (_, i) => ({
+    ...row, id: String(i + 1), question_title: `题目 ${i + 1}`,
+  }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/service?")) return response(service);
+    const params = new URL(url, "http://test").searchParams;
+    const size = Number(params.get("size"));
+    const offset = (Number(params.get("page")) - 1) * size;
+    return response({ items: records.slice(offset, offset + size), total: records.length });
+  }));
+  const user = userEvent.setup();
+  render(<Judge classroomId={1} canManage={false} />);
+  expect(await screen.findByText("第 1–10 条，共 13 条")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "下一页" }));
+  expect(await screen.findByText("题目 11")).toBeVisible();
+  expect(screen.queryByText("题目 1")).toBeNull();
+  expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
 });

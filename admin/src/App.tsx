@@ -1,5 +1,6 @@
+import { TablePreferences } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense, type ReactNode } from "react";
 import {
   GraduationCap,
   School,
@@ -58,7 +59,6 @@ import type { CourseInstance } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
-import { ClassOverview } from "@/pages/class-overview";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
 const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
 import { Activities } from "@/features/activities/activities-page";
@@ -81,23 +81,31 @@ const globalNav = [
   { key: "global-judge", title: "评测管理", icon: ShieldCheck },
   { key: "system", title: "全站设置", icon: Settings },
 ] as const;
-const courseNav = [
+const statisticsNav = [
   { key: "insights", title: "学情洞察", icon: ChartNoAxesCombined },
-  { key: "classes", title: "班级管理", icon: School },
   { key: "details", title: "任务点明细", icon: List },
   { key: "grades", title: "学生成绩", icon: IdCard },
-  { key: "classroom", title: "班级概况", icon: LayoutDashboard },
-  { key: "students", title: "学生账号", icon: IdCard },
-  { key: "teaching", title: "章节开放安排", icon: CalendarDays },
+] as const;
+const classNav = [
+  { key: "classes", title: "班级管理", icon: School },
+  { key: "teaching", title: "定时开放", icon: CalendarDays },
+] as const;
+const contentNav = [
   { key: "content-graph", title: "知识图谱", icon: Network },
   { key: "content-list", title: "内容列表", icon: List },
+] as const;
+const activityNav = [
   { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
   { key: "activities", title: "学习活动", icon: BookOpen },
   { key: "authoring", title: "教学流程", icon: GitBranch },
+] as const;
+const settingsNav = [
   { key: "settings", title: "课程答疑设置", icon: MessageCircleQuestionMark },
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
+const courseNav = [...statisticsNav, ...classNav, ...contentNav, ...activityNav, ...settingsNav,
+  { key: "students", title: "学生管理", icon: Users }] as const;
 const hubNav = [{ key: "courses", title: "课程选择", icon: School }, { key: "packages", title: "课程包管理", icon: Package }] as const;
 const pages = [...hubNav, ...globalNav, ...courseNav] as const;
 type Page = (typeof pages)[number]["key"];
@@ -117,6 +125,12 @@ function currentPage(): Page {
     const initialReview = { materialId: /^\d+$/.test(rawMaterial) && Number.isSafeInteger(id) && id > 0 ? id : undefined };
     history.replaceState({ ...history.state, initialReview }, "", "/teacher/content-graph?" + params);
     return "content-graph";
+  }
+  if (part === "classroom") {
+    const url = new URL(location.href);
+    url.pathname = "/teacher/classes";
+    history.replaceState(history.state, "", url);
+    return "classes";
   }
   const legacyTab = legacyContentTabs.get(part);
   if (legacyTab) {
@@ -139,10 +153,26 @@ export default function App() {
     </DraftProvider>
   );
 }
+function SidebarGroup({ id, label, icon: Icon, active, sidebar, expandSidebar, children }: {
+  id: string; label: string; icon: typeof Settings; active: boolean; sidebar: boolean;
+  expandSidebar: () => void; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(active);
+  const expanded = sidebar && open;
+  return <div className="nav-group">
+    <button type="button" className="nav-group-trigger" aria-label={label} title={sidebar ? undefined : label}
+      aria-expanded={expanded} aria-controls={id} data-current={active || undefined}
+      onClick={() => { if (!sidebar) expandSidebar(); setOpen(!expanded); }}>
+      <Icon size={18} aria-hidden/><span className="nav-text">{label}</span>
+      <ChevronDown size={15} aria-hidden className="group-chevron"/>
+    </button>
+    <div className="nav-children" id={id} hidden={!expanded}>{children}</div>
+  </div>;
+}
 function Workbench() {
   const [user, setUser] = useState<User | null>(null),
-    [classes, setClasses] = useState<Classroom[]>([]),
-    [classroomId, setClassroomId] = useState<number | null>(null),
+    [classes, setClasses] = useState<Classroom[] | null>(null),
+    [requestedClass, setRequestedClass] = useState(Number(new URLSearchParams(location.search).get("class")) || null),
     [loading, setLoading] = useState(Boolean(token())),
     [error, setError] = useState(""),
     [page, setPage] = useState<Page>(currentPage),
@@ -152,7 +182,8 @@ function Workbench() {
     [courseId, setCourseId] = useState(Number(new URLSearchParams(location.search).get("course"))),
     [busy, setBusy] = useState(false),
     [openingTown, setOpeningTown] = useState(false),
-    [sidebar, setSidebar] = useState(true);
+    [sidebar, setSidebar] = useState(() => !window.matchMedia?.("(max-width: 700px)").matches);
+  const [classError, setClassError] = useState("");
   const [classListRevision, setClassListRevision] = useState(0);
   const [packageRevision, setPackageRevision] = useState(0);
   const [exporting, setExporting] = useState<number | null>(null);
@@ -173,15 +204,28 @@ function Workbench() {
   const canLeave = useCanLeave();
   const courses = useResource<CourseInstance[]>(user && !user.must_change_password ? "/teacher/courses" : null);
   const course = courses.data?.find(row => row.id === courseId);
-  const inCourse = classes.filter(row => row.course_id === courseId);
-  const classPage = ["classroom", "students", "teaching", "judge", "details", "grades"].includes(page);
-  function pageUrl(next: Page, cid = courseId, room = classroomId) {
+  const inCourse = (classes ?? []).filter(row => row.course_id === courseId).sort((a, b) => a.id - b.id);
+  const storageKey = user && courseId ? `classroom:${user.id}:${courseId}` : null;
+  const remembered = storageKey ? Number(sessionStorage.getItem(storageKey)) : null;
+  const classroom = inCourse.find(row => row.id === requestedClass) ?? inCourse.find(row => row.id === remembered) ?? inCourse[0];
+  const classroomId = classroom?.id ?? null;
+  const classPage = ["students", "teaching", "judge", "details", "grades"].includes(page);
+  useEffect(() => {
+    if (!classroomId || !storageKey || !classPage) return;
+    sessionStorage.setItem(storageKey, String(classroomId));
+    const url = new URL(location.href);
+    if (url.searchParams.get("class") !== String(classroomId)) {
+      url.searchParams.set("class", String(classroomId));
+      history.replaceState(history.state, "", url);
+    }
+  }, [classroomId, classPage, storageKey, requestedClass, page]);
+  function pageUrl(next: Page, cid = courseId, room: number | null = classroomId) {
     if (!courseNav.some(item => item.key === next)) return `/teacher/${next}`;
     return `/teacher/${next}?course=${cid}${room ? "&class=" + room : ""}`;
   }
   function selectCourse(id: number) {
     if (!canLeave()) return;
-    setCourseId(id); setClassroomId(null);
+    setCourseId(id); setRequestedClass(null);
     history.pushState({}, "", pageUrl("insights", id, null)); setPage("insights");
   }
   useEffect(() => {
@@ -216,8 +260,8 @@ function Workbench() {
     const expire = () => {
       toast.close();
       setUser(null);
-      setClasses([]);
-      setClassroomId(null);
+      setClasses(null);
+      setRequestedClass(null);
       setPasswordOpen(false);
       setNewClass(false);
       setClassName("");
@@ -229,6 +273,7 @@ function Workbench() {
   }, []);
   useEffect(() => {
     if (!user || user.must_change_password) return;
+    setClassError("");
     const controller = new AbortController();
     const captured = token();
     api
@@ -236,13 +281,9 @@ function Workbench() {
       .then((rows) => {
         if (controller.signal.aborted || captured !== token()) return;
         setClasses(rows);
-        const saved = Number(new URLSearchParams(location.search).get("class"));
-        setClassroomId(
-          rows.some((c) => c.id === saved) ? saved : null,
-        );
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(errorMessage(e));
+        if (!controller.signal.aborted) setClassError(errorMessage(e));
       });
     return () => controller.abort();
   }, [user?.id, user?.must_change_password, classListRevision]);
@@ -251,7 +292,7 @@ function Workbench() {
       if (canLeave()) {
         const next = currentPage();
         setCourseId(Number(new URLSearchParams(location.search).get("course")));
-        setClassroomId(Number(new URLSearchParams(location.search).get("class")) || null);
+        setRequestedClass(Number(new URLSearchParams(location.search).get("class")) || null);
         setPage(user?.role !== "admin" && globalNav.some(item => item.key === next) ? returnToCourses() : next);
       }
       else history.pushState({}, "", pageUrl(page));
@@ -260,8 +301,9 @@ function Workbench() {
     return () => window.removeEventListener("popstate", pop);
   }, [canLeave, page, user?.role]);
   function navigate(next: Page) {
+    if (next !== page && !canLeave()) return;
+    if (window.matchMedia?.("(max-width: 700px)").matches) setSidebar(false);
     if (next === page) return;
-    if (!canLeave()) return;
     history.pushState({}, "", pageUrl(next));
     setPage(next);
     if (next === "courses") courses.reload();
@@ -276,9 +318,8 @@ function Workbench() {
     if (page === "content-graph" && history.state?.initialReview) {
       history.replaceState({ ...history.state, initialReview: {} }, "");
     }
-    setClassroomId(id);
+    setRequestedClass(id);
     history.pushState({}, "", pageUrl(page, courseId, id));
-    if (user) sessionStorage.setItem(`classroom:${user.id}`, String(id));
     setError("");
   }
   async function createClass() {
@@ -289,13 +330,12 @@ function Workbench() {
     try {
       const row = await api.post<Classroom>(`/teacher/courses/${courseId}/classrooms`, { name: className });
       if (capturedToken !== token()) return;
-      setClasses((v) => [...v, row]);
+      setClasses((v) => [...(v ?? []), row]);
       setClassName("");
       setNewClass(false);
-      if (user) sessionStorage.setItem(`classroom:${user.id}`, String(row.id));
-      setClassroomId(row.id);
-      history.pushState({}, "", pageUrl("classroom", courseId, row.id));
-      setPage("classroom");
+      setRequestedClass(row.id);
+      history.pushState({}, "", pageUrl("students", courseId, row.id));
+      setPage("students");
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -311,8 +351,8 @@ function Workbench() {
       toast.close();
       if (user) sessionStorage.removeItem(`classroom:${user.id}`);
       setUser(null);
-      setClasses([]);
-      setClassroomId(null);
+      setClasses(null);
+      setRequestedClass(null);
       setPasswordOpen(false);
       setNewClass(false);
       setClassName("");
@@ -353,30 +393,43 @@ function Workbench() {
   if (user.must_change_password) {
     return <PasswordDialog open required onClose={() => {}} onUser={setUser} user={user} onLogout={logout} />;
   }
-  const classroom = inCourse.find((c) => c.id === classroomId);
   const isAdmin = user.role === "admin";
   const globalPage = globalNav.find(item => item.key === page);
 
   const allowed = !globalPage || isAdmin;
-  function openClass(id: number) {
+  async function openClass(id: number) {
     if (!user || !canLeave()) return;
-    setClassroomId(id);
-    const selectedCourse = classes.find(row => row.id === id)?.course_id ?? courseId;
-    setCourseId(selectedCourse);
-    if (!classes.some(row => row.id === id)) setClassListRevision(value => value + 1);
-    history.pushState({}, "", pageUrl("classroom", selectedCourse, id));
-    setPage("classroom");
+    const session = token();
+    let room = classes?.find(row => row.id === id);
+    if (!room) {
+      try {
+        const rows = await api.get<Classroom[]>("/classrooms");
+        if (session !== token()) return;
+        setClasses(rows);
+        room = rows.find(row => row.id === id);
+      } catch (e) {
+        if (session === token()) setError(errorMessage(e));
+        return;
+      }
+    }
+    if (!room) { setError("此班级已无法访问，请刷新列表。"); return; }
+    setRequestedClass(id);
+    setCourseId(room.course_id);
+    history.pushState({}, "", pageUrl("students", room.course_id, id));
+    setPage("students");
   }
-  function link({ key, title, icon: Icon }: (typeof globalNav | typeof courseNav)[number]) {
-    return <a key={key} href={pageUrl(key)} aria-current={page === key ? "page" : undefined}
-      onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} aria-hidden />{title}</a>;
+  type NavItem = (typeof globalNav | typeof courseNav)[number];
+  function navLink({ key, title, icon: Icon }: NavItem, active: boolean) {
+    return <a key={key} href={pageUrl(key)} aria-label={title} title={sidebar ? undefined : title} aria-current={active ? (key === page ? "page" : "location") : undefined}
+      onClick={event => { event.preventDefault(); navigate(key); }}><Icon size={18} aria-hidden /><span className="nav-text">{title}</span></a>;
   }
-  function renderPage(currentUser: User) {
+  function link(item: NavItem) { return navLink(item, item.key === page); }
+  function renderPage() {
     if (!allowed) return <ErrorNotice message="此页面仅管理员可访问。" />;
     switch (page) {
       case "classes":
         if (!course) break;
-        return <ClassroomManagement courseId={course.id} isAdmin={isAdmin} userId={currentUser.id} onOpen={openClass}
+        return <ClassroomManagement courseId={course.id} isAdmin={isAdmin} onOpen={openClass}
           onCreate={() => setNewClass(true)} onChanged={() => setClassListRevision(value => value + 1)} />;
       case "teachers":
       case "accounts":
@@ -392,12 +445,13 @@ function Workbench() {
     }
     if (!course) return courses.loading ? <Loading/> : <Empty title="课程不存在或无法访问" />;
     if (page === "insights") return <Insights courseId={course.id}/>;
+    if (classPage && classError) return <><ErrorNotice message={classError}/><Button variant="outline" onClick={() => setClassListRevision(v => v + 1)}>重新加载班级</Button></>;
+    if (classPage && classes === null) return <Loading/>;
     if (classPage && !classroom) return <div className="surface">
-      <Empty title="尚未进入班级" />
-      <div className="flex justify-center pb-8"><Button onClick={() => navigate("classes")}>班级管理</Button></div>
+      <Empty title="本课程尚未创建班级" />
+      <div className="flex justify-center pb-8"><Button onClick={() => setNewClass(true)}>创建班级</Button></div>
     </div>;
-    if (page === "classroom") return <ClassOverview classroom={classroom!}/>;
-    if (page === "students") return <Students classroomId={classroom!.id}/>;
+    if (page === "students") return <><ButtonLink href={pageUrl("classes")} variant="ghost" className="mb-3" onClick={e => { e.preventDefault(); navigate("classes"); }}><ChevronLeft/>返回班级列表</ButtonLink><Students classroomId={classroom!.id}/></>;
     if (page === "details" || page === "grades") return <ClassReport classroomId={classroom!.id} grades={page === "grades"}/>;
     if (page === "teaching") return <Teaching classroomId={classroom!.id} courseId={course.id}/>;
     if (page === "judge") return <Judge classroomId={classroom!.id} canManage={false} />;
@@ -412,10 +466,16 @@ function Workbench() {
     const Screen = courseScreens[page as keyof typeof courseScreens];
     return <Screen courseId={course.id} />;
   }
+  function group(id: string, label: string, icon: typeof Settings, items: typeof statisticsNav | typeof settingsNav) {
+    const active = items.some(item => item.key === page);
+    return <SidebarGroup key={`${courseId}:${id}:${active}`} id={id} label={label} icon={icon}
+      active={active} sidebar={sidebar} expandSidebar={() => setSidebar(true)}>{items.map(link)}</SidebarGroup>;
+  }
   const hub = page === "courses" || page === "packages";
   const brand = (<a
           href="/teacher/"
           className="brand"
+          aria-label="Pythontopia 教学工作台" title={!sidebar && !hub ? "教学工作台" : undefined}
           onClick={(e) => {
             e.preventDefault();
             navigate("courses");
@@ -429,7 +489,7 @@ function Workbench() {
           </span>
         </a>);
   const accountMenu = (<DropdownMenu>
-            <DropdownMenuTrigger render={<button className="account" />}>
+            <DropdownMenuTrigger render={<button className="account" aria-label={!hub && !sidebar ? `${user.name}，账号菜单` : undefined} title={!hub && !sidebar ? `${user.name}，账号菜单` : undefined} />}>
               {!hub && <span className="avatar" aria-hidden>{user.name.slice(0, 1)}</span>}
               <span>
                 {hub ? `欢迎，${user.name}！` : user.name}
@@ -460,25 +520,23 @@ function Workbench() {
       <ErrorNotice message={error}/>
       <Tabs value={page} onValueChange={value => navigate(value === "packages" ? "packages" : "courses")}>
         <TabsList aria-label="教学工作台">{hubNav.map(item => <TabsTrigger key={item.key} value={item.key}>{item.title}</TabsTrigger>)}</TabsList>
-        <TabsContent value="courses"><CoursePicker classes={classes} exportCourse={exportCourse} exporting={exporting} courses={courses} items={myCourses} onOpen={selectCourse} admin={isAdmin}/></TabsContent>
+        <TabsContent value="courses"><CoursePicker classes={classes ?? []} exportCourse={exportCourse} exporting={exporting} courses={courses} items={myCourses} onOpen={selectCourse} admin={isAdmin}/></TabsContent>
         <TabsContent value="packages"><Packages revision={packageRevision} courses={myCourses} onCreated={courses.reload}/></TabsContent>
       </Tabs>
     </main> : <div className={`workbench ${sidebar ? "" : "sidebar-collapsed"}`}>
+      {sidebar && <button className="sidebar-backdrop" aria-label="关闭导航菜单" onClick={() => setSidebar(false)} />}
       <aside id="workbench-sidebar" className="sidebar">
         {brand}
         <div className="sidebar-scroll">
-          <div className="sidebar-return"><a href="/teacher/courses" onClick={e => { e.preventDefault(); navigate("courses"); }}><ChevronLeft size={18} aria-hidden/>返回课程选择</a></div>
+          <div className="sidebar-return"><a href="/teacher/courses" aria-label="返回课程选择" title={sidebar ? undefined : "返回课程选择"} onClick={e => { e.preventDefault(); navigate("courses"); }}><ChevronLeft size={18} aria-hidden/><span className="nav-text">返回课程选择</span></a></div>
           {globalPage && isAdmin && <nav aria-label="工作台导航">{globalNav.map(link)}</nav>}
           {course && !globalPage && <nav aria-label="课程导航">
-            {courseNav.map(item => (
-              <div key={item.key}>
-                {item.key === "classroom" && <p className="nav-label">班级教学</p>}
-                {item.key === "content-graph" && <p className="nav-label">课程内容</p>}
-                {item.key === "quick-orchestration" && <p className="nav-label">课程编排</p>}
-                {item.key === "settings" && <p className="nav-label">任务与设置</p>}
-                {link(item)}
-              </div>
-            ))}
+            {navLink(classNav[0], page === "classes" || page === "students")}
+            {group("statistics-nav", "学情统计", ChartNoAxesCombined, statisticsNav)}
+            {link(classNav[1])}
+            <p className="nav-label">课程内容</p>{contentNav.map(link)}
+            <p className="nav-label">课程活动</p>{activityNav.map(link)}
+            <div className="course-settings-nav">{group("settings-nav", "设置", Settings, settingsNav)}</div>
           </nav>}
         </div>
         <div className="sidebar-bottom">
@@ -501,25 +559,22 @@ function Workbench() {
           <span className="text-border">/</span>
           {course && !globalPage && <span>{course.name} / </span>}
           <span>{pages.find((n) => n.key === page)?.title}</span>
-          {classPage && <div className="class-picker">
-            <label className="class-picker-label" htmlFor="active-class">当前班级</label>
-            <SelectField
+          {classPage && classroom && <div className="class-picker">
+            <span className="class-picker-label">当前班级</span>
+            {inCourse.length === 1 ? <span aria-label="当前班级">{classroom.name}</span> : <SelectField aria-label="当前班级"
               id="active-class"
               disabled={busy || inCourse.length === 0}
               value={classroomId ?? ""}
               onValueChange={(value) => changeClass(Number(value))}
             >
-              <option value="" disabled>
-                选择班级
-              </option>
               {inCourse.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {isAdmin ? `${c.teacher_name || (c.teacher_id === user.id ? user.name : "未知教师")} | ${c.name}` : c.name}
+                  {c.name}
                 </option>
               ))}
-            </SelectField>
+            </SelectField>}
           </div>}
-          {classPage && <Button
+          {classPage && classroom && <Button
             className="shrink-0"
             variant="outline"
             size="sm"
@@ -534,7 +589,7 @@ function Workbench() {
         <main className={page === "content-graph" && course ? "main-content graph-main" : "main-content"}>
           <ErrorNotice message={error} />
           <Suspense key={`${user.id}:${classPage ? classroomId : courseId}:${page}`} fallback={<Loading />}>
-            {renderPage(user)}
+            <TablePreferences>{renderPage()}</TablePreferences>
           </Suspense>
         </main>
       </div>

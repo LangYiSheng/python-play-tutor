@@ -1,3 +1,4 @@
+import { ListEmpty } from "@/components/common";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,7 +104,7 @@ export function QuestionPlanEditor({ recipe, chapters, withQuiz, onChange }: Pro
               <span className="block break-words font-medium">{catalog.get(row.chapter_id)?.title ?? "已移出的章节"}</span>
               <span className="hint">{stages.map(s => `${stageNames[s]} ${Number.isFinite(stageCount(recipe, row, s)) ? stageCount(recipe, row, s) : "—"} 题`).join(" · ")}</span>
             </button></div>)}
-            {!visible.length && <p className="hint">没有匹配的章节。</p>}
+            {!visible.length && <ListEmpty title="尚未选择授课章节" filteredTitle="没有匹配的章节。" filtered={Boolean(search.trim())} reset={() => setSearch("")} />}
           </div>
         </div>
         {current && <div className="min-w-0 rounded-lg border p-3">

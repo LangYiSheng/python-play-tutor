@@ -1,5 +1,6 @@
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import {
-  Empty,
   ErrorNotice,
   Loading,
   PageHeader,
@@ -10,7 +11,6 @@ import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -108,17 +108,13 @@ export function Activities({ courseId, teacherId }: { courseId: number; teacherI
               </option>
             ))}
           </SelectField>
-        </div>
+        <span id="activities-page-columns-0" className="ml-auto" /></div>
         {course.loading ? (
           <Loading />
-        ) : !activities.length ? (
-          <Empty
-            title={
-              course.data?.activities.length ? "没有匹配的活动" : "尚无学习活动"
-            }
-          />
+        ) : course.error ? null : !activities.length ? (
+          <ListEmpty title="尚无学习活动" filtered={Boolean(query.trim()) || chapterFilter !== "all" || typeFilter !== "all"} reset={() => { setQuery(""); setChapterFilter("all"); setTypeFilter("all"); }} action={course.data?.chapters.length ? <Button onClick={() => edit(null)}>创建第一个活动</Button> : undefined} description={!course.data?.chapters.length ? "先在内容列表创建章节，再添加活动。" : undefined} />
         ) : (
-          <Table>
+          <ManagementTable toolsId="activities-page-columns-0" paginate key={query + chapterFilter + typeFilter}>
             <TableHeader>
               <TableRow>
                 <TableHead>活动名称</TableHead>
@@ -183,7 +179,7 @@ export function Activities({ courseId, teacherId }: { courseId: number; teacherI
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ManagementTable>
         )}
       </div>
       <DeleteSelection actions={deletion} />

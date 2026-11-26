@@ -1,6 +1,9 @@
+import { PaginatedRows } from "@/components/paginated-rows";
+import { ListEmpty } from "@/components/common";
+import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { useState, type FormEvent } from "react";
-import { CalendarClock, Pencil, Eye } from "lucide-react";
+import { CalendarClock, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +30,6 @@ import {
   ErrorNotice,
   Loading,
   Empty,
-  Pager,
   TableSearch,
 } from "@/components/common";
 import { api, scoped, errorMessage } from "@/lib/api";
@@ -41,17 +43,6 @@ interface Release {
   status: "published" | "paused";
   opens_at: string | null;
   prerequisite_chapter_id: number | null;
-}
-interface Progress {
-  members: {
-    id: number;
-    student_id: string | null;
-    name: string;
-    completed_chapters: number;
-    completed_nodes: number;
-    submissions: number;
-    records: number;
-  }[];
 }
 interface StudentRecord {
   assessments?: { id: string; activity_id: string; activity_title?: string; score: number | null; max_score: number; status: string }[];
@@ -86,24 +77,15 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
   const course = useResource<Course>(scoped("/teacher/catalog", courseId)),
     releases = useResource<Release[]>(
       `/teacher/classrooms/${classroomId}/releases`,
-    ),
-    progress = useResource<Progress>(
-      `/teacher/classrooms/${classroomId}/progress`,
     );
-  const [tab, setTab] = useState("releases"),
-    [editing, setEditing] = useState<Chapter | null>(null),
+  const [editing, setEditing] = useState<Chapter | null>(null),
     [status, setStatus] = useState<Release["status"]>("published"),
     [opensAt, setOpensAt] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [dirty, setDirty] = useState(false),
-    [student, setStudent] = useState<number | null>(null),
     [releaseQuery, setReleaseQuery] = useState(""),
-    [releaseFilter, setReleaseFilter] = useState("all"),
-    [query, setQuery] = useState(""),
-    [progressFilter, setProgressFilter] = useState("all"),
-    [page, setPage] = useState(1),
-    [size, setSize] = useState(25);
+    [releaseFilter, setReleaseFilter] = useState("all");
   useDraft(!!editing && dirty);
   function edit(chapter: Chapter) {
     const row = releases.data?.find((r) => r.chapter_id === chapter.id);
@@ -148,35 +130,18 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
     chapter.title.toLowerCase().includes(releaseQuery.trim().toLowerCase()) &&
     (releaseFilter === "all" || releaseFilter === state),
   );
-  const members = (progress.data?.members ?? []).filter((m) => {
-    const hasRecords = Boolean(m.completed_chapters || m.completed_nodes || m.submissions || m.records);
-    const search = query.trim().toLowerCase();
-    return (m.name.toLowerCase().includes(search) || (m.student_id ?? "").includes(search)) &&
-      (progressFilter === "all" || (progressFilter === "started") === hasRecords);
-  });
-  const safePage = Math.min(
-    page,
-    Math.max(1, Math.ceil(members.length / size)),
-  );
   return (
     <>
       <PageHeader
-        title="教学管理"
+        title="章节安排"
       />
       <ErrorNotice
         message={
           course.error ||
           releases.error ||
-          progress.error ||
           (!editing ? error : "")
         }
       />
-      <Tabs value={tab} onValueChange={setTab} className="gap-4">
-        <TabsList variant="line" aria-label="教学管理视图">
-          <TabsTrigger value="releases">章节安排</TabsTrigger>
-          <TabsTrigger value="progress">学习记录</TabsTrigger>
-        </TabsList>
-        <TabsContent value="releases">
         <div className="surface">
           <div className="toolbar">
             <TableSearch label="搜索章节" placeholder="搜索章节名称" value={releaseQuery} onValueChange={setReleaseQuery} />
@@ -184,13 +149,13 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
               <option value="all">全部开放状态</option>
               {Object.entries(releaseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </SelectField>
-          </div>
+          <span id="teaching-columns-0" className="ml-auto" /></div>
           {course.loading || releases.loading ? (
             <Loading />
           ) : !chapters.length ? (
-            <Empty title={course.data?.chapters.length ? "没有匹配的章节" : "还没有章节"} />
+            <ListEmpty title="还没有章节" description="可在课程内容列表添加章节。" filtered={Boolean(releaseQuery.trim()) || releaseFilter !== "all"} reset={() => { setReleaseQuery(""); setReleaseFilter("all"); }} />
           ) : (
-            <Table>
+            <ManagementTable toolsId="teaching-columns-0" paginate key={releaseQuery + releaseFilter}>
               <TableHeader>
                 <TableRow>
                   <TableHead>章节</TableHead>
@@ -234,79 +199,9 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
                     </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ManagementTable>
           )}
         </div>
-        </TabsContent>
-        <TabsContent value="progress">
-        <div className="surface">
-          <div className="toolbar">
-            <TableSearch label="搜索学习记录" placeholder="搜索学号或姓名" value={query} onValueChange={(value) => { setQuery(value); setPage(1); }} />
-            <SelectField aria-label="学习记录状态" value={progressFilter} onValueChange={(value) => { setProgressFilter(value); setPage(1); }}>
-              <option value="all">全部学习状态</option>
-              <option value="started">已有学习记录</option>
-              <option value="not_started">暂无学习记录</option>
-            </SelectField>
-          </div>
-          {progress.loading ? (
-            <Loading />
-          ) : !members.length ? (
-            <Empty title="没有匹配的学生" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>学生</TableHead>
-                  <TableHead>完成章节</TableHead>
-                  <TableHead>完成节点</TableHead>
-                  <TableHead>正式提交</TableHead>
-                  <TableHead>参与记录</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members
-                  .slice((safePage - 1) * size, safePage * size)
-                  .map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell>
-                        <p className="font-medium">{m.name}</p>
-                        <small className="text-muted-foreground">
-                          {m.student_id ?? "未分配学号"}
-                        </small>
-                      </TableCell>
-                      <TableCell>{m.completed_chapters}</TableCell>
-                      <TableCell>{m.completed_nodes}</TableCell>
-                      <TableCell>{m.submissions}</TableCell>
-                      <TableCell>{m.records}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setStudent(m.id)}
-                        >
-                          <Eye />
-                          查看记录
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          )}
-          <Pager
-            page={safePage}
-            size={size}
-            total={members.length}
-            onPage={setPage}
-            onSize={(v) => {
-              setSize(v);
-              setPage(1);
-            }}
-          />
-        </div>
-        </TabsContent>
-      </Tabs>
       <Dialog
         open={!!editing}
         onOpenChange={(v) => {
@@ -358,14 +253,6 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
           </form>
         </DialogContent>
       </Dialog>
-      {student !== null && (
-        <RecordViewer
-          classroomId={classroomId}
-          studentId={student}
-          course={course.data}
-          onClose={() => setStudent(null)}
-        />
-      )}
     </>
   );
 }
@@ -425,11 +312,11 @@ export function RecordViewer({
             {result.loading ? (
               <Loading />
             ) : tab === "assessments" ? (
-              result.data?.assessments?.length ? <Table><TableHeader><TableRow>
+              result.data?.assessments?.length ? <PaginatedRows rows={result.data.assessments}>{visible => <Table><TableHeader><TableRow>
                 <TableHead>测验</TableHead><TableHead>成绩</TableHead>
-              </TableRow></TableHeader><TableBody>{result.data.assessments.map(item => <TableRow key={item.id}>
+              </TableRow></TableHeader><TableBody>{visible.map(item => <TableRow key={item.id}>
                 <TableCell>{item.activity_title || item.activity_id}</TableCell><TableCell>{item.score === null ? (item.status === "draft" ? "未交" : item.status === "attention" ? "评测异常" : "待判定") : `${item.score} / ${item.max_score}`}</TableCell>
-              </TableRow>)}</TableBody></Table> : <Empty title="暂无测验成绩" />
+              </TableRow>)}</TableBody></Table>}</PaginatedRows> : <Empty title="暂无测验成绩" />
             ) : tab === "submissions" ? (
             result.data?.submissions.length ? (
               result.data.submissions
