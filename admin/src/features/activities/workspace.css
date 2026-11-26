@@ -6,6 +6,10 @@
 .activity-chapters svg { flex:none; }
 .activity-chapters button:hover { background:var(--muted); }
 .activity-chapters button[aria-current] { background:var(--accent); color:var(--accent-foreground); font-weight:600; }
+.activity-chapter-status { display:inline-flex; flex:none; margin-inline-start:auto; color:var(--muted-foreground); }
+.activity-chapter-status[data-state="published"] { color:#237750; }
+.activity-chapter-heading { display:flex; align-items:baseline; gap:.65rem; }
+.activity-chapter-number { display:inline-grid; flex:none; place-items:center; min-width:1.85rem; min-height:1.85rem; padding-inline:.35rem; border-radius:.45rem; background:var(--accent); color:var(--accent-foreground); font:600 .875rem/1 var(--font-sans, sans-serif); font-variant-numeric:tabular-nums; }
 .activity-panel-heading { padding:1.25rem; border-bottom:1px solid var(--border); }
 .activity-rows { margin:0; padding:0 1.25rem; }
 .activity-rows li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:.85rem; padding:1rem 0; }

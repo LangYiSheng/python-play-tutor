@@ -6,6 +6,7 @@ import { ClassroomManagement } from "@/features/management/classrooms";
 import { Accounts } from "@/features/management/accounts";
 import { GlobalOverview } from "@/features/management/overview";
 import { RecordViewer } from "@/pages/teaching";
+import { Students } from "@/pages/students";
 
 const row = { id: 7, name: "一班", teacher_id: 12, teacher_name: "任老师", status: "active", student_count: 2, has_learning_records: true };
 const props = { courseId: 3, onCreate: vi.fn(), onOpen: vi.fn(), onChanged: vi.fn() };
@@ -62,6 +63,36 @@ it("lets administrators reset an unbound legacy student's password using a valid
   await user.click(confirm);
   expect(await screen.findByText("已重置密码 · 小林")).toBeVisible();
   expect(fetch.mock.calls.filter(([url, init]) => url === "/api/admin/accounts/5/reset-password" && init.method === "POST")).toHaveLength(1);
+});
+
+it.each(["classroom", "admin"] as const)("adds a single student from the %s student-management page", async scope => {
+  const classroom = scope === "classroom";
+  const student = { id: 8, name: "测试学生", student_id: "00000034", role: "student", classrooms: [], must_change_password: true, disabled: false };
+  let added = false;
+  const fetch = vi.fn(async (url: string, init: RequestInit) => {
+    if (init.method === "POST") {
+      added = true;
+      return Response.json(classroom ? { created: 1, bound: 0, existing: 0 } : student);
+    }
+    if (url.endsWith("/classrooms/management")) return Response.json([]);
+    const items = added ? [student] : [];
+    return Response.json(classroom ? items : { items, total: items.length });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const user = userEvent.setup();
+  render(classroom ? <Students classroomId={7} /> : <Accounts role="student" />);
+  if (classroom) expect(screen.getByRole("button", { name: "导入学生" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "添加学生" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await user.type(dialog.getByLabelText("学号"), student.student_id);
+  await user.type(dialog.getByLabelText("姓名"), student.name);
+  await user.click(dialog.getByRole("button", { name: "添加学生" }));
+  const payload = { student_id: student.student_id, name: student.name };
+  expect(fetch).toHaveBeenCalledWith(classroom ? "/api/teacher/classrooms/7/students" : "/api/admin/students", expect.objectContaining({
+    method: "POST", body: JSON.stringify(classroom ? { students: [payload] } : payload),
+  }));
+  expect(await screen.findByText(student.name)).toBeVisible();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 it("reads retained grades from the history endpoint and distinguishes zero from pending", async () => {

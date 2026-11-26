@@ -48,6 +48,11 @@ class CreateInput(BaseModel):
     students: list[StudentInput] = Field(min_length=1, max_length=MAX_ROWS)
 
 
+def new_student_account(student_id: str, name: str) -> User:
+    return User(student_id=student_id, name=name, role="student",
+                password_hash=hash_password(student_id), must_change_password=True)
+
+
 def inspect_students(db, classroom_id, students):
     seen, errors, result = set(), [], []
     existing = {u.student_id: u for u in db.scalars(select(User).where(User.student_id.in_([s.student_id for s in students])))}
@@ -101,8 +106,7 @@ def create_students(classroom_id: int, body: CreateInput, db: Annotated[Session,
                 db.add(Membership(user_id=student_id, classroom_id=classroom_id))
                 bound += 1
                 continue
-            student = User(student_id=row["student_id"], name=row["name"], role="student",
-                           password_hash=hash_password(row["student_id"]), must_change_password=True)
+            student = new_student_account(row["student_id"], row["name"])
             db.add(student)
             db.flush()
             db.add(Membership(user_id=student.id, classroom_id=classroom_id))

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { BookOpen, ClipboardList, Code2, FileCheck2, ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { BookOpen, CirclePause, ClipboardList, Clock3, Code2, FileCheck2, ListChecks, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Button } from "@/components/ui/button";
 import { scoped } from "@/lib/api";
+import { chapterReleaseState, type ChapterRelease } from "@/lib/chapter-release";
 import type { Activity, Chapter, Course, QuestionCandidate } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 import { ChapterMaterials } from "./chapter-materials";
@@ -17,11 +18,22 @@ const categories = [
   { key: "assessment", label: "测验", icon: FileCheck2 },
 ] as const;
 
-export function LearningTasks({ courseId }: { courseId: number }) {
+const releaseIcons = {
+  published: { icon: LockOpen, label: "已开放" },
+  unpublished: { icon: Lock, label: "未开放" },
+  scheduled: { icon: Clock3, label: "等待开放" },
+  paused: { icon: CirclePause, label: "已暂停" },
+};
+
+export function LearningTasks({ courseId, classroomId }: { courseId: number; classroomId?: number | null }) {
+  const id = useId();
   const course = useResource<Course>(scoped("/teacher/catalog", courseId));
+  const releases = useResource<ChapterRelease[]>(classroomId ? `/teacher/classrooms/${classroomId}/releases` : null);
   const [selected, setSelected] = useState(() => Number(new URLSearchParams(location.search).get("chapter")));
   const chapters = course.data?.chapters ?? [];
   const chapter = chapters.find(item => item.id === selected) ?? chapters[0];
+  const chapterNumber = chapter ? chapter.order_index ?? chapters.indexOf(chapter) + 1 : null;
+  const releaseByChapter = releases.data && new Map(releases.data.map(release => [release.chapter_id, release]));
 
   function selectChapter(id: number) {
     setSelected(id);
@@ -33,14 +45,29 @@ export function LearningTasks({ courseId }: { courseId: number }) {
   return <div className="space-y-4">
     <PageHeader title="学习任务" />
     <ErrorNotice message={course.error} />
+    <ErrorNotice message={releases.error} />
     {course.loading ? <Loading /> : chapter && course.data ? <div className="activity-workspace">
       <nav aria-label="选择章节" className="activity-chapters">
         <h2>课程章节</h2>
-        <div>{chapters.map(item => <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
-          onClick={() => selectChapter(item.id)}><BookOpen size={16}/><span>{item.title}</span></button>)}</div>
+        <div>{chapters.map(item => {
+          const state = releaseByChapter && chapterReleaseState(releaseByChapter.get(item.id));
+          const status = state ? releaseIcons[state] : null;
+          const statusId = `${id}-release-${item.id}`;
+          return <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
+            aria-describedby={status ? statusId : undefined} onClick={() => selectChapter(item.id)}>
+            <BookOpen size={16} aria-hidden="true"/><span>{item.title}</span>
+            {status && <span className="activity-chapter-status" data-state={state} title={status.label}>
+              <status.icon size={15} aria-hidden="true" />
+              <span id={statusId} hidden>{status.label}</span>
+            </span>}
+          </button>;
+        })}</div>
       </nav>
       <div key={chapter.id} className="min-w-0 space-y-4">
-        <h2 className="text-xl font-semibold">{chapter.title}</h2>
+        <h2 className="activity-chapter-heading text-xl font-semibold" aria-label={`第 ${chapterNumber} 章 ${chapter.title}`}>
+          <span className="activity-chapter-number" aria-hidden="true">{chapterNumber}</span>
+          {chapter.title}
+        </h2>
         <ChapterMaterials courseId={courseId} chapter={chapter}/>
         <ChapterActivities courseId={courseId} chapter={chapter} course={course.data} reload={course.reload}/>
       </div>
