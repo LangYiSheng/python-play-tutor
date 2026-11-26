@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.auth import as_utc
-from app.course_content.snapshot import stable_id
+from app.course_packages.snapshot import stable_id
 from app.course_packages.contracts import LIMITS
 from app.course_packages.manifest import PackageError
 from app.course_packages.narration_contract import FIELDS, directory, fingerprint

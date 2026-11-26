@@ -7,7 +7,6 @@ import time
 from typing import Annotated, Literal, cast
 from urllib.parse import urlparse
 
-from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
@@ -21,8 +20,8 @@ from .models import User
 from .narration import tts, tts_catalog
 from .narration.contracts import SpeechSettings
 
-Service = Literal["authoring", "speech"]
-IDS = {"authoring": 2, "speech": 3}
+from .service_connections import IDS, Service, configuration, environment
+
 router = APIRouter(prefix="/teacher/services", tags=["service-settings"])
 
 
@@ -77,25 +76,6 @@ class SpeechInput(ConnectionInput):
             if not 0.5 <= self.speed <= 2:
                 raise ValueError("阿里语音语速只支持 0.5–2")
         return self
-
-
-def environment(service: Service):
-    from .narration.defaults import authoring_environment, speech_environment
-    return authoring_environment() if service == "authoring" else speech_environment()
-
-
-def configuration(service: Service, db: Session | None = None, *, include_key=True):
-    row = db.get(AssistantModelSettings, IDS[service]) if db is not None else None
-    if row is None:
-        value = dict(environment(service))
-        if not include_key:
-            value["api_key"] = ""
-        return value
-    try:
-        key = cipher().decrypt(row.encrypted_key.encode()).decode() if include_key and row.encrypted_key else ""
-    except InvalidToken:
-        raise HTTPException(503, "服务密钥无法解密，请恢复对应主密钥文件") from None
-    return {**row.configuration, "api_key": key}
 
 
 @router.get("/{service}")

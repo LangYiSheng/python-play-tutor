@@ -42,18 +42,15 @@ interface Release {
   chapter_id: number;
   status: "published" | "paused";
   opens_at: string | null;
-  prerequisite_chapter_id: number | null;
 }
 interface StudentRecord {
   assessments?: { id: string; activity_id: string; activity_title?: string; score: number | null; max_score: number; status: string }[];
   student: { name: string; student_id: string | null };
-  events: { id: string; node_id: string; created_at: string }[];
+  chapters: {id: number; title: string; completed: boolean; tasks: {id: string; title: string; kind: string; required: boolean; completed: boolean; locked: boolean; current: number; total: number; unit: string}[]}[];
   participation: {
     id: string;
-    activity_id: string;
-    kind: string;
-    created_at: string;
-    data: Record<string, unknown>;
+    title: string; chapter: string; kind: string; created_at: string | null;
+    read_pages?: number; read_seconds?: number; watched_seconds?: number; current?: number; total?: number;
   }[];
   submissions: {
     id: string;
@@ -67,6 +64,7 @@ interface StudentRecord {
   }[];
 }
 const date = formatTimestamp;
+const taskKinds: Record<string, string> = {reading: "资料阅读", objective: "客观题练习", programming: "编程题练习", assessment: "测验"};
 const releaseLabels = {
   unpublished: "未发布",
   paused: "已暂停",
@@ -161,7 +159,6 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
                   <TableHead>章节</TableHead>
                   <TableHead>开放状态</TableHead>
                   <TableHead>开放时间</TableHead>
-                  <TableHead>前置章节</TableHead>
                   <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -180,11 +177,6 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
                       </TableCell>
                       <TableCell>
                         {r?.opens_at ? date(r.opens_at) : r ? "立即开放" : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {course.data?.chapters.find(
-                          (v) => v.id === c.prerequisite_chapter_id,
-                        )?.title ?? "无"}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -268,7 +260,6 @@ function readable(value: unknown): string {
 export function RecordViewer({
   classroomId,
   studentId,
-  course,
   history = false,
   showGrades = false,
   onClose,
@@ -306,7 +297,7 @@ export function RecordViewer({
             <TabsTrigger value="assessments">测验成绩</TabsTrigger>
             <TabsTrigger value="submissions">作答记录</TabsTrigger>
             <TabsTrigger value="participation">活动参与</TabsTrigger>
-            <TabsTrigger value="events">任务节点</TabsTrigger>
+            <TabsTrigger value="chapters">章节任务</TabsTrigger>
           </TabsList>
           <TabsContent value={tab} className="max-h-[60vh] space-y-4 overflow-y-auto">
             {result.loading ? (
@@ -349,45 +340,44 @@ export function RecordViewer({
             )
           ) : tab === "participation" ? (
             result.data?.participation.length ? (
-              result.data.participation
-                .slice()
-                .reverse()
-                .map((r) => (
+              result.data.participation.map((r) => (
                   <article className="border rounded-lg p-4" key={r.id}>
                     <div className="flex justify-between gap-4">
                       <h3 className="font-medium">
-                        {course?.activities.find((a) => a.id === r.activity_id)
-                          ?.title ?? "学习活动"}
+                        {r.title}
                       </h3>
                       <time className="text-xs text-muted-foreground">
-                        {date(r.created_at)}
+                        {r.created_at && date(r.created_at)}
                       </time>
                     </div>
                     <p className="text-sm text-muted-foreground mt-2">
-                      {r.kind}
+                      {r.chapter} · {taskKinds[r.kind]}
                     </p>
                     <p className="text-sm whitespace-pre-wrap mt-2">
-                      {readable(r.data)}
+                      {r.watched_seconds !== undefined ? `有效观看 ${r.watched_seconds} 秒`
+                        : r.read_pages !== undefined ? `已读 ${r.read_pages} 页，有效阅读 ${r.read_seconds} 秒`
+                        : `题目进度 ${r.current} / ${r.total}`}
                     </p>
                   </article>
                 ))
             ) : (
               <Empty title="暂无参与记录" />
             )
-          ) : result.data?.events.length ? (
-            result.data.events.map((r) => (
-              <article
-                key={r.id}
-                className="border rounded-lg p-4 flex justify-between gap-4"
-              >
-                <p>{r.node_id}</p>
-                <time className="text-xs text-muted-foreground">
-                  {date(r.created_at)}
-                </time>
-              </article>
+          ) : result.data?.chapters?.length ? (
+            result.data.chapters.map(chapter => (
+              <section className="rounded-lg border p-4" key={chapter.id}>
+                <h3 className="font-medium">{chapter.title} {chapter.completed && <Badge>已完成</Badge>}</h3>
+                {chapter.tasks.length ? <ul className="mt-2 divide-y">{chapter.tasks.map(task => (
+                  <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm" key={task.id}>
+                    <span>{task.title}</span>
+                    <span className="text-muted-foreground">{taskKinds[task.kind]} · {task.required ? "必做" : "选做"}</span>
+                    <span className="ml-auto">{task.completed ? "已完成" : task.locked ? "待解锁" : "未完成"} · {task.current}/{task.total} {task.unit}</span>
+                  </li>
+                ))}</ul> : <p className="mt-2 text-sm text-muted-foreground">本章暂无任务</p>}
+              </section>
             ))
           ) : (
-            <Empty title="暂无任务记录" />
+            <Empty title="本班暂无已开放章节" />
           )}
           </TabsContent>
         </Tabs>

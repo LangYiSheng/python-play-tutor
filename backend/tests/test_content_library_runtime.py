@@ -36,7 +36,7 @@ def library_runtime():
         db.add(Npc(key="teacher", name="老师", portrait="builtin:portrait:professor", sprite="builtin:sprite:chara_2"))
         for key in ("runtime-practice-a", "runtime-practice-b", "runtime-assessment"):
             db.add(Activity(id=key, chapter_id=9001, title=key, kind="assessment" if "assessment" in key else "practice",
-                            owner_id=teacher.id, npc_key="teacher", content={"published": True}))
+                            owner_id=teacher.id, content={"published": True, "required": False}))
         db.add_all([Question(id="runtime-q1", title="First", kind="boolean", prompt="True?", status="ready", owner_id=teacher.id),
                     Question(id="runtime-q2", title="Second", kind="boolean", prompt="False?", status="ready", owner_id=teacher.id)])
         db.flush()
@@ -128,11 +128,8 @@ def test_material_filters_unpublished_associations_and_owner_access(library_runt
     assert library[0]["chapter_ids"] == [9001]
     assert client.get(f"/api/materials/{foreign.id}?classroom_id={classroom.id}", headers=headers).status_code == 403
     assert client.get(f"/api/materials/{unclassified.id}?classroom_id={classroom.id}", headers=headers).status_code == 403
-    own.content = {"library_available": False}
-    db.commit()
-    assert client.get(f"/api/materials/{own.id}?classroom_id={classroom.id}", headers=headers).status_code == 403
-    # An activity in the still-unpublished chapter cannot publish the other association.
-    db.add(Activity(id='runtime-unpublished', title='Unpublished', kind='reading', chapter_id=9002, course_instance_id=scope, owner_id=teacher.id, content={'published': True}, resources=[ActivityMaterial(material_id=own.id, required=True, order_index=0, learning={})]))
+    # Removing the open chapter association immediately revokes student access.
+    set_material_chapters(db, own.id, [9002])
     db.commit()
     assert client.get(f"/api/materials/{own.id}?classroom_id={classroom.id}", headers=headers).status_code == 403
 

@@ -37,17 +37,19 @@
 
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="assistantState.code ?? ''" :assistant-state="assistantState" :read-interactive-state="current?.kind === 'interactive' ? readInteractiveState : undefined" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
-      <template v-if="!isAssessment" #goals>
+      <template #goals>
+        <ChapterGoals v-if="chapterTask" :chapter-id="activity.chapter_id" :current="chapterTask.id" :kind="chapterTask.kind" />
+        <template v-if="!isAssessment">
         <section class="practice-goal-summary" aria-label="活动进度">
           <div class="practice-goal-heading">
             <strong>{{ activity.title }}</strong>
-            <button v-if="storySessionId && activityProgress?.completed" class="primary practice-complete" @click="$emit('complete')">完成练习</button>
           </div>
           <div class="support-goal-progress">
             <span>已通过 {{ passedCount }} / {{ questions.length }} 题</span>
             <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
           </div>
         </section>
+      </template>
       </template>
       <template v-if="personalPractice" #question-list>
         <PracticeQuestionGroups :goals="personalPractice.goals" :names="pointNames" :questions="questionOutline" @select-question="selectQuestion" />
@@ -72,12 +74,13 @@
   </LearningSplitLayout>
 </template>
 <script setup lang="ts">
+import ChapterGoals from "../ChapterGoals.vue";
 import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
 import type { InteractiveResult } from '../../../../shared/interactivePractice';
 import { randomUUID } from "../../shared/uuid";
 import type { AssistantFeedback, AssistantState } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { api, ApiError, notify } from "../../shared/api";
+import { api, ApiError } from "../../shared/api";
 import { useSession } from "../../shared/session";
 import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, QuestionOutlineState, Submission } from "../../shared/types";
 import { pendingSubmissionStates } from "./practicePresentation";
@@ -94,12 +97,13 @@ import "../support/learningUi.css";
 import "./practiceUi.css";
 import "./programmingUi.css";
 interface Draft extends QuestionDraft { submission_id?: string; pending?: { key: string; mode: 'submit'; answer: AnswerValue | InteractiveResult; code: string; browser_cases?: BrowserCase[] } }
-const props = defineProps<{ activityId: string; storySessionId?: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
+const props = defineProps<{ activityId: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
 const emit = defineEmits<{ complete: []; activityKind: [kind: string] }>();
 const session = useSession(), { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
 const activity = ref<Activity>(), activityProgress = ref<ActivityProgress>(), paper = ref<AssessmentAttempt>();
 const drafts = ref<Record<string, Draft>>({}), results = ref<Record<string, Submission>>({});
 const assistantFeedback = ref<Record<string, AssistantFeedback>>({});
+const chapterTask = computed(() => session.taskChapters.find(c => c.id === activity.value?.chapter_id)?.tasks.find(t => t.activity_id === props.activityId));
 const questionIndex = ref(0), viewMode = ref<'single' | 'paper'>('single'), questionRegion = ref<HTMLElement>();
 const loading = ref(true), error = ref(''), draftError = ref(''), draftConflict = ref(false), requestBusy = ref(false), busyQuestionId = ref('');
 const compact = ref(false), showAssistant = ref(false), paperSubmissionPending = ref(false);
@@ -302,7 +306,7 @@ async function refreshPractice(ticket: number) {
     if (!drafts.value[question.id]) restoreQuestion(question);
   }
   activity.value = updated;
-  if (updated.progress?.completed && !props.storySessionId) await advanceTask();
+  if (updated.progress?.completed) await advanceTask();
   return updated.progress;
 }
 async function load() {
@@ -327,7 +331,7 @@ async function load() {
       const local = localJson(containerKey.value);
       if (!saved.locked && local?.revision === saved.revision && Array.isArray(local.answers)) { applyAnswers(local.answers); pendingPaper = local.submission; paperSubmissionPending.value = Boolean(pendingPaper); }
       if (local?.mode === 'paper') viewMode.value = 'paper';
-      if (saved.locked) { persistLocal(); schedulePaperPoll(); if (saved.completed && !props.storySessionId && saved.results.length) await advanceTask(saved.results[saved.results.length - 1]!.id); }
+      if (saved.locked) { persistLocal(); schedulePaperPoll(); if (saved.completed && saved.results.length) await advanceTask(); }
       else {
         configureDraftQueue(saved, ticket, loaded.id);
         if (pendingPaper) error.value = '上次交卷结果尚未确认，请重试交卷。';
@@ -336,7 +340,7 @@ async function load() {
       for (const [id, draft] of Object.entries(drafts.value)) {
         if (draft.submission_id) void pollQuestion(id, draft.submission_id, ticket, true);
       }
-      if (loaded.progress?.practice && loaded.progress.completed && !props.storySessionId) await advanceTask();
+      if (loaded.progress?.practice && loaded.progress.completed) await advanceTask();
     }
   } catch (cause) { if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '题目加载失败'; }
   finally { if (currentOwner() && ticket === generation) { loading.value = false; if (activity.value) sessionStorage.setItem(questionPositionKey(), String(questionIndex.value + 1)); } }
@@ -379,7 +383,7 @@ async function handleQuestionResult(id: string, result: Submission, ticket: numb
     const progress = await api.get<ActivityProgress>(`/activities/${props.activityId}/progress?classroom_id=${contextClassroomId}`);
     if (!currentOwner() || ticket !== generation) return;
     activityProgress.value = progress;
-    if (!props.storySessionId && progress.completed) await advanceTask(result.id);
+    if (progress.completed) await advanceTask();
   }
 }
 async function pollQuestion(id: string, submissionId: string, ticket: number, restoring = false) {
@@ -395,15 +399,8 @@ async function pollQuestion(id: string, submissionId: string, ticket: number, re
     if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '结果读取失败';
   }
 }
-async function advanceTask(submissionId?: string) {
-  if (!activity.value || !currentOwner()) return;
-  let advanced = false;
-  for (const quest of session.world?.quests ?? []) for (const node of quest.nodes) {
-    if (node.status !== 'ready' || !['COMPLETE_PRACTICE', 'PASS_ASSESSMENT'].includes(node.type) || node.activity_id !== activity.value.id) continue;
-    try { await session.event(quest, node, { submission_id: submissionId }); advanced = true; }
-    catch (cause) { notify(cause instanceof Error ? cause.message : '仍有待完成题目'); }
-  }
-  if (advanced && currentOwner()) await session.refresh();
+async function advanceTask() {
+  if (currentOwner() && chapterTask.value) await session.refreshTasks();
 }
 async function submitPaper() {
   if (!activity.value || !isAssessment.value || paper.value?.locked || requestBusy.value || !allAnswered.value) return;
@@ -416,7 +413,7 @@ async function submitPaper() {
     if (!currentOwner() || ticket !== generation) return;
     paper.value = saved; pendingPaper = undefined; paperSubmissionPending.value = false; draftQueue = undefined; applyAnswers(saved.answers); persistLocal();
     if (saved.question_ids.some(id => !activity.value?.questions.some(question => question.id === id))) error.value = '试卷中的部分题目已调整，请联系教师查看。';
-    if (saved.completed && !props.storySessionId && saved.results.length) await advanceTask(saved.results[saved.results.length - 1]!.id);
+    if (saved.completed && saved.results.length) await advanceTask();
     schedulePaperPoll();
   } catch (cause) { if (currentOwner() && ticket === generation) { error.value = cause instanceof Error ? cause.message : '交卷失败，请重试。'; if (cause instanceof ApiError && cause.status === 422) { pendingPaper = undefined; paperSubmissionPending.value = false; persistLocal(); } if (cause instanceof ApiError && cause.status === 409 || cause instanceof Error && /锁定|已提交|已交卷/.test(cause.message)) await refreshPaper(ticket); } }
   finally { if (currentOwner() && ticket === generation) requestBusy.value = false; }
@@ -438,13 +435,13 @@ async function refreshPaper(ticket: number) {
       configureDraftQueue(saved, ticket, props.activityId);
       persistLocal();
     }
-    if (saved.completed && !wasCompleted && !props.storySessionId && saved.results.length) await advanceTask(saved.results[saved.results.length - 1]!.id);
+    if (saved.completed && !wasCompleted && saved.results.length) await advanceTask();
     schedulePaperPoll();
   } catch (cause) {
     if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '试卷结果读取失败';
   }
 }
-function cite(id: number, page: number) { session.navigate({ kind: 'material', material_id: id, page_no: page }); }
+function cite(id: number, page: number) { session.navigate({ kind: 'material', material_id: id, chapter_id:session.taskChapters.find(c => c.id === activity.value?.chapter_id && c.tasks.some(t => t.material_id === id))?.id, page_no: page }); }
 watch(() => props.activityId, load);
 watch(ownerActive, active => { if (!active) browserSubmission?.abort(); });
 watch(sidebarCollapsed, value => { if (value) showAssistant.value = false; });

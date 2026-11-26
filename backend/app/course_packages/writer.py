@@ -5,12 +5,14 @@ import json
 from pathlib import Path
 
 import yaml
+
 from sqlalchemy import select
 
 from app.auth import as_utc
-from app.course_content.snapshot import snapshot_content, stable_id
+from app.course_packages.snapshot import stable_id
+from app.course_packages.snapshot import package_snapshot
 from app.course_instances import MODEL_NAMES
-from app.course_packages.contracts import CONFIG_FILES, JSONL_FILES, LIMITS
+from app.course_packages.contracts import JSONL_FILES, LIMITS
 from app.course_packages.manifest import PackageError, validate_package
 from app.materials.storage import get_storage
 from app.models import Material, now
@@ -27,12 +29,12 @@ def _write_jsonl(path, values):
 
 
 def write_package(db, instance, root):
-    data, secrets, prerequisites, config, rows = snapshot_content(db, instance)
+    data, secrets, config, rows = package_snapshot(db, instance)
     if any(material.status in {"queued", "processing"} for material in rows[Material]):
         raise PackageError("班级资料仍在转换，请完成后导出课程")
     created = as_utc(instance.created_at).isoformat()
     manifest = {
-        "schema_version": 3,
+        "schema_version": 4,
         "origin": "exported",
         "package_id": instance.package_id,
         "name": instance.name,
@@ -42,17 +44,14 @@ def write_package(db, instance, root):
         "requires": {
             "world_id": "pythontopia-town",
             "world_schema_version": 1,
-            "capabilities": ["reading", "practice", "assessment", "dialogue", "tasks", "library"],
+            "capabilities": ["reading", "practice", "assessment", "chapter_tasks", "library"],
         },
         "entry": "curriculum/course.yaml",
     }
     if any(material.kind == "video" for material in rows[Material]):
         manifest["requires"]["capabilities"].append("video")
     _write_yaml(root / "manifest.yaml", manifest)
-    course = {"schema_version": 2, "title": instance.name, "prerequisites": prerequisites}
-    recipe = config.get("_quick_orchestration", {}).get("recipe")
-    if recipe is not None:
-        course["quick_orchestration"] = recipe
+    course = {"schema_version": 4, "title": instance.name}
     _write_yaml(root / "curriculum/course.yaml", course)
     chapter_paths = {
         row["id"]: f"curriculum/chapters/{index:04d}" for index, row in enumerate(sorted(data["chapter"], key=lambda r: r["order_index"]))
@@ -62,19 +61,8 @@ def write_package(db, instance, root):
     for model, path in JSONL_FILES.items():
         _write_jsonl(root / path, data[MODEL_NAMES[model]])
     _write_jsonl(root / "content/secrets/answers.jsonl", secrets)
-    _write_yaml(root / "world/npcs.yaml", data["npc"])
     for index, row in enumerate(data["activity"]):
         _write_yaml(root / f"content/activities/{index:06d}.yaml", row)
-    for index, row in enumerate(data["quest"]):
-        parent = "world" if row["chapter_id"] is None else chapter_paths[row["chapter_id"]]
-        _write_yaml(root / parent / "quests" / f"{index:06d}.yaml", row)
-    for index, row in enumerate(data["story"]):
-        prefix = chapter_paths[row["chapter_id"]] + "/flows" if row["chapter_id"] else "world/flows"
-        _write_yaml(root / prefix / f"{index:06d}.yaml", row)
-    for key, path in CONFIG_FILES.items():
-        _write_yaml(root / path, config.get(key, {})) if key != "editor" else (root / "editor").mkdir(exist_ok=True)
-        if key == "editor":
-            (root / path).write_text(json.dumps(config.get(key, {}), ensure_ascii=False), encoding="utf-8")
     adapter, assets = get_storage(), []
     original_assets = {asset["id"]: asset for asset in config.get("_assets", [])}
     asset_ids = {row["id"]: row["asset_id"] for row in data["material"]}
@@ -91,17 +79,12 @@ def write_package(db, instance, root):
             preview_id = preview_ids[stable_id(material)]
             export_assets.append({**original_assets.get(preview_id, {}), "id": preview_id, "storage_key": material.content["preview_key"]})
     exported_ids = {asset["id"] for asset in export_assets}
-    retired_materials = db.scalars(
-        select(Material).where(Material.course_instance_id == instance.id, Material.deleted_at.is_not(None)).execution_options(include_deleted=True)
-    )
-    retired_keys = {key for row in retired_materials for key in (row.storage_key, row.content.get("preview_key")) if key}
-    character_assets = {row[kind][6:] for row in data["npc"] for kind in ("portrait", "sprite") if row[kind].startswith("asset:")}
-    export_assets.extend(
-        asset
-        for key, asset in original_assets.items()
-        if key not in exported_ids and not asset.get("path", "").startswith("narrations/")
-        and asset["storage_key"] not in retired_keys and (not asset.get("character_kind") or key in character_assets)
-    )
+    retired = db.scalars(select(Material).where(Material.course_instance_id == instance.id, Material.deleted_at.is_not(None))
+                         .execution_options(include_deleted=True))
+    retired_keys = {key for material in retired for key in (material.storage_key, material.content.get("preview_key")) if key}
+    export_assets.extend(asset for key, asset in original_assets.items()
+                         if key not in exported_ids and not asset.get("character_kind") and asset["storage_key"] not in retired_keys
+                         and not asset.get("path", "").startswith("narrations/"))
     for source in {asset["id"]: asset for asset in export_assets}.values():
         suffix = Path(source["storage_key"]).suffix.lower()
         from app.course_packages.manifest import MEDIA_TYPES
@@ -133,7 +116,7 @@ def write_package(db, instance, root):
                 "source": source.get("source", "教师授权班级当前资料"),
                 "license": source.get("license", "仅按原资料授权使用；本清单不新增授权"),
                 **{
-                    key: source[key] for key in ("character_kind", "width", "height", "frame_width", "frame_height", "original_name") if key in source
+                    key: source[key] for key in ("original_name",) if key in source
                 },
             }
         )

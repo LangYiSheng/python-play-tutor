@@ -6,12 +6,7 @@
         <label class="town-field" for="developer-chapter">选择章节
           <GameSelect id="developer-chapter" v-model="chapterId" :disabled="action.busy" aria-label="选择章节" :options="(overview?.chapters ?? []).map(item => ({ value: item.id, label: `${item.title} · ${chapterState(item)}` }))" />
         </label>
-        <button class="town-secondary" :disabled="action.busy || !chapter || chapter.status !== 'published'" @click="locateChapter">
-          <GameIcon name="compass" />定位本章
-        </button>
       </div>
-      <p class="developer-help">只调整本学生的章节前置，不修改班级发布安排。未发布或未到开放时间的章节仍不可进入。</p>
-      <ToolFeedback v-if="action.name === 'chapter'" :error="action.error" :message="action.message" />
     </section>
     <div class="developer-columns">
       <section class="developer-section" aria-labelledby="developer-material-title">
@@ -64,7 +59,7 @@ import ToolFeedback from "./ToolFeedback.vue";
 import { useDeveloperTools, useToolAction } from "./useDeveloperTools";
 import type { ExperienceOverview } from "./types";
 
-const { overview, session, load } = useDeveloperTools();
+const { overview, session } = useDeveloperTools();
 const action = reactive(useToolAction());
 const chapterId = ref<number>();
 const materialId = ref("");
@@ -79,20 +74,7 @@ const material = computed(() => materials.value.find(item => String(item.id) ===
 const activity = computed(() => activities.value.find(item => item.id === activityId.value));
 
 function chapterState(item: ExperienceOverview["chapters"][number]) {
-  return item.available ? "可进入" : item.status === "published" ? "需定位或等待开放" : "未发布";
-}
-
-function locateChapter() {
-  const id = chapterId.value;
-  if (!id) return;
-  return action.run("chapter", async ({ client, current }) => {
-    await client.locateChapter(id);
-    if (!current()) return;
-    await session.refresh();
-    if (!current()) return;
-    await load();
-    if (current()) action.message = "章节定位已更新。";
-  });
+  return item.available ? "可进入" : item.status === "published" ? "等待开放" : "未发布";
 }
 
 function openContent(kind: "material" | "activity") {
@@ -106,8 +88,7 @@ function openContent(kind: "material" | "activity") {
   return action.run(kind, async ({ client, current }) => {
     const result = await client.openContent(body);
     if (current() && result.workspace) {
-      session.dismissStory();
-      session.navigate(result.workspace);
+      session.navigate(result.workspace.kind === "material" ? {...result.workspace, chapter_id:chapterId.value} : result.workspace);
     }
   });
 }

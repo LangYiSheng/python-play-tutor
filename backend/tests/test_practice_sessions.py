@@ -5,12 +5,9 @@ import sqlite3
 import subprocess
 import sys
 
-import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.content_relations import set_question_knowledge_points
-from app.course_content.evidence import validate_learning_evidence
 from app.models import Activity, KnowledgePoint, PracticeSession, QuestionSecret, User
 from conftest import make_question
 
@@ -81,14 +78,15 @@ def test_assigned_only_retry_once_and_complete_every_added_question(client, db, 
 
     partial = open_activity()["progress"]
     assert partial["practice"]["goals"][0]["accepted"] == 2 and not partial["completed"]
-    user = db.get(User, student["id"])
-    node = {"type": "COMPLETE_PRACTICE", "activity_id": activity.id}
-    with pytest.raises(HTTPException):
-        validate_learning_evidence(db, user, cid, node, {})
+    def task():
+        chapters = client.get(f"/api/chapter-tasks?classroom_id={cid}", headers=student["headers"]).json()["chapters"]
+        return next(t for chapter in chapters for t in chapter["tasks"] if t["id"] == activity.id)
+
+    assert not task()["completed"]
     assert submit(b, "对", "right-b").status_code == 201
     final = open_activity()["progress"]
     assert final["completed"] and set(final["accepted_question_ids"]) == {a, b, c}
-    validate_learning_evidence(db, user, cid, node, {})
+    assert task()["completed"]
 
 
 def test_practice_session_migration_round_trip(tmp_path):

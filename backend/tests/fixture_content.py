@@ -112,13 +112,11 @@ def load_content(root=None):
 
 
 def validate_sources(root=None):
-    from app.teaching.quests.validation import validate_definition
-    from app.teaching.story.validation import validate_story
     from app.learning_rules import validate_learning
 
     content = load_content(root)
     for quest in content["quests"]:
-        validate_definition(quest)
+        assert quest["id"]
     activities = {item["id"] for item in content["activities"]}
     npc_keys = {item["key"] for item in content["npcs"]}
     questions = {item["id"] for item in content["questions"]}
@@ -134,7 +132,6 @@ def validate_sources(root=None):
         if any(key not in questions and not (key.startswith("course-") and key[7:].isdigit()) for key in ids):
             raise ValueError("活动题集引用了未配置的题目")
     for story in content["stories"]:
-        validate_story(story["story"], quest_definition=story["quest"], story_id=story["id"])
         if set(story["story"]["entries"]) - npc_keys:
             raise ValueError("演出引用了未配置的NPC")
         for binding in story["story"]["bindings"].values():

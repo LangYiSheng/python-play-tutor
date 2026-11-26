@@ -33,10 +33,10 @@ async function confirm(wrapper: VueWrapper) {
 }
 
 describe("developer workspace", () => {
-  it("groups tools into four icon side tabs and keeps the reset in account overview", async () => {
+  it("groups tools into three icon side tabs and keeps the reset in account overview", async () => {
     const wrapper = panel();
     const tabs = wrapper.findAll('[role="tab"]');
-    expect(tabs.map(tab => tab.text())).toEqual(["账户概要", "内容定位", "任务阶段", "体验检查点"]);
+    expect(tabs.map(tab => tab.text())).toEqual(["账户概要", "内容定位", "体验检查点"]);
     expect(wrapper.get('[role="tablist"]').attributes("aria-orientation")).toBe("vertical");
     expect(tabs.every(tab => tab.find("svg").exists())).toBe(true);
     expect(wrapper.get(".developer-reset").isVisible()).toBe(true);
@@ -61,7 +61,7 @@ describe("developer workspace", () => {
   it("adds a native menu entry after settings only for the server-enabled student", async () => {
     const session = useSession(), open = vi.spyOn(session, "open");
     const wrapper = mount(GameHUD); wrappers.push(wrapper);
-    expect(wrapper.get('nav[aria-label="小镇菜单"]').findAll("button").map(button => button.text())).toEqual(["任务日志J", "学习资料", "地图", "我的班级", "设置Esc", "开发工具"]);
+    expect(wrapper.get('nav[aria-label="小镇菜单"]').findAll("button").map(button => button.text())).toEqual(["任务日志J", "去图书馆", "地图", "我的班级", "设置Esc", "开发工具"]);
     const entry = wrapper.get(".hud-dock button:last-child");
     expect(entry.find("svg").exists()).toBe(true);
     await entry.trigger("click");

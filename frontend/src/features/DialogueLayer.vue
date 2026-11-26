@@ -4,7 +4,7 @@
     class="dialogue-layer"
     role="dialog"
     aria-modal="true"
-    aria-label="剧情对白"
+    aria-label="角色对白"
     tabindex="-1"
     @keydown="navigateResponses"
   >
@@ -24,16 +24,12 @@
       <p class="dialogue-text" :aria-label="line?.text">
         {{ displayed }}
       </p>
-      <p v-if="error" class="error">{{ error }}</p>
-      <p v-if="session.storyBusy" class="dialogue-saving" role="status">
-        正在记录这次对话…
-      </p>
-      <div v-if="!typing" class="dialogue-actions" :aria-busy="session.storyBusy">
+      <div v-if="!typing" class="dialogue-actions">
         <button
           v-for="(choice, index) in typing ? [] : (line?.choices ?? [])"
           :key="choice.id"
           class="dialogue-response"
-            :disabled="session.storyBusy"
+
           @click="advance(choice.id)"
         >
           <span class="response-number" aria-hidden="true">{{ index + 1 }}.</span>
@@ -42,55 +38,29 @@
       </div>
       <footer class="dialogue-footer">
         <span>{{ typing ? "点击显示全文" : line?.choices?.length ? "↑ ↓ 选择 · Enter 确认" : "点击继续 · Enter" }}</span>
-        <button v-if="story" class="text-button" :disabled="session.storyBusy" @click="endInteraction">结束本次互动</button>
-        <button class="text-button" @click="close">暂时离开 <kbd>Esc</kbd></button>
+        <button class="text-button" @click="close">结束交谈 <kbd>Esc</kbd></button>
       </footer>
     </section>
   </div>
 </template>
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from "vue";
-import type { StoryView } from "../shared/types";
+import type { StoryDialogue } from "../shared/types";
 import { useCharacterImage } from "../shared/characterImage";
-import { useSession } from "../shared/session";
 import { useModalFocus } from "../shared/modalFocus";
 import { useUiPreferences } from "../shared/uiPreferences";
-const props = defineProps<{ story?: StoryView }>();
-const emit = defineEmits<{ close: [] }>();
-const session = useSession(), displayed = ref(""), typing = ref(false), imageError = ref(false), error = ref("");
+const props = defineProps<{ line: StoryDialogue }>();
+const emit = defineEmits<{ close: []; advance: [choice?: string] }>();
+const displayed = ref(""), typing = ref(false), imageError = ref(false);
 const panel = ref<HTMLElement>();
 const preferences = useUiPreferences();
-useModalFocus(panel, () => props.story?.id ?? "interaction", close);
-const line = computed(() => {
-  const story = props.story;
-  const current = story?.node;
-  if (!current || current.type === "action") return undefined;
-  if (story.chapter_id === undefined) return current;
-  const values = {
-    name: session.user?.name ?? "同学",
-    course_name: session.classes.find(c => c.id === session.classroomId)?.course_name || "这门课程",
-    chapter_name: session.world?.chapters.find(c => c.id === story.chapter_id)?.title || "本章",
-  };
-  const render = (text: string) => text.replace(
-    /(?<!\{)\{(name|course_name|chapter_name)\}(?!\})/g,
-    (_, key: keyof typeof values) => values[key],
-  );
-  return {
-    ...current,
-    text: render(current.text),
-    choices: current.choices?.map(choice => ({ ...choice, label: render(choice.label) })),
-  };
-});
+useModalFocus(panel, () => props.line.id, close);
+const line = computed(() => props.line);
 const speaker = computed(() => line.value?.speaker ?? "小镇互动");
 const portrait = useCharacterImage(computed(() => imageError.value ? undefined : line.value?.portrait));
 let timer: ReturnType<typeof setInterval> | undefined;
 function close() { emit("close"); }
-async function endInteraction() {
-  try { if (await session.endStory()) close(); }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : "未能结束互动，请重试。"; }
-}
 function continueDialogue() {
-  if (session.storyBusy) return;
   if (typing.value) reveal();
   else if (!line.value?.choices?.length) void advance();
 }
@@ -130,16 +100,12 @@ function navigateResponses(event: KeyboardEvent) {
   buttons[next]?.focus();
 }
 async function advance(choice?: string) {
-  if (session.storyBusy) return;
   if (typing.value) { reveal(); return; }
-  error.value = "";
-  try { await session.advanceStory(choice); }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : "对白推进失败，请重试。"; }
+  emit("advance", choice);
 }
 // Start after the complete prop update, including a new round on the same node.
 watch(
-  [() => props.story?.id, () => props.story?.revision,
-    () => line.value?.id, () => line.value?.text],
+  [() => line.value?.id, () => line.value?.text],
   type,
   { immediate: true },
 );

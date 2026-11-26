@@ -1,19 +1,16 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { api } from "../api";
-import { randomUUID } from "../uuid";
+
 import type {
   Activity,
   Classroom,
-  EventEvidence,
-  Quest,
-  QuestNode,
   User,
   World,
 } from "../types";
 import { createWorkspaceNavigation } from "./navigation";
 import { createWorldPosition } from "./position";
-import { createStorySession } from "./story";
+import type { TaskChapter } from "../chapterTasks";
 import { createExperienceCoordinator } from "./experience";
 import { mediaCache } from "../mediaCache";
 import { pdfCache } from "../pdfCache";
@@ -33,25 +30,28 @@ export const useSession = defineStore("session", () => {
     classroomSwitchGeneration = 0;
   const navigation = createWorkspaceNavigation(user, classroomId);
   const position = createWorldPosition(user, classroomId, world);
-  const stories = createStorySession({
-    user,
-    classroomId,
-    world,
-    workspace: navigation.workspace,
-    open: navigation.open,
-    refresh,
-  });
+  let participation: (() => Promise<void>) | undefined;
+  function registerParticipation(save: () => Promise<void>) { participation = save; return () => { if (participation === save) participation = undefined; }; }
+  async function flushParticipation() { await participation?.(); }
+  const taskChapters = ref<TaskChapter[]>([]);
+  let taskGeneration = 0;
+  async function refreshTasks() {
+    const id = classroomId.value, owner = user.value?.id, generation = ++taskGeneration;
+    if (!id) return;
+    const data = await api.get<{chapters: TaskChapter[]}>(`/chapter-tasks?classroom_id=${id}`);
+    if (id === classroomId.value && owner === user.value?.id && generation === taskGeneration)
+      taskChapters.value = data.chapters;
+  }
   const experience = createExperienceCoordinator({
     user,
     classes,
     classroomId,
     world,
-    reading: stories.reading,
     invalidateRequests,
     resetClientState() {
       mediaCache.clear();
       pdfCache.clear();
-      stories.clear();
+      taskGeneration++; taskChapters.value = [];
       navigationTarget.value = null;
       trackedQuest.value = "";
       drafts.value = {};
@@ -122,7 +122,7 @@ export const useSession = defineStore("session", () => {
       owner === user.value?.id &&
       previous === classroomId.value &&
       token === api.token();
-    await stories.reading.pending.catch(() => undefined);
+    await flushParticipation();
     if (!current()) return false;
     const result = await api.get<World>(`/world?classroom_id=${id}`);
     if (!current()) return false;
@@ -131,27 +131,8 @@ export const useSession = defineStore("session", () => {
     drafts.value = {};
     trackedQuest.value = "";
     navigation.clearHistory();
+    await refreshTasks();
     return true;
-  }
-  async function event(quest: Quest, node: QuestNode, evidence: EventEvidence) {
-    if (experience.resetBusy.value) return;
-    const id = classroomId.value,
-      owner = user.value?.id,
-      generation = experience.generation;
-    const result = await api.post<{ world: World }>("/events", {
-      classroom_id: id,
-      event_id: randomUUID(),
-      quest_id: quest.id,
-      node_id: node.id,
-      evidence,
-    });
-    if (
-      classroomId.value === id &&
-      user.value?.id === owner &&
-      generation === experience.generation &&
-      !experience.resetBusy.value
-    )
-      world.value = result.world;
   }
   async function activity(id: string) {
     return api.get<Activity>(
@@ -161,7 +142,6 @@ export const useSession = defineStore("session", () => {
 
   function guideTo(key: string) {
     navigation.open(null);
-    stories.dismissStory();
     navigationTarget.value = key;
   }
   watch(
@@ -170,10 +150,8 @@ export const useSession = defineStore("session", () => {
       mediaCache.clear();
       pdfCache.clear();
       experience.invalidate();
-      stories.clear();
+      taskGeneration++; taskChapters.value = [];
       navigationTarget.value = null;
-      const workspace = navigation.workspace.value;
-      if (workspace && "story_session_id" in workspace) navigation.open(null);
     },
     { flush: "sync" },
   );
@@ -195,7 +173,7 @@ export const useSession = defineStore("session", () => {
     drafts.value = {};
     trackedQuest.value = "";
     audioEnabled.value = false;
-    stories.clear();
+    taskGeneration++; taskChapters.value = [];
     navigationTarget.value = null;
     api.setToken(null);
   }
@@ -217,17 +195,8 @@ export const useSession = defineStore("session", () => {
     back: navigation.back,
     canGoBack: navigation.canGoBack,
     previousWorkspace: navigation.previousWorkspace,
-    story: stories.story,
-    storyBusy: stories.storyBusy,
-    storyDismissed: stories.storyDismissed,
-    hasStory: stories.hasStory,
-    restoreStory: stories.restoreStory,
-    interactStory: stories.interactStory,
-    advanceStory: stories.advanceStory,
-    endStory: stories.endStory,
-    returnStoryActivity: stories.returnStoryActivity,
-    saveActivityProgress: stories.saveActivityProgress,
-    dismissStory: stories.dismissStory,
+    taskChapters, refreshTasks, registerParticipation, flushParticipation,
+    replace: navigation.replace,
     resetBusy: experience.resetBusy,
     restartCompleted: experience.restartCompleted,
     registerRestartPreparation: experience.registerRestartPreparation,
@@ -236,7 +205,6 @@ export const useSession = defineStore("session", () => {
     load,
     refresh,
     switchClassroom,
-    event,
     activity,
     guideTo,
     reset,

@@ -1,16 +1,14 @@
 from course_fixtures import create_test_class
-from app.models import ActivityMaterial
 import pytest
 from copy import deepcopy
 from datetime import timedelta
 from app.models import (
     ActivityProgress, ActivityQuestion, AssessmentAttempt, Chapter, ChapterRelease, KnowledgePoint,
-    LearningRecord, Material, MaterialChapter, NodeState, PlayerQuest, Question, QuestionChapter,
-    QuestionKnowledgePoint, QuestDefinition, StoryDefinition, StorySession, Submission, now,
+    LearningRecord, Material, MaterialChapter, Question, QuestionChapter,
+    QuestionKnowledgePoint, Submission, now,
 )
 from app.integration_models import AssistantSession
 from app.deletion_models import ContentDeletionPreview
-from app.course_exchange_models import CoursePackageState
 from test_curriculum import another_teacher
 from sqlalchemy import select
 from app.models import Activity, CourseInstance
@@ -30,7 +28,7 @@ def confirm(client, teacher, classroom, plan):
 
 def test_unused_activity_preview_and_confirmation(client, db, teacher, classroom):
     result = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=teacher["headers"],
-                         json={"id": "delete-me", "title": "可删除练习", "kind": "practice", "chapter_id": 179})
+                         json={"id": "delete-me", "title": "可删除练习", "kind": "practice", "chapter_id": 179, "published": False})
     assert result.status_code == 201, result.text
     key = result.json()["id"]
     plan = preview(client, teacher, classroom, "activity", key)
@@ -55,7 +53,7 @@ def authored(db, teacher, classroom):
     material = Material(id=9001, title='独立资料', owner_id=owner, content={'text': '保留原文'})
     point = KnowledgePoint(id=9001, chapter_id=9001, title='相关知识', owner_id=owner)
     questions = [Question(id=f'cascade-q{i}', title=f'题目{i}', kind='boolean', prompt='判断', owner_id=owner, status='ready') for i in range(2)]
-    activity = Activity(id='cascade-a', chapter_id=9001, title='关联活动', kind='practice', owner_id=owner, content={'knowledge_point_ids': [9001]}, resources=[ActivityMaterial(material_id=9001, required=True, order_index=0, learning={})])
+    activity = Activity(id='cascade-a', chapter_id=9001, title='关联活动', kind='practice', owner_id=owner, content={'knowledge_point_ids': [9001]})
     db.add_all([chapter, material, point, *questions, activity])
     db.flush()
     db.add_all([MaterialChapter(material_id=9001, chapter_id=9001), MaterialChapter(material_id=9001, chapter_id=179)])
@@ -77,7 +75,6 @@ def test_chapter_cascade_preserves_shared_bank_and_history(client, db, teacher, 
     db.add_all(records)
     db.add(ChapterRelease(classroom_id=classroom['id'], chapter_id=9001, status='published'))
     dependent = db.get(ChapterRelease, (classroom['id'], 180))
-    db.get(Chapter, 180).prerequisite_chapter_id = 9001
     db.commit()
     for record in records:
         db.refresh(record)
@@ -101,7 +98,7 @@ def test_chapter_cascade_preserves_shared_bank_and_history(client, db, teacher, 
     assert db.get(MaterialChapter, (material.id, 9001)) is None
     assert db.get(QuestionKnowledgePoint, (questions[0].id, 9001)) is None
     db.refresh(dependent)
-    assert dependent.status == 'paused' and db.get(Chapter, 180).prerequisite_chapter_id is None
+    assert dependent.status == 'published'
     # Retired chapter order slots may be reused without changing the old chapter.
     db.add(Chapter(title='新章节', order_index=100, owner_id=teacher['id']))
     db.commit()
@@ -110,20 +107,20 @@ def test_chapter_cascade_preserves_shared_bank_and_history(client, db, teacher, 
     assert client.get(f'/api/activities/{activity.id}', params={'classroom_id': classroom['id']}, headers=student['headers']).status_code in {403, 404}
 
 
-def test_material_cascades_activity_but_keeps_question_and_source_files(client, db, teacher, classroom, authored):
+def test_material_removal_preserves_chapter_practice_question_and_source_file(client, db, teacher, classroom, authored):
     _, material, _, questions, activity = authored
     material.storage_key = 'private/keep.txt'
     questions[0].source = {'material_id': material.id, 'page_no': 2, 'note': '原始引用说明'}
     db.commit()
     plan = preview(client, teacher, classroom, 'material', material.id)
     assert not plan['blockers'], plan
-    assert {r['kind'] for r in plan['remove']} == {'material', 'activity'}
+    assert {r['kind'] for r in plan['remove']} == {'material'}
     assert confirm(client, teacher, classroom, plan).status_code == 200
     db.refresh(material)
     db.refresh(questions[0])
     assert material.storage_key == 'private/keep.txt' and material.content == {'text': '保留原文'}
     assert questions[0].source == {'note': '原始引用说明'}
-    assert db.scalar(select(Activity).where(Activity.id == activity.id)) is None
+    assert db.scalar(select(Activity).where(Activity.id == activity.id)) is not None
     assert db.scalar(select(Question).where(Question.id == questions[0].id))
 
 
@@ -142,34 +139,6 @@ def test_question_unlinks_and_only_cascades_empty_activity(client, db, teacher, 
     assert db.scalar(select(Activity).where(Activity.id == activity.id))
     assert db.scalar(select(Activity).where(Activity.id == single.id)) is None
     assert [r.question_id for r in db.scalars(select(ActivityQuestion).where(ActivityQuestion.activity_id == activity.id))] == [questions[1].id]
-
-
-def test_flow_cascade_keeps_nodes_receipts_and_closes_open_sessions(client, db, teacher, student, classroom, authored):
-    *_, activity = authored
-    quest = QuestDefinition(id='cascade-quest', title='依赖任务', chapter_id=9001, owner_id=teacher['id'],
-                            definition={'nodes': [{'id': 'work', 'type': 'PRACTICE', 'activity_id': activity.id}]})
-    story = StoryDefinition(id='cascade-story', quest_id=quest.id, content={'title': '依赖流程', 'bindings': {}, 'nodes': []})
-    db.add_all([quest, story])
-    db.flush()
-    player = PlayerQuest(user_id=student['id'], classroom_id=classroom['id'], quest_id=quest.id)
-    db.add(player)
-    db.flush()
-    node = NodeState(player_quest_id=player.id, node_id='work', status='complete', evidence={'score': 100})
-    session = StorySession(user_id=student['id'], classroom_id=classroom['id'], story_id=story.id, node_id='wait', status='waiting',
-                           pending_activity_id=activity.id, return_mapping={'success': 'end'}, receipts=[{'id': 'keep'}])
-    db.add_all([node, session])
-    db.commit()
-    plan = preview(client, teacher, classroom, 'activity', activity.id)
-    assert not plan['blockers'], plan
-    assert {'quest', 'story', 'activity'} == {r['kind'] for r in plan['remove']}
-    assert plan['ending_sessions'] == 1
-    assert any(r['title'] == '任务进度' for r in plan['preserve'])
-    assert confirm(client, teacher, classroom, plan).status_code == 200
-    db.refresh(session)
-    db.refresh(node)
-    assert session.status == 'ended' and session.node_id == 'wait' and session.pending_activity_id == activity.id
-    assert session.return_mapping == {'success': 'end'} and session.receipts == [{'id': 'keep'}]
-    assert node.evidence == {'score': 100} and node.status == 'complete'
 
 
 @pytest.mark.parametrize('change', ['revision', 'history', 'expired', 'wrong_text', 'unchecked'])
@@ -221,19 +190,6 @@ def test_batch_dependency_closure_and_old_delete_cannot_bypass(client, db, teach
     assert db.scalar(select(Activity).where(Activity.id == activity.id)) is None
 
 
-def test_world_reference_blocks_without_changing_conditions(client, db, teacher, classroom, authored):
-    *_, activity = authored
-    state = db.get(CoursePackageState, activity.course_instance_id)
-    config = deepcopy(state.configuration)
-    config['buildings']['library']['when'] = {'activity_completed': activity.stable_id}
-    state.configuration = config
-    db.commit()
-    plan = preview(client, teacher, classroom, 'activity', activity.id)
-    assert any(r['kind'] == 'building' for r in plan['blockers'])
-    assert confirm(client, teacher, classroom, plan).status_code == 409
-    db.refresh(state)
-    assert state.configuration == config
-
 def test_retired_question_does_not_change_locked_paper(client, db, teacher, student, classroom):
     from app.models import User
     from test_assessments import hand_in
@@ -254,15 +210,15 @@ def test_retired_question_does_not_change_locked_paper(client, db, teacher, stud
 
 
 def test_package_import_cannot_hard_delete_parent_of_retired_content(client, db, teacher, classroom, authored):
-    from app.course_content.snapshot import snapshot_content
+    from app.course_packages.snapshot import package_snapshot
     from app.course_packages.impact import preview_impact
     chapter, _, _, _, activity = authored
     plan = preview(client, teacher, classroom, 'activity', activity.id)
     assert confirm(client, teacher, classroom, plan).status_code == 200
     instance = db.get(CourseInstance, activity.course_instance_id)
-    data, answers, releases, config, _ = snapshot_content(db, instance)
+    data, answers, _, _ = package_snapshot(db, instance)
     data['chapter'] = [c for c in data['chapter'] if c['id'] != chapter.stable_id]
-    bundle = {'data': data, 'secrets': answers, 'course': {'prerequisites': releases}, 'configuration': config, 'assets': [],
+    bundle = {'data': data, 'secrets': answers, 'course': {}, 'assets': [],
               'manifest': {key: getattr(instance,key) for key in ('package_id','name','package_version')}}
     impact = preview_impact(db, instance, bundle)
     assert any('历史保留内容引用' in message for message in impact['blockers'])

@@ -1,11 +1,9 @@
-from conftest import read_activity
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from app.course_content import access
 from app.auth import as_utc
 from app.course_content.releases import ReleaseInput
-from app.models import ChapterRelease, LearningEvent, LearningRecord, Submission
-from sqlalchemy import select
+from app.models import ChapterRelease, Material, MaterialParticipation, Submission
 
 
 def test_shanghai_and_utc_release_inputs_store_the_same_instant_and_preserve_boundary(client, db, teacher, student, classroom, monkeypatch, branching_course):
@@ -50,20 +48,10 @@ def test_shanghai_and_utc_release_inputs_store_the_same_instant_and_preserve_bou
 def test_all_learning_timestamps_remain_explicit_utc_after_sqlite_requery(client, db, teacher, student, classroom):
     cid = classroom["id"]
     headers = student["headers"]
-    position = client.put(
-        "/api/world/position", json={"classroom_id": cid, "map_key": "town_hub", "tile_x": 22, "tile_y": 34, "direction": "up"}, headers=headers
-    )
-    assert position.status_code == 200
-    from app.models import QuestDefinition
-    definition = {"id": "timestamp-talk", "title": "Timestamp", "chapter_id": 179,
-        "nodes": [{"id": "talk", "type": "REACH_LOCATION", "title": "Talk", "target": "town_square", "dependencies": []}], "effects": []}
-    db.add(QuestDefinition(id=definition["id"], chapter_id=179, title="Timestamp", definition=definition))
-    db.commit()
-    event = client.post("/api/events", json={"classroom_id": cid, "event_id": str(uuid4()), "quest_id": definition["id"], "node_id": "talk", "evidence": {}}, headers=headers)
-    assert event.status_code == 200, event.text
-    read_activity(client, student["headers"], cid, "ch1-lesson")
-    record = client.post("/api/activities/ch1-lesson/participation", json={"classroom_id": cid, "page_no": 42}, headers=headers)
-    assert record.status_code == 200, record.text
+    material = db.get(Material, 186)
+    beat = {"session_id": "timed-reading", "sequence": 1, "visible": True, "page_id": material.content["pages"][0]["id"]}
+    reading = client.post(f"/api/chapters/179/materials/186/participation?classroom_id={cid}", json=beat, headers=headers)
+    assert reading.status_code == 200, reading.text
     submission = client.post(
         "/api/submissions",
         json={
@@ -78,19 +66,16 @@ def test_all_learning_timestamps_remain_explicit_utc_after_sqlite_requery(client
     assert submission.status_code == 201, submission.text
     submission_id = submission.json()["id"]
     db.expire_all()
-    event_row = db.scalar(select(LearningEvent))
-    record_row = db.get(LearningRecord, record.json()["record_id"])
+    evidence = db.get(MaterialParticipation, (student["id"], cid, 179, 186)).evidence
     submission_row = db.get(Submission, submission_id)
-    assert event_row.created_at.tzinfo is None and record_row.created_at.tzinfo is None and submission_row.created_at.tzinfo is None
+    assert submission_row.created_at.tzinfo is None
     progress = client.get(f"/api/teacher/classrooms/{cid}/progress", headers=teacher["headers"]).json()
     detail = client.get(f"/api/teacher/classrooms/{cid}/students/{student['id']}", headers=teacher["headers"]).json()
     reread = client.get(f"/api/submissions/{submission_id}?classroom_id={cid}", headers=headers)
     assert reread.status_code == 200, reread.text
     expected = [
-        (progress["events"][0]["created_at"], event_row.created_at),
         (progress["submissions"][0]["created_at"], submission_row.created_at),
-        (detail["events"][0]["created_at"], event_row.created_at),
-        (next(row for row in detail["participation"] if row["id"] == record_row.id)["created_at"], record_row.created_at),
+        (next(row for row in detail["participation"] if row["kind"] == "reading")["created_at"], datetime.fromisoformat(evidence["received_at"])),
         (detail["submissions"][0]["created_at"], submission_row.created_at),
         (reread.json()["created_at"], submission_row.created_at),
         (submission.json()["created_at"], submission_row.created_at),

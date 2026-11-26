@@ -49,17 +49,16 @@ describe("development replay orchestration", () => {
     const session = context(), saved = deferred<void>(), reading = deferred<never>();
     const prepare = vi.fn(() => saved.promise);
     session.registerRestartPreparation(prepare);
-    const post = vi.spyOn(api, "post").mockImplementation(path => path.includes("/progress") && path !== "/dev/progress/reset"
-      ? reading.promise : Promise.resolve({ ok: true, user_id: 7, classroom_id: 4 }) as Promise<never>);
-    const save = session.saveActivityProgress("ch1-lesson", 42);
+    const post = vi.spyOn(api, "post").mockResolvedValue({ok:true,user_id:7,classroom_id:4});
+    const read = vi.fn(() => reading.promise);
+    session.registerRestartPreparation(read);
     const restart = session.restartCurrentClassroom();
     expect(session.resetBusy).toBe(true);
     expect(await session.restartCurrentClassroom()).toBe(false);
-    await vi.waitFor(() => expect(post).toHaveBeenCalledWith("/activities/ch1-lesson/progress", expect.anything()));
+    await vi.waitFor(() => expect(read).toHaveBeenCalled());
     expect(post.mock.calls.some(([path]) => path === "/dev/progress/reset")).toBe(false);
     saved.resolve();
     reading.resolve({ completed: false, page_no: 42, visited_pages: [42] } as never);
-    await save;
     expect(await restart).toBe(true);
     expect(prepare).toHaveBeenCalledOnce();
     expect(post).toHaveBeenLastCalledWith("/dev/progress/reset", { classroom_id: 4, confirmed: true });

@@ -5,12 +5,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.course_packages.manifest import PackageLimits
-from app.models import Activity, CourseExample, KnowledgePoint, Material, Question
+from app.models import Activity, Chapter, CourseExample, KnowledgePoint, Material, Question
 
 LIMITS = PackageLimits()
 
 
-EXTRAS = {Material: {"chapter_ids", "asset_id", "preview_asset_id"}, Question: {"chapter_ids", "knowledge_point_ids"}, Activity: {"question_ids", "resources"}}
+PACKAGE_MODELS = (Chapter, KnowledgePoint, Material, Question, Activity, CourseExample)
+EXTRAS = {Material: {"chapter_ids", "task_points", "asset_id", "preview_asset_id"}, Question: {"chapter_ids", "knowledge_point_ids"}, Activity: {"question_ids"}}
 
 
 JSONL_FILES = {
@@ -18,14 +19,6 @@ JSONL_FILES = {
     Question: "content/questions/questions-001.jsonl",
     KnowledgePoint: "content/knowledge-points.jsonl",
     CourseExample: "content/examples.jsonl",
-}
-
-
-CONFIG_FILES = {
-    "world": "world/interactions.yaml",
-    "buildings": "world/buildings.yaml",
-    "assistant": "assistant/settings.yaml",
-    "editor": "editor/layouts.json",
 }
 
 

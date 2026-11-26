@@ -9,8 +9,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.content_relations import activity_questions, question_chapter_ids, set_activity_questions
-from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Npc, Question, Submission, User
-from app.practice_rules import PracticeRules, allocate_initial, candidate_pool, without_legacy_retry_interval
+from app.models import Activity, ActivityProgress, AssessmentAttempt, KnowledgePoint, Question, Submission, User
+from app.practice_rules import PracticeRules, allocate_initial, candidate_pool
 from app.teacher_scope import commit_content, require_scope, scoped_key, own_course, teacher_instance_id
 
 
@@ -33,10 +33,10 @@ class ActivityInput(BaseModel):
     id: str = Field(min_length=1, max_length=100)
     chapter_id: int
     title: str = Field(min_length=1, max_length=200)
-    kind: Literal["lesson", "reading", "practice", "assessment"]
-    resources: list[dict] = Field(default_factory=list, max_length=64)
-    npc_key: str | None = None
-    assistant_allowed: bool = True
+    kind: Literal["practice", "assessment"]
+    practice_kind: Literal["objective", "programming"] = "objective"
+    required: bool = True
+    order_index: int = Field(default=0, ge=0, le=100000)
     knowledge_point_ids: list[int] = Field(default_factory=list, max_length=65)
     question_ids: QuestionIds | None = None
     practice_rules: PracticeRules | None = None
@@ -60,11 +60,12 @@ def create_activity(body: ActivityInput, db: Session, user: User, course_id: int
     from app.curriculum import validate_activity_points
 
     validate_activity_points(db, user, body.chapter_id, body.knowledge_point_ids, instance_id)
-    if body.npc_key is not None and (not db.get(Npc, body.npc_key) or db.get(Npc, body.npc_key).course_instance_id != instance_id):
-        raise HTTPException(422, "NPC不存在")
-    content = {"published": True, "knowledge_point_ids": body.knowledge_point_ids}
+    content = {"published": body.published, "knowledge_point_ids": body.knowledge_point_ids,
+               "required": body.required if body.kind == "practice" else True, "order_index": body.order_index}
+    if body.kind == "practice":
+        content["practice_kind"] = body.practice_kind
     item = Activity(
-        **body.model_dump(exclude={"id", "knowledge_point_ids", "resources", "question_ids", "practice_rules", "published"}),
+        chapter_id=body.chapter_id, title=body.title, kind=body.kind, assistant_allowed=body.kind == "practice",
         id=runtime_id,
         stable_id=body.id,
         course_instance_id=instance_id,
@@ -73,15 +74,10 @@ def create_activity(body: ActivityInput, db: Session, user: User, course_id: int
     )
     if body.practice_rules is not None:
         configure_practice(db, item, user, body.practice_rules.model_dump(), body.published, body.knowledge_point_ids or None)
-    elif not body.published:
-        raise HTTPException(422, "只有知识点练习可以保存为草稿")
+    elif body.published and not body.question_ids:
+        raise HTTPException(422, "发布前请至少选择一道题")
     db.add(item)
     db.flush()
-    from app.course_content.resources import set_resources
-    try:
-        set_resources(db, item, body.resources)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
     if body.question_ids is not None:
         assign_activity_questions(db, item, body.question_ids, instance_id)
     commit_content(db, instance_id)
@@ -91,9 +87,9 @@ def create_activity(body: ActivityInput, db: Session, user: User, course_id: int
 class ActivityUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    npc_key: str | None = None
-    assistant_allowed: bool | None = None
-    resources: list[dict] | None = Field(default=None, max_length=64)
+    practice_kind: Literal["objective", "programming"] | None = None
+    required: bool | None = None
+    order_index: int | None = Field(default=None, ge=0, le=100000)
     knowledge_point_ids: list[int] | None = Field(default=None, max_length=65)
     question_ids: QuestionIds | None = None
     practice_rules: PracticeRules | None = None
@@ -137,59 +133,40 @@ def update_activity(activity_id: str, body: ActivityUpdate, db: Session, user: U
     if item.owner_id != user.id and user.role != "admin":
         raise HTTPException(403, "共享种子不可覆盖，请创建教师自己的活动并绑定任务")
     changes = body.model_dump(exclude_unset=True)
-    question_ids = changes.pop("question_ids", None)
-    resources = changes.pop("resources", None)
     content = dict(item.content)
-    new_points = changes.pop("knowledge_point_ids", None)
-    previous_rules = without_legacy_retry_interval(content.get("practice_rules"))
-    rules = changes.pop("practice_rules", previous_rules)
-    if body.practice_rules is not None:
-        rules = body.practice_rules.model_dump()
-    published = changes.pop("published", content.get("published", True))
-    if rules is not None or {"practice_rules", "published"} & body.model_fields_set:
-        if previous_rules != rules:
-            from app.models import PracticeSession
-
-            if any(db.scalar(select(model.activity_id).where(model.activity_id == item.id).limit(1)) is not None
-                   for model in (PracticeSession, Submission, ActivityProgress)):
-                raise HTTPException(409, "练习已有个人题单或学习记录，修改出题方式或目标请新建练习")
-        if rules is not None:
-            configure_practice(db, item, user, rules, published, new_points)
-            if previous_rules is None:
-                set_activity_questions(db, item, [])
-            content, new_points = dict(item.content), None
-        elif item.kind == "practice" and "practice_rules" in body.model_fields_set:
-            if "published" in body.model_fields_set and published is not True:
-                raise HTTPException(422, "只有知识点练习可以保存为草稿")
-            content.pop("practice_rules", None)
-            content["published"] = True
-        else:
-            raise HTTPException(422, "知识点练习需要有效的目标与发布状态")
-    if new_points is not None:
+    if any(changes.get(k) is None for k in {"required", "order_index", "title", "published"} & changes.keys()):
+        raise HTTPException(422, "必填字段不能为空")
+    if "title" in changes:
+        item.title = body.title
+    for key in ("required", "published", "order_index"):
+        if key in changes:
+            content[key] = changes[key]
+    if item.kind == "assessment":
+        content["required"] = True
+    elif body.practice_kind is not None and body.practice_kind != content.get("practice_kind", "objective"):
+        raise HTTPException(422, "练习类别不能更换，请创建新的练习")
+    old_rules = content.get("practice_rules")
+    rules = changes.get("practice_rules", old_rules)
+    if rules != old_rules:
+        from app.models import PracticeSession
+        if any(db.scalar(select(model.activity_id).where(model.activity_id == item.id).limit(1)) is not None
+               for model in (PracticeSession, Submission, ActivityProgress)):
+            raise HTTPException(409, "已有作答记录，请新建练习后修改出题方式")
+    if rules is not None:
+        item.content = content
+        configure_practice(db, item, user, rules, content.get("published", True), body.knowledge_point_ids)
+        if old_rules is None:
+            set_activity_questions(db, item, [])
+    else:
         from app.curriculum import validate_activity_points
-
-        validate_activity_points(db, user, item.chapter_id, new_points, instance_id)
-    if any(key in changes and changes[key] is None for key in ("title", "assistant_allowed")):
-        raise HTTPException(422, "活动必填字段不能设为空")
-    if (
-        "npc_key" in changes
-        and changes["npc_key"] is not None
-        and (not db.get(Npc, changes["npc_key"]) or db.get(Npc, changes["npc_key"]).course_instance_id != instance_id)
-    ):
-        raise HTTPException(422, "NPC不存在")
-    if "resources" in body.model_fields_set:
-        from app.course_content.resources import set_resources
-        try:
-            set_resources(db, item, resources)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
-    for key, value in changes.items():
-        setattr(item, key, value)
-    if new_points is not None:
-        content["knowledge_point_ids"] = new_points
-    item.content = content
-    if question_ids is not None:
-        assign_activity_questions(db, item, question_ids, instance_id)
+        if body.knowledge_point_ids is not None:
+            validate_activity_points(db, user, item.chapter_id, body.knowledge_point_ids, instance_id)
+            content["knowledge_point_ids"] = body.knowledge_point_ids
+        item.content = {k: v for k, v in content.items() if k != "practice_rules"}
+    if body.question_ids is not None:
+        assign_activity_questions(db, item, body.question_ids, instance_id)
+    if not rules and content.get("published", True) and not activity_questions(db, item):
+        raise HTTPException(422, "发布前请至少选择一道题")
     commit_content(db, instance_id)
     return {"id": item.id}
 
@@ -221,6 +198,13 @@ def assign_activity_questions(db, activity, question_ids, instance_id):
         raise HTTPException(422, "知识点练习按目标抽题，不能设置固定题单")
     if activity.kind not in {"practice", "assessment"}:
         raise HTTPException(422, "只有练习与测验活动可以选题")
+    if activity.content.get("published", True) and not question_ids:
+        raise HTTPException(422, "发布前请至少选择一道题")
+    existing_ids = [q.id for q in activity_questions(db, activity)]
+    if activity.kind == "practice" and question_ids != existing_ids and db.scalar(
+        select(Submission.id).where(Submission.activity_id == activity.id).limit(1)
+    ):
+        raise HTTPException(409, "已有作答记录，请新建练习后修改题单")
     if activity.kind == "assessment" and len(question_ids) > 100:
         raise HTTPException(422, "章节测验最多选择100道题")
     if (
@@ -234,6 +218,10 @@ def assign_activity_questions(db, activity, question_ids, instance_id):
         if not question:
             raise HTTPException(422, "选中的题目不存在")
         require_scope(question, instance_id)
+        if activity.kind == "practice":
+            coding = activity.content.get("practice_kind", "objective") == "programming"
+            if (question.kind == "python") != coding or (coding and not question.samples):
+                raise HTTPException(422, "练习题型与类别不符，编程练习须配置公开样例")
         if question.kind == "interactive" and activity.kind != "practice":
             raise HTTPException(422, "交互练习题只能用于练习活动")
         if question.owner_id not in {None, activity.owner_id}:

@@ -119,7 +119,8 @@ def validate_practice_question_edit(db, question, body):
         if not rules or activity.content.get("published") is False or not old_points.intersection(activity.content["knowledge_point_ids"]):
             continue
         pool = candidate_pool(db, activity)
-        eligible = available and activity.chapter_id in body.chapter_ids and question.owner_id in {None, activity.owner_id}
+        category_matches = (body.kind == "python") == (activity.content.get("practice_kind") == "programming")
+        eligible = available and category_matches and activity.chapter_id in body.chapter_ids and question.owner_id in {None, activity.owner_id}
         for point, choices in pool.items():
             if eligible and point in body.knowledge_point_ids:
                 choices[question.id] = body.kind
@@ -158,6 +159,11 @@ def stage_question(db, user, question, body):
         raise HTTPException(409, "题目仍被活动引用，请先从活动移除再改为草稿或停用")
     if body.kind == "interactive" and any(activity.kind != "practice" for activity in bound):
         raise HTTPException(409, "交互练习题只能用于练习活动，请先从其他活动移除此题")
+    for activity in bound:
+        if activity.kind == "practice":
+            coding = activity.content.get("practice_kind") == "programming"
+            if (body.kind == "python") != coding or (coding and not body.samples):
+                raise HTTPException(409, "题目仍被练习引用，请保留对应题型及编程练习的公开样例")
     if any(activity.chapter_id not in body.chapter_ids for activity in bound):
         raise HTTPException(409, "题目仍被活动引用，不能移除所用章节")
     validate_practice_question_edit(db, question, body)

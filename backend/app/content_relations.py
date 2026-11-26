@@ -59,8 +59,9 @@ def _validate_ids(db, parent, parent_id, model, ids):
 
 def set_material_chapters(db, material_id, ids):
     _validate_ids(db, Material, material_id, Chapter, ids)
-    db.execute(delete(MaterialChapter).where(MaterialChapter.material_id == material_id))
-    db.add_all(MaterialChapter(material_id=material_id, chapter_id=key) for key in ids)
+    existing = set(material_chapter_ids(db, material_id))
+    db.execute(delete(MaterialChapter).where(MaterialChapter.material_id == material_id, MaterialChapter.chapter_id.not_in(ids)))
+    db.add_all(MaterialChapter(material_id=material_id, chapter_id=key) for key in ids if key not in existing)
     db.flush()
 
 

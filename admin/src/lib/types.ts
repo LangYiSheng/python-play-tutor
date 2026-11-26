@@ -41,7 +41,6 @@ export interface CourseInstance {
   revision: number;
 }
 export interface Chapter {
-  prerequisite_chapter_id?: number | null;
   id: number;
   title: string;
   order_index: number;
@@ -64,6 +63,9 @@ export interface Activity {
   assistant_allowed: boolean;
   knowledge_point_ids: number[];
   question_ids: string[];
+  required?: boolean;
+  order_index?: number;
+  practice_kind?: "objective" | "programming";
   practice_rules?: PracticeRules | null;
   published?: boolean;
   owner_id: number | null;

@@ -68,10 +68,10 @@ def test_duplicate_turn_reserves_and_dispatches_once(monkeypatch):
         app.dependency_overrides[get_db] = dependency
         # Do not enter lifespan: unrelated background workers use the app database.
         client = TestClient(app)
-        response = client.post("/api/assistant/sessions", headers=headers, json={"classroom_id": cid, "activity_id": "ch1-lesson"})
+        response = client.post("/api/assistant/sessions", headers=headers, json={"classroom_id": cid, "material_id": 186})
         sid = response.json()["id"]
         barrier = Barrier(2)
-        payload = {"message": "解释", "state": {"page_no": 42}, "expected_revision": 0, "client_request_id": "duplicate"}
+        payload = {"message": "解释", "page_no": 42, "expected_revision": 0, "client_request_id": "duplicate"}
 
         def send(_):
             barrier.wait()

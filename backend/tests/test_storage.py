@@ -1,4 +1,3 @@
-from app.models import ActivityMaterial
 import app.materials.conversion as materials_conversion
 import app.materials.jobs as materials_jobs
 import app.materials.storage as materials_storage
@@ -64,7 +63,7 @@ def test_missing_ppt_converter_reports_failure(tmp_path, monkeypatch):
 def test_teacher_upload_processing_range_and_current_material_authorization(client, db, teacher, student, classroom, tmp_path, monkeypatch):
     from sqlalchemy import select
     from sqlalchemy.orm import sessionmaker
-    from app.models import Material, Activity
+    from app.models import Material
 
     monkeypatch.setenv("REBORN_STORAGE_ROOT", str(tmp_path / "private"))
     monkeypatch.setattr(materials_jobs, "SessionLocal", sessionmaker(db.bind, expire_on_commit=False))
@@ -80,11 +79,8 @@ def test_teacher_upload_processing_range_and_current_material_authorization(clie
     db.expire_all()
     assert db.get(Material, row.id).status == "ready"
     url = f"/api/materials/{material_id}/file?classroom_id={classroom['id']}"
-    assert client.get(url, headers=student["headers"]).status_code == 403
-    activity = Activity(id='teacher-reading', chapter_id=179, title='补充阅读', kind='lesson', npc_key='mayor_py', assistant_allowed=True, content={'published': True, 'owner_id': teacher['id']}, resources=[ActivityMaterial(material_id=material_id, required=True, order_index=0, learning={})])
-    db.add(activity)
-    db.flush()
-    db.commit()
+    library = client.get(f"/api/library?classroom_id={classroom['id']}", headers=student["headers"])
+    assert library.is_success and material_id in {item["id"] for item in library.json()}
     response = client.get(url, headers={**student["headers"], "Range": "bytes=0-5"})
     assert response.status_code == 206, response.text
     assert response.headers["content-length"] == "6"

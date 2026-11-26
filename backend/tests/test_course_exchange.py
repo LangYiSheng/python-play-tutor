@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.course_packages.reader import load_bundle
 from fixture_archive import unpack_archive
+from fixture_package import chapter_task_fixture
 from app.course_instances import content_mapping
 
 from fixture_instances import clone_current_course
@@ -16,27 +17,16 @@ from app.course_packages.manifest import PackageError
 from app.models import (ActivityProgress, Classroom, CourseInstance, Material, Question, QuestionSecret)
 
 
-def test_directory_package_rejects_action_prompt_field(client, teacher, exchange, tmp_path):
-    import yaml
-    from app.course_packages.manifest import PackageError
-
-    root = tmp_path / "action-prompt-package"
-    root.mkdir()
+def test_directory_package_rejects_world_definitions(client, teacher, exchange, tmp_path):
     import io
+    root = tmp_path / "retired-world"
     with zipfile.ZipFile(io.BytesIO(export(client, teacher, exchange[0]))) as archive:
         archive.extractall(root)
     load_bundle(root)
-    changed = False
-    for path in (root / "world" / "flows").glob("*.yaml"):
-        row = yaml.safe_load(path.read_text(encoding="utf-8"))
-        action = next((node for node in row["content"]["nodes"] if node["type"] == "action"), None)
-        if action:
-            action["text"] = "旧操作提示"
-            path.write_text(yaml.safe_dump(row, allow_unicode=True), encoding="utf-8")
-            changed = True
-            break
-    assert changed
-    with pytest.raises(PackageError, match="无效界面操作节点"):
+    retired = root / "world" / "flows" / "legacy.yaml"
+    retired.parent.mkdir(parents=True)
+    retired.write_text("id: old", encoding="utf8")
+    with pytest.raises(PackageError, match="未识别配置"):
         load_bundle(root)
 
 
@@ -46,6 +36,7 @@ def exchange(db, classroom, teacher, monkeypatch, tmp_path):
     monkeypatch.setenv("REBORN_COURSE_EXCHANGE_ROOT", str(tmp_path / "exchange"))
     original = db.get(Classroom, classroom["id"])
     instance = original.course
+    chapter_task_fixture(db, instance)
     db.add(Question(id=f"draft-{uuid4().hex}", stable_id="unassigned-draft", course_instance_id=instance.id,
                     owner_id=teacher["id"], title="未分配草稿", kind="boolean", prompt="待审核", source_type="ai_generated",
                     status="draft", options=[], samples=[], source={}))
@@ -100,24 +91,24 @@ def apply(client, teacher, cid, item, request_id=None):
 
 
 def test_complete_roundtrip_draft_private_answers_and_repeated_apply(client, db, teacher, exchange, tmp_path):
-    from app.models import Activity, KnowledgePoint, ActivityMaterial
+    from app.models import Activity, KnowledgePoint, MaterialChapter
     from app.content_relations import set_material_chapters
 
     source, target = exchange
     source_maps = content_mapping(db, source)
-    source_activity = db.get(Activity, source_maps["activity"]["ch1-lesson"])
-    cross_chapter_point = db.scalar(select(KnowledgePoint).where(
-        KnowledgePoint.course_instance_id == source.id, KnowledgePoint.chapter_id != source_activity.chapter_id))
-    assert cross_chapter_point is not None
-    point_stable_id = cross_chapter_point.stable_id or str(cross_chapter_point.id)
-    source_activity.content = {**source_activity.content, "knowledge_point_ids": [cross_chapter_point.id]}
+    source_activity = db.get(Activity, source_maps["activity"]["ch1-practice"])
+    chapter_point = db.scalar(select(KnowledgePoint).where(
+        KnowledgePoint.course_instance_id == source.id, KnowledgePoint.chapter_id == source_activity.chapter_id))
+    assert chapter_point is not None
+    point_stable_id = chapter_point.stable_id or str(chapter_point.id)
+    source_activity.content = {**source_activity.content, "knowledge_point_ids": [chapter_point.id]}
     extra = Material(stable_id="optional-notes", course_instance_id=source.id, owner_id=teacher["id"], title="可选补充", kind="text",
                      status="ready", content={"pages": [{"id": 42, "page_no": 1, "title": "补充", "text": "保留可选要求"}]})
     db.add(extra)
     db.flush()
     set_material_chapters(db, extra.id, [source_activity.chapter_id])
-    source_activity.resources.append(ActivityMaterial(material_id=extra.id, required=False, order_index=1,
-                                                      learning={"reading": {"scope": "pages", "page_ids": [42]}}))
+    link = db.get(MaterialChapter, (extra.id, source_activity.chapter_id))
+    link.required, link.rule, link.order_index = True, {"scope": "count", "count": 1, "minimum_seconds": 4}, 1
     db.commit()
     payload = export(client, teacher, source)
     item = preview(client, teacher, target.course_id, payload)
@@ -128,12 +119,11 @@ def test_complete_roundtrip_draft_private_answers_and_repeated_apply(client, db,
     imported = db.get(CourseInstance, response.json()["instance_id"])
     assert imported.id == target.course_id
     maps = content_mapping(db, imported)
-    imported_activity = db.get(Activity, maps["activity"]["ch1-lesson"])
+    imported_activity = db.get(Activity, maps["activity"]["ch1-practice"])
     assert imported_activity.content["knowledge_point_ids"] == [maps["knowledge_point"][point_stable_id]]
-    assert [(row.required, row.order_index) for row in imported_activity.resources] == [(True, 0), (False, 1)]
-    assert imported_activity.resources[1].material_id == maps["material"]["optional-notes"]
-    assert imported_activity.resources[1].learning == {"reading": {"scope": "pages", "page_ids": [42]}}
-    assert db.get(KnowledgePoint, imported_activity.content["knowledge_point_ids"][0]).chapter_id != imported_activity.chapter_id
+    assert imported_activity.content["practice_kind"] in {"objective", "programming"}
+    link = db.get(MaterialChapter, (maps["material"]["optional-notes"], imported_activity.chapter_id))
+    assert link.required and link.order_index == 1 and link.rule == {"scope":"count","count":1,"minimum_seconds":4}
     assert "unassigned-draft" in maps["question"]
     question = db.get(Question, maps["question"]["unassigned-draft"])
     assert question.status == "draft" and question.source_type == "ai_generated"
@@ -163,19 +153,23 @@ def test_revision_conflict_and_wrong_class_preview_rejected(client, db, teacher,
     assert apply(client, teacher, source.id, item).status_code == 409
 
 
-def test_same_package_keeps_activity_progress_and_ids(client, db, teacher, student, exchange):
+def test_same_package_keeps_material_evidence_and_stable_ids(client, db, teacher, student, exchange):
+    from app.models import MaterialChapter, MaterialParticipation
     source, _ = exchange
     maps = content_mapping(db, source)
-    activity_id = maps["activity"]["ch1-lesson"]
-    progress = ActivityProgress(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)), activity_id=activity_id,
-                                page_no=42, visited_pages=[10723], completed=False)
+    material = db.get(Material, maps["material"]["186"])
+    chapter_id = db.scalar(select(MaterialChapter.chapter_id).where(MaterialChapter.material_id == material.id))
+    room_id = db.scalar(select(Classroom.id).where(Classroom.course_id == source.id))
+    page = material.content["pages"][0]["id"]
+    progress = MaterialParticipation(user_id=student["id"], classroom_id=room_id, chapter_id=chapter_id,
+                                     material_id=material.id, evidence={"pages":[page], "seconds":5})
     db.add(progress)
     db.commit()
     item = preview(client, teacher, source.id, export(client, teacher, source))
     assert apply(client, teacher, source.id, item).status_code == 200
     db.refresh(progress)
-    assert progress.page_no == 42 and progress.visited_pages == [10723]
-    assert content_mapping(db, source)["activity"]["ch1-lesson"] == activity_id
+    assert progress.evidence == {"pages":[page], "seconds":5}
+    assert content_mapping(db, source) == maps
 
 
 @pytest.mark.parametrize("name", ["../escape", "/absolute", "C:/escape", "a\\escape", "con.txt", "a/../b"])
@@ -234,36 +228,25 @@ def rewrite_archive(payload, transform):
     return result.getvalue()
 
 
-def test_legacy_package_imports_prerequisites_without_changing_either_class_schedule(client, db, classroom, teacher, exchange):
+def test_old_format_rejected_and_class_schedule_is_local(client, teacher, exchange, classroom, tmp_path):
     import yaml
-    from app.models import Chapter
-
     course, _ = exchange
-    headers = teacher["headers"]
-    keys = content_mapping(db, course)["chapter"]
-    first, second = list(keys)[:2]
-    new_class = client.post(endpoint(course.id, "classrooms"), json={"name": "晚班"}, headers=headers).json()
-    releases = f"/api/teacher/classrooms/{classroom['id']}/releases"
-    before = client.get(releases, headers=headers).json()
-
-    def old_curriculum(entries):
-        path = "curriculum/course.yaml"
-        data = yaml.safe_load(entries[path])
-        assert "releases" not in data and "prerequisites" in data
-        data.pop("prerequisites")
-        data.update(schema_version=1, releases=[{"chapter_id": second, "prerequisite_chapter_id": first,
-                    "status": "published", "opens_at": "2099-12-01T19:00:00+08:00"}])
-        entries[path] = yaml.safe_dump(data).encode()
-
-    package = rewrite_archive(export(client, teacher, course), old_curriculum)
-    planned = preview(client, teacher, course.id, package)
-    assert any("旧版课程包" in warning for warning in planned["warnings"])
-    response = apply(client, teacher, course.id, planned)
-    assert response.status_code == 200, response.text
-    db.expire_all()
-    assert db.get(Chapter, keys[second]).prerequisite_chapter_id == keys[first]
-    assert client.get(releases, headers=headers).json() == before
-    assert client.get(f"/api/teacher/classrooms/{new_class['id']}/releases", headers=headers).json() == []
+    payload = export(client, teacher, course)
+    def downgrade(entries):
+        manifest = yaml.safe_load(entries["manifest.yaml"])
+        manifest["schema_version"] = 3
+        entries["manifest.yaml"] = yaml.safe_dump(manifest).encode()
+    archive = tmp_path / "old.zip"
+    archive.write_bytes(rewrite_archive(payload, downgrade))
+    directory = tmp_path / "old"
+    directory.mkdir()
+    unpack_archive(archive, directory)
+    with pytest.raises(PackageError):
+        load_bundle(directory)
+    before = client.get(f"/api/teacher/classrooms/{classroom['id']}/releases", headers=teacher["headers"]).json()
+    item = preview(client, teacher, course.id, payload)
+    assert apply(client, teacher, course.id, item).status_code == 200
+    assert client.get(f"/api/teacher/classrooms/{classroom['id']}/releases", headers=teacher["headers"]).json() == before
 
 
 def test_real_media_and_unassigned_sources_roundtrip(client, db, teacher, exchange, tmp_path):
@@ -301,7 +284,7 @@ def test_real_media_and_unassigned_sources_roundtrip(client, db, teacher, exchan
         assert all("storage_key" not in asset for asset in index)
 
 
-@pytest.mark.parametrize("change", ["dangling", "duplicate", "unknown", "cycle", "answer"])
+@pytest.mark.parametrize("change", ["dangling", "duplicate", "unknown", "task_rule", "answer"])
 def test_invalid_domain_package_never_creates_instance(client, db, teacher, exchange, change, tmp_path):
     import json
     import yaml
@@ -318,10 +301,11 @@ def test_invalid_domain_package_never_creates_instance(client, db, teacher, exch
             rows[0]["chapter_ids"] = ["missing-chapter"]
             entries["content/materials.jsonl"] = ("\n".join(json.dumps(row) for row in rows)).encode()
         else:
-            name = next(name for name in entries if "/quests/" in name)
-            row = yaml.safe_load(entries[name])
-            row["definition"]["nodes"][0]["dependencies"] = [row["definition"]["nodes"][0]["id"]]
-            entries[name] = yaml.safe_dump(row).encode()
+            path = "content/materials.jsonl"
+            rows = [json.loads(line) for line in entries[path].decode().splitlines()]
+            task = next(task for row in rows for task in row["task_points"])
+            task["rule"] = {"scope":"range","start_page":12,"end_page":1}
+            entries[path] = ("\n".join(json.dumps(row) for row in rows)).encode()
     payload = rewrite_archive(export(client, teacher, source), corrupt)
     archive = tmp_path / "invalid.zip"
     archive.write_bytes(payload)
@@ -339,7 +323,7 @@ def test_history_blocks_course_replacement_and_removal(client, db, teacher, stud
     source, _ = exchange
     maps = content_mapping(db, source)
     db.add(ActivityProgress(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)),
-                            activity_id=maps["activity"]["ch1-lesson"], visited_pages=[10715]))
+                            activity_id=maps["activity"]["ch1-practice"], visited_pages=[10715]))
     db.commit()
     original = export(client, teacher, source)
     def replace(entries):
@@ -404,55 +388,6 @@ def test_request_id_deduplicates_across_new_previews(client, db, teacher, exchan
     duplicate = apply(client, teacher, target.course_id, second, request_id)
     assert duplicate.status_code == 200 and duplicate.json()["duplicate"]
     assert duplicate.json()["revision"] == result.json()["revision"]
-
-
-def test_pending_story_update_has_concrete_impact_and_blocks(client, db, teacher, student, exchange):
-    import yaml
-    from app.models import StorySession
-    source, _ = exchange
-    maps = content_mapping(db, source)
-    db.add(StorySession(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)),
-                        story_id=maps["story"]["first-steps"], npc_key=maps["npc"]["mayor_py"],
-                        node_id="test-pending", status="waiting", pending_activity_id=maps["activity"]["ch1-lesson"],
-                        revision=0, return_mapping={}, receipts=[]))
-    db.commit()
-    def edit(entries):
-        for name in entries:
-            if "/flows/" in name:
-                row = yaml.safe_load(entries[name])
-                if row["id"] == "first-steps":
-                    next(node for node in row["content"]["nodes"] if node["type"] == "dialogue")["text"] = "修改对白"
-                    entries[name] = yaml.safe_dump(row, allow_unicode=True).encode()
-    item = preview(client, teacher, source.id, rewrite_archive(export(client, teacher, source), edit))
-    assert not item["can_apply"]
-    assert any(row["kind"] == "story" and row["stable_id"] == "first-steps" and row["affected_records"] == 1
-               for row in item["learning_impact"])
-    assert apply(client, teacher, source.id, item).status_code == 409
-
-
-def test_zip_update_cannot_bypass_task_reset_confirmation(client, db, teacher, student, exchange):
-    import yaml
-    from app.models import PlayerQuest
-
-    source, _ = exchange
-    quest_id = content_mapping(db, source)["quest"]["arrival"]
-    db.add(PlayerQuest(user_id=student["id"], classroom_id=db.scalar(select(Classroom.id).where(Classroom.course_id == source.id)), quest_id=quest_id))
-    db.commit()
-
-    def edit(entries):
-        for name, value in entries.items():
-            if "/quests/" not in name:
-                continue
-            row = yaml.safe_load(value)
-            if row["id"] == "arrival":
-                row["definition"]["nodes"][0]["optional"] = True
-                entries[name] = yaml.safe_dump(row, allow_unicode=True).encode()
-
-    item = preview(client, teacher, source.id, rewrite_archive(export(client, teacher, source), edit))
-    assert not item["can_apply"]
-    assert any(row["kind"] == "quest" and row["stable_id"] == "arrival" and row["affected_records"] == 1
-               for row in item["learning_impact"])
-    assert apply(client, teacher, source.id, item).status_code == 409
 
 
 def test_assessment_question_order_locked_by_formal_attempt(client, db, teacher, student, exchange):
@@ -536,6 +471,7 @@ def test_postgres_repeated_apply_is_serialized_and_idempotent(pg_course_engine, 
     with Session(pg_course_engine, expire_on_commit=False) as db:
         teacher_row, _, source, target = classes(db)
         instance = clone_current_course(db, source)
+        chapter_task_fixture(db, instance)
         db.commit()
         directory = tmp_path / "package"
         directory.mkdir()
@@ -575,6 +511,7 @@ def test_postgres_same_instance_reorders_and_removes_unreferenced_content(pg_cou
     with Session(pg_course_engine) as db:
         _, _, source, _ = classes(db)
         instance = clone_current_course(db, source)
+        chapter_task_fixture(db, instance)
         db.add(Question(id="pg-disposable", stable_id="disposable", course_instance_id=instance.id, title="草稿", kind="boolean",
                         prompt="draft", status="draft", source_type="imported", options=[], samples=[], source={}))
         db.flush()
@@ -595,18 +532,15 @@ def test_postgres_same_instance_reorders_and_removes_unreferenced_content(pg_cou
         assert db.get(Chapter, mapping["chapter"][first["id"]]).order_index == first["order_index"]
 
 
-def test_teaching_roles_are_part_of_complete_package(client, db, teacher, exchange):
-    from app.course_exchange_models import CoursePackageState
+def test_platform_roles_and_policy_are_excluded(client, db, teacher, exchange):
+    from io import BytesIO
     source, target = exchange
-    state = db.get(CoursePackageState, source.id)
-    policy = {"enabled": True, "default_npc_id": "librarian_doc", "limits": {"model_calls": 1, "output_tokens": 128}}
-    state.configuration = {**state.configuration, "assistant": policy}
-    db.commit()
-    item = preview(client, teacher, target.course_id, export(client, teacher, source))
-    result = apply(client, teacher, target.course_id, item)
-    assert result.status_code == 200, result.text
-    stored = db.get(CoursePackageState, result.json()["instance_id"])
-    assert stored.configuration["assistant"] == policy
+    payload = export(client, teacher, source)
+    with zipfile.ZipFile(BytesIO(payload)) as archive:
+        assert not any(path.startswith(("assistant/", "world/")) for path in archive.namelist())
+    item = preview(client, teacher, target.course_id, payload)
+    assert apply(client, teacher, target.course_id, item).status_code == 200
+
 
 @pytest.mark.parametrize("kind", ["directory"])
 def test_available_mounted_package_uses_normal_preview_and_apply(client, db, teacher, exchange, kind):

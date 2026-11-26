@@ -137,8 +137,20 @@ class Material(RetirableContent, CourseContent, Base):
 
 class MaterialChapter(Base):
     __tablename__ = "material_chapters"
+    required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    rule: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
+    order_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     material_id: Mapped[int] = mapped_column(ForeignKey("materials.id", ondelete="CASCADE"), primary_key=True)
     chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), primary_key=True, index=True)
+
+
+class MaterialParticipation(Base):
+    __tablename__ = "material_participation"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    classroom_id: Mapped[int] = mapped_column(ForeignKey("classrooms.id", ondelete="CASCADE"), primary_key=True)
+    chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id", ondelete="CASCADE"), primary_key=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Activity(RetirableContent, CourseContent, Base):

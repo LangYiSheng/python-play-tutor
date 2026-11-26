@@ -6,13 +6,11 @@ from app.experience.checkpoints import delete_checkpoint as _delete_checkpoint
 from app.experience.checkpoints import preview_restore as _preview_restore
 from app.experience.checkpoints import restore_checkpoint as _restore_checkpoint
 from app.experience.checkpoints import save_checkpoint as _save_checkpoint
-from app.experience.contracts import Actor, ChapterInput, Db, OpenInput, RestoreInput, SaveInput, Scope, StageInput
+from app.experience.contracts import Actor, ChapterInput, Db, OpenInput, RestoreInput, SaveInput, Scope
 from app.experience.navigation import open_content as _open_content
 from app.experience.navigation import overview as _overview
 from app.experience.navigation import return_to_spawn as _return_to_spawn
 from app.experience.navigation import switch_chapter as _switch_chapter
-from app.experience.stages import locate_stage as _locate_stage
-from app.experience.stages import preview_stage as _preview_stage
 
 router = APIRouter(prefix="/experience", tags=["experience tools"])
 
@@ -30,16 +28,6 @@ def overview(classroom_id: int, request: Request, db: Db, user: Actor):
 @router.post("/open")
 def open_content(body: OpenInput, request: Request, db: Db, user: Actor):
     return _open_content(body=body, request=request, db=db, user=user)
-
-
-@router.post("/stage/preview")
-def preview_stage(body: StageInput, request: Request, db: Db, user: Actor):
-    return _preview_stage(body=body, request=request, db=db, user=user)
-
-
-@router.post("/stage")
-def locate_stage(body: StageInput, request: Request, db: Db, user: Actor):
-    return _locate_stage(body=body, request=request, db=db, user=user)
 
 
 @router.post("/checkpoints")

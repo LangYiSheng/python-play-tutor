@@ -8,8 +8,7 @@ from app.course_content.access import authorize_activity, authorize_material, ch
 from app.course_scope import course_clause
 from app.experience.access import guard
 from app.experience.contracts import Actor, ChapterInput, Db, OpenInput, Scope
-from app.experience.stages import end_stories
-from app.experience.state import definition_hash, own_rows
+from app.experience.state import definition_hash
 from app.models import (
     Activity,
     Chapter,
@@ -17,14 +16,9 @@ from app.models import (
     ExperienceCheckpoint,
     Material,
     MaterialChapter,
-    NodeState,
     PlayerPosition,
-    PlayerQuest,
     PracticeSession,
-    QuestDefinition,
-    WorldFlag,
 )
-from app.teaching.quests.graph import node_statuses
 from app.world_config import load_world_config, validate_point
 
 
@@ -47,13 +41,6 @@ def switch_chapter(body: ChapterInput, request: Request, db: Db, user: Actor):
 
     if not chapter or not release or release.status != "published" or (release.opens_at and as_utc(release.opens_at) > now()):
         raise HTTPException(403, "章节尚未发布或未到开放时间，不能定位")
-    # Only this development actor bypasses prerequisite gates; the classroom release is unchanged.
-    for flag in own_rows(db, WorldFlag, user, body.classroom_id):
-        if flag.key.startswith("dev:chapter:"):
-            db.delete(flag)
-    db.flush()
-    db.add(WorldFlag(user_id=user.id, classroom_id=body.classroom_id, key=f"dev:chapter:{chapter.id}"))
-    db.commit()
     return {"ok": True}
 
 
@@ -92,21 +79,6 @@ def overview(classroom_id: int, request: Request, db: Db, user: Actor):
         }
         for row in db.scalars(select(Activity).where(course_clause(db, Activity, classroom_id)))
     ]
-    quests = []
-    for definition in db.scalars(select(QuestDefinition).where(course_clause(db, QuestDefinition, classroom_id))):
-        instance = db.scalar(
-            select(PlayerQuest).where(PlayerQuest.user_id == user.id, PlayerQuest.classroom_id == classroom_id, PlayerQuest.quest_id == definition.id)
-        )
-        states = {row.node_id: row for row in db.scalars(select(NodeState).where(NodeState.player_quest_id == instance.id))} if instance else {}
-        statuses = node_statuses(definition.definition, states)
-        quests.append(
-            {
-                "id": definition.id,
-                "title": definition.title,
-                "chapter_id": definition.chapter_id,
-                "nodes": [{**node, "status": statuses[node["id"]]} for node in definition.definition["nodes"]],
-            }
-        )
     current_hash = definition_hash(db, classroom_id)
     checkpoints = [
         {"id": row.id, "name": row.name, "created_at": row.created_at.isoformat(), "valid": row.definition_hash == current_hash}
@@ -116,7 +88,7 @@ def overview(classroom_id: int, request: Request, db: Db, user: Actor):
             .order_by(ExperienceCheckpoint.created_at.desc())
         )
     ]
-    return {"chapters": chapters, "materials": materials, "activities": activities, "quests": quests, "checkpoints": checkpoints}
+    return {"chapters": chapters, "materials": materials, "activities": activities, "checkpoints": checkpoints}
 
 
 def open_content(body: OpenInput, request: Request, db: Db, user: Actor):
@@ -151,6 +123,5 @@ def return_to_spawn(body: Scope, request: Request, db: Db, user: Actor):
     validate_point(spawn["map_key"], spawn["tile_x"], spawn["tile_y"])
     db.execute(delete(PlayerPosition).where(PlayerPosition.user_id == user.id, PlayerPosition.classroom_id == body.classroom_id))
     db.add(PlayerPosition(user_id=user.id, classroom_id=body.classroom_id, **spawn))
-    end_stories(db, user, body.classroom_id)
     db.commit()
     return {"ok": True, "user_id": user.id, "classroom_id": body.classroom_id}

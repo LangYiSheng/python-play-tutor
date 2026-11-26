@@ -1,21 +1,20 @@
-from app.models import ActivityMaterial
-from conftest import make_material
 import json
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from app import assistant
-from app.integration_models import AssistantCall, AssistantSession
-from app.models import Activity
+from app.integration_models import AssistantCall, AssistantModelSettings, AssistantSession
+from app.models import Material
 
 
-def create_session(client, student, classroom, activity="ch1-lesson"):
-    return client.post("/api/assistant/sessions", json={"classroom_id": classroom["id"], "activity_id": activity}, headers=student["headers"])
+def create_session(client, student, classroom, activity=None):
+    target = {"activity_id": activity} if activity else {"material_id": 186}
+    return client.post("/api/assistant/sessions", json={"classroom_id": classroom["id"], **target}, headers=student["headers"])
 
 
 def test_world_reading_and_npc_do_not_call_models(client, student, classroom):
     before = client.get("/api/assistant/status", headers=student["headers"]).json()["model_calls"]
     assert client.get(f"/api/world?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 200
-    assert client.get(f"/api/activities/ch1-lesson?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 200
+    assert client.get(f"/api/materials/186?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 200
     after = client.get("/api/assistant/status", headers=student["headers"]).json()["model_calls"]
     assert before == after == 0
 
@@ -32,8 +31,7 @@ def test_no_credentials_is_503_not_fake_success(client, student, classroom, monk
 def test_sessions_enforce_user_activity_and_assessment_policy(client, db, student, teacher, classroom):
     sid = create_session(client, student, classroom).json()["id"]
     assert client.post(f"/api/assistant/sessions/{sid}/messages", json={"message": "read"}, headers=teacher["headers"]).status_code == 404
-    activity = db.get(Activity, "ch1-lesson")
-    activity.assistant_allowed = False
+    db.add(AssistantModelSettings(id=1, configuration={"enabled": False}))
     db.commit()
     assert client.post(f"/api/assistant/sessions/{sid}/messages", json={"message": "read"}, headers=student["headers"]).status_code == 403
     assert create_session(client, student, classroom).status_code == 403
@@ -255,25 +253,19 @@ def test_stale_assistant_call_after_database_outage_does_not_lock_session_foreve
     assert fresh.id != interrupted.id and fresh.status == "running"
 
 
-def test_existing_session_reads_current_activity_configuration(client, db, student, classroom):
+def test_existing_session_reads_current_material_configuration(client, db, student, classroom):
     from app.models import User
 
     sid = create_session(client, student, classroom).json()["id"]
-    current = make_material(db, chapter_ids=[179], title="替换的当前资料", kind="text", content={"pages": [
-        {"id": 1, "page_no": 1, "title": "当前页", "text": "当前教学内容"}
-    ]})
-    db.add(current)
-    db.flush()
-    activity = db.get(Activity, "ch1-lesson")
-    activity.resources = [ActivityMaterial(material_id=current.id, required=True, order_index=0, learning={"reading": {"scope": "all"}})]
-    activity.content = {"learning": {"reading": {"scope": "all"}}}
-    activity.title = "更新后的活动"
+    current = db.get(Material, 186)
+    current.title = "更新后的资料"
+    current.content = {"pages": [{"id": 1, "page_no": 1, "title": "当前页", "text": "当前教学内容"}]}
     db.commit()
     session, activity = assistant.authorized_session(db, db.get(User, student["id"]), sid)
     context = assistant.build_context(db, db.get(User, student["id"]), session, activity,
                                       assistant.MessageInput(message="解释当前页", page_no=1))
     assert session.material_id == current.id
-    assert context["activity"]["title"] == "更新后的活动"
+    assert context["current_page"]["material_id"] == current.id
     assert context["current_page"]["excerpt"] == "当前教学内容"
     assert "version" not in context["current_page"] and "version" not in context["activity"]
 

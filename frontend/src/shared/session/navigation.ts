@@ -33,7 +33,7 @@ export function createWorkspaceNavigation(
       user.value &&
       classroomId.value &&
       workspace.value &&
-      ["lesson", "material", "practice"].includes(workspace.value.kind)
+      ["material", "practice"].includes(workspace.value.kind)
     ) {
       sessionStorage.setItem(
         `read:${user.value.id}:${classroomId.value}:workspace`,
@@ -66,6 +66,7 @@ export function createWorkspaceNavigation(
     open,
     navigate,
     back,
+    replace(next: Exclude<Workspace, null>) { rememberContent(); workspace.value = next; },
     clearHistory,
     reset,
   };

@@ -99,7 +99,7 @@ def db(database_factory):
             Real import/migration tests never set this marker and retain sources.
             This does not change application authorization or HTTP request scope.
             """
-            from app.course_instances import CONTENT_MODELS
+            from fixture_instances import CONTENT_MODELS
             from app.models import Npc
             from uuid import uuid4
             key = session.info.get("fixture_course_instance_id")
@@ -191,7 +191,7 @@ def classroom(client, db, teacher, student):
 
 def bind_test_course(db, classroom_id):
     """Move explicitly synthetic fixture definitions into a test course namespace."""
-    from app.course_instances import CONTENT_MODELS
+    from fixture_instances import CONTENT_MODELS
     from app.models import Npc
     from fixture_instances import configure_fixture_world
     from app.course_instances import classroom_course
@@ -211,7 +211,7 @@ def bind_test_course(db, classroom_id):
 def copy_fixture_course(db, source_classroom_id, target_classroom_id):
     """Copy test definitions through the real mapper, deliberately excluding progress."""
     from copy import deepcopy
-    from app.course_instances import CONTENT_MODELS, classroom_course
+    from fixture_instances import CONTENT_MODELS, classroom_course
     from fixture_instances import _clone_rows, _relations
     from app.course_exchange_models import CoursePackageState
     from app.models import ChapterRelease, Classroom
@@ -266,6 +266,8 @@ def branching_course(db, teacher):
         ids = [point.id for point in db.scalars(select(KnowledgePoint).where(KnowledgePoint.chapter_id == source["chapter_id"]))
                if set(point.content.get("page_refs", [])) & set(source.get("knowledge_point_pages", []))]
         fields["content"] = {**{key: value for key, value in fields["content"].items() if key != "question_ids"}, "knowledge_point_ids": [1844] if source["id"] == "ch2-code" else ids}
+        if source["kind"] == "practice":
+            fields["content"].update(required=False, practice_kind="programming" if source["id"] == "ch2-code" else "objective")
         item = db.get(Activity, source["id"])
         if not item:
             item = Activity(**fields, owner_id=teacher["id"])

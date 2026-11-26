@@ -12,26 +12,16 @@
         v-if="session.world"
         :key="session.classroomId"
         ref="canvas"
-        :paused="Boolean(session.workspace || activeStory?.node || welcome || session.storyBusy || session.resetBusy)"
+        :paused="Boolean(session.workspace || line || welcome || busy || session.resetBusy)"
         @ready="onWorldReady"
         @position="positionChanged"
         @interact="interact" /><GameHUD
         v-if="!welcome"
-        :blocked="Boolean(session.workspace || activeStory?.node || session.storyBusy || session.resetBusy)"
+        :blocked="Boolean(session.workspace || line || busy || session.resetBusy)"
         :class="{ 'is-entering': entered }"
         @guide="guide" /><DialogueLayer
-        v-if="!silentAction && activeStory?.node"
-        :story="activeStory"
-        @close="closeDialogue"
+        v-if="line" :line="line" @advance="advanceDialogue" @close="dismissDialogue"
         />
-      <div v-if="silentAction && !welcome" class="world-action-status">
-        <template v-if="automaticActionError">
-          <p role="alert">{{ automaticActionError }}</p>
-          <button type="button" :disabled="session.storyBusy" @click="runAutomaticAction">重试操作</button>
-          <button type="button" :disabled="session.storyBusy" @click="endAutomaticAction">结束本次互动</button>
-        </template>
-        <p v-else role="status">正在继续互动…</p>
-      </div>
       <OverlayHost @close="closeWorkspace" @complete="closeWorkspace"
     /></template>
     <section v-else class="arrival-page">
@@ -52,7 +42,6 @@
 </template>
 <script setup lang="ts">
 import {
-  computed,
   nextTick,
   onMounted,
   onBeforeUnmount,
@@ -66,9 +55,9 @@ import DialogueLayer from "./DialogueLayer.vue";
 import OverlayHost from "./OverlayHost.vue";
 import { useSession } from "../shared/session";
 import { api, notify } from "../shared/api";
-import type { Player, Workspace } from "../shared/types";
+import type { Player, StoryDialogue } from "../shared/types";
 import { isTextFocus } from "../game/pathfinding";
-import { resolveWorldTarget } from "../game/config/worldConfig";
+import { greeting, farewell, taskKinds, taskRoles, type TaskKind, type TaskChapter } from "../shared/chapterTasks";
 import { arrivalActive, arrivalCamera, arrivalFinished, backdropReady, startArrival, endArrival, type ArrivalCamera } from "../app/arrival";
 import ArrivalWelcome from "./ArrivalWelcome.vue";
 const welcome = ref(true);
@@ -98,58 +87,45 @@ const session = useSession(),
   error = ref(""),
   joinCode = ref(""),
   canvas = ref<InstanceType<typeof WorldCanvas>>();
-let reachBusy = false;
-let reachTask: Promise<void> = Promise.resolve();
+
 let unregisterRestart: (() => void) | undefined;
 watch(() => session.restartCompleted, () => {
   loading.value = true;
   window.location.reload();
 }, { flush: "sync" });
-const activeStory = computed(() =>
-  session.story?.status === "active" && !session.storyDismissed && !session.workspace ? session.story : undefined,
-);
-const silentAction = computed(() => activeStory.value?.node?.type === "action"
-  ? `${activeStory.value.id}:${activeStory.value.revision}`
-  : null);
-const automaticActionError = ref("");
-let requestedAction: string | null = null;
-async function runAutomaticAction() {
-  const key = silentAction.value;
-  if (!key || session.storyBusy) return;
-  automaticActionError.value = "";
-  try {
-    await session.advanceStory();
-  } catch (failure) {
-    if (silentAction.value === key)
-      automaticActionError.value = failure instanceof Error ? failure.message : "互动未完成，请重试。";
-  }
+const line = ref<StoryDialogue>();
+const busy = ref(false);
+let visit: { kind: TaskKind; before: TaskChapter[] } | undefined;
+let visitGeneration = 0;
+watch(() => [session.classroomId, session.user?.id], () => {
+  visitGeneration++; visit = undefined; line.value = undefined; busy.value = false;
+});
+function say(kind: TaskKind, text: string, offer = false) {
+  const npc = session.world?.npcs.find(n => n.key === taskRoles[kind].key);
+  line.value = {id: String(++visitGeneration), speaker: npc?.name ?? taskRoles[kind].name, portrait: npc?.portrait,
+    text, choices: offer ? [{id:"open", label: "查看" + taskRoles[kind].label}] : []};
 }
-async function endAutomaticAction() {
-  try {
-    await session.endStory();
-  } catch (failure) {
-    automaticActionError.value = failure instanceof Error ? failure.message : "未能结束互动，请重试。";
-  }
-}
-watch([silentAction, welcome, loading, () => session.storyBusy], ([key, entering, connecting, busy]) => {
-  if (!key) {
-    requestedAction = null;
-    return;
-  }
-  if (entering || connecting || busy || key === requestedAction) return;
-  requestedAction = key;
-  void runAutomaticAction();
-}, { immediate: true });
-function closeDialogue() {
-  session.dismissStory();
+function dismissDialogue() {line.value = undefined; visit = undefined;}
+function advanceDialogue(choice?: string) {
+  line.value = undefined;
+  if (choice !== "open" || !visit) {visit = undefined; return;}
+  session.open(visit.kind === "reading" ? {kind:"library"} : {kind:"taskList", category: visit.kind});
 }
 async function closeWorkspace() {
+  if (busy.value) return;
+  const generation = visitGeneration;
+  busy.value = true;
   try {
-    if (session.story?.status === "waiting") await session.returnStoryActivity();
-    else session.open(null);
-  } catch (error) {
-    notify(error instanceof Error ? error.message : "活动进度保存失败，请重试。");
-  }
+    await session.flushParticipation();
+    await session.refreshTasks();
+    if (generation !== visitGeneration) return;
+    session.open(null);
+    if (visit) {
+      const old = visit; visit = undefined;
+      say(old.kind, farewell(old.before, session.taskChapters, old.kind, session.world?.npcs));
+    }
+  } catch (failure) {notify(failure instanceof Error ? failure.message : "无法保存学习进度，请重试。");}
+  finally {busy.value = false;}
 }
 watch(() => session.navigationTarget, async target => {
   if (!target) return;
@@ -161,16 +137,7 @@ async function load() {
   error.value = "";
   try {
     if (!session.world) await session.load();
-    await session.restoreStory();
-    const resumeKey = `experience-resume:${session.user?.id}:${session.classroomId}`;
-    const resume = sessionStorage.getItem(resumeKey);
-    sessionStorage.removeItem(resumeKey);
-    if (resume && session.user?.dev_tools_enabled && !session.workspace) {
-      try {
-        const target = JSON.parse(resume) as Workspace;
-        if (target && ['lesson', 'practice', 'material', 'journal', 'library'].includes(target.kind)) session.open(target);
-      } catch { /* An invalid local navigation hint never prevents entering the town. */ }
-    }
+    await session.refreshTasks();
     if (!session.classroomId) endArrival();
   } catch (e) {
     error.value = e instanceof Error ? e.message : "连接失败";
@@ -201,57 +168,31 @@ async function logout() {
 }
 async function guide(key: string) {
   session.open(null);
-  session.dismissStory();
+  line.value = undefined; visit = undefined;
   await nextTick();
   canvas.value?.guide(key);
 }
-async function positionChanged(player: Player) {
-  if (session.resetBusy) return;
+function positionChanged(player: Player) {
   if (session.world) session.world.player = player;
-  if (reachBusy) return;
-  reachBusy = true;
-  reachTask = (async () => {
-  try {
-    for (const quest of session.world?.quests ?? [])
-      for (const node of quest.nodes) {
-        const target = resolveWorldTarget(node.target, session.world?.npcs ?? [], session.world);
-        if (
-          node.status === "ready" &&
-          node.type === "REACH_LOCATION" &&
-          target &&
-          player.map_key === target.map_key &&
-          Math.abs(player.tile_x - target.x) +
-            Math.abs(player.tile_y - target.y) <=
-            3
-        )
-          await session.event(quest, node, {
-            map_key: player.map_key,
-            tile_x: player.tile_x,
-            tile_y: player.tile_y,
-          });
-      }
-  } catch (e) {
-    notify(e instanceof Error ? e.message : "到达记录失败");
-  } finally {
-    reachBusy = false;
-  }
-  })();
-  await reachTask;
 }
 async function interact(target: string, type: "npc" | "object") {
-  if (type === "npc") {
-    session.open(null);
-    try {
-      if (await session.interactStory(target)) return;
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "无法读取这段对话，请重试。");
-      return;
-    }
-    notify("这个角色当前暂无可用对话。");
+  if (busy.value || session.workspace) return;
+  if (type === "object") {
+    if (target === "library_shelf") await guide(taskRoles.reading.key);
     return;
   }
-  try { await session.interactStory(target, "object"); }
-  catch (error) { notify(error instanceof Error ? error.message : "互动未完成，请重试。"); }
+  const kind = taskKinds.find(kind => taskRoles[kind].key === target);
+  if (!kind) return;
+  const generation = visitGeneration;
+  busy.value = true;
+  try {
+    await session.refreshTasks();
+    if (generation !== visitGeneration) return;
+    const reply = greeting(session.taskChapters, kind);
+    visit = reply.open ? {kind, before: JSON.parse(JSON.stringify(session.taskChapters))} : undefined;
+    say(kind, reply.text, reply.open);
+  } catch (failure) {notify(failure instanceof Error ? failure.message : "无法加载章节任务");}
+  finally {busy.value = false;}
 }
 function worldShortcut(event: KeyboardEvent) {
   if (
@@ -264,8 +205,8 @@ function worldShortcut(event: KeyboardEvent) {
     isTextFocus(document.activeElement) ||
     welcome.value ||
     session.workspace ||
-    activeStory.value?.node ||
-    session.storyBusy ||
+    line.value ||
+    busy.value ||
     session.resetBusy ||
     !session.world
   )
@@ -278,7 +219,7 @@ function worldShortcut(event: KeyboardEvent) {
 onMounted(() => {
   unregisterRestart = session.registerRestartPreparation(async () => {
     await canvas.value?.flushSaves();
-    await reachTask;
+    await session.flushParticipation();
   });
   void load();
   window.addEventListener("keydown", worldShortcut);

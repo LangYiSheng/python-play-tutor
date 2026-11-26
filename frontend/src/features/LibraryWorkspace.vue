@@ -27,9 +27,9 @@
           <section v-for="group in filteredChapters" :key="group.id" class="library-chapter" :aria-labelledby="`library-chapter-${group.id}`">
             <header class="library-chapter-heading"><h3 class="game-card-title" :id="`library-chapter-${group.id}`"><GameIcon name="book"/>{{ group.title }}</h3><span>{{ group.materials.length }} 份</span></header>
             <div class="library-list">
-              <button v-for="material in group.materials" :key="material.id" class="library-card" :disabled="material.status !== 'ready'" @click="open(material)">
+              <button v-for="material in group.materials" :key="material.id" class="library-card" :disabled="material.status !== 'ready'" @click="open(material, group.id)">
                 <span class="library-material-icon" :class="{ 'is-video': material.kind === 'video' }" aria-hidden="true"><GameIcon :name="material.kind === 'video' ? 'video' : 'book'"/></span>
-                <span class="library-card-copy"><strong>{{ material.title }}</strong><small>{{ kindLabels[material.kind] ?? '课程资料' }}<span v-if="duration(material)"> · {{ duration(material) }}</span></small></span>
+                <span class="library-card-copy"><strong>{{ material.title }}</strong><small>{{ kindLabels[material.kind] ?? '课程资料' }}<span v-if="chapterTask(group.id, material.id)"> · {{ chapterTask(group.id, material.id)!.required ? "必读" : "选读" }} · {{ taskProgress(chapterTask(group.id, material.id)!) }}</span><span v-if="duration(material)"> · {{ duration(material) }}</span></small></span>
                 <span class="library-card-action">{{ material.status === 'ready' ? material.kind === 'video' ? '观看' : '阅读' : material.status === 'failed' ? '处理失败' : '处理中' }}<GameIcon v-if="material.status === 'ready'" name="arrowRight"/></span>
               </button>
             </div>
@@ -41,6 +41,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { taskProgress } from "../shared/chapterTasks";
 import GameIcon from "../shared/GameIcon.vue";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../shared/api";
@@ -56,7 +57,7 @@ const types = [{ id: "all", label: "全部资料" }, { id: "lesson", label: "课
 const kindLabels: Record<string, string> = { text: "文本课件", pdf: "PDF 课件", presentation: "演示课件", video: "课程视频" };
 let ownerKey = "", generation = 0, disposed = false, scrollPosition = 0;
 const chapters = computed(() => {
-  const groups = new Map<number, Material[]>();
+  const groups = new Map<number, Material[]>((session.taskChapters ?? []).map(c => [c.id, []]));
   for (const material of materials.value) {
     const ids = material.chapter_ids?.length ? material.chapter_ids : [material.chapter_id ?? 0];
     for (const id of ids) {
@@ -67,7 +68,10 @@ const chapters = computed(() => {
   }
   return [...groups].map(([id, items]) => {
     const details = session.world?.chapters.find(item => item.id === id);
-    return { id, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, materials: items };
+    return { id, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, materials: items.sort((a,b) => {
+      const entries = session.taskChapters.find(c => c.id === id)?.tasks ?? [];
+      return entries.findIndex(t => t.material_id === a.id) - entries.findIndex(t => t.material_id === b.id);
+    }) };
   }).sort((a, b) => a.order - b.order || a.id - b.id);
 });
 const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, "");
@@ -96,7 +100,8 @@ function resetScroll() { scrollPosition = 0; if (content.value) content.value.sc
 function selectChapter(id: ChapterSelection) { chapter.value = id; resetScroll(); }
 function selectType(id: MaterialType) { type.value = id; resetScroll(); }
 function clearFilters() { query.value = ""; type.value = "all"; chapter.value = "all"; resetScroll(); }
-function open(material: Material) { saveView(); session.navigate({ kind: "material", material_id: material.id }); }
+function chapterTask(chapter: number, material: number) { return session.taskChapters.find(c => c.id === chapter)?.tasks.find(t => t.material_id === material); }
+function open(material: Material, chapterId: number) { saveView(); session.navigate({ kind: "material", material_id: material.id, chapter_id: chapterId }); }
 watch([query, type, chapter], saveView, { flush: "post" });
 watch(() => [session.user?.id, session.classroomId] as const, async ([userId, classroomId]) => {
   saveView();

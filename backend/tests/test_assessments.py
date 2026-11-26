@@ -20,7 +20,6 @@ from app.db import Base, get_db
 from app.judge import JudgeSubmissionUnknown
 from app.main import create_app
 from app.models import Activity, AssessmentAttempt, ChapterRelease, Classroom, Membership, QuestionSecret, Submission, User
-from app.teaching.quests.evidence import validate_evidence
 from fixture_seed import seed
 
 
@@ -72,8 +71,6 @@ def test_one_hand_in_is_atomic_immutable_and_wrong_answers_still_finish_the_pape
     assert db.scalar(select(func.count()).select_from(Submission)) == before == 3
     progress = client.get(f"/api/activities/ch1-assessment/progress?classroom_id={classroom['id']}", headers=student["headers"]).json()
     assert progress["completed"] and not progress["passed"]
-    validate_evidence(db, db.get(User, student["id"]), classroom["id"],
-                      {"type": "PASS_ASSESSMENT", "activity_id": "ch1-assessment"}, {"submission_id": paper["results"][-1]["id"]})
     # A submitted receipt remains readable even if the current configured set changes.
     activity = db.get(Activity, "ch1-assessment")
     set_activity_questions(db, activity, [paper["question_ids"][0]])

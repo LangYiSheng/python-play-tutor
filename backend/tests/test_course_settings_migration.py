@@ -1,4 +1,4 @@
-"""Upgrade removes the old stored key once, without touching other course data."""
+"""Remove course assistant settings during upgrade and retain source assets."""
 from sqlalchemy.orm import Session
 
 from app.course_exchange_models import CoursePackageState
@@ -6,7 +6,7 @@ from sqlalchemy import text
 from test_curriculum_migration import migrate, sqlite_engine
 
 
-def test_persisted_default_is_renamed_once(tmp_path):
+def test_legacy_course_assistant_is_removed_once(tmp_path):
     path = tmp_path / "settings.sqlite"
     url = "sqlite:///" + path.as_posix()
     migrate(url, "upgrade", "ea30c9b172f4")
@@ -24,4 +24,4 @@ def test_persisted_default_is_renamed_once(tmp_path):
     migrate(url, "upgrade", "head")
     with Session(sqlite_engine(path)) as db:
         config = db.get(CoursePackageState, instance_id).configuration
-        assert config == {"assistant": {"default_npc_id": "guide", "enabled": False, "limits": {"model_calls": 1}}, "_assets": []}
+        assert config == {"_assets": []}

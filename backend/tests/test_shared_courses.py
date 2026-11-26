@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth import issue
 from app.classrooms.contracts import JoinInput
 from app.classrooms.service import join_classroom
-from app.models import (Activity, ActivityProgress, AssessmentAttempt, Classroom, Membership,
+from app.models import (Activity, MaterialParticipation, AssessmentAttempt, Classroom, CourseInstance, Membership,
                         Submission, User)
 from test_curriculum_migration import migrate
 
@@ -31,9 +31,7 @@ def test_two_classes_share_content_and_keep_evidence(client, db, teacher, classr
     assert client.post("/api/classrooms/join", headers=student["headers"], json={"join_code": evening["join_code"]}).status_code == 409
     assert client.post(f"/api/teacher/classrooms/{evening['id']}/students", headers=headers,
                        json={"students": [{"name": "学生", "student_id": student["student_id"]}]}).status_code == 422
-    lesson = db.scalar(sa.select(Activity).where(Activity.chapter_id == 179, Activity.kind.in_(["lesson", "reading"])))
-    assert lesson
-    before = client.get(base + "/authoring", headers=headers).json()["revision"]
+    before = db.get(CourseInstance, evening["course_id"]).revision
     clock = datetime(2026, 11, 24, 14, tzinfo=timezone(timedelta(hours=8)))
     class TestClock(datetime):
         @classmethod
@@ -43,11 +41,10 @@ def test_two_classes_share_content_and_keep_evidence(client, db, teacher, classr
     for cid, date in ((afternoon, clock), (evening["id"], clock + timedelta(hours=5))):
         assert client.put(f"/api/teacher/classrooms/{cid}/releases/179", headers=headers,
                           json={"status": "published", "opens_at": date.isoformat()}).status_code == 200
-    assert client.get(base + "/authoring", headers=headers).json()["revision"] == before
-    assert client.get(f"/api/activities/{lesson.id}?classroom_id={afternoon}", headers=student["headers"]).status_code == 200
-    assert client.get(f"/api/activities/{lesson.id}?classroom_id={evening['id']}", headers=late).status_code == 403
-    assert client.get(f"/api/materials/{lesson.resources[0].material_id}?classroom_id={evening['id']}", headers=late).status_code == 403
-    db.add(ActivityProgress(user_id=student["id"], classroom_id=afternoon, activity_id=lesson.id, visited_pages=[1]))
+    assert db.get(CourseInstance, evening["course_id"]).revision == before
+    assert client.get(f"/api/materials/186?classroom_id={afternoon}", headers=student["headers"]).status_code == 200
+    assert client.get(f"/api/materials/186?classroom_id={evening['id']}", headers=late).status_code == 403
+    db.add(MaterialParticipation(user_id=student["id"], classroom_id=afternoon, chapter_id=179, material_id=186, evidence={"pages": [1]}))
     paper = Activity(id="shared-exam", stable_id="exam", course_instance_id=evening["course_id"], chapter_id=179,
                      kind="assessment", title="测验", content={})
     db.add(paper)
@@ -66,7 +63,7 @@ def test_two_classes_share_content_and_keep_evidence(client, db, teacher, classr
                              question_ids=[question.id], submission_ids={question.id: sub.id}, answers={}))
     from app.integration_models import AssistantSession
     db.add_all([
-        AssistantSession(user_id=student["id"], classroom_id=afternoon, activity_id=lesson.id,
+        AssistantSession(user_id=student["id"], classroom_id=afternoon, material_id=186,
                          messages=[{"role": "user", "content": "问题"}, {"role": "assistant", "content": "回答"}]),
         AssistantSession(user_id=add[-1].id, classroom_id=evening["id"], activity_id=practice.id,
                          messages=[{"role": "user", "content": "一道练习题"}]),
@@ -159,7 +156,7 @@ def test_upgrade_and_competing_enrollment(tmp_path, engine_kind):
     with Session(engine) as db:
         assert db.get(Classroom, 10).course_id == 11 and db.get(Classroom, 20).course_id == 21
         assert db.get(Classroom, 30).course.name == "空" and db.get(Classroom, 30).status == "deleted"
-        assert db.scalar(sa.text("SELECT prerequisite_chapter_id FROM chapters WHERE id=72")) == 71
+        assert db.scalar(sa.text("SELECT prerequisite_chapter_id FROM chapters WHERE id=72")) is None
         assert db.scalar(sa.text("SELECT status FROM chapter_releases WHERE chapter_id=72")) == "paused"
         from app.course_content.access import authorize_material, chapter_available
         student = db.get(User, 2)
@@ -167,11 +164,12 @@ def test_upgrade_and_competing_enrollment(tmp_path, engine_kind):
         assert chapter_available(db, student, 10, 71)
         assert not chapter_available(db, student, 10, 72)
         assert db.get(Membership, (2,10))
-        from app.assessments import assessment_payload
-        from app.models import PlayerPosition
-        assert assessment_payload(db, db.get(User, 2), 10, db.get(Activity, "exam"))["score"] == 100
-        position = db.get(PlayerPosition, (2, 10))
-        assert (position.tile_x, position.tile_y) == (13, 7)
+        from app.models import PlayerPosition, MaterialChapter
+        assert not db.get(Activity, "exam")
+        assert not db.get(Submission, "answer")
+        assert not db.get(AssessmentAttempt, "paper")
+        assert not db.get(PlayerPosition, (2, 10))
+        assert db.get(MaterialChapter, (14, 71)).required is False
         db.add_all([Classroom(name="晚班", course_id=11, join_code="aaa4"),
                     User(id=3, name="并发学生", role="student", password_hash="unused")])
         db.commit()

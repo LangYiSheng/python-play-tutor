@@ -50,7 +50,8 @@ it("validates confirmation, retains failed input, then rotates session and conti
   await inputs[1].setValue("mismatch-password");
   await wrapper.get("form").trigger("submit");
   expect(post).not.toHaveBeenCalled();
-  expect(wrapper.get('[role="alert"]').text()).toContain("不一致");
+  expect(wrapper.get('input[aria-invalid="true"]').attributes("aria-describedby")).toBeTruthy();
+  expect(wrapper.text()).toContain("不一致");
   await inputs[1].setValue("private-password");
   await wrapper.get("form").trigger("submit");
   await flushPromises();

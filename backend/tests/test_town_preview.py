@@ -17,18 +17,12 @@ def launch(client, classroom_id, teacher_headers):
     return result["user"], {"Authorization": f"Bearer {result['access_token']}"}
 
 
-def complete_welcome(client, classroom_id, headers):
+def finish_practice(client, classroom_id, headers):
     move_player(client, headers, classroom_id, "town_hub", 22, 34)
-    result = client.post("/api/story/interactions", headers=headers, json={"classroom_id": classroom_id, "npc_key": "mayor_py"})
-    assert result.status_code == 200, result.text
-    view = result.json()
-    assert view["node"]["id"] == "mayor-first"
-    for _ in range(2):
-        result = client.post(f"/api/story/sessions/{view['id']}/advance", headers=headers,
-                             json={"classroom_id": classroom_id, "revision": view["revision"], "event_id": str(uuid4())})
-        assert result.status_code == 200, result.text
-        view = result.json()
-    assert view["status"] == "ended"
+    result = client.post("/api/submissions", headers=headers, json={
+        "classroom_id": classroom_id, "activity_id": "ch1-practice", "question_id": "ch1-computation",
+        "answer": True, "idempotency_key": str(uuid4())})
+    assert result.status_code == 201 and result.json()["status"] == "accepted", result.text
 
 
 def test_town_preview_persists_real_progress_without_adding_a_roster_member(db, classroom, teacher, student, monkeypatch):
@@ -46,8 +40,8 @@ def test_town_preview_persists_real_progress_without_adding_a_roster_member(db, 
     assert client.get("/api/auth/me", headers=teacher_headers).json()["role"] == "teacher"
     assert client.get("/api/auth/me", headers=student["headers"]).json()["dev_tools_enabled"] is False
 
-    complete_welcome(client, cid, preview_headers)
-    complete_welcome(client, cid, student["headers"])
+    finish_practice(client, cid, preview_headers)
+    finish_practice(client, cid, student["headers"])
     client.post("/api/auth/logout", headers=preview_headers)
     assert client.get("/api/auth/me", headers=preview_headers).status_code == 401
     reopened_user, reopened_headers = launch(client, cid, teacher_headers)
@@ -60,11 +54,14 @@ def test_town_preview_persists_real_progress_without_adding_a_roster_member(db, 
 
     saved = world(reopened_headers)
     assert saved["player"]["tile_x"] == 22 and "library" in saved["building_unlock"]
-    assert any(node["id"] == "welcome" and node["status"] == "complete" for node in saved["quests"][0]["nodes"])
+    def practice_progress(auth):
+        response = client.get(f"/api/chapter-tasks?classroom_id={cid}", headers=auth)
+        return next(t for c in response.json()["chapters"] for t in c["tasks"] if t["id"] == "ch1-practice")["current"]
+    assert practice_progress(reopened_headers) == 1
     roster = client.get(f"/api/teacher/classrooms/{cid}/students", headers=teacher_headers).json()
     assert [row["id"] for row in roster] == [student["id"]]
     report = client.get(f"/api/teacher/classrooms/{cid}/progress", headers=teacher_headers).json()
-    assert {event["user_id"] for event in report["events"]} == {student["id"]}
+    assert {s["user_id"] for s in report["submissions"]} == {student["id"]}
 
     body = {"classroom_id": cid, "confirmed": True}
     assert client.post("/api/dev/progress/reset", json=body, headers=reopened_headers).status_code == 404
@@ -73,8 +70,8 @@ def test_town_preview_persists_real_progress_without_adding_a_roster_member(db, 
         assert client.post(reset_url, json=body, headers=headers).status_code == 403
     assert client.post(reset_url, json={**body, "confirmed": False}, headers=reopened_headers).status_code == 422
     assert client.post(reset_url, json=body, headers=reopened_headers).status_code == 200
-    assert "library" not in world(reopened_headers)["building_unlock"]
-    assert "library" in world(student["headers"])["building_unlock"]
+    assert practice_progress(reopened_headers) == 0
+    assert practice_progress(student["headers"]) == 1
 
     changed = client.post("/api/auth/password", headers=teacher_headers,
                           json={"current_password": "teacher-password-123", "new_password": "new-teacher-password-123"})

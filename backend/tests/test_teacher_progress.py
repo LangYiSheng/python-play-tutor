@@ -1,142 +1,48 @@
-"""Chapter totals use the same published main-quest rules as prerequisites."""
+"""Teacher records follow the same published chapter tasks that students see."""
+from datetime import timedelta
 
-from uuid import uuid4
-from sqlalchemy import select
-from app.auth import hash_password, issue
-from app.models import PlayerQuest, QuestDefinition, User
-
-
-def author_quest(client, teacher, classroom_id, quest_id, *, kind="main", optional=False, expected=201):
-    definition = {
-        "id": quest_id,
-        "title": quest_id,
-        "chapter_id": 185,
-        "kind": kind,
-        "nodes": [{"id": "talk", "type": "REACH_LOCATION", "title": "Talk", "target": "town_square", "dependencies": []}],
-        "effects": []}
-    if optional:
-        definition["nodes"].append(
-            {"id": "optional-talk", "type": "REACH_LOCATION", "title": "Optional", "target": "town_square", "dependencies": [], "optional": True}
-        )
-    response = client.post(f"/api/teacher/courses/{classroom_id}/quests", json={"definition": definition}, headers=teacher["headers"])
-    assert response.status_code == expected, response.text
-    return response.json().get("id")
+from app.auth import issue
+from app.models import Material, User, now
 
 
-def release(client, teacher, classroom_id, **body):
-    response = client.put(f"/api/teacher/classrooms/{classroom_id}/releases/185", json={"status": "published", **body}, headers=teacher["headers"])
-    assert response.status_code == 200, response.text
-
-
-def complete_goal(client, student, classroom_id, quest_id):
-    position = client.put(
-        "/api/world/position",
-        json={"classroom_id": classroom_id, "map_key": "town_hub", "tile_x": 22, "tile_y": 34, "direction": "up"},
-        headers=student["headers"],
-    )
-    assert position.status_code == 200, position.text
-    response = client.post(
-        "/api/events",
-        json={"classroom_id": classroom_id, "event_id": str(uuid4()), "quest_id": quest_id, "node_id": "talk", "evidence": {}},
-        headers=student["headers"],
-    )
-    assert response.status_code == 200, response.text
-    return next(quest for quest in response.json()["world"]["quests"] if quest["id"] == quest_id)
-
-
-def completed_chapters(client, teacher, classroom_id, student_id):
-    response = client.get(f"/api/teacher/classrooms/{classroom_id}/progress", headers=teacher["headers"])
-    assert response.status_code == 200, response.text
-    count = next(member for member in response.json()["members"] if member["id"] == student_id)["completed_chapters"]
-    assert isinstance(count, int) and not isinstance(count, bool)
-    return count
-
-
-def test_progress_requires_all_main_quests_but_not_optional_or_side_nodes(client, db, teacher, student, classroom):
+def test_reading_evidence_and_tasks_match_student_view(client, db, teacher, student, classroom, monkeypatch):
     cid = classroom["id"]
-    first_id = author_quest(client, teacher, cid, "progress-main-a", optional=True)
-    second_id = author_quest(client, teacher, cid, "progress-main-b")
-    side_id = author_quest(client, teacher, cid, "progress-unfinished-side", kind="side")
-    release(client, teacher, cid)
-    first = complete_goal(client, student, cid, first_id)
-    assert first["status"] == "complete"
-    assert next(node for node in first["nodes"] if node["id"] == "optional-talk")["status"] != "complete"
-    assert completed_chapters(client, teacher, cid, student["id"]) == 0
-    complete_goal(client, student, cid, second_id)
-    side = db.scalar(
-        select(PlayerQuest).where(
-            PlayerQuest.user_id == student["id"], PlayerQuest.classroom_id == cid, PlayerQuest.quest_id == side_id
-        )
-    )
-    assert side.status == "active"
-    assert completed_chapters(client, teacher, cid, student["id"]) == 1
-    # Pausing access preserves completed history in the teacher's progress view.
-    release(client, teacher, cid, status="paused")
-    assert completed_chapters(client, teacher, cid, student["id"]) == 1
+    headers = student["headers"]
+    manage = teacher["headers"]
+    material = db.get(Material, 186)
+    page = material.content["pages"][0]
+    requirement = f"/api/teacher/courses/{classroom['course_id']}/chapters/179/material-tasks/186"
+    assert client.put(requirement, headers=manage, json={"required": True, "rule": {"scope": "count", "count": 1}}).status_code == 200
+    beat = {"page_id": page["id"], "sequence": 1, "session_id": "student-reading", "visible": True}
+    path = f"/api/chapters/179/materials/186/participation?classroom_id={cid}"
+    start = now()
+    monkeypatch.setattr("app.chapter_tasks.router.now", lambda: start)
+    assert client.post(path, headers=headers, json=beat).status_code == 200
+    monkeypatch.setattr("app.chapter_tasks.router.now", lambda: start + timedelta(seconds=5))
+    end = client.post(path, headers=headers, json={**beat, "visible": False, "sequence": 2})
+    assert end.json()["completed"]
+    detail = f"/api/teacher/classrooms/{cid}/students/{student['id']}"
+    individual = client.get(detail, headers=manage).json()
+    assert individual["chapters"] == client.get(f"/api/chapter-tasks?classroom_id={cid}", headers=headers).json()["chapters"]
+    first = next(c for c in individual["chapters"] if c["id"] == 179)
+    assert next(t for t in first["tasks"] if t.get("material_id") == 186)["completed"]
+    reading, = individual["participation"]
+    assert (reading["title"], reading["chapter"], reading["read_pages"], reading["read_seconds"]) == (material.title, first["title"], 1, 5)
+    overview = client.get(f"/api/teacher/classrooms/{cid}/progress", headers=manage).json()["members"]
+    assert overview[0]["completed_tasks"] == sum(t["completed"] for c in individual["chapters"] for t in c["tasks"])
+    release = f"/api/teacher/classrooms/{cid}/releases/179"
+    assert client.put(release, headers=manage, json={"status": "paused"}).status_code == 200
+    paused = client.get(detail, headers=manage).json()
+    assert all(c["id"] != 179 for c in paused["chapters"])
+    assert paused["participation"] == [reading]
 
 
-def test_progress_only_side_quests_do_not_count_a_chapter(client, teacher, student, classroom):
-    cid = classroom["id"]
-    key = author_quest(client, teacher, cid, "progress-only-side", kind="side")
-    release(client, teacher, cid)
-    assert complete_goal(client, student, cid, key)["status"] == "complete"
-    assert completed_chapters(client, teacher, cid, student["id"]) == 0
-
-
-def test_current_quest_edits_preserve_completion_and_new_quests_count(client, db, teacher, student, classroom, branching_course):
-    cid = classroom["id"]
-    previous = author_quest(client, teacher, cid, "progress-versioned")
-    release(client, teacher, cid)
-    complete_goal(client, student, cid, previous)
-    db.get(QuestDefinition, previous).title = "Updated current title"
+def test_student_details_are_scoped_to_class_and_teacher(client, db, teacher, student, classroom):
+    outsider = User(student_id="8000000100009", name="其他教师", role="teacher", password_hash="unused")
+    db.add(outsider)
     db.commit()
-    new = author_quest(client, teacher, cid, "progress-new-main")
-    # New main quests join the current chapter without a separate release version.
-    assert completed_chapters(client, teacher, cid, student["id"]) == 0
-    complete_goal(client, student, cid, new)
-    old = db.scalar(
-        select(PlayerQuest).where(PlayerQuest.user_id == student["id"], PlayerQuest.classroom_id == cid, PlayerQuest.quest_id == previous)
-    )
-    assert old.status == "complete"
-    assert completed_chapters(client, teacher, cid, student["id"]) == 1
-    from app.models import Chapter
-    db.get(Chapter, 180).owner_id = teacher['id']
-    db.commit()
-    # The same predicate permits this chapter as the next chapter's prerequisite.
-    response = client.put(
-        f"/api/teacher/courses/{classroom['course_id']}/chapters/180", json={"prerequisite_chapter_id": 185}, headers=teacher["headers"]
-    )
-    assert response.status_code == 200
-    assert client.get(f"/api/activities/ch2-lesson?classroom_id={cid}", headers=student["headers"]).status_code == 200
-
-
-def test_progress_counts_are_scoped_to_student_classroom_and_teacher(client, db, teacher, student, classroom):
-    cid = classroom["id"]
-    key = author_quest(client, teacher, cid, "progress-isolation")
-    release(client, teacher, cid)
-    complete_goal(client, student, cid, key)
-    assert completed_chapters(client, teacher, cid, student["id"]) == 1
-    course = client.post("/api/teacher/courses", json={"name": "Other"}, headers=teacher["headers"]).json()
-    other_class = client.post(f"/api/teacher/courses/{course['id']}/classrooms", json={"name": "Different classroom"}, headers=teacher["headers"]).json()
-    client.post("/api/classrooms/join", json={"join_code": other_class["join_code"]}, headers=student["headers"])
-    assert completed_chapters(client, teacher, other_class["id"], student["id"]) == 0
-    from conftest import make_student_account
-
-    new_student = make_student_account(db, "190515614727603", "Other")
-    other_headers = new_student["headers"]
-    client.post("/api/classrooms/join", json={"join_code": classroom["join_code"]}, headers=other_headers)
-    assert completed_chapters(client, teacher, cid, new_student["id"]) == 0
-    other_teacher = User(
-        student_id="259066979884583", name="Other teacher", role="teacher", password_hash=hash_password("other-progress-teacher")
-    )
-    db.add(other_teacher)
-    db.commit()
-    other_teacher_headers = {"Authorization": "Bearer " + issue(db, other_teacher)["access_token"]}
-    author_quest(client, {"headers": other_teacher_headers}, cid, "foreign-private-main", expected=403)
-    assert completed_chapters(client, teacher, cid, student["id"]) == 1
-    blocked = client.get(f"/api/teacher/classrooms/{cid}/progress", headers=other_teacher_headers)
-    assert blocked.status_code == 403
-    assert client.get(f"/api/teacher/classrooms/{cid}/progress", headers=student["headers"]).status_code == 403
-    other_teacher.role = "admin"
-    db.commit()
-    assert completed_chapters(client, {"headers": other_teacher_headers}, cid, student["id"]) == 1
+    foreign = {"Authorization": "Bearer " + issue(db, outsider)["access_token"]}
+    for headers in (student["headers"], foreign):
+        for endpoint in ("progress", f"students/{student['id']}"):
+            assert client.get(f"/api/teacher/classrooms/{classroom['id']}/{endpoint}", headers=headers).status_code == 403
+    assert client.get(f"/api/teacher/classrooms/{classroom['id']}/students/{outsider.id}", headers=teacher["headers"]).status_code == 404

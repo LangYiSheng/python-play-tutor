@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { useUiPreferences } from "../shared/uiPreferences";
 import GameIcon from "../shared/GameIcon.vue";
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import type { Player, World } from "../shared/types";
 import { useSession } from "../shared/session";
 import { api, ApiError, notify } from "../shared/api";
@@ -162,14 +162,6 @@ onMounted(async () => {
     session.world.flags,
     {
       position: save,
-      enterRegion: async (id, player) => {
-        if (!currentContext() || props.paused || session.workspace || session.storyBusy) return;
-        await save(player);
-        if (!currentContext() || props.paused || session.workspace || lastPosition !== JSON.stringify(player)) return;
-        try { await session.interactStory(id, "object"); }
-        catch (error) { if (currentContext()) notify(error instanceof Error ? error.message : "区域互动暂不可用"); }
-        await nextTick();
-      },
       mapPosition: player => { if (currentContext()) session.setMapPosition(player); },
       transition: (portalId, source) => {
         const task = (async () => {
@@ -239,7 +231,7 @@ watch(
 watch(() => preferences.musicVolume, volume => game?.setVolume(volume));
 watch(() => session.world, world => {
   if (!world || !currentContext()) return;
-  game?.setRuntime({ interactions: world.interactions, building_access: world.building_access });
+  game?.setRuntime({ building_access: world.building_access });
   game?.setPlayer(world.player);
 });
 watch(

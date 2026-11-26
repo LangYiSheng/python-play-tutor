@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import current_user
 from app.db import get_db
 from app.models import User
-from app.teaching.quests.state import world as _world
+from app.teaching.world.fixed import world_payload as _world
 from app.teaching.world.contracts import PositionInput, TransitionInput
 from app.teaching.world.movement import transition as _transition
 from app.teaching.world.movement import update_position as _update_position

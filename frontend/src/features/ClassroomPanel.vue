@@ -17,16 +17,9 @@
           </section>
           <div v-else class="town-empty classroom-no-current"><GameIcon name="people" /><h3>尚未选择班级</h3><p>选择已加入的班级，或使用教师提供的加入码加入新班级。</p><div class="classroom-actions"><button v-if="session.classes.length" class="town-primary" @click="selectSection('switch')">选择班级</button><button class="town-secondary" @click="selectSection('join')">加入班级</button></div></div>
           <section v-if="currentClass" class="town-section classroom-learning" aria-label="当前学习进度">
-            <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="chart" />学习进度</h3><span v-if="mainQuests.length">{{ completedMainQuests }} / {{ mainQuests.length }} 项主线已完成</span></div>
-            <template v-if="currentQuest">
-              <div class="classroom-quest-heading"><h4>{{ currentQuest.title }}</h4><span class="classroom-status" :class="{ 'is-complete': currentQuest.status === 'complete' }">{{ currentQuest.status === 'complete' ? '已完成' : '进行中' }}</span></div>
-              <div class="classroom-progress-caption"><span>任务步骤</span><strong>{{ currentQuest.status === 'complete' ? '已完成' : `${completedSteps} / ${requiredSteps.length} 步` }}</strong></div>
-              <progress class="classroom-progress" :value="currentQuest.status === 'complete' ? Math.max(1, requiredSteps.length) : completedSteps" :max="Math.max(1, requiredSteps.length)" aria-label="当前主线任务进度" />
-              <div v-if="nextGoal && currentQuest.status !== 'complete'" class="classroom-next-goal"><GameIcon name="compass" /><div><span>当前目标</span><strong>{{ nextGoal.title }}</strong></div></div>
-              <p v-else-if="currentQuest.status === 'complete'" class="classroom-progress-note">当前主线已完成，学习记录已保存在这个班级。</p>
-              <p v-else class="classroom-progress-note">任务开放后，可在小镇继续学习。</p>
-            </template>
-            <p v-else class="town-empty">本班还没有开放主线任务。</p>
+            <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="chart" />学习进度</h3><span>{{ completedChapters }} / {{ availableChapters }} 章已完成</span></div>
+            <p v-if="nextGoal" class="classroom-next-goal">{{ nextGoal.chapter.title }} · {{ nextGoal.title }}</p>
+            <button class="town-secondary" @click="session.open({kind:'journal'})">查看章节进度</button>
           </section>
         </template>
         <section v-else-if="section === 'switch'" class="town-section classroom-switch" aria-label="切换班级">
@@ -50,7 +43,7 @@ import { computed, onBeforeUnmount, ref } from "vue";
 import GameIcon from "../shared/GameIcon.vue";
 import { useSession } from "../shared/session";
 import { api } from "../shared/api";
-import { requiredQuestNodes } from "../shared/questProgress";
+import {chapterGoals} from "../shared/chapterTasks";
 type Section = "current" | "switch" | "join";
 const allSections = [{ key: "current", label: "当前班级", icon: "people" }, { key: "switch", label: "切换班级", icon: "refresh" }, { key: "join", label: "加入班级", icon: "plus" }] as const;
 const session = useSession(), section = ref<Section>("current"), joinCode = ref("");
@@ -58,17 +51,9 @@ const sections = computed(() => session.user?.town_preview ? allSections.slice(0
 const switchingId = ref<number | null>(null), joining = ref(false), error = ref(""), message = ref("");
 const busy = computed(() => switchingId.value !== null || joining.value);
 const currentClass = computed(() => session.classes.find(item => item.id === session.classroomId));
-const mainQuests = computed(() => session.world?.quests.filter(quest => quest.kind === "main") ?? []);
-const completedMainQuests = computed(() => mainQuests.value.filter(quest => quest.status === "complete").length);
-const availableChapters = computed(() => session.world?.chapters.filter(chapter => chapter.available).length ?? 0);
-const completedChapters = computed(() => {
-  const chapters = new Set(mainQuests.value.map(quest => quest.chapter_id));
-  return [...chapters].filter(id => mainQuests.value.filter(quest => quest.chapter_id === id).every(quest => quest.status === "complete")).length;
-});
-const currentQuest = computed(() => mainQuests.value.find(quest => quest.id === session.trackedQuest && quest.status !== "complete") ?? mainQuests.value.find(quest => quest.status !== "complete") ?? mainQuests.value[0]);
-const requiredSteps = computed(() => requiredQuestNodes(currentQuest.value));
-const completedSteps = computed(() => requiredSteps.value.filter(node => node.status === "complete").length);
-const nextGoal = computed(() => requiredSteps.value.find(node => node.status === "ready"));
+const availableChapters = computed(() => session.taskChapters.length);
+const completedChapters = computed(() => session.taskChapters.filter(c => c.completed).length);
+const nextGoal = computed(() => chapterGoals(session.taskChapters, session.world?.npcs)[0]);
 let disposed = false, operation = 0;
 const currentOperation = (owner: number | undefined, generation: number) => !disposed && session.user?.id === owner && generation === operation;
 onBeforeUnmount(() => { disposed = true; operation++; });

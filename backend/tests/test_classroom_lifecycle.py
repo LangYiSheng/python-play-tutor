@@ -3,7 +3,7 @@ from sqlalchemy import inspect, select, text
 
 from app.auth import issue
 from app.models import (
-    Activity, AssessmentAttempt, Chapter, Classroom, LearningRecord, Membership,
+    Activity, AssessmentAttempt, Chapter, Classroom, MaterialParticipation, Membership,
     PracticeSession, Question, Submission, User,
 )
 from test_curriculum_migration import migrate, sqlite_engine
@@ -21,7 +21,7 @@ def test_archive_delete_retains_evidence_and_account(client, db, teacher, studen
     path = f"/api/teacher/classrooms/{class_id}"
     _, admin_headers = staff(db, "88810", "admin")
     _, other_headers = staff(db, "88811", "teacher")
-    activity = db.scalar(select(Activity).limit(1))
+    activity = db.scalar(select(Activity).where(Activity.kind == "assessment").limit(1))
     question = db.scalar(select(Question).limit(1))
     submission = Submission(user_id=student["id"], classroom_id=class_id, activity_id=activity.id,
                             question_id=question.id, idempotency_key="record", status="accepted")
@@ -29,7 +29,9 @@ def test_archive_delete_retains_evidence_and_account(client, db, teacher, studen
     db.flush()
     attempt = AssessmentAttempt(user_id=student["id"], classroom_id=class_id, activity_id=activity.id,
                                 state="submitted", question_ids=[question.id], submission_ids={question.id: submission.id})
-    record = LearningRecord(user_id=student["id"], classroom_id=class_id, activity_id=activity.id, data={"page": 4})
+    record_key = (student["id"], class_id, 179, 186)
+    record = MaterialParticipation(user_id=student["id"], classroom_id=class_id, chapter_id=179, material_id=186,
+                                   evidence={"pages": [10723], "seconds": 4})
     db.add_all([record, attempt])
     db.commit()
     assert client.get("/api/teacher/classrooms/management", headers=teacher["headers"]).json()[0]["has_learning_records"]
@@ -48,7 +50,7 @@ def test_archive_delete_retains_evidence_and_account(client, db, teacher, studen
     assert client.delete(path, headers=admin_headers).is_success
     assert client.delete(path, headers=admin_headers).is_success
     assert db.get(Membership, (student["id"], class_id)) is None
-    assert db.get(User, student["id"]) and db.get(LearningRecord, record.id)
+    assert db.get(User, student["id"]) and db.get(MaterialParticipation, record_key)
     assert db.get(Submission, submission.id) and db.get(AssessmentAttempt, attempt.id)
     assert client.get("/api/teacher/classrooms/management", headers=admin_headers).json() == []
     tombstone = client.get("/api/teacher/classrooms/management?deleted=true", headers=teacher["headers"]).json()[0]
@@ -57,7 +59,8 @@ def test_archive_delete_retains_evidence_and_account(client, db, teacher, studen
     learner = client.get(path + "/history", headers=teacher["headers"]).json()["students"][0]
     assert learner["id"] == student["id"] and learner["records"] == 3
     detail = client.get(path + f"/history/{learner['id']}", headers=admin_headers).json()
-    assert detail["participation"][0]["data"] == {"page": 4}
+    reading = next(item for item in detail["participation"] if item["kind"] == "reading")
+    assert (reading["id"], reading["read_pages"], reading["read_seconds"]) == ("reading:179:186", 1, 4)
     assert detail["assessments"][0]["score"] == 100
 
 

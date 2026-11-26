@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { api } from "../src/shared/api";
-import type { Activity, ActivityProgress, Material } from "../src/shared/types";
+import type { Material } from "../src/shared/types";
 import { useLessonSource } from "../src/features/learning/useLessonSource";
 
 const material = (id: number, kind = "text"): Material => ({
@@ -11,20 +11,6 @@ const material = (id: number, kind = "text"): Material => ({
   title: `资料 ${id}`,
   status: "ready",
   pages: [{ id: id * 10, page_no: 1, title: "第一页", text: "正文" }],
-});
-const activity = (id: string): Activity => ({id,
-role: null,
-chapter_id: 1,
-title: id,
-kind: "lesson",
-npc_key: null,
-assistant_allowed: false,
-questions: [],
-resources: [{material_id: (material(1)).id, required: true, learning: { ...{}, reading: { scope: "pages", page_ids: ({ required_page_ids: [10] }).required_page_ids } }, material: material(1)}]});
-const progress = (page: number): ActivityProgress => ({
-  page_no: page,
-  visited_pages: [],
-  completed: false,
 });
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -36,15 +22,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const wrappers: VueWrapper[] = [];
-function setup(useActivity = false) {
+function setup() {
   const owner = {
     active: true,
-    materialId: useActivity ? undefined : 1,
-    activityId: "first",
+    materialId: 1,
   };
   let source!: ReturnType<typeof useLessonSource>;
   const ready = vi.fn();
-  const fetchActivity = vi.fn(async (id: string) => activity(id));
   const wrapper = mount(
     defineComponent({
       setup() {
@@ -52,12 +36,9 @@ function setup(useActivity = false) {
           userId: 1,
           classroomId: 2,
           currentOwner: () => owner.active,
-          activityId: () => owner.activityId,
           materialId: () => owner.materialId,
           initialPage: () => undefined,
-          fetchActivity,
           beforeLoad: vi.fn(),
-          prepareVideo: vi.fn(),
           ready,
         });
         return () => null;
@@ -82,23 +63,6 @@ afterEach(() => {
 });
 
 describe("lesson source request ownership", () => {
-  it("keeps the new activity progress when the preceding load finishes late", async () => {
-    const previous = deferred<ActivityProgress>();
-    vi.spyOn(api, "get").mockImplementation(
-      async (path) =>
-        (path.includes("/first/") ? previous.promise : progress(2)) as never,
-    );
-    const { source, owner, ready } = setup(true);
-    const first = source.load();
-    await flushPromises();
-    owner.activityId = "second";
-    await source.load();
-    previous.resolve(progress(9));
-    await first;
-    expect(source.activity.value?.id).toBe("second");
-    expect(source.progress.value?.page_no).toBe(2);
-    expect(ready).toHaveBeenCalledTimes(1);
-  });
 
   it("does not create a media URL after the reader has closed", async () => {
     const download = deferred<Blob>();

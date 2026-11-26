@@ -1,6 +1,5 @@
 """Two-stage, classroom-scoped retirement with impact review and retained evidence."""
 from app.course_scope import course_class_ids
-from copy import deepcopy
 from datetime import timedelta
 from hashlib import sha256
 import json
@@ -16,16 +15,16 @@ from .db import Base, get_db
 from .deletion_models import ContentDeletionPreview
 from .models import (
     Activity, ActivityQuestion, Chapter, ChapterRelease, Classroom, CourseInstance, KnowledgePoint,
-    Material, MaterialChapter, Npc, PlayerQuest, Question, QuestionChapter, QuestionKnowledgePoint,
-    QuestDefinition, StoryDefinition, StorySession, User, now,
+    Material, MaterialChapter, Question, QuestionChapter, QuestionKnowledgePoint,
+    User, now,
 )
 from .teacher_scope import commit_content, require_scope, teacher_instance_id
 
 router = APIRouter(prefix="/teacher/courses/{course_id}/content-deletions", tags=["content-deletions"])
 MODELS = {"chapter": Chapter, "material": Material, "question": Question, "activity": Activity,
-          "knowledge_point": KnowledgePoint, "quest": QuestDefinition, "story": StoryDefinition}
+          "knowledge_point": KnowledgePoint}
 LABELS = {"chapter": "章节", "material": "资料", "question": "题目", "activity": "活动",
-          "knowledge_point": "知识点", "quest": "任务", "story": "教学流程"}
+          "knowledge_point": "知识点"}
 Kind = Literal["chapter", "material", "question", "activity"]
 Teacher = Annotated[User, Depends(require_teacher)]
 Database = Annotated[Session, Depends(get_db)]
@@ -49,31 +48,7 @@ class ConfirmInput(BaseModel):
 
 
 def title(row):
-    return row.content.get("title", row.stable_id or row.id) if isinstance(row, StoryDefinition) else row.title
-
-
-def refs(value, context=None):
-    """Only typed references; prose, node IDs and answers are never dependencies."""
-    scalar = {"chapter_id": "chapter", "prerequisite_chapter_id": "chapter", "material_id": "material",
-              "document_id": "material", "activity_id": "activity", "activity_completed": "activity",
-              "question_id": "question", "knowledge_point_id": "knowledge_point", "quest_id": "quest", "story_id": "story"}
-    lists = {"chapter_ids": "chapter", "material_ids": "material", "question_ids": "question", "knowledge_point_ids": "knowledge_point"}
-    if isinstance(value, list):
-        for child in value:
-            yield from refs(child, context)
-    elif isinstance(value, dict):
-        for key, child in value.items():
-            if key in scalar and isinstance(child, (str, int)):
-                yield scalar[key], str(child)
-            elif key in lists and isinstance(child, list):
-                for item in child:
-                    yield lists[key], str(item)
-            elif key == "id" and context in {"chapter", "quest"}:
-                yield context, str(child)
-            elif key == "dialogue_id" and isinstance(child, str) and child.startswith("story:"):
-                yield "story", child.split(":", 2)[1]
-            else:
-                yield from refs(child, key)
+    return row.title
 
 
 def plan_deletion(db, user, instance, targets):
@@ -102,28 +77,13 @@ def plan_deletion(db, user, instance, targets):
     selections = list(db.scalars(select(ActivityQuestion).where(ActivityQuestion.activity_id.in_([r.id for r in rows["activity"].values()]))))
     questions_by_activity = {key: {str(link.question_id) for link in selections if str(link.activity_id) == key} for key in rows["activity"]}
 
-    def deleted_refs():
-        return {(kind, value) for kind, removed in retiring.items() for key in removed
-                for value in {key, str(rows[kind][key].stable_id)}}
-
-    changed = True
-    while changed:
-        changed = False
-        removed = deleted_refs()
-        for kind in ("knowledge_point", "activity", "quest", "story"):
-            for key, row in rows[kind].items():
-                if str(row.chapter_id) in retiring["chapter"]:
-                    changed |= add(kind, key, "所属章节将删除")
-                if kind == "activity":
-                    if any(str(resource.material_id) in retiring["material"] for resource in row.resources):
-                        changed |= add(kind, key, "依赖的资料将删除")
-                    selected = questions_by_activity[key]
-                    if selected and selected <= set(retiring["question"]):
-                        changed |= add(kind, key, "删除所选题目后活动将为空")
-                if kind in {"quest", "story"}:
-                    source = row.definition if kind == "quest" else {"quest_id": row.quest_id, "content": row.content}
-                    if set(refs(source)) & removed:
-                        changed |= add(kind, key, "引用了本次删除的内容，整项移除以保留其他流程结构")
+    for kind in ("knowledge_point", "activity"):
+        for key, row in rows[kind].items():
+            if str(row.chapter_id) in retiring["chapter"]:
+                add(kind, key, "所属章节将删除")
+    for key, selected in questions_by_activity.items():
+        if selected and selected <= set(retiring["question"]):
+            add("activity", key, "删除所选题目后活动将为空")
 
     if retiring["question"]:
         from .models import PracticeSession
@@ -145,20 +105,6 @@ def plan_deletion(db, user, instance, targets):
                 allocate_initial(rules, pool, shuffle=False)
             except ValueError as exc:
                 blockers.append({"message": f"删除会导致练习「{activity.title}」无法抽题：{exc}", "kind": "activity", "id": activity.id})
-    removed = deleted_refs()
-    # Conditions on retained world objects cannot be made true by deleting a prerequisite.
-    from .course_exchange_models import CoursePackageState
-    state = db.get(CoursePackageState, instance.id)
-    config = deepcopy(state.configuration) if state else {}
-    for key, value in config.get("buildings", {}).items():
-        if set(refs(value)) & removed:
-            blockers.append({"message": f"建筑“{key}”的开放条件引用了删除内容，请先调整", "kind": "building", "id": key})
-    for item in config.get("world", {}).get("interactions", []):
-        if set(refs(item)) & removed:
-            blockers.append({"message": f"地图交互“{item.get('label', item['id'])}”引用了删除内容，请先调整", "kind": "interaction", "id": item["id"]})
-    for npc in db.scalars(select(Npc).where(Npc.course_instance_id == instance.id)):
-        if set(refs(npc.appearance_condition)) & removed:
-            blockers.append({"message": f"角色“{npc.name}”的出现条件引用了删除内容，请先调整", "kind": "npc", "id": npc.key})
     for key in retiring["material"]:
         if rows["material"][key].status in {"queued", "processing"}:
             blockers.append({"message": f"资料“{title(rows['material'][key])}”仍在转换，请完成后重试", "kind": "material", "id": key})
@@ -186,37 +132,6 @@ def plan_deletion(db, user, instance, targets):
     for key, row in rows["question"].items():
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             unlink("question", key, "清除已删除资料的来源引用与页码；题目保留")
-    pause_releases = [r.id for r in rows["chapter"].values() if str(r.id) not in retiring["chapter"]
-                      and str(r.prerequisite_chapter_id) in retiring["chapter"]]
-    for key in pause_releases:
-        unlink("chapter", key, "解除已删除的前置章节并暂停发布，待教师重新确认开放规则")
-
-    # Validate the resulting current course, never splice arbitrary story edges.
-    from app.course_content.snapshot import snapshot_content
-    from app.teaching.authoring.validation import validate_configuration
-    from .authoring_diagnostics import AuthoringIssue
-    try:
-        data = snapshot_content(db, instance)[0]
-        stable = {kind: {rows[kind][key].stable_id or key for key in removed_keys} for kind, removed_keys in retiring.items()}
-        for kind in MODELS:
-            data[kind] = [r for r in data[kind] if r["id"] not in stable[kind]]
-        for kind in ("material", "question"):
-            for row in data[kind]:
-                row["chapter_ids"] = [key for key in row["chapter_ids"] if key not in stable["chapter"]]
-        for row in data["question"]:
-            row["knowledge_point_ids"] = [key for key in row["knowledge_point_ids"] if key not in stable["knowledge_point"]]
-            if row["source"].get("material_id") in stable["material"]:
-                row["source"] = {k: v for k, v in row["source"].items() if k not in {"material_id", "page_no"}}
-        for row in data["activity"]:
-            row["question_ids"] = [key for key in row["question_ids"] if key not in stable["question"]]
-            content = row["content"]
-            content["knowledge_point_ids"] = [key for key in content.get("knowledge_point_ids", []) if key not in stable["knowledge_point"]]
-        validate_configuration({k: v for k, v in config.items() if k in {"world", "buildings", "assistant", "editor"}}, data)
-    except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        detail = exc.diagnostic() if isinstance(exc, AuthoringIssue) else {"message": str(exc)}
-        blockers.append({"message": "删除后的课程需要修正：" + detail["message"], "kind": "configuration", "id": "",
-                         "path": detail.get("path", ""), "target": detail.get("target", {})})
-
     # Retain full rows/files, including records referenced only through JSON snapshots.
     evidence, learners = {}, set()
     association_tables = {"activity_questions", "material_chapters", "question_chapters", "question_knowledge_points", "question_secrets", "chapter_releases"}
@@ -240,22 +155,6 @@ def plan_deletion(db, user, instance, targets):
             preserved.append({"kind": "history", "title": {"activity_progress": "活动进度", "learning_records": "学习记录",
                 "submissions": "提交与评测记录", "assessment_attempts": "试卷与成绩", "assistant_sessions": "助教会话",
                 "player_quests": "任务进度"}.get(table.name, "关联历史记录"), "count": len(found)})
-    players = list(db.scalars(select(PlayerQuest).where(PlayerQuest.classroom_id.in_(course_class_ids(instance.id)),
-                                                       PlayerQuest.quest_id.in_(retiring["quest"]))))
-    if players:
-        evidence["player_quests"] = [{c.name: getattr(p, c.name) for c in PlayerQuest.__table__.columns} for p in players]
-        learners.update(p.user_id for p in players)
-        preserved.append({"kind": "history", "title": "任务进度", "count": len(players)})
-        for table in Base.metadata.sorted_tables:
-            if "player_quest_id" in table.c:
-                evidence[table.name] = [dict(r) for r in db.execute(select(table).where(table.c.player_quest_id.in_([p.id for p in players]))).mappings()]
-    sessions = list(db.scalars(select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(instance.id))).order_by(StorySession.id)))
-    sessions = [r for r in sessions if r.story_id in retiring["story"] or r.pending_activity_id in retiring["activity"]]
-    closing = [r.id for r in sessions if r.status in {"active", "waiting"}]
-    if sessions:
-        evidence["story_sessions"] = [{c.name: getattr(r, c.name) for c in StorySession.__table__.columns} for r in sessions]
-        learners.update(r.user_id for r in sessions)
-        preserved.append({"kind": "history", "title": "互动记录", "count": len(sessions)})
     retiring_rows = [{"kind": kind, "id": key, "title": title(rows[kind][key]), "reason": reason}
                      for kind, items in retiring.items() for key, reason in sorted(items.items())]
     # Root chapter deletion never expands to independent material/question bank entries.
@@ -274,16 +173,16 @@ def plan_deletion(db, user, instance, targets):
             if record.get("classroom_id") is not None and record.get("user_id") is not None:
                 learners_by_class.setdefault(record["classroom_id"], set()).add(record["user_id"])
     classrooms = [{"id": cid, "name": name, "students": len(learners_by_class[cid]),
-                   "ending_sessions": sum(s.classroom_id == cid and s.status in {"active", "waiting"} for s in sessions)}
+                   "ending_sessions": 0}
                   for cid, name in db.execute(select(Classroom.id, Classroom.name)
                       .where(Classroom.id.in_(learners_by_class)).order_by(Classroom.id))]
     public = {"classrooms": classrooms, "remove": retiring_rows, "detach": detach, "preserve": list({json.dumps(x, sort_keys=True): x for x in preserved}.values()),
-              "blockers": blockers, "affected_students": len(learners), "ending_sessions": len(closing),
+              "blockers": blockers, "affected_students": len(learners), "ending_sessions": 0,
               "history_policy": "学生提交、试卷、成绩、阅读及任务历史全部保留；删除内容退出当前教学，历史所需文件保留。"}
     # Hash actual evidence too: newly submitted work or session progress invalidates a stale preview.
     evidence = {key: sorted(value, key=lambda r: json.dumps(r, sort_keys=True, default=str)) for key, value in evidence.items()}
     fingerprint = sha256(json.dumps({"plan": public, "evidence": evidence}, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
-    return public, fingerprint, retiring, closing, pause_releases, rows
+    return public, fingerprint, retiring, rows
 
 
 @router.post("/preview")
@@ -317,7 +216,7 @@ def confirm_deletion(course_id: int, preview_id: str, body: ConfirmInput, user: 
     instance = db.get(CourseInstance, instance_id)
     if instance.revision != preview.revision:
         raise HTTPException(409, "课程内容已变化，请重新查看影响范围")
-    plan, fingerprint, retiring, closing, pauses, rows = plan_deletion(db, user, instance, preview.targets)
+    plan, fingerprint, retiring, rows = plan_deletion(db, user, instance, preview.targets)
     if fingerprint != preview.fingerprint:
         raise HTTPException(409, "学生记录或删除影响已变化，请重新查看影响范围")
     if plan["blockers"]:
@@ -342,14 +241,8 @@ def confirm_deletion(course_id: int, preview_id: str, body: ConfirmInput, user: 
         if key not in retiring["question"] and str(row.source.get("material_id")) in retiring["material"]:
             row.source = {k: v for k, v in row.source.items() if k not in {"material_id", "page_no"}}
     for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id.in_(course_class_ids(course_id)))):
-        if release.chapter_id in chapter_ids or release.chapter_id in pauses:
+        if release.chapter_id in chapter_ids:
             release.status = "paused"
-    for chapter_id in pauses:
-        db.get(Chapter, chapter_id).prerequisite_chapter_id = None
-    for session in db.scalars(select(StorySession).where(StorySession.id.in_(closing))):
-        session.status = "ended"
-        session.revision += 1
-        # Preserve node, pending activity, receipts and return mapping as historical evidence.
     preview.result = {"ok": True, "removed": len(plan["remove"]), "detached": len(plan["detach"]), "history_preserved": True}
     commit_content(db, instance_id)
     return preview.result

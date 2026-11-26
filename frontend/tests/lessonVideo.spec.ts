@@ -1,89 +1,44 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { flushPromises, mount } from "@vue/test-utils";
-import { createPinia, setActivePinia } from "pinia";
-import LessonWorkspace from "../src/features/learning/LessonWorkspace.vue";
-import { api } from "../src/shared/api";
-import { useSession } from "../src/shared/session";
-import type { ActivityProgress } from "../src/shared/types";
-
-const initial: ActivityProgress = { page_no: null, visited_pages: [], completed: false, watched_seconds: 0, required_seconds: 5 };
-function setup() {
-  const pinia = createPinia(); setActivePinia(pinia);
-  const session = useSession();
-  session.user = { id: 1, student_id: "124639931179929", name: "Fixture", role: "student" }; session.classroomId = 2;
-  session.world = { player: { map_key: "library", tile_x: 5, tile_y: 5, direction: "down" }, npcs: [], quests: [], chapters: [], flags: [] };
-  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
-  vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:video"), revokeObjectURL: vi.fn() });
-  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
-  vi.spyOn(session, "activity").mockResolvedValue({id: "video",
-chapter_id: 179,
-title: "观看",
-kind: "lesson",
-npc_key: "librarian_doc",
-assistant_allowed: false,
-questions: [],
-progress: initial,
-resources: [{material_id: 193, required: true, learning: { video: { minimum_seconds: 5 }, highlights: { video: [{ start_seconds: 30, end_seconds: 40, label: "重点演示" }] } }, material: { id: 193, title: "示范视频", kind: "video", status: "ready", pages: [], duration_seconds: 460 }}]});
-  vi.spyOn(api, "get").mockResolvedValue(initial);
-  vi.spyOn(api, "blob").mockResolvedValue(new Blob(["video"]));
-  return { session, pinia };
+import {afterEach, beforeEach, expect, it, vi} from "vitest";
+import {defineComponent, h, ref} from "vue";
+import {mount, flushPromises, type VueWrapper} from "@vue/test-utils";
+import {createPinia, setActivePinia} from "pinia";
+import {useChapterParticipation, type ParticipationSample} from "../src/features/learning/useChapterParticipation";
+import {api} from "../src/shared/api";
+import {useSession} from "../src/shared/session";
+let wrapper:VueWrapper|undefined;
+beforeEach(()=>{setActivePinia(createPinia());});
+afterEach(async()=>{wrapper?.unmount();await flushPromises();vi.restoreAllMocks();});
+function setup(value:ParticipationSample) {
+  const session=useSession();session.user={id:1,role:"student",name:"同学",student_id:"10"};session.classroomId=2;
+  const sample=ref<ParticipationSample|null>(value);
+  const task={id:"reading:3:4",material_id:4,title:"资料",kind:"reading" as const,current:0,total:2,unit:"页",required:true,completed:false,locked:false,lock_reason:null};
+  session.taskChapters=[{id:3,title:"第一章",order_index:0,completed:false,tasks:[task]}];
+  const post=vi.spyOn(api,"post").mockResolvedValue(task);
+  wrapper=mount(defineComponent({setup(){useChapterParticipation(3,4,sample);return()=>h("main");}}));
+  return {sample,post,session};
 }
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });
-
-describe("configured video learning", () => {
-  it("sends material-bound playback evidence and keeps seeking separate from completion", async () => {
-    const { pinia } = setup(), post = vi.spyOn(api, "post").mockResolvedValue(initial);
-    const wrapper = mount(LessonWorkspace, { props: { activityId: "video" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
-    await flushPromises();
-    const video = wrapper.get("video").element as HTMLVideoElement;
-    Object.defineProperty(video, "paused", { configurable: true, value: false });
-    video.currentTime = 0;
-    await wrapper.get("video").trigger("playing");
-    await flushPromises();
-    expect(post).toHaveBeenCalledWith("/activities/video/video-progress", expect.objectContaining({ classroom_id: 2, material_id: 193, sequence: 1, position_seconds: 0, playing: true }));
-    video.currentTime = 5;
-    video.playbackRate = 2;
-    await wrapper.get("video").trigger("ratechange");
-    await flushPromises();
-    const rateSamples = post.mock.calls.slice(-2).map(call => call[1]);
-    expect(rateSamples[0]).toMatchObject({ playback_rate: 1, playing: false });
-    expect(rateSamples[1]).toMatchObject({ playback_rate: 2, playing: true, sequence: 1 });
-    await wrapper.get('[role="tab"][id$="-outline-tab"]').trigger("click");
-    await wrapper.get('[title="重点演示"]').trigger("click");
-    await flushPromises();
-    expect(video.currentTime).toBe(30);
-    expect(wrapper.get(".activity-resource-progress progress").attributes("value")).toBe("0");
-    expect(wrapper.findAll("button").find(button => button.text() === "完成学习")!.attributes("disabled")).toBeDefined();
-    await wrapper.get("video").trigger("seeked");
-    await flushPromises();
-    const restarted = post.mock.calls.at(-1)![1] as { sequence: number; position_seconds: number };
-    expect(restarted).toMatchObject({ sequence: 1, position_seconds: 30 });
-    video.currentTime = 460.2;
-    await wrapper.get("video").trigger("pause");
-    await flushPromises();
-    expect(post).toHaveBeenLastCalledWith("/activities/video/video-progress", expect.objectContaining({ position_seconds: 460, playing: false }));
-    wrapper.unmount();
-  });
-  it("retains reset preparation until an unmounted reader's in-flight heartbeat settles", async () => {
-    const { pinia, session } = setup();
-    let prepare!: () => Promise<void>, finish!: (progress: ActivityProgress) => void;
-    const unregister = vi.fn();
-    vi.spyOn(session, "registerRestartPreparation").mockImplementation(callback => { prepare = callback; return unregister; });
-    vi.spyOn(api, "post").mockReturnValue(new Promise(resolve => { finish = resolve as (progress: ActivityProgress) => void; }));
-    const wrapper = mount(LessonWorkspace, { props: { activityId: "video" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
-    await flushPromises();
-    const video = wrapper.get("video").element as HTMLVideoElement;
-    Object.defineProperty(video, "paused", { configurable: true, value: false });
-    await wrapper.get("video").trigger("playing");
-    wrapper.unmount();
-    expect(unregister).not.toHaveBeenCalled();
-    let ready = false;
-    const prepared = prepare().then(() => { ready = true; });
-    await Promise.resolve();
-    expect(ready).toBe(false);
-    finish(initial);
-    await prepared;
-    await flushPromises();
-    expect(unregister).toHaveBeenCalledOnce();
-  });
+it("sends displayed page IDs and stops when the reader is covered",async()=>{
+  const {sample,post,session}=setup({visible:true,page_id:82});await flushPromises();
+  sample.value={visible:true,page_id:94};await flushPromises();
+  sample.value=null;await flushPromises();
+  expect(post.mock.calls.map(([url,body])=>[url,(body as ParticipationSample).page_id,(body as ParticipationSample).visible])).toEqual(
+    [[82,true],[94,true],[94,false]].map(parts=>["/chapters/3/materials/4/participation?classroom_id=2",...parts]));
+  await session.flushParticipation();
+  expect(post).toHaveBeenCalledTimes(3);
+});
+it("reports video position, playback and rate, without claiming elapsed time",async()=>{
+  const {post,sample,session}=setup({visible:true,position:1,playing:true,playback_rate:1});
+  await flushPromises();sample.value={visible:true,position:8,playing:true,playback_rate:2};await flushPromises();
+  await session.flushParticipation();
+  expect(post.mock.lastCall?.[1]).toMatchObject({position:8,playing:false,visible:false,playback_rate:2,sequence:3});
+  expect(post.mock.lastCall?.[1]).not.toHaveProperty("seconds");
+});
+it("retries the same packet before sending later evidence and isolates classroom switches",async()=>{
+  const {post,sample,session}=setup({visible:true,page_id:82});
+  post.mockRejectedValueOnce(new Error("离线"));
+  await flushPromises();sample.value={visible:true,page_id:94};await flushPromises();
+  expect(post.mock.calls[0]).toEqual(post.mock.calls[1]);
+  expect(post.mock.calls[2]?.[1]).toMatchObject({page_id:94,sequence:2});
+  session.classroomId=5;await session.flushParticipation();
+  expect(post).toHaveBeenCalledTimes(3);
 });

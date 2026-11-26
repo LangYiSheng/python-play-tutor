@@ -8,7 +8,7 @@ from .deletion_models import ContentDeletionPreview
 from .integration_models import AssistantCall, AssistantSession
 from .models import (
     Activity, ActivityProgress, AssessmentAttempt, BuildingUnlock, Chapter, ChapterRelease,
-    Classroom, CourseInstance, LearningEvent, LearningRecord, Membership, PlayerPosition,
+    Classroom, CourseInstance, LearningEvent, LearningRecord, MaterialParticipation, Membership, PlayerPosition,
     PlayerQuest, PracticeSession, Question, QuestionSecret, StorySession, Submission,
     TownPreviewStudent, User, WorldFlag,
 )
@@ -18,7 +18,7 @@ from .narration.models import NarrationJob, NarrationRun, PageNarration
 # The database cascades node states, submission payloads, narration questions and checkpoints.
 LEARNER_ROWS = (
     AssistantCall, AssistantSession, LearningEvent, PlayerQuest, StorySession, ActivityProgress,
-    LearningRecord, Submission, AssessmentAttempt, PracticeSession, BuildingUnlock, PlayerPosition,
+    LearningRecord, MaterialParticipation, Submission, AssessmentAttempt, PracticeSession, BuildingUnlock, PlayerPosition,
     WorldFlag, Membership,
 )
 

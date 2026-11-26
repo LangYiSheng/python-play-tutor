@@ -1,3 +1,4 @@
+import { ChapterTasks } from "@/features/activities/activities-page";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
@@ -20,6 +21,7 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
     [pointChapter, setPointChapter] = useState("all"),
     [editing, setEditing] = useState<Chapter | Point | null>(null),
     [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<Chapter | null>(null);
   const points = useCatalogPage<Point>("/teacher/knowledge-points", courseId, query, { chapter_id: pointChapter }, tab === "points");
   const reload = tab === "points" ? points.reload : course.reload;
   const deletion = useTableDelete<Chapter | Point>((item) => scoped(
@@ -31,6 +33,7 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / size)));
   const rows = tab === "points" ? filtered : filtered.slice((currentPage - 1) * size, currentPage * size);
   const add = <Button onClick={() => edit(null)} disabled={course.loading}><Plus />新增{tab === "chapters" ? "章节" : "知识点"}</Button>;
+  if (tab === "chapters" && detail) return <ChapterTasks courseId={courseId} chapter={detail} onBack={() => setDetail(null)}/>;
   return (
     <>
       <ErrorNotice message={course.error || points.error} />
@@ -58,7 +61,7 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
               {rows.map((item) => (
                 <TableRow key={item.id} data-state={deletion.isSelected(item) ? "selected" : undefined}>
                   <TableCell><SelectTableRow actions={deletion} row={item} /></TableCell>
-                  <TableCell className="font-medium">{item.title}</TableCell>
+                  <TableCell className="font-medium">{"order_index" in item ? <Button variant="link" onClick={() => setDetail(item)}>{item.title}</Button> : item.title}</TableCell>
                   <TableCell>{"order_index" in item
                     ? `第 ${item.order_index} 章`
                     : course.data?.chapters.find((c) => c.id === item.chapter_id)?.title}

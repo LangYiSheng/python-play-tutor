@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import type { Npc, Player } from "../../shared/types";
 import { findPath, isTextFocus } from "../pathfinding";
 import { startedOnWorldCanvas } from "../pointerBoundary";
-import { enteredInteractions } from "../interactionRegions";
 import {
   getWorldMap,
   mapCameraBounds,
@@ -55,11 +54,6 @@ export function createTownScene(
     renderMaps = new Map<string, RenderMap>();
     queuedTextures = new Set<string>();
     lastHint = "";
-    enteredRegions = enteredInteractions(
-      initial,
-      state.runtime?.interactions ?? [],
-      new Set(),
-    ).inside;
     constructor() {
       super("town");
     }
@@ -161,19 +155,13 @@ export function createTownScene(
       return this.interactions.interact(preferredTarget);
     }
     changeMap(player: Player) {
-      const crossedMap = this.mapKey !== player.map_key;
       this.mapKey = player.map_key;
       this.tileX = player.tile_x;
       this.tileY = player.tile_y;
       this.direction = player.direction.toUpperCase();
       this.path = [];
       this.pendingTarget = null;
-      if (crossedMap) this.enteredRegions = new Set();
       this.build();
-      if (crossedMap)
-        this.time.delayedCall(0, () => {
-          if (!state.destroyed) void this.checkRegionEntry();
-        });
       if (this.travelTarget) {
         const finalTarget = this.travelTarget;
         this.time.delayedCall(200, () => {
@@ -196,9 +184,6 @@ export function createTownScene(
         tile_y: this.player.y / 16 - 0.75,
         direction: this.direction.toLowerCase(),
       };
-    }
-    checkRegionEntry() {
-      return this.interactions.checkRegionEntry();
     }
     save() {
       if (!this.transitioning) callbacks.position(this.position());
@@ -258,9 +243,8 @@ export function createTownScene(
         x: this.tileX * 16 + 8,
         y: this.tileY * 16 + 12,
         duration: 130,
-        onComplete: async () => {
+        onComplete: () => {
           callbacks.mapPosition?.(this.mapPosition());
-          await this.checkRegionEntry();
           this.busy = false;
         },
       });

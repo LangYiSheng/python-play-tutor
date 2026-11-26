@@ -1,4 +1,4 @@
-import { provisionStudent } from "./studentAccount";
+import { provisionStudent, visitLibrary } from "./studentAccount";
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { importCourse } from "./courseFixture";
@@ -61,7 +61,7 @@ test("PDF narration keeps all pages readable and opens the existing learning ass
   });
   await page.goto("/world");
   await page.getByRole("dialog", { name: "欢迎回到小镇", exact: true }).getByRole("button", { name: "按任意键继续", exact: true }).click();
-  await page.getByRole("button", { name: /学习资料/ }).click();
+  await visitLibrary(page);
   await page.locator(".library-list button").filter({ hasText: title }).click();
   const canvas = page.locator(".pdf-reader canvas");
   await expect(canvas).toBeVisible();

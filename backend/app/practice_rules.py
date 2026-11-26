@@ -69,6 +69,7 @@ def candidate_pool(db, activity, *, rules=None):
             Question.course_instance_id == activity.course_instance_id,
             Question.owner_id.is_(None) | (Question.owner_id == activity.owner_id),
             Question.status == "ready",
+            (Question.kind == "python") if activity.content.get("practice_kind") == "programming" else (Question.kind != "python"),
             Question.deleted_at.is_(None),
             QuestionChapter.chapter_id == activity.chapter_id,
             QuestionKnowledgePoint.knowledge_point_id.in_(pool),

@@ -40,7 +40,7 @@ class SpeechFailed(RuntimeError):
 
 
 def settings(db: Session | None = None) -> SpeechSettings:
-    from ..service_settings import configuration
+    from ..service_connections import configuration
     return cast(SpeechSettings, configuration("speech", db))
 
 

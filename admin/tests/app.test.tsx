@@ -92,7 +92,7 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   await screen.findByRole("heading", { name: "图谱课程 3" });
   expect(screen.queryByLabelText("待审批")).not.toBeInTheDocument();
   for (const group of [
-    ["班级管理", "学情统计", "定时开放"], ["教学流程", "设置"],
+    ["班级管理", "学情统计", "定时开放"], ["内容列表", "设置"],
   ]) {
     const icons = group.map(name => {
       const role = ["学情统计", "设置"].includes(name) ? "button" : "link";
@@ -115,32 +115,6 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   expect(screen.queryByRole("link", { name: "学生成绩" })).toBeNull();
   expect(location.pathname).toBe("/teacher/content-graph");
   expect(screen.getByRole("button", { name: "收起导航" })).toHaveAttribute("aria-expanded", "true");
-});
-it("counts the class teacher's practice pool when an administrator creates an activity", async () => {
-  setToken("admin-session");
-  history.replaceState({}, "", "/teacher/activities?course=32");
-  const question = { kind: "single_choice", status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [] };
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url.endsWith("/auth/me")) return json({ id: 1, name: "管理员", role: "admin" });
-    if (url.endsWith("/classrooms")) return json([{ id: 7, name: "一班", teacher_id: 9 }]);
-    if (url.endsWith("/teacher/courses")) return json([{id: 32, name: "课程", teacher_id: 9}]);
-    if (url.endsWith("/catalog")) return json({ chapters: [{ id: 1, title: "第一章" }],
-      knowledge_points: [{ id: 11, chapter_id: 1, title: "变量" }], npcs: [], activities: [] });
-    if (url.includes("/question-candidates")) return json([
-      { ...question, id: "shared", owner_id: null }, { ...question, id: "teacher", owner_id: 9 },
-    ]);
-    return json([]);
-  }));
-  const user = userEvent.setup();
-  render(<App />);
-  const create = await screen.findByRole("button", { name: "新增活动" });
-  await waitFor(() => expect(create).toBeEnabled());
-  await user.click(create);
-  await user.click(screen.getByRole("combobox", { name: "类型" }));
-  await user.click(await screen.findByRole("option", { name: "练习" }));
-  await user.click(screen.getByRole("tab", { name: "知识点目标" }));
-  await user.click(screen.getByRole("checkbox", { name: "变量" }));
-  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveAccessibleName(/可用 2 题/);
 });
 it("redirects a teacher from an admin deep link without loading site-wide data", async () => {
   setToken("teacher-session");

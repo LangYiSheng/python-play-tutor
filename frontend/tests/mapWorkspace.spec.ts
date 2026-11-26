@@ -161,7 +161,10 @@ describe("the map previews places and navigates only on request", () => {
     const session = useSession(); session.open(null);
     const hud = mount(GameHUD, { attachTo: document.body }); mounted.push(hud);
     const buttons = hud.findAll(".hud-dock button");
-    expect(buttons.slice(1, 4).map(button => button.text())).toEqual(["学习资料", "地图", "我的班级"]);
+    expect(buttons.slice(1, 4).map(button => button.text())).toEqual(["去图书馆", "地图", "我的班级"]);
+    await buttons[1]!.trigger("click");
+    expect(hud.emitted("guide")).toEqual([["librarian"]]);
+    expect(session.workspace).toBeNull();
     buttons[2]!.element.focus();
     await buttons[2]!.trigger("click");
     const invoker = document.activeElement;

@@ -144,7 +144,7 @@ const diffEnabled = ref(true);
 const submissionTime = ref<{ id: string; ms: number }>();
 const resultDuration = computed(() => {
   if (resultSource.value === 'local') return latestRun.value?.duration_ms;
-  if (submissionTime.value?.id === props.result?.id) return submissionTime.value?.ms;
+  return submissionTime.value?.id === props.result?.id ? submissionTime.value?.ms : undefined;
 });
 let submitClick: { started: number; previousId?: string } | undefined;
 function submitCode() {
@@ -226,12 +226,13 @@ async function runSamples() {
   } catch(e) { if (version === runVersion) { runStopped.value=currentController.signal.aborted; runError.value=e instanceof Error ? e.message : '运行失败'; } }
   finally { if (version === runVersion) { running.value=false; emit('runningChange', false); if (!runError.value) activeCase.value=Math.max(0,localResults.value.findIndex(item=>item.status !== 'accepted'));
     await nextTick();
-    if (version !== runVersion) return;
+    if (version === runVersion) {
     const duration = Math.round(performance.now() - started);
     const cap = Math.min(16000, Math.floor(60000 / Math.max(1, localResults.value.length)));
     const bounded = (value: string) => value.length > cap ? value.slice(0, cap - 20) + '\n（输出过长，已省略）' : value;
     latestRun.value = { question_id: props.question.id, run_id: randomUUID(), code: source, completed_at: new Date().toISOString(), duration_ms: duration,
       cases: localResults.value.map(item => ({ ...item, stdout: bounded(item.stdout), error: bounded(item.error) })), error: runError.value.slice(0, 2000), stopped: runStopped.value };
+    }
   } }
 }
 onBeforeUnmount(()=>{ runVersion++; controller?.abort(); pythonRunner?.dispose(); emit('runningChange', false); });

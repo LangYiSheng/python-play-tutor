@@ -10,7 +10,7 @@
           <GameIcon name="save" />保存检查点
         </button>
       </form>
-      <p class="developer-help">保存任务、对白、阅读位置、当前活动与角色位置。正式提交、成绩和助教会话保留，不随恢复回退。</p>
+      <p class="developer-help">记录当前所在房间和角色位置。</p>
       <ToolFeedback v-if="action.name === 'save'" :error="action.error" :message="action.message" />
     </section>
     <section class="developer-section" aria-labelledby="developer-checkpoint-list">
@@ -37,7 +37,7 @@
     </section>
     <section v-if="confirmation" class="developer-confirm" aria-label="确认体验调整">
       <h4 class="game-card-title"><GameIcon name="save" />{{ confirmation.kind === 'restore' ? '恢复' : '删除' }}“{{ confirmation.name }}”</h4>
-      <p v-if="confirmation.kind === 'restore'">当前体验状态和阅读位置将被替换，当前对白重新建立。正式提交、成绩和助教会话不会回退。</p>
+      <p v-if="confirmation.kind === 'restore'">角色将返回保存时的房间和位置。</p>
       <p v-else>仅删除此检查点，不改变当前学生进度。</p>
       <div class="developer-actions">
         <button class="town-primary" :disabled="action.busy" @click="confirm">{{ action.busy ? '处理中…' : confirmation.kind === 'restore' ? '确认恢复' : '确认删除' }}</button>
@@ -51,9 +51,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
-import { captureExperience } from "../../shared/devTools";
 import { randomUUID } from "../../shared/uuid";
-import type { Workspace } from "../../shared/types";
 import ToolFeedback from "./ToolFeedback.vue";
 import { useDeveloperTools, useToolAction } from "./useDeveloperTools";
 import type { CheckpointInput } from "./types";
@@ -67,28 +65,16 @@ const confirmation = ref<Confirmation>();
 const full = computed(() => (overview.value?.checkpoints.length ?? 0) >= 20);
 let pendingSave: CheckpointInput | undefined;
 
-function savedWorkspace(owner: number, classroomId: number): Workspace {
-  let workspace: Workspace = session.previousWorkspace ? { ...session.previousWorkspace } : null;
-  try {
-    workspace = JSON.parse(sessionStorage.getItem(`read:${owner}:${classroomId}:workspace`) ?? "null") as Workspace ?? workspace;
-  } catch { /* A malformed local navigation hint is optional. */ }
-  if (workspace && "page_no" in workspace) delete workspace.page_no;
-  if (workspace && "video_time" in workspace) delete workspace.video_time;
-  if (workspace && "question_no" in workspace) delete workspace.question_no;
-  if (workspace && "story_session_id" in workspace) delete workspace.story_session_id;
-  return workspace;
-}
-
 function save() {
   if (!name.value.trim() || full.value) return;
-  return action.run("save", async ({ client, current, owner, classroomId }) => {
+  return action.run("save", async ({ client, current }) => {
     await session.prepareExperience();
     if (!current()) return;
     // Reuse both payload and key after an uncertain request outcome.
     pendingSave ??= {
       request_id: randomUUID(),
       name: name.value.trim(),
-      client_state: captureExperience(owner, classroomId, savedWorkspace(owner, classroomId)),
+      client_state: {},
     };
     await client.saveCheckpoint(pendingSave);
     if (!current()) return;

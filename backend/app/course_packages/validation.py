@@ -1,11 +1,10 @@
 """Validate package content references and teaching definitions before import."""
 
-from datetime import datetime
 from pathlib import Path
 
-from app.course_content.snapshot import FIELDS
+from app.course_packages.snapshot import FIELDS
 from app.course_instances import MODEL_NAMES, remap_references
-from app.course_packages.contracts import EXTRAS
+from app.course_packages.contracts import EXTRAS, PACKAGE_MODELS
 from app.course_packages.manifest import PackageError
 from app.materials.uploads import validate_upload
 from app.models import Activity, Chapter, CourseExample, KnowledgePoint, Material
@@ -62,7 +61,8 @@ def validate_practice(row, converted, maps):
         pool = {point: {} for point in points}
         for question in converted["question"].values():
             available = practice_question_available(question["kind"], question["status"], bool(question["samples"]))
-            if available and row["chapter_id"] in question["chapter_ids"]:
+            matches_kind = (content["practice_kind"] == "programming") == (question["kind"] == "python")
+            if available and matches_kind and row["chapter_id"] in question["chapter_ids"]:
                 for point in points.intersection(question["knowledge_point_ids"]):
                     pool[point][question["id"]] = question["kind"]
         allocate_initial(rules, pool, shuffle=False, point_titles=titles)
@@ -73,16 +73,14 @@ def validate_bundle(bundle, root):
     from types import SimpleNamespace
 
     from app.course_content.question_contracts import QuestionInput
-    from app.course_content.resources import validate_resources
-    from app.teaching.conditions.validation import validate_condition
-    from app.teaching.quests.validation import validate_definition
-    from app.teaching.story.validation import validate_story
+    from app.chapter_tasks.rules import validate_rule
 
     try:
         _bounded(bundle)
         data = bundle["data"]
         indexed, maps = {}, {}
-        for model, fields in FIELDS.items():
+        for model in PACKAGE_MODELS:
+            fields = set(FIELDS[model])
             kind, items = MODEL_NAMES[model], data[MODEL_NAMES[model]]
             if not isinstance(items, list) or len(items) > 10000:
                 raise PackageError("课程领域条目超限")
@@ -116,13 +114,6 @@ def validate_bundle(bundle, root):
         if set(secret_map) != set(indexed["question"]):
             raise PackageError("每道题必须具有私有答案记录（草稿可为空）")
         assets = {asset["id"]: asset for asset in bundle["assets"]}
-        from app.characters import validate_image
-
-        for asset in bundle["assets"]:
-            if asset.get("character_kind"):
-                metadata = validate_image(root / asset["path"], asset["character_kind"], asset.get("frame_width", 16), asset.get("frame_height", 20))
-                if any(asset.get(key) != value for key, value in metadata.items()):
-                    raise PackageError("角色素材元信息与实际图片不一致")
         for row in data["material"]:
             if row["kind"] not in {"text", "pdf", "video", "presentation"} or row["status"] not in {"ready", "failed", "missing"}:
                 raise PackageError("资料类型或状态无效")
@@ -154,6 +145,17 @@ def validate_bundle(bundle, root):
                 numbers.add(page["page_no"])
             if len(row["chapter_ids"]) != len(set(row["chapter_ids"])):
                 raise PackageError("资料章节关联重复")
+            points = row["task_points"]
+            if not isinstance(points, list) or len(points) != len(row["chapter_ids"]):
+                raise PackageError("每个资料章节关联需要一条任务点配置")
+            for point in points:
+                keys = {"chapter_id", "required", "rule", "order_index"}
+                _object(point, keys, keys)
+                if type(point["required"]) is not bool or type(point["order_index"]) is not int or point["order_index"] < 0:
+                    raise PackageError("资料必读设置或顺序无效")
+                validate_rule(point["rule"], SimpleNamespace(**row), point["required"])
+            if {p["chapter_id"] for p in points} != set(row["chapter_ids"]):
+                raise PackageError("资料任务点归属与章节不一致")
             if row["asset_id"]:
                 asset = assets[row["asset_id"]]
                 from app.materials.uploads import KINDS
@@ -174,130 +176,36 @@ def validate_bundle(bundle, root):
                 or source["page_no"] not in {page["page_no"] for page in indexed["material"][source["material_id"]]["content"].get("pages", [])}
             ):
                 raise PackageError("题目来源页不存在")
-        from app.characters import validate_characters
-
-        validate_characters(data["npc"], bundle["assets"])
         for row in data["activity"]:
-            if row["kind"] not in {"lesson", "reading", "practice", "assessment"} or type(row["assistant_allowed"]) is not bool:
-                raise PackageError("学习活动类型或助教开关无效")
+            content = row["content"]
+            if row["kind"] not in {"practice", "assessment"} or type(content.get("required", True)) is not bool:
+                raise PackageError("任务点类型或必做设置无效")
+            if row["kind"] == "practice" and content.get("practice_kind") not in {"objective", "programming"}:
+                raise PackageError("请选择客观题或编程题练习")
+            if row["kind"] == "assessment" and content.get("required", True) is False:
+                raise PackageError("测验必须完成")
+            if type(content.get("published", True)) is not bool or type(content.get("order_index", 0)) is not int or not 0 <= content.get("order_index", 0) <= 100000:
+                raise PackageError("活动发布状态或顺序无效")
+            if content.get("published", True) and not row["question_ids"] and "practice_rules" not in content:
+                raise PackageError("发布的练习和测验至少需要一道题")
             if "practice_rules" in row["content"]:
                 validate_practice(converted["activity"][row["id"]], converted, maps)
             if "question_ids" in row["content"]:
                 raise PackageError("活动题集只能声明于结构化question_ids关联")
-            if row["npc_key"] is not None and row["npc_key"] not in indexed["npc"]:
-                raise PackageError("活动NPC不存在")
-            if "learning" in row["content"] or "completion" in row["content"]:
-                raise PackageError("学习要求必须配置在活动资料项中")
-            def resolve(key):
-                material = indexed["material"].get(key)
-                if material and row["chapter_id"] not in material["chapter_ids"]:
-                    raise PackageError("活动资料必须属于活动章节")
-                return SimpleNamespace(**material) if material else None
-            validate_resources(row["resources"], row["kind"], resolve)
             if len(set(row["question_ids"])) != len(row["question_ids"]):
                 raise PackageError("活动题目重复")
             for question_id in row["question_ids"]:
                 question = indexed["question"][question_id]
+                if row["kind"] == "practice" and (content["practice_kind"] == "programming") != (question["kind"] == "python"):
+                    raise PackageError("题型与练习类别不一致")
                 if question["kind"] == "interactive" and row["kind"] != "practice":
                     raise PackageError("交互练习题只能用于练习活动")
                 if row["chapter_id"] not in question["chapter_ids"] or question["status"] != "ready":
                     raise PackageError("活动题目必须已就绪并属于当前章节")
-        for key, row in converted["quest"].items():
-            definition = row["definition"]
-            if definition.get("id") != key or definition.get("chapter_id") != row["chapter_id"]:
-                raise PackageError("任务定义与外层ID/章节不一致")
-            from app.world_config import interaction_points
-
-            validate_definition(
-                definition,
-                objects=set(interaction_points()) | {item["id"] for item in bundle["configuration"].get("world", {}).get("interactions", [])},
-            )
-            if "when" in definition:
-                activity = converted["activity"].get(definition["when"]["activity_completed"])
-                if not activity or activity["content"].get("published") is False:
-                    raise PackageError("支线开放条件必须绑定已发布的活动")
-                if row["chapter_id"] is not None and activity["chapter_id"] != row["chapter_id"]:
-                    raise PackageError("章节支线开放条件必须绑定本章已发布的活动")
-            for node in definition["nodes"]:
-                if node.get("navigation_target") and node["navigation_target"] not in indexed["npc"]:
-                    raise PackageError("任务导航NPC不存在")
-                if node["type"] in {"TALK_TO_NPC", "PLAY_DIALOGUE", "REPORT_BACK"} and node.get("target") not in indexed["npc"]:
-                    raise PackageError("任务NPC不存在")
-                if node.get("activity_id"):
-                    activity = converted["activity"][node["activity_id"]]
-                    expected = {"STUDY_LESSON": {"lesson", "reading"}, "COMPLETE_PRACTICE": {"practice"}, "PASS_ASSESSMENT": {"assessment"}}
-                    if node["type"] in expected and activity["kind"] not in expected[node["type"]]:
-                        raise PackageError("任务节点活动类型不匹配")
-                    if row["chapter_id"] is not None and activity["chapter_id"] != row["chapter_id"]:
-                        raise PackageError("任务活动必须属于当前章节")
-
-        class Catalog:
-            def get(self, model, key):
-                kind = MODEL_NAMES[model]
-                row = next((value for stable, value in converted[kind].items() if maps[kind][stable] == key), None)
-                if row and model is Activity:
-                    row = {**row, "resources": [SimpleNamespace(**item) for item in row["resources"]]}
-                return SimpleNamespace(**row) if row else None
-
-        catalog = Catalog()
-
-        def conditions(value, bindings, definition):
-            if isinstance(value, dict):
-                for key, item in value.items():
-                    if key == "when":
-                        validate_condition(item, bindings, definition, catalog)
-                    else:
-                        conditions(item, bindings, definition)
-            elif isinstance(value, list):
-                for item in value:
-                    conditions(item, bindings, definition)
-
-        for key, row in converted["story"].items():
-            quest = converted["quest"].get(row["quest_id"])
-            definition = quest["definition"] if quest else None
-            if quest and quest["chapter_id"] != row["chapter_id"]:
-                raise PackageError("剧情任务必须属于同一章节")
-            validate_story(row["content"], quest_definition=definition, story_id=key)
-            conditions(row["content"], row["content"]["bindings"], definition)
         course = bundle["course"]
-        version = course.get("schema_version")
-        if type(version) is not int or version not in (1, 2):
+        _object(course, {"schema_version", "title"}, {"schema_version", "title"})
+        if course["schema_version"] != 4 or not _short(course["title"], 200):
             raise PackageError("课程目录格式无效")
-        key = "releases" if version == 1 else "prerequisites"
-        _object(course, {"schema_version", "title", key, "quick_orchestration"}, {"schema_version", "title", key})
-        if not _short(course["title"], 200) or not isinstance(course[key], list):
-            raise PackageError("课程目录格式无效")
-        if "quick_orchestration" in course:
-            from app.teaching.quick_template.contracts import Recipe
-            Recipe.model_validate(course["quick_orchestration"])
-        parents = {}
-        fields = {"chapter_id", "prerequisite_chapter_id"}
-        for row in course[key]:
-            allowed = fields | {"status", "opens_at"} if version == 1 else fields
-            _object(row, allowed, allowed)
-            if version == 1:
-                if row["status"] not in {"published", "paused"}:
-                    raise PackageError("章节发布配置无效")
-                if row["opens_at"] is not None and datetime.fromisoformat(row["opens_at"]).tzinfo is None:
-                    raise PackageError("开放时间需要时区")
-            remap_references(row, maps)
-            if row["chapter_id"] in parents:
-                raise PackageError("章节前置重复")
-            parents[row["chapter_id"]] = row["prerequisite_chapter_id"]
-        for chapter in parents:
-            visited = set()
-            while chapter is not None:
-                if chapter in visited:
-                    raise PackageError("章节前置依赖存在循环")
-                visited.add(chapter)
-                chapter = parents.get(chapter)
-        course.pop(key)
-        course["schema_version"] = 2
-        course["prerequisites"] = [{"chapter_id": chapter, "prerequisite_chapter_id": parent}
-                                   for chapter, parent in parents.items() if parent is not None]
-        from app.teaching.authoring.validation import validate_configuration
-
-        validate_configuration(bundle["configuration"], data)
         from app.course_packages.narration_contract import validate_narrations
 
         validate_narrations(bundle, root)

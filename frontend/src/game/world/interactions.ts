@@ -1,5 +1,4 @@
 import { isTextFocus } from "../pathfinding";
-import { enteredInteractions } from "../interactionRegions";
 import {
   nearbyWorldTarget,
   portalAvailable,
@@ -187,39 +186,6 @@ export class WorldInteractions {
       }
       scene.save();
       callbacks.interact(obj.id, "object");
-    }
-  }
-  async checkRegionEntry() {
-    const { scene, state, callbacks } = this;
-    const crossings = enteredInteractions(
-      scene.position(),
-      state.runtime?.interactions ?? [],
-      scene.enteredRegions,
-    );
-    scene.enteredRegions = crossings.inside;
-    if (
-      !crossings.entered.length ||
-      !callbacks.enterRegion ||
-      state.paused ||
-      state.destroyed
-    )
-      return;
-    // Both a completed walking step and an authorized cross-map landing enter a region.
-    // Keep the exact tile until persistence and the flow request finish.
-    scene.busy = true;
-    state.pressed.clear();
-    scene.path = [];
-    scene.pendingTarget = null;
-    scene.travelTarget = null;
-    try {
-      await callbacks.enterRegion(crossings.entered[0]!, scene.position());
-    } catch (error) {
-      if (!state.destroyed)
-        callbacks.error(
-          error instanceof Error ? error.message : "区域互动暂不可用",
-        );
-    } finally {
-      scene.busy = false;
     }
   }
 }

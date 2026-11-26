@@ -4,12 +4,12 @@ from copy import deepcopy
 from sqlalchemy import select, text
 
 from .models import (
-    Activity, Chapter, CourseExample, CourseInstance, KnowledgePoint, Material, Npc, Question, QuestDefinition, StoryDefinition,
+    Activity, Chapter, CourseExample, CourseInstance, KnowledgePoint, Material, Question,
 )
 
-CONTENT_MODELS = (Chapter, KnowledgePoint, Material, Question, Npc, Activity, QuestDefinition, StoryDefinition, CourseExample)
+CONTENT_MODELS = (Chapter, KnowledgePoint, Material, Question, Activity, CourseExample)
 MODEL_NAMES = {Chapter: "chapter", KnowledgePoint: "knowledge_point", Material: "material", Question: "question",
-               Npc: "npc", Activity: "activity", QuestDefinition: "quest", StoryDefinition: "story", CourseExample: "example"}
+               Activity: "activity", CourseExample: "example"}
 
 
 def classroom_course(db, classroom_id):
@@ -19,7 +19,7 @@ def classroom_course(db, classroom_id):
 
 def content_mapping(db, instance):
     """Stable source IDs to runtime PKs, independently for each content kind."""
-    return {MODEL_NAMES[model]: {row.stable_id: getattr(row, "key" if model is Npc else "id")
+    return {MODEL_NAMES[model]: {row.stable_id: row.id
             for row in db.scalars(select(model).where(model.course_instance_id == instance.id))} for model in CONTENT_MODELS}
 
 
@@ -35,33 +35,19 @@ def lock_content_tables(db):
                      nextval(pg_get_serial_sequence('{table}', 'id'))), true)"""))
 
 
-def _lookup(maps, kind, value, *, required=True):
+def _lookup(maps, kind, value):
     if value is None:
         return None
     result = maps[kind].get(value)
     if result is None:
-        if required:
-            raise ValueError(f"课程引用缺失或不属于当前教师：{kind}")
-        return value
+        raise ValueError(f"课程引用缺失或不属于当前教师：{kind}")
     return result
-
-
-def _marker(value, maps):
-    if not isinstance(value, str):
-        return value
-    for old, new in maps["story"].items():
-        prefix = f"story:{old}:"
-        if value.startswith(prefix):
-            return f"story:{new}:" + value[len(prefix):]
-    return value
 
 
 def remap_references(value, maps, context=None):
     """Rewrite only typed references; never replace text, answers, node or event IDs."""
-    scalar = {"chapter_id": "chapter", "prerequisite_chapter_id": "chapter", "material_id": "material",
-              "document_id": "material", "activity_id": "activity", "pending_activity_id": "activity",
-              "question_id": "question", "knowledge_point_id": "knowledge_point", "quest_id": "quest",
-              "story_id": "story", "npc_key": "npc", "speaker_npc_id": "npc", "activity_completed": "activity"}
+    scalar = {"chapter_id": "chapter", "material_id": "material", "document_id": "material",
+              "activity_id": "activity", "question_id": "question", "knowledge_point_id": "knowledge_point"}
     lists = {"chapter_ids": "chapter", "question_ids": "question", "knowledge_point_ids": "knowledge_point"}
     if isinstance(value, list):
         return [remap_references(item, maps, context) for item in value]
@@ -73,14 +59,8 @@ def remap_references(value, maps, context=None):
             result[key] = _lookup(maps, scalar[key], item)
         elif key in lists and isinstance(item, list):
             result[key] = [_lookup(maps, lists[key], ref) for ref in item]
-        elif key == "id" and context in {"chapter", "quest"}:
+        elif key == "id" and context == "chapter":
             result[key] = _lookup(maps, context, item)
-        elif key == "entries" and isinstance(item, dict):
-            result[key] = {npc if npc.startswith("interaction:") else _lookup(maps, "npc", npc): remap_references(routes, maps) for npc, routes in item.items()}
-        elif key in {"target", "navigation_target"} and isinstance(item, str):
-            result[key] = _lookup(maps, "npc", item, required=False)
-        elif key == "dialogue_id":
-            result[key] = _marker(item, maps)
         else:
             result[key] = remap_references(item, maps, key)
     return result

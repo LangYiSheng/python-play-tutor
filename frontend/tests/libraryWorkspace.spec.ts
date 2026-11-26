@@ -82,7 +82,7 @@ describe("chapter library", () => {
     await wrapper.get('[aria-label="资料章节"]').findAll("button")[1]!.trigger("click");
     (wrapper.get(".library-content").element as HTMLElement).scrollTop = 231;
     await wrapper.get(".library-card").trigger("click");
-    expect(navigate).toHaveBeenCalledWith({ kind: "material", material_id: 193 });
+    expect(navigate).toHaveBeenCalledWith({ kind: "material", material_id: 193, chapter_id: expect.any(Number) });
     wrapper.unmount();
     mounted.splice(mounted.indexOf(wrapper), 1);
     const returned = await library();

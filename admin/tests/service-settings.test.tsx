@@ -2,7 +2,6 @@ import { render } from "./render-with-toasts";
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { CourseSettings } from '../src/pages/course-settings';
 import { GlobalSettings } from '../src/features/management/settings';
 import { ServiceSettings } from '../src/components/service-settings';
 import { api } from '../src/lib/api';
@@ -14,7 +13,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.get).mockImplementation(async path => path.includes('/course/settings') ? { revision: 1, assistant: { enabled: true }, roles: [] } : config);
 });
-it('retains service drafts across icon tabs and hides global configuration from teachers', async () => {
+it('retains service drafts across icon tabs ', async () => {
   const w = render(<GlobalSettings />);
   await screen.findByRole('button', { name: '测试已保存连接' });
   const tab = screen.getByRole('tab', { name: '讲稿生成' });
@@ -27,8 +26,7 @@ it('retains service drafts across icon tabs and hides global configuration from 
   expect(screen.getByLabelText('页面图像模型')).toHaveValue('unsaved-vision');
   expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
   w.unmount();
-  render(<CourseSettings courseId={1} />);
-  expect(screen.queryByRole('tab', { name: '讲稿生成' })).toBeNull();
+
 });
 it('preserves keys after a conflict and clears transient key text only after save', async () => {
   vi.mocked(api.put).mockRejectedValueOnce(new Error('版本冲突')).mockResolvedValueOnce({ ...config, revision: 1 });

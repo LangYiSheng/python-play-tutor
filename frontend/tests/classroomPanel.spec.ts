@@ -31,6 +31,7 @@ function setup() {
 }
 function mountPanel() {
   const { session, pinia } = setup();
+  session.taskChapters = [{id:1,title:"第一章",order_index:1,completed:false,tasks:[{id:"read:1",kind:"reading",title:"阅读指定课件",required:true,completed:false,locked:false,lock_reason:null,current:1,total:2,unit:"页"}]}];
   const wrapper = mount(ClassroomPanel, { global: { plugins: [pinia] } });
   return { wrapper, session };
 }
@@ -49,10 +50,7 @@ describe("classroom workspace", () => {
     expect(wrapper.get(".current-classroom h3").text()).toBe("入门班");
     expect(wrapper.text()).toContain("授课教师：林老师");
     expect(wrapper.text()).toContain("1 章已开放 · 0 章已完成");
-    expect(wrapper.get(".classroom-progress-caption").text()).toContain("1 / 2 步");
-    expect(wrapper.get("progress").attributes("value")).toBe("1");
-    expect(wrapper.get("progress").attributes("max")).toBe("2");
-    expect(wrapper.get(".classroom-next-goal").text()).toContain("阅读指定课件");
+    expect(wrapper.get(".classroom-next-goal").text()).toContain("拜访图书管理员");
     expect(wrapper.text()).not.toContain("掌握率");
     wrapper.unmount();
   });

@@ -58,7 +58,7 @@ import "./pdfReader.css";
 const hasNarration = ref(false);
 
 const props = defineProps<{ url: string; page: number; title?: string; kind?: string; materialId?: number }>(),
-  emit = defineEmits<{ page: [value: number]; timeline: [value: LectureSegment[]] }>(),
+  emit = defineEmits<{ page: [value: number]; ready: [page: number | null]; timeline: [value: LectureSegment[]] }>(),
   canvas = ref<HTMLCanvasElement>(),
   stage = ref<HTMLElement>(),
   count = ref(1),
@@ -158,6 +158,7 @@ async function render() {
     previous = task;
   task = undefined;
   previous?.cancel();
+  emit("ready", null);
   rendering.value = true;
   rendered.value = false;
   const current = () => !disposed && generation === renderGeneration && document === doc;
@@ -182,7 +183,7 @@ async function render() {
     const pending = page.render({ canvasContext: context, viewport: view });
     task = pending;
     await pending.promise;
-    if (current()) rendered.value = true;
+    if (current()) {rendered.value = true; emit("ready", props.page);}
   } catch (cause) {
     if (current() && !ignoreCancellation(cause))
       error.value = cause instanceof Error ? cause.message : "课件显示失败";

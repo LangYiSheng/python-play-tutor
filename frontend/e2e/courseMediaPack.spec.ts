@@ -1,4 +1,4 @@
-import { provisionStudent } from "./studentAccount";
+import { provisionStudent, visitLibrary } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -47,7 +47,7 @@ async function enter(page: Page, identity: { access_token: string; user: { id: n
 }
 
 async function openLibrary(page: Page) {
-  await page.getByRole("button", { name: /学习资料/ }).click();
+  await visitLibrary(page);
   await expect(page.locator(".library-workspace")).toBeVisible();
 }
 

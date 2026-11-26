@@ -8,13 +8,11 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .auth import require_teacher
-from .course_content.knowledge_graph import router as graph_router
 from .db import get_db
 from .teacher_scope import own_course, teacher_instance_id, require_scope, new_stable_id, commit_content
 from .models import Activity, Chapter, KnowledgePoint, QuestionKnowledgePoint, User
 
 router = APIRouter(prefix="/teacher/courses/{course_id}", tags=["curriculum"])
-router.include_router(graph_router)
 
 
 def authoring_chapter(db, user, chapter_id, instance_id=None):
@@ -60,7 +58,6 @@ def chapter_payload(chapter):
         "order_index": chapter.order_index,
         "owner_id": chapter.owner_id,
         "course_id": chapter.course_instance_id,
-        "prerequisite_chapter_id": chapter.prerequisite_chapter_id,
     }
 
 
@@ -69,7 +66,6 @@ def point_payload(point):
 
 
 class ChapterInput(BaseModel):
-    prerequisite_chapter_id: int | None = None
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     order_index: int | None = Field(default=None, ge=1, strict=True)
@@ -83,7 +79,6 @@ class ChapterInput(BaseModel):
 
 
 class ChapterUpdate(BaseModel):
-    prerequisite_chapter_id: int | None = None
     model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=200)
     order_index: int | None = Field(default=None, ge=1, strict=True)
@@ -103,16 +98,6 @@ class ChapterUpdate(BaseModel):
         return value
 
 
-def check_prerequisite(db, course_id, chapter, previous):
-    visited = {chapter.id}
-    while previous is not None:
-        if previous in visited:
-            raise HTTPException(422, "前置章节不能成环")
-        visited.add(previous)
-        parent = require_scope(db.get(Chapter, previous), course_id)
-        previous = parent.prerequisite_chapter_id
-
-
 def commit_metadata(db, instance_id=None):
     try:
         commit_content(db, instance_id)
@@ -128,8 +113,6 @@ def create_chapter(body: ChapterInput, db: Annotated[Session, Depends(get_db)], 
     order = body.order_index if body.order_index is not None else (db.scalar(select(func.max(Chapter.order_index)).where(Chapter.course_instance_id == instance_id)) or 0) + 1
     chapter = Chapter(title=body.title, order_index=order, owner_id=course.teacher_id, course_id=43,
                       course_instance_id=instance_id, stable_id=new_stable_id())
-    check_prerequisite(db, instance_id, chapter, body.prerequisite_chapter_id)
-    chapter.prerequisite_chapter_id = body.prerequisite_chapter_id
     db.add(chapter)
     commit_metadata(db, instance_id)
     return chapter_payload(chapter)
@@ -139,7 +122,6 @@ def create_chapter(body: ChapterInput, db: Annotated[Session, Depends(get_db)], 
 def update_chapter(chapter_id: int, body: ChapterUpdate, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None):
     instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     chapter = editable(db.get(Chapter, chapter_id), user, instance_id)
-    check_prerequisite(db, instance_id, chapter, body.prerequisite_chapter_id)
     for key, value in body.model_dump(exclude_unset=True).items():
         setattr(chapter, key, value)
     commit_metadata(db, instance_id)

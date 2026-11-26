@@ -109,37 +109,6 @@ async function canvas() {
 }
 
 describe("pending world interactions", () => {
-  it("persists the exact region entry tile before requesting its authorized flow", async () => {
-    const saved = deferred<void>();
-    const request = vi.spyOn(api, "request").mockReturnValue(saved.promise);
-    const session = useSession();
-    const interact = vi.spyOn(session, "interactStory").mockResolvedValue(true);
-    const { callbacks } = await canvas();
-    const position = { ...world().player, tile_x: 23 };
-    const pending = callbacks.enterRegion!("entry-strip", position);
-    await flushPromises();
-    expect(request).toHaveBeenCalledWith("/world/position", expect.objectContaining({ body: JSON.stringify({ classroom_id: 1, ...position }) }));
-    expect(interact).not.toHaveBeenCalled();
-    saved.resolve();
-    await pending;
-    expect(interact).toHaveBeenCalledWith("entry-strip", "object");
-  });
-  it("does not trigger a region when its position save failed or its account changed", async () => {
-    const session = useSession();
-    const interact = vi.spyOn(session, "interactStory").mockResolvedValue(true);
-    const request = vi.spyOn(api, "request").mockRejectedValueOnce(new Error("offline"));
-    const { callbacks } = await canvas();
-    await callbacks.enterRegion!("entry-strip", { ...world().player, tile_x: 23 });
-    expect(interact).not.toHaveBeenCalled();
-    const saved = deferred<void>();
-    request.mockReturnValueOnce(saved.promise);
-    const pending = callbacks.enterRegion!("entry-strip", { ...world().player, tile_x: 24 });
-    await flushPromises();
-    session.user = person(2);
-    saved.resolve();
-    await pending;
-    expect(interact).not.toHaveBeenCalled();
-  });
   it("drains pending position saves before the world is restarted", async () => {
     const saved = deferred<void>();
     const request = vi.spyOn(api, "request").mockReturnValue(saved.promise);
@@ -316,44 +285,31 @@ describe("pending world interactions", () => {
 });
 
 function dialogue() {
-  const story = { id: "session", revision: 0, status: "active" as const, npc_key: "mayor_py",
-    node: { id: "intro", text: "This is a scripted conversation." }, activity: null };
-  useSession().story = story;
-  const wrapper = mount(DialogueLayer, { props: { story }, attachTo: document.body, global: { plugins: [pinia] } });
+  const line = {id:"intro", text:"This is a scripted conversation."};
+  const wrapper = mount(DialogueLayer, {props:{line},attachTo:document.body,global:{plugins:[pinia]}});
   mounted.push(wrapper);
   return wrapper;
 }
 
-describe("server flow dialogue controls", () => {
+describe("fixed NPC dialogue controls", () => {
   it("reveals text first and acknowledges only on the second click", async () => {
     useUiPreferences().reduceMotion = false;
-    const advance = vi.spyOn(useSession(), "advanceStory").mockResolvedValue(false);
     const wrapper = dialogue();
     await wrapper.get(".dialogue-text").trigger("click");
     expect(wrapper.get(".dialogue-text").text()).toBe("This is a scripted conversation.");
-    expect(advance).not.toHaveBeenCalled();
+    expect(wrapper.emitted("advance")).toBeUndefined();
     await wrapper.get(".dialogue-text").trigger("click");
-    expect(advance).toHaveBeenCalledOnce();
+    expect(wrapper.emitted("advance")).toHaveLength(1);
   });
   it("requires a visible choice and supports keyboard focus", async () => {
-    const advance = vi.spyOn(useSession(), "advanceStory").mockResolvedValue(false);
     const wrapper = dialogue();
-    await wrapper.setProps({ story: { ...useSession().story!, node: { id: "choice", text: "Ready?", choices: [{ id: "yes", label: "开始" }] } } });
+    await wrapper.setProps({ line: { id: "choice", text: "Ready?", choices: [{ id: "yes", label: "开始" }] } });
     await wrapper.get(".dialogue-box").trigger("click");
-    expect(advance).not.toHaveBeenCalled();
+    expect(wrapper.emitted("advance")).toBeUndefined();
     await wrapper.trigger("keydown", { key: "ArrowDown" });
     expect(document.activeElement).toBe(wrapper.get(".dialogue-response").element);
     await wrapper.get(".dialogue-response").trigger("click");
-    expect(advance).toHaveBeenCalledWith("yes");
-  });
-  it("keeps failed acknowledgments visible for retry", async () => {
-    const advance = vi.spyOn(useSession(), "advanceStory").mockRejectedValue(new Error("课程已更新"));
-    const wrapper = dialogue();
-    await wrapper.get(".dialogue-box").trigger("click");
-    await flushPromises();
-    expect(wrapper.text()).toContain("课程已更新");
-    expect(advance).toHaveBeenCalledOnce();
-    expect(wrapper.emitted("close")).toBeUndefined();
+    expect(wrapper.emitted("advance")).toEqual([["yes"]]);
   });
 });
 

@@ -76,7 +76,7 @@ def test_cli_rejects_invalid_and_duplicate_ids(db, monkeypatch):
         cli.main()
 
 
-def test_existing_database_upgrade_preserves_users_and_learning(tmp_path):
+def test_student_id_migration_preserves_users_and_learning(tmp_path):
     from sqlalchemy import text, inspect
     url = "sqlite:///" + (tmp_path / "identity.sqlite3").as_posix()
     migrate(url, "upgrade", "221d0f8caf6e")
@@ -86,8 +86,7 @@ def test_existing_database_upgrade_preserves_users_and_learning(tmp_path):
     with engine.connect() as conn:
         before = {table: conn.execute(text(f'SELECT count(*) FROM "{table}"')).scalar()
                   for table in inspect(engine).get_table_names() if table not in {"auth_sessions", "alembic_version"}}
-    migrate(url, "upgrade", "head")
-    migrate(url, "check")
+    migrate(url, "upgrade", "a91c7d20e648")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM auth_sessions")).scalar() == 0
         assert conn.execute(text("SELECT count(*) FROM users WHERE student_id IS NULL")).scalar() == 2
@@ -97,5 +96,9 @@ def test_existing_database_upgrade_preserves_users_and_learning(tmp_path):
             assert conn.execute(text(f'SELECT count(*) FROM "{table}"')).scalar() == count
     with engine.begin() as conn:
         conn.execute(text("UPDATE users SET student_id='001234' WHERE id=1"))
+        assert conn.execute(select(User.student_id).where(User.id == 1)).scalar() == "001234"
+    migrate(url, "upgrade", "head")
+    migrate(url, "check")
+    with engine.connect() as conn:
         assert conn.execute(select(User.student_id).where(User.id == 1)).scalar() == "001234"
     engine.dispose()

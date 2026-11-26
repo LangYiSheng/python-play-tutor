@@ -77,7 +77,7 @@ describe("configured world places and portals", () => {
   it("updates compact nearby actions at fractional moving positions and excludes closed buildings", () => {
     const shelves = resolveWorldTargets("library_shelf", []);
     const within = nearbyWorldTarget({ map_key: "library", x: 15, y: 10 }, shelves, []);
-    expect(worldTargetHint(within!, [])).toBe("阅读");
+    expect(worldTargetHint(within!, [])).toBe("问路");
     expect(nearbyWorldTarget({ map_key: "library", x: 15, y: 10.01 }, shelves, [])).toBeUndefined();
     const closed = resolveWorldTarget("training", [])!;
     expect(nearbyWorldTarget({ map_key: closed.map_key, x: closed.x, y: closed.y }, [closed], [])).toBeUndefined();

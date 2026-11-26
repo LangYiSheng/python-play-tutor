@@ -1,4 +1,4 @@
-"""Migrate real relationship references without replacing student evidence."""
+"""Verify historical relation migration and the later chapter-task reset."""
 
 from datetime import datetime, timezone
 import os
@@ -22,7 +22,7 @@ from app.content_relations import (
     set_question_chapters,
     set_question_knowledge_points,
 )
-from app.models import Activity, ActivityQuestion, Question
+from app.models import Activity, ActivityQuestion, Chapter, MaterialChapter, Question
 
 BACKEND = Path(__file__).resolve().parents[1]
 
@@ -115,7 +115,7 @@ def test_empty_migration_and_metadata_match(tmp_path):
 def test_existing_relationships_order_answers_and_submissions_survive(tmp_path):
     path = tmp_path / "existing.db"
     old_content(path)
-    migrate(path)
+    migrate(path, "c4261124aa02")
     engine = engine_for(path)
     with Session(engine) as db:
         assert material_chapter_ids(db, 10) == [1]
@@ -133,12 +133,34 @@ def test_existing_relationships_order_answers_and_submissions_survive(tmp_path):
     engine.dispose()
 
 
+def test_chapter_tasks_preserve_bank_and_chapter_links_and_clear_old_activity_evidence(tmp_path):
+    path = tmp_path / "task-points.db"
+    old_content(path)
+    migrate(path)
+    engine = engine_for(path)
+    with Session(engine) as db:
+        link = db.get(MaterialChapter, (10, 1))
+        assert not link.required and link.rule == {}
+        assert question_chapter_ids(db, "q1") == [1]
+        assert db.execute(text("SELECT answer FROM question_secrets WHERE question_id='q1'")).scalar() == "true"
+        for table in ("activities", "activity_questions", "submissions", "assessment_attempts"):
+            assert db.execute(text(f"SELECT count(*) FROM {table}")).scalar() == 0
+        assert not db.execute(text("PRAGMA foreign_key_check")).all()
+    engine.dispose()
+
+
 def test_relations_reuse_order_validation_and_constraints(tmp_path):
     path = tmp_path / "reuse.db"
     old_content(path)
     migrate(path)
     engine = engine_for(path)
     with Session(engine) as db:
+        for key, chapter_id in (("practice", 1), ("review", 2)):
+            chapter = db.get(Chapter, chapter_id)
+            db.add(Activity(id=key, chapter_id=chapter.id, course_instance_id=chapter.course_instance_id,
+                            title=key, kind="practice", owner_id=chapter.owner_id, content={"published": True}))
+        db.flush()
+        set_activity_questions(db, "practice", ["q2", "q1"])
         set_material_chapters(db, 10, [2, 1])
         assert material_chapter_ids(db, 10) == [1, 2]
         assert material_in_chapter(db, 10, 2)

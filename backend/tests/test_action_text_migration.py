@@ -9,7 +9,6 @@ from alembic.operations import Operations
 import pytest
 import sqlalchemy as sa
 
-from app.teaching.story.validation import validate_story
 from test_curriculum_migration import migrate
 
 spec = spec_from_file_location("action_text_migration", Path(__file__).resolve().parents[1] / "alembic/versions/d74e90bc21a6_action_nodes_without_text.py")
@@ -31,7 +30,6 @@ def test_redundant_action_labels_are_removed(prompt, workspace):
     del expected["nodes"][0]["text"]
     assert migration._clean_content(original) == expected
     assert "text" in original["nodes"][0]
-    validate_story(expected)
 
 
 def test_substantive_prompt_keeps_original_entry_and_collision_safe_action_id():
@@ -47,7 +45,6 @@ def test_substantive_prompt_keeps_original_entry_and_collision_safe_action_id():
     assert action["id"] != collision and action["next"] == end["id"] == collision
     assert cleaned["entries"] == original["entries"]
     assert migration._clean_content(cleaned) == cleaned
-    validate_story(cleaned)
 
 
 def test_migration_updates_definitions_once_and_preserves_session_and_receipts(tmp_path):

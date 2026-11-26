@@ -10,16 +10,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .question_types import question_type
+from .assessment_grades import ACCEPTED, GRADED, grade_status
 from .auth import current_user
 from .db import get_db
 from .models import AssessmentAttempt, Classroom, Submission, User, now
 from .practice import public_submission, stage_submission
 
 router = APIRouter(tags=["assessments"])
-ACCEPTED = {"accepted", "AC", "ac"}
-GRADED = ACCEPTED | {"wrong_answer", "compile_error", "runtime_error", "time_limit", "memory_limit"}
-PENDING = {"prepared", "dispatching", "queued", "running"}
-
 
 def assessment_questions(db, activity, classroom_id=None):
     from app.course_content.learning import learning_questions
@@ -72,12 +69,7 @@ def assessment_payload(db, user, classroom_id, activity):
         status, results = "draft", []
     else:
         statuses = [row.status for row in rows.values() if row]
-        if len(statuses) == len(ids) and statuses and all(status in GRADED for status in statuses):
-            status = "graded"
-        elif any(value not in GRADED | PENDING for value in statuses) or len(statuses) != len(ids):
-            status = "attention" if any(value not in GRADED | PENDING for value in statuses) else "grading"
-        else:
-            status = "grading"
+        status = grade_status(statuses, len(ids))
         results = [public_submission(rows[key]) for key in ids if rows.get(key)]
     correct = sum(row is not None and row.status in ACCEPTED for row in rows.values()) if locked else 0
     return {"id": attempt.id if attempt else None, "status": status, "revision": attempt.revision if attempt else 0,

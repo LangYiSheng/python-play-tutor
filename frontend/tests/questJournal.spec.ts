@@ -1,116 +1,76 @@
-import { describe, it, expect, vi } from "vitest";
-import { nextTick } from "vue";
-import GameSelect from "../src/shared/GameSelect.vue";
-import { mount } from "@vue/test-utils";
-import { createPinia, setActivePinia } from "pinia";
+import {it, expect} from "vitest";
+import {mount} from "@vue/test-utils";
+import {createPinia, setActivePinia} from "pinia";
+import {useSession} from "../src/shared/session";
 import QuestJournal from "../src/features/QuestJournal.vue";
-import { useSession } from "../src/shared/session";
-import type { QuestNode } from "../src/shared/types";
-describe("quest journal main and side classification", () => {
-  it("shows a completed test-only branching quest at full progress without counting skipped or optional goals", async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const store = useSession();
-    const ids = ["start", "meet-mentor", "read", "choose", "path-a", "path-b-read", "path-b-practice", "parallel-one", "parallel-two", "finish"];
-    const nodes: QuestNode[] = ids.map(id => ({ id, title: id, type: "TALK_TO_NPC", target: "professor", dependencies: [], aggregation: "ALL", optional: false, status: ["path-b-read", "path-b-practice"].includes(id) ? "skipped" : "complete" }));
-    nodes.push({ id: "optional-reading", title: "可选阅读", type: "STUDY_LESSON", target: "", dependencies: [], aggregation: "ALL", optional: true, status: "ready" });
-    store.world = { player: { map_key: "town_hub", tile_x: 22, tile_y: 36, direction: "down" }, npcs: [], chapters: [], flags: [], quests: [{ id: "branch-fixture", kind: "main", title: "分支计数测试", chapter_id: 179, status: "complete", nodes }] };
-    const wrapper = mount(QuestJournal, { global: { plugins: [pinia] } });
-    await wrapper.findAll("button").find(button => button.text() === "已完成")!.trigger("click");
-    expect(wrapper.get(".journal-objectives span").text()).toBe("8 / 8");
-    expect(wrapper.get("progress").attributes()).toMatchObject({ value: "8", max: "8" });
-    expect(wrapper.findAll(".journal-entry li")).toHaveLength(11);
-    expect(wrapper.findAll("li.skipped")).toHaveLength(2);
-    expect(wrapper.text()).toContain("可选阅读");
-    wrapper.unmount();
-  });
+import GameHUD from "../src/features/GameHUD.vue";
+import ChapterActivityList from "../src/features/ChapterActivityList.vue";
+import {greeting, farewell, type TaskChapter, type ChapterTask, type TaskKind} from "../src/shared/chapterTasks";
 
-  it("filters side quests separately and retains completed side history", async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const store = useSession();
-    store.world = {
-      player: {
-        map_key: "town_hub",
-        tile_x: 22,
-        tile_y: 36,
-        direction: "down",
-      },
-      npcs: [],
-      chapters: [],
-      flags: [],
-      quests: [
-        {
-          id: "main",
-          kind: "main",
-          title: "主线来信",
-          chapter_id: 179,
+const task = (kind:TaskKind, id:string, changes: Partial<ChapterTask> = {}):ChapterTask => ({
+  kind, id, title:"活动 " + id, activity_id:id, required:true, completed:false, locked:false, lock_reason:null,current:0,total:2,unit:"题",...changes,
+});
+function setup() {
+  const pinia=createPinia();setActivePinia(pinia);
+  const session=useSession();
+  session.taskChapters=[{id:1,title:"第一章",order_index:1,completed:false,tasks:[task("objective","a"),task("objective","b",{completed:true}),task("programming","c"),task("objective","extra",{required:false})]},
+    {id:2,title:"第二章",order_index:2,completed:false,tasks:[task("reading","d",{material_id:2}),task("objective","e",{locked:true,lock_reason:"请先阅读必读资料"})]}];
+  return {session, global:{plugins:[pinia]}};
+}
+it("lists parallel goals per chapter and shows the whole selected chapter",async()=>{
+  const {session,global}=setup();
+  const w=mount(QuestJournal,{global});
+  expect(w.text()).toContain("拜访教授，完成客观题练习（1/2）");
+  expect(w.text()).toContain("拜访练习场教练，完成编程题练习");
+  expect(w.text()).toContain("选做");
+  await w.findAll(".journal-goal").at(-1)!.trigger("click");
+  expect(session.trackedQuest).toBe("2:reading");
+  expect(w.get("main").text()).toContain("请先阅读必读资料");
+});
+it("switches the HUD between available targets and guides to its fixed NPC",async()=>{
+  const {global}=setup(), w=mount(GameHUD,{global});
+  await w.get('[aria-label="切换追踪目标"]').trigger("click");
+  expect(w.get(".quest-next").text()).toContain("编程题练习");
+  await w.findAll("button").find(b=>b.text()==="立即前往")!.trigger("click");
+  expect(w.emitted("guide")).toEqual([["coach"]]);
+});
+it("offers unlocked practice across chapters and leaves locked items visible",async()=>{
+  const {session,global}=setup(),w=mount(ChapterActivityList,{global,props:{category:"objective"}});
+  expect(w.findAll(".task-row")).toHaveLength(4);
+  expect(w.get(".task-row:disabled").text()).toContain("请先阅读必读资料");
+  await w.get(".task-row").trigger("click");
+  expect(session.workspace).toEqual({kind:"practice",activity_id:"a"});
+});
+it("gives progress-specific greetings and reports the newly unlocked practice",()=>{
+  const {session}=setup();
+  expect(greeting([], "reading").open).toBe(false);
+  expect(greeting(session.taskChapters,"objective").open).toBe(true);
+  expect(greeting([session.taskChapters[1]!],"objective").text).toContain("第二章");
+  const after:TaskChapter[]=JSON.parse(JSON.stringify(session.taskChapters));
+  after[1]!.tasks[0]!.completed=true;after[1]!.tasks[1]!.locked=false;
+  expect(farewell(session.taskChapters,after,"reading")).toContain("教授");
+});
 
-          status: "active",
-          nodes: [],
-        },
-        {
-          id: "side",
-          kind: "side",
-          title: "支线找书",
-          chapter_id: null,
+it("uses the platform role name in goals, journal navigation and unlock dialogue", async () => {
+  const {session, global} = setup();
+  session.world = {
+    player: {map_key: "town_hub", tile_x: 0, tile_y: 0, direction: "down"}, flags: [], chapters: [], default_role: null,
+    npcs: [{key: "professor", name: "林老师", portrait: "", map_key: "workshop", tile_x: 2, tile_y: 3,
+      direction: "down", sprite: {id: "chara_24", url: "", frame_width: 16, frame_height: 20}}],
+  };
+  const journal = mount(QuestJournal, {global});
+  const hud = mount(GameHUD, {global});
+  expect(journal.get(".journal-goal").text()).toBe("拜访林老师，完成客观题练习（1/2）");
+  expect(journal.get(".town-secondary").text()).toBe("前往林老师");
+  expect(hud.get(".quest-next").text()).toContain("拜访林老师");
+  await journal.get(".town-secondary").trigger("click");
+  expect(session.navigationTarget).toBe("professor");
 
-          status: "active",
-          nodes: [{ id: "open", title: "打开书架", type: "INTERACT_OBJECT", target: "library_shelf", dependencies: [], aggregation: "ALL", optional: false, status: "ready" }],
-        },
-        {
-          id: "finished-side",
-          kind: "side",
-          title: "已归还的书",
-          chapter_id: 179,
-
-          status: "complete",
-          nodes: [],
-        },
-      ],
-    };
-    const wrapper = mount(QuestJournal, { global: { plugins: [pinia] } });
-    wrapper.getComponent(GameSelect).vm.$emit("update:modelValue", "side");
-    await nextTick();
-    expect(wrapper.findAll(".journal-entry h3").map((h) => h.text())).toEqual(["支线找书"]);
-    expect(wrapper.find(".journal-entry .eyebrow").text()).toContain(
-      "全镇支线",
-    );
-    const guide = vi.spyOn(store, "guideTo").mockImplementation(() => {});
-    await wrapper.get(".journal-entry li button").trigger("click");
-    expect(guide).toHaveBeenCalledWith("library_shelf");
-    await wrapper
-      .findAll("button")
-      .find((b) => b.text() === "已完成")!
-      .trigger("click");
-    expect(wrapper.findAll(".journal-entry h3").map((h) => h.text())).toEqual(["已归还的书"]);
-    expect(wrapper.find(".journal-entry .eyebrow").text()).toContain(
-      "章节支线 · 已完成",
-    );
-    wrapper.unmount();
-  });
-
-  it("keeps filtering inside the directory and shows a centered, uncluttered empty state", async () => {
-    const pinia = createPinia();
-    setActivePinia(pinia);
-    const store = useSession();
-    store.world = { player: { map_key: "town_hub", tile_x: 22, tile_y: 36, direction: "down" }, npcs: [], chapters: [], flags: [], quests: [] };
-    const wrapper = mount(QuestJournal, { global: { plugins: [pinia] } });
-    expect(wrapper.find(".journal-controls").exists()).toBe(false);
-    expect(wrapper.find(".journal-count").exists()).toBe(false);
-    expect(wrapper.find(".journal-cover img").exists()).toBe(false);
-    expect(wrapper.get(".journal-cover h3").text()).toBe("委托目录");
-    expect(wrapper.get('.journal-filter-bar [aria-label="任务状态"]').findAll("button")).toHaveLength(3);
-    expect(wrapper.getComponent(GameSelect).props("options")).toHaveLength(3);
-    expect(wrapper.get(".quest-directory").classes()).toContain("is-empty");
-    expect(wrapper.get(".quest-directory").text()).toBe("没有委托");
-    expect(wrapper.get(".journal-empty").text()).toBe("");
-    expect(wrapper.find(".directory-label").exists()).toBe(false);
-    expect(wrapper.find(".journal-empty svg").exists()).toBe(false);
-    wrapper.getComponent(GameSelect).vm.$emit("update:modelValue", "side");
-    await nextTick();
-    await wrapper.get('.status-tabs button[aria-pressed="true"]').trigger("click");
-    expect(wrapper.get(".quest-directory").text()).toBe("没有委托");
-    wrapper.unmount();
-  });
+  const before = session.taskChapters;
+  const after: TaskChapter[] = JSON.parse(JSON.stringify(before));
+  after[1]!.tasks[0]!.completed = true;
+  after[1]!.tasks[1]!.locked = false;
+  expect(farewell(before, after, "reading", session.world.npcs)).toContain("接下来可以去找林老师了");
+  journal.unmount();
+  hud.unmount();
 });

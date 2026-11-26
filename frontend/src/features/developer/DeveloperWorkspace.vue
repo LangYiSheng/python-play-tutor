@@ -31,7 +31,6 @@
               </div>
               <template v-if="overview">
                 <ContentPanel v-show="activeTab === 'content'" :key="`content-${identity}`" />
-                <StagePanel v-show="activeTab === 'stage'" :key="`stage-${identity}`" />
                 <CheckpointPanel v-show="activeTab === 'checkpoints'" :key="`checkpoints-${identity}`" />
               </template>
           </template>
@@ -47,7 +46,6 @@ import { computed, nextTick } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import AccountPanel from "./AccountPanel.vue";
 import ContentPanel from "./ContentPanel.vue";
-import StagePanel from "./StagePanel.vue";
 import CheckpointPanel from "./CheckpointPanel.vue";
 import ToolFeedback from "./ToolFeedback.vue";
 import { createDeveloperTools } from "./useDeveloperTools";
@@ -57,7 +55,6 @@ import "./developer.css";
 const tabs = [
   { id: "account", label: "账户概要", icon: "people" },
   { id: "content", label: "内容定位", icon: "book" },
-  { id: "stage", label: "任务阶段", icon: "journal" },
   { id: "checkpoints", label: "体验检查点", icon: "save" },
 ] as const;
 const { activeTab, allowed, classroom, overview, loading, loadError, busy, identity, load } = createDeveloperTools();

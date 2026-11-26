@@ -9,68 +9,18 @@
         </div>
       </div>
     </header>
-    <aside
-      v-if="tracked"
-      class="quest-tracker"
-
-      aria-label="当前委托"
-    >
-<h2 class="quest-heading"><GameIcon name="message" /><span class="quest-title">{{ tracked.title }}</span></h2>
-      <div id="tracked-quest-details">
-
-        <div
-          class="quest-progress"
-          role="progressbar"
-          aria-label="委托步骤进度"
-          :aria-valuenow="completed"
-          :aria-valuemax="total"
-          aria-valuemin="0"
-          :aria-valuetext="`已完成 ${completed} / ${total} 步`"
-        >
-          <span
-            :style="{ width: `${total ? (completed / total) * 100 : 0}%` }"
-          />
-        </div>
-        <p class="quest-next-label">
-          {{ tracked.status === "complete" ? "委托已完成" : "当前目标" }}
-        </p>
-        <p class="quest-next">
-          {{ node ? node.title : tracked.status === "complete" ? "这份委托已完成，可以在小镇里自由走走。" : "打开任务日志查看目标进度。" }}
-        </p>
-        <p v-if="readyCount > 1" class="quest-parallel">
-          还有 {{ readyCount - 1 }} 个目标可在日志中查看
-        </p>
-        <button v-if="node?.navigation_target" class="quest-go" @click="$emit('guide', node.navigation_target)">
-          <span>立即前往</span><GameIcon name="compass" />
-        </button>
-        <button v-else-if="node?.activity_id && !tracked?.story_id" class="quest-go" @click="openActivity">
-          <span>{{
-            node.type === "STUDY_LESSON" ? "继续学习" : "开始练习"
-          }}</span
-          ><GameIcon name="chevron" />
-        </button>
-        <button
-          v-else-if="node?.target"
-          class="quest-go"
-          @click="$emit('guide', node.target)"
-        >
-          <span>立即前往</span><GameIcon name="compass" />
-        </button>
-        <button
-          v-else
-          class="quest-go"
-          @click="session.open({ kind: 'journal' })"
-        >
-          查看委托详情<GameIcon name="chevron" />
-        </button>
-      </div>
+    <aside v-if="tracked" class="quest-tracker" aria-label="当前目标">
+      <h2 class="quest-heading"><GameIcon name="journal" /><span>{{ tracked.chapter.title }}</span></h2>
+      <p class="quest-next">{{ tracked.title }}</p>
+      <button v-if="goals.length > 1" class="quest-go" aria-label="切换追踪目标" @click="cycle">切换目标 {{ goals.indexOf(tracked) + 1 }} / {{ goals.length }}</button>
+      <button class="quest-go" @click="$emit('guide', tracked.target)">立即前往<GameIcon name="compass" /></button>
     </aside>
     <nav class="hud-dock" aria-label="小镇菜单">
       <button data-world-focus @click="session.open({ kind: 'journal' })">
         <GameIcon name="journal" /><span>任务日志</span><kbd>J</kbd>
       </button>
-      <button @click="session.open({ kind: 'library' })">
-        <GameIcon name="book" /><span>学习资料</span>
+      <button @click="$emit('guide', 'librarian')">
+        <GameIcon name="book" /><span>去图书馆</span>
       </button>
       <button @click="session.open({ kind: 'map' })">
         <GameIcon name="compass" /><span>地图</span>
@@ -91,47 +41,22 @@
 import { computed } from "vue";
 import { useSession } from "../shared/session";
 import GameIcon from "../shared/GameIcon.vue";
-import { requiredQuestNodes } from "../shared/questProgress";
+import {chapterGoals} from "../shared/chapterTasks";
 import { canUseDevTools } from "../shared/devTools";
 defineProps<{ blocked?: boolean }>();
 const session = useSession();
 
 defineEmits<{ guide: [key: string] }>();
-const tracked = computed(
-  () =>
-    session.world?.quests.find(
-      (q) => q.id === session.trackedQuest && q.status !== "complete",
-    ) ??
-    session.world?.quests.find(
-      (q) => q.kind === "main" && q.status !== "complete",
-    ) ??
-    session.world?.quests.find((q) => q.status !== "complete") ??
-    session.world?.quests.at(-1),
-);
-const node = computed(() =>
-  tracked.value?.nodes.find((n) => n.status === "ready"),
-);
-const readyCount = computed(
-  () => tracked.value?.nodes.filter((n) => n.status === "ready").length ?? 0,
-);
-const required = computed(() => requiredQuestNodes(tracked.value));
-const completed = computed(
-  () => required.value.filter((n) => n.status === "complete").length,
-);
-const total = computed(() => required.value.length);
-
+const goals = computed(() => chapterGoals(session.taskChapters, session.world?.npcs));
+const tracked = computed(() => goals.value.find(g => g.id === session.trackedQuest) ?? goals.value[0]);
+function cycle() {
+  if (tracked.value) session.trackedQuest = goals.value[(goals.value.indexOf(tracked.value) + 1) % goals.value.length]!.id;
+}
 const classroomName = computed(
   () =>
     session.classes.find((c) => c.id === session.classroomId)?.name ??
     "我的班级",
 );
-function openActivity() {
-  if (node.value?.activity_id)
-    session.open({
-      kind: node.value.type === "STUDY_LESSON" ? "lesson" : "practice",
-      activity_id: node.value.activity_id,
-    });
-}
 </script>
 
 <style scoped src="./world/hud.css"></style>

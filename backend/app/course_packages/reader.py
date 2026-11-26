@@ -6,7 +6,7 @@ import yaml
 from yaml.tokens import AliasToken, AnchorToken
 
 from app.course_instances import MODEL_NAMES
-from app.course_packages.contracts import CONFIG_FILES, JSONL_FILES, LIMITS
+from app.course_packages.contracts import PACKAGE_MODELS, JSONL_FILES, LIMITS
 from app.course_packages.manifest import ManifestLoader, PackageError, unique_json_pairs, validate_package
 from app.course_packages.validation import validate_bundle
 from app.models import Question
@@ -39,18 +39,12 @@ def load_bundle(root):
     accepted = {
         "manifest.yaml",
         "curriculum/course.yaml",
-        "world/npcs.yaml",
         "assets/index.jsonl",
         "content/secrets/answers.jsonl",
         *JSONL_FILES.values(),
-        *CONFIG_FILES.values(),
     }
     patterns = (
         "curriculum/chapters/*/chapter.yaml",
-        "curriculum/chapters/*/quests/*.yaml",
-        "curriculum/chapters/*/flows/*.yaml",
-        "world/quests/*.yaml",
-        "world/flows/*.yaml",
         "content/activities/*.yaml",
         "content/questions/*.jsonl",
         "narrations/*/pages.jsonl",
@@ -61,33 +55,19 @@ def load_bundle(root):
     accepted.update(row["path"] for row in asset_rows)
     if any(path.relative_to(root).as_posix() not in accepted for path in root.rglob("*") if path.is_file()):
         raise PackageError("课程包含未识别配置文件，不能静默丢弃")
-    data = {kind: [] for kind in MODEL_NAMES.values()}
+    data = {MODEL_NAMES[model]: [] for model in PACKAGE_MODELS}
     data["chapter"] = [_load(path) for path in sorted(root.glob("curriculum/chapters/*/chapter.yaml"))]
-    for pattern, town_wide in (("curriculum/chapters/*/quests/*.yaml", False), ("world/quests/*.yaml", True)):
-        for path in sorted(root.glob(pattern)):
-            quest = _load(path)
-            if not isinstance(quest, dict) or "chapter_id" not in quest or (quest["chapter_id"] is None) != town_wide:
-                raise PackageError("任务目录与章节归属不一致")
-            data["quest"].append(quest)
-    data["story"] = [_load(path) for path in sorted(root.glob("curriculum/chapters/*/flows/*.yaml"))] + [
-        _load(path) for path in sorted(root.glob("world/flows/*.yaml"))
-    ]
     data["activity"] = [_load(path) for path in sorted(root.glob("content/activities/*.yaml"))]
-    data["npc"] = _load(root / "world/npcs.yaml")
     for model, path in JSONL_FILES.items():
         if model is Question:
             data["question"] = [row for file in sorted((root / "content/questions").glob("*.jsonl")) for row in _load(file, json_lines=True)]
-            for question in data["question"]:
-                if isinstance(question, dict):
-                    question.setdefault("interactive", None)  # Format 3 packages predate this optional field.
         else:
             data[MODEL_NAMES[model]] = _load(root / path, json_lines=True)
     secrets = _load(root / "content/secrets/answers.jsonl", json_lines=True)
     assets = asset_rows
-    config = {key: _load(root / path) for key, path in CONFIG_FILES.items()}
     course = _load(root / "curriculum/course.yaml")
     manifest = _load(root / "manifest.yaml")
-    bundle = {"data": data, "secrets": secrets, "assets": assets, "configuration": config, "course": course, "manifest": manifest}
+    bundle = {"data": data, "secrets": secrets, "assets": assets, "course": course, "manifest": manifest}
     from app.course_packages.narration_contract import directory
 
     bundle["narrations"] = []
@@ -99,7 +79,5 @@ def load_bundle(root):
         bundle["narrations"].extend(pages)
     if len(bundle["narrations"]) > 10000:
         raise PackageError("课程讲稿页数超限")
-    legacy_schedule = isinstance(course, dict) and course.get("schema_version") == 1
     validate_bundle(bundle, root)
-    bundle["legacy_schedule"] = legacy_schedule
     return bundle

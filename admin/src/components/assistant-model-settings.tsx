@@ -12,7 +12,7 @@ import { useDraft } from '@/lib/drafts';
 import { toast } from '@/components/ui/toast';
 
 type ModelSettings = {
-  revision: number; base_url: string; model: string; reasoning_effort: string;
+  enabled: boolean; revision: number; base_url: string; model: string; reasoning_effort: string;
   context_window: number; compression_threshold: number; output_tokens: number;
   model_calls: number; tool_calls: number; timeout_seconds: number; request_tokens: number;
   key_configured: boolean; key_mask: string; source: string; token_counting: string;
@@ -45,7 +45,7 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
     setBusy(true); setError('');
     try {
       const value = await api.put<ModelSettings>('/teacher/assistant/model', {
-        expected_revision: saved.revision, base_url: draft.base_url, model: draft.model, reasoning_effort: draft.reasoning_effort,
+        enabled: draft.enabled, expected_revision: saved.revision, base_url: draft.base_url, model: draft.model, reasoning_effort: draft.reasoning_effort,
         ...Object.fromEntries(numbers.map(([name]) => [name, draft[name]])), api_key: key || null, clear_key: clearKey,
       });
       setSaved(value); setDraft(value); setKey(''); setClearKey(false);
@@ -67,6 +67,7 @@ export function AssistantModelSettings({ onSaved, actionsTarget, active }: Setti
     <p className="hint">适用范围：全站学生答疑。由管理员维护，学习与练习共用此连接。保存设置不会调用模型。</p>
     <ErrorNotice message={error} />
     {draft && <fieldset disabled={busy} className="space-y-4">
+      <Label className="gap-2"><Checkbox checked={draft.enabled} onCheckedChange={v => setDraft({ ...draft, enabled: Boolean(v) })} />开放全平台学生答疑</Label>
       <div><Button variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void test()}><PlugZap />测试已保存连接</Button><p className="hint mt-2">测试会发送一次短请求；有未保存修改时，请先保存或取消。</p></div>
       <div className="grid items-start gap-4 md:grid-cols-2">
         <div className="field"><Label htmlFor="model-url">API 地址</Label><Input id="model-url" value={draft.base_url} onChange={e => setDraft({ ...draft, base_url: e.target.value })} /></div>

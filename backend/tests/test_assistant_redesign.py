@@ -14,7 +14,8 @@ from app.assistant_context import MessageInput, build_tools, state_text, system_
 from app.assistant_runtime import AgentFactory, complete_history, serialise, restore_messages
 from app.assistant_settings import DEFAULTS, configuration, ModelInput
 from app.integration_models import AssistantCall, AssistantSession, AssistantModelSettings
-from app.models import User, Npc, Submission
+from app.models import User, Submission
+from app.platform_roles import PlatformRole
 from conftest import make_question
 from test_assistant import create_session
 
@@ -178,8 +179,7 @@ def test_real_graph_persists_tool_chain_idempotency_and_role_snapshot(client, db
     assert model.calls == calls
     assert client.post(url, json={**body, "message": "不同内容"}, headers=student["headers"]).status_code == 409
     assert client.post(url, json={**body, "client_request_id": "two"}, headers=student["headers"]).status_code == 409
-    npc = db.scalar(select(Npc).where(Npc.name == "图书管理员"))
-    npc.persona = "新角色人设"
+    db.add(PlatformRole(key="librarian", revision=1, configuration={"persona": "新角色人设"}))
     db.commit()
     history = client.get(f"/api/assistant/sessions/{sid}", headers=student["headers"]).json()
     assert history["role_changed"] and history["revision"] == 1

@@ -20,7 +20,7 @@
         {
           "id": "mayor_hall",
           "object_name": "building_mayor_hall",
-          "label": "镇长大厅",
+          "label": "镇长办公室",
           "purpose": "小镇接待与议事的地方。",
           "status": "open",
           "anchor": {
@@ -55,8 +55,9 @@
           "id": "workshop",
           "object_name": "building_workshop",
           "label": "教学工坊",
-          "purpose": "教学工坊，室内暂未开放。",
-          "status": "closed",
+          "purpose": "教授在工坊指导本章的客观题练习。",
+          "status": "open",
+          "portal_id": "workshop_door",
           "anchor": {
             "x": 43,
             "y": 22
@@ -144,8 +145,13 @@
       ]
     },
     "mayor_hall": {
-      "label": "镇长大厅",
+      "label": "镇长办公室",
       "width": 18, "height": 14, "renderer": "tiled", "asset": "/assets/maps/mayor_hall.json",
+      "camera_mode": "centered", "buildings": []
+    },
+    "workshop": {
+      "label": "教学工坊",
+      "width": 18, "height": 14, "renderer": "tiled", "asset": "/assets/maps/workshop.json",
       "camera_mode": "centered", "buildings": []
     },
     "arena": {
@@ -200,13 +206,25 @@
   "portal_marker": {"asset": "/assets/pixel/ui/portal-chevron-up.png", "width": 8, "height": 8},
   "portals": [
     {
-      "id": "mayor_hall_door", "label": "镇长大厅入口", "action_label": "进入镇长大厅",
+      "id": "workshop_door", "label": "教学工坊入口", "action_label": "进入教学工坊",
+      "from": {"map_key":"town_hub","tile_x":43,"tile_y":22,"radius":2},
+      "to": {"map_key":"workshop","tile_x":9,"tile_y":11,"direction":"up"},
+      "required_flags": [], "blocked_message": "这座建筑暂未开放。", "building_id": "workshop"
+    },
+    {
+      "id": "workshop_exit", "label": "返回小镇", "action_label": "离开教学工坊，返回小镇",
+      "from": {"map_key":"workshop","tile_x":9,"tile_y":12,"radius":2},
+      "to": {"map_key":"town_hub","tile_x":43,"tile_y":22,"direction":"down"},
+      "required_flags": [], "blocked_message": ""
+    },
+    {
+      "id": "mayor_hall_door", "label": "镇长办公室入口", "action_label": "进入镇长办公室",
       "from": {"map_key": "town_hub", "tile_x": 24, "tile_y": 13, "radius": 2},
       "to": {"map_key": "mayor_hall", "tile_x": 9, "tile_y": 11, "direction": "up"},
       "required_flags": [], "blocked_message": "这座建筑暂未开放。", "building_id": "mayor_hall"
     },
     {
-      "id": "mayor_hall_exit", "label": "返回小镇", "action_label": "离开镇长大厅，返回小镇",
+      "id": "mayor_hall_exit", "label": "返回小镇", "action_label": "离开镇长办公室，返回小镇",
       "from": {"map_key": "mayor_hall", "tile_x": 9, "tile_y": 12, "radius": 2},
       "to": {"map_key": "town_hub", "tile_x": 24, "tile_y": 13, "direction": "down"},
       "required_flags": [], "blocked_message": ""

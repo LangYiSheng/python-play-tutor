@@ -12,22 +12,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KnowledgePointPicker } from "@/features/curriculum/knowledge-point-picker";
-import type { Activity, Course, Material, QuestionCandidate } from "@/lib/types";
+import type { Course, QuestionCandidate } from "@/lib/types";
 import { PaperEditor } from "./paper-editor";
 import { EditorTabs } from "@/components/editor-tabs";
-import { ResourceEditor } from "./resource-editor";
 import { PracticeGoalsEditor } from "./practice-goals-editor";
 import type { useActivityEditor } from "./use-editor";
 export function ActivityDialog({
   editor,
   course,
-  materials,
   questions,
   candidates,
 }: {
   editor: ReturnType<typeof useActivityEditor>;
   course: { data: Course | null };
-  materials: { data: Material[] | null };
   questions: { data: QuestionCandidate[] | null };
   candidates: QuestionCandidate[];
 }) {
@@ -40,17 +37,9 @@ export function ActivityDialog({
     setTitle,
     id,
     chapter,
-    setChapter,
     kind,
-    setKind,
-    resources,
-    setResources,
     pointIds,
     setPointIds,
-    npc,
-    setNpc,
-    assistant,
-    setAssistant,
     selected,
     setSelected,
     error,
@@ -68,7 +57,7 @@ export function ActivityDialog({
       <DialogContent className="editor-dialog tabbed-editor activity-editor">
         <DialogHeader>
           <DialogTitle>
-            {editing ? "编辑活动" : "新增活动"}
+            {editing ? "编辑" : "新增"}{kind === "assessment" ? "测验" : editor.practiceKind === "programming" ? "编程题练习" : "客观题练习"}
           </DialogTitle>
           <DialogDescription>
             完成条件由服务端依据真实学习记录判定。
@@ -93,50 +82,12 @@ export function ActivityDialog({
                     onChange={(e) => setTitle(e.target.value)}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="field">
-                    <Label htmlFor="a-chapter">章节</Label>
-                    <SelectField
-                      id="a-chapter"
-                      disabled={Boolean(editing)}
-                      value={chapter}
-                      onValueChange={(value) => {
-                        setChapter(Number(value));
-                        setSelected([]);
-                        setResources([]);
-                        editor.setRules({ ...editor.rules, goals: [] });
-                        setDirty(true);
-                      }}
-                    >
-                      {course.data?.chapters.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.title}
-                        </option>
-                      ))}
-                    </SelectField>
-                  </div>
-                  <div className="field">
-                    <Label htmlFor="a-kind">类型</Label>
-                    <SelectField
-                      id="a-kind"
-                      disabled={Boolean(editing)}
-                      value={kind}
-                      onValueChange={(value) => {
-                        setKind(value as Activity["kind"]);
-                        if (value === "assessment") setSelected(ids => ids.filter(id => questions.data?.find(q => q.id === id)?.kind !== "interactive"));
-                        setResources([]);
-                        setDirty(true);
-                      }}
-                    >
-                      <option value="lesson">阅读</option>
-                      {kind === "reading" && (
-                        <option value="reading">阅读</option>
-                      )}
-                      <option value="practice">练习</option>
-                      <option value="assessment">测验</option>
-                    </SelectField>
-                  </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="field">显示顺序<Input type="number" min={0} max={100000} required value={editor.order} onChange={e => editor.setOrder(Number(e.target.value))}/></label>
+                  <label className="field">发布状态<SelectField value={editor.published ? "published" : "draft"} onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
+                    <option value="published">已发布</option><option value="draft">草稿</option></SelectField></label>
                 </div>
+                {kind === "practice" && <label className="flex gap-2"><input type="checkbox" checked={editor.required} onChange={e => editor.setRequired(e.target.checked)}/>必做练习</label>}
                 {kind === "practice" && (
                   <fieldset className="field">
                     <legend>出题方式</legend>
@@ -157,62 +108,22 @@ export function ActivityDialog({
                   </fieldset>
                 )}
               </> },
-              ...(kind === "reading" || kind === "lesson" ? [{label: "资料与阅读要求", content: <ResourceEditor courseId={editor.courseId} resources={resources} materials={materials.data ?? []} chapterId={chapter}
-                    onChange={(value) => { setResources(value); setDirty(true); }} />}] : []),
               ...(editor.goalPractice ? [{label: "知识点目标", content: <>
-                    <PracticeGoalsEditor rules={editor.rules}
+                    <PracticeGoalsEditor practiceKind={editor.practiceKind} rules={editor.rules}
                       points={(course.data?.knowledge_points ?? []).filter(point => point.chapter_id === chapter)}
                       candidates={questions.data ? candidates : null}
                       onChange={value => { editor.setRules(value); setDirty(true); }} />
-                    <div className="field">
-                      <Label htmlFor="practice-status">发布状态</Label>
-                      <SelectField id="practice-status" value={editor.published ? "published" : "draft"}
-                        onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
-                        <option value="published">已发布</option>
-                        <option value="draft">草稿</option>
-                      </SelectField>
-                      <p className="hint">发布时会按整场练习检查题量，多个知识点共享的题目只分配一次。</p>
-                    </div>
               </>}] : []),
               ...(kind === "assessment" || (kind === "practice" && !editor.goalPractice) ?
                 ["按知识点选题", "题目顺序"].map(label => ({ label, content: <PaperEditor order={label === "题目顺序"} assessment={kind === "assessment"}
                   candidates={candidates} questions={questions.data ?? []} points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
                   selected={selected} onChange={ids => { setSelected(ids); setDirty(true); }} /> })) : []),
-              ...(kind !== "assessment" ? [{ label: "答疑设置", content: <>
-                <div className="field">
-                  <Label htmlFor="a-npc">答疑角色</Label>
-                  <SelectField
-                    id="a-npc"
-                    placeholder="使用课程默认角色"
-                    value={npc}
-                    onValueChange={(value) => {
-                      setNpc(value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">使用课程默认角色</option>
-                    {course.data?.npcs.map((n) => (
-                      <option key={n.key} value={n.key}>
-                        {n.name}
-                      </option>
-                    ))}
-                  </SelectField>
-                </div>
-                  <label className="flex items-center gap-2 mb-4">
-                    <input
-                      type="checkbox"
-                      checked={assistant}
-                      onChange={(e) => setAssistant(e.target.checked)}
-                    />
-                    允许学生主动向助教提问
-                  </label>
-              </> }] : []),
               { label: "内容关联", content: editor.goalPractice ? <div className="space-y-2"><strong>关联知识点</strong>
                 <p>{editor.rules.goals.map(g => course.data?.knowledge_points.find(p => p.id === g.knowledge_point_id)?.title).join("、") || "尚未选择"}</p>
                 <p className="hint">在「知识点目标」中调整本章练习范围。</p></div> : <KnowledgePointPicker
                   key={id}
-                  chapters={course.data?.chapters ?? []}
-                  points={course.data?.knowledge_points ?? []}
+                  chapters={(course.data?.chapters ?? []).filter(c => c.id === chapter)}
+                  points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
                   selected={pointIds}
                   initialChapterId={chapter}
                   onChange={(ids) => {

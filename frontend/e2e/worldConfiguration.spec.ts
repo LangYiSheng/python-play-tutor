@@ -315,7 +315,7 @@ test("map preview, filters, WASD, library doors and cross-map guidance share one
   await expect(page.locator(".toast-layer p")).toHaveCount(0, { timeout: 8_000 });
   await checkCanvas();
   await page.screenshot({ path: testInfo.outputPath("library-exit-marker.png") });
-  // A different real bookcase must open the same reading library, far from the old western point.
+  // A distant bookcase leads to the same librarian visit as the HUD shortcut.
   const libraryArt = await (await request.get(definition.maps.library!.asset!)).json() as TiledMap;
   const cabinets = libraryArt.layers.flatMap(layer => layer.objects ?? []).filter(object =>
     object.properties?.some(property => property.name === "interaction_id" && property.value === "library_shelf"),
@@ -326,18 +326,16 @@ test("map preview, filters, WASD, library doors and cross-map guidance share one
   await clickVisibleWorldPoint(page, definition.maps.library!, (await world()).player, {
     x: eastCabinet.x + eastCabinet.width / 2, y: eastCabinet.y + eastCabinet.height / 2,
   });
-  // 迁移来的课程（CI 夹具也是这种）里书架流程就是 start → open_workspace → end，
-  // 没有开场对白。断言“先弹出对白”会让 CI 永远红：对白是由内容作者加在流程里的，
-  // 属于内容能力，不是这个交互的固有行为。这里只验本 spec 关心的事：
-  // 换一个远离出生点的真书架，同样能走到并打开同一个阅读库。
+  const librarianDialogue = page.getByRole("dialog", { name: "角色对白" });
+  await expect(librarianDialogue).toBeVisible({ timeout: 45_000 });
+  await librarianDialogue.getByRole("button", { name: /查看学习资料/ }).click();
   const readingLibrary = page.getByRole("dialog", { name: "游戏工作区", exact: true });
   await expect(readingLibrary).toBeVisible({ timeout: 20_000 });
   await expect(readingLibrary.getByRole("heading", { name: "小镇图书馆", exact: true })).toBeVisible();
   await expect(readingLibrary.getByRole("button", { name: /阅读$/ }).first()).toBeVisible();
-  const atShelf = (await world()).player;
-  expect(Math.abs(atShelf.tile_x - 4) + Math.abs(atShelf.tile_y - 4)).toBeGreaterThan(2);
   await readingLibrary.getByRole("button", { name: "关闭当前工作区", exact: true }).click();
-  await expect(page.locator(".world-hint")).toHaveText("E · 阅读");
+  await librarianDialogue.getByRole("button", { name: /结束交谈/ }).click();
+  await expect(page.locator(".world-hint")).toHaveText("E · 交谈");
   const indoorNavigation = await openMap(page);
   await expect(indoorNavigation.getByLabel("玩家当前位置", { exact: true })).toBeVisible();
   await expect(indoorNavigation.getByRole("button", { name: "选择图书馆书架", exact: true })).toBeVisible();

@@ -1,4 +1,4 @@
-import { provisionStudent } from "./studentAccount";
+import { provisionStudent, visitLibrary } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type APIResponse, type ElementHandle, type Locator, type Page, type Response, type TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -345,7 +345,7 @@ test("seven game workspaces share the real shell, controls and readable 100–20
   await expect(panel(page)).toBeHidden();
   await sameCanvas(page, canvas);
 
-  await dock.getByRole("button", { name: "学习资料", exact: true }).click();
+  await visitLibrary(page);
   await expect(panel(page).locator(".library-card")).not.toHaveCount(0);
   await shell(page, "小镇图书馆", town, baseline);
   await panel(page).getByRole("navigation", { name: "资料章节" }).getByRole("button", { name: /第一章/ }).click();

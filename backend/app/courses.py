@@ -1,30 +1,24 @@
 from app.course_content.presentation import progress_payload
 from app.materials.presentation import material_payload
 from app.course_content.presentation import public_question
-from app.course_content.learning import reading_completed
 from app.course_content.resources import learning_materials, resource_payload
 from app.course_content.learning import learning_questions
 from app.course_content.access import authorize_material
 from app.course_content.access import authorized_material_chapters
 from app.course_content.access import authorize_activity
 from app.course_content.access import authorize_classroom
-from .course_assistant import activity_npc
+from .course_assistant import activity_npc, policy
 from .characters import presentation
 from typing import Annotated
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .auth import current_user
 from .db import get_db
 from .course_scope import course_clause
-from .learning_rules import record_video, video_duration, video_state_for_material
 from .models import (
-    ActivityProgress,
     Chapter,
     Classroom,
-    LearningRecord,
     KnowledgePoint,
     Material,
     Question,
@@ -32,28 +26,6 @@ from .models import (
 )
 
 router = APIRouter(tags=["courses"])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @router.get("/activities/{activity_id}")
@@ -108,7 +80,7 @@ def get_activity(
         "kind": activity.kind,
         "npc_key": activity.npc_key,
         "role": presentation(db, classroom_id, activity_npc(db, classroom_id, activity)),
-        "assistant_allowed": activity.assistant_allowed,
+        "assistant_allowed": activity.kind != "assessment" and policy(db, classroom_id)["enabled"],
         "progress": progress_payload(db, user, classroom_id, activity),
         "knowledge_point_ids": activity.content.get("knowledge_point_ids", []),
         "knowledge_points": points,
@@ -124,158 +96,12 @@ def get_activity(
     return payload
 
 
-
-
-
-
-
-
-class ProgressInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    classroom_id: int
-    material_id: int = Field(strict=True, ge=1)
-    page_no: int = Field(ge=1)
-
-
 @router.get("/activities/{activity_id}/progress")
 def get_progress(
     activity_id: str, classroom_id: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(current_user)]
 ):
     activity = authorize_activity(db, user, classroom_id, activity_id)
     return {**progress_payload(db, user, classroom_id, activity), "participation_only": activity.kind in {"lesson", "reading"}}
-
-
-@router.post("/activities/{activity_id}/progress")
-def save_progress(activity_id: str, body: ProgressInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(current_user)]):
-    activity = authorize_activity(db, user, body.classroom_id, activity_id)
-    if user.role != "student":
-        raise HTTPException(403, "教师预览不能写入学生学习进度")
-    if activity.kind not in {"lesson", "reading"} or not activity.resources:
-        raise HTTPException(422, "此活动不支持阅读进度")
-    materials = learning_materials(db, activity)
-    if body.material_id not in materials:
-        raise HTTPException(409, "资料不属于当前活动，请重新打开活动")
-    material = authorize_material(db, user, body.classroom_id, body.material_id)
-    payload = material_payload(db, material)
-    if payload["status"] != "ready":
-        raise HTTPException(409, "资料尚未就绪")
-    page = next((item for item in payload["pages"] if item["page_no"] == body.page_no), None)
-    if not page:
-        raise HTTPException(422, "资料中不存在此页")
-    db.execute(select(User.id).where(User.id == user.id).with_for_update())
-    progress = db.get(ActivityProgress, (user.id, body.classroom_id, activity.id))
-    if not progress:
-        progress = ActivityProgress(user_id=user.id, classroom_id=body.classroom_id, activity_id=activity.id, visited_pages=[])
-        db.add(progress)
-    media = dict(progress.media_progress or {})
-    visited = media.get("reading_pages", {}).get(str(material.id), [])
-    first_visit = page["id"] not in visited
-    media["reading_pages"] = {**media.get("reading_pages", {}), str(material.id): sorted(set(visited) | {page["id"]})}
-    media["playing"] = False
-    media["selected_material_id"] = material.id
-    media["reading_positions"] = {**media.get("reading_positions", {}), str(material.id): body.page_no}
-    progress.media_progress = media
-    progress.page_no = body.page_no
-    progress.visited_pages = sorted(set(progress.visited_pages) | {page["id"]})
-    progress.completed = reading_completed(activity, progress, materials)
-    if first_visit:
-        db.add(LearningRecord(user_id=user.id, classroom_id=body.classroom_id, activity_id=activity.id,
-                              kind="participation", data={"material_id": material.id, "page_no": body.page_no, "page_id": page["id"]}))
-    db.commit()
-    return {**progress_payload(db, user, body.classroom_id, activity), "participation_only": True}
-
-
-class VideoProgressInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    classroom_id: int
-    material_id: int = Field(strict=True, ge=1)
-    playback_session_id: UUID
-    sequence: int = Field(strict=True, ge=1, le=2**31 - 1)
-    position_seconds: float = Field(strict=True, ge=0, le=86400, allow_inf_nan=False)
-    playing: bool = Field(strict=True)
-    playback_rate: float = Field(default=1.0, strict=True, ge=.25, le=4, allow_inf_nan=False)
-
-
-@router.post("/activities/{activity_id}/video-progress")
-def save_video_progress(activity_id: str, body: VideoProgressInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(current_user)]):
-    activity = authorize_activity(db, user, body.classroom_id, activity_id)
-    if user.role != "student":
-        raise HTTPException(403, "教师预览不能写入学生学习进度")
-    if activity.kind not in {"lesson", "reading"} or not activity.resources:
-        raise HTTPException(422, "此活动不支持视频进度")
-    materials = learning_materials(db, activity)
-    if body.material_id not in materials:
-        raise HTTPException(409, "资料不属于当前活动，请重新打开活动")
-    material = authorize_material(db, user, body.classroom_id, body.material_id)
-    duration = video_duration(material)
-    if material.status != "ready" or not material.storage_key:
-        raise HTTPException(409, "视频尚未就绪")
-    if material.kind != "video" or duration is None:
-        raise HTTPException(422, "此活动没有可记录的可靠时长视频")
-    if body.position_seconds > duration:
-        raise HTTPException(422, "播放位置超出视频时长")
-    db.execute(select(User.id).where(User.id == user.id).with_for_update())
-    progress = db.get(ActivityProgress, (user.id, body.classroom_id, activity.id))
-    if not progress:
-        progress = ActivityProgress(user_id=user.id, classroom_id=body.classroom_id, activity_id=activity.id, visited_pages=[], media_progress={})
-        db.add(progress)
-    try:
-        from .learning_rules import ensure_video_switch
-        ensure_video_switch(progress.media_progress or {}, material.id)
-        state = video_state_for_material(progress.media_progress or {}, material.id)
-        media, changed = record_video(state, str(body.playback_session_id), body.sequence, body.position_seconds, body.playing, duration, body.playback_rate)
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
-    if changed:
-        first = (progress.media_progress or {}).get("material_id") != material.id
-        media["selected_material_id"] = material.id
-        progress.media_progress = media
-        progress.completed = reading_completed(activity, progress, materials)
-        if first:
-            db.add(LearningRecord(user_id=user.id, classroom_id=body.classroom_id, activity_id=activity.id,
-                                  kind="participation", data={"video": True, "material_id": material.id}))
-        db.commit()
-    return {**progress_payload(db, user, body.classroom_id, activity), "participation_only": True}
-
-
-class ParticipationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    classroom_id: int
-    material_id: int | None = Field(default=None, strict=True, ge=1)
-    page_no: int | None = Field(default=None, ge=1)
-    video_time: float | None = Field(default=None, ge=0)
-
-
-@router.post("/activities/{activity_id}/participation")
-def participation(activity_id: str, body: ParticipationInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(current_user)]):
-    activity = authorize_activity(db, user, body.classroom_id, activity_id)
-    if activity.kind not in {"lesson", "reading"}:
-        raise HTTPException(422, "此活动不支持阅读记录")
-    if user.role != "student":
-        raise HTTPException(403, "教师预览不能写入学生学习记录")
-    if activity.resources and not progress_payload(db, user, body.classroom_id, activity)["completed"]:
-        raise HTTPException(422, "请先完成当前活动的材料参与要求")
-    if body.material_id:
-        if body.material_id not in {row.material_id for row in activity.resources}:
-            raise HTTPException(422, "资料不属于当前活动")
-        material = authorize_material(db, user, body.classroom_id, body.material_id)
-        payload = material_payload(db, material)
-        if payload["status"] != "ready":
-            raise HTTPException(409, "资料尚未就绪")
-        if body.page_no is not None and body.page_no not in {p["page_no"] for p in payload["pages"]}:
-            raise HTTPException(422, "资料中不存在此页")
-        if body.video_time is not None and material.kind != "video":
-            raise HTTPException(422, "此资料不是视频")
-    record = LearningRecord(
-        user_id=user.id,
-        classroom_id=body.classroom_id,
-        activity_id=activity.id,
-        kind="participation",
-        data=body.model_dump(exclude={"classroom_id"}, exclude_none=True),
-    )
-    db.add(record)
-    db.commit()
-    return {"record_id": record.id, "participation_only": True}
 
 
 @router.get("/materials/{material_id}")

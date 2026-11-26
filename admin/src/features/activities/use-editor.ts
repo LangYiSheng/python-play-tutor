@@ -1,12 +1,13 @@
 import { api, errorMessage, scoped } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
 import { newId } from "@/lib/id";
-import type { Activity, ActivityResource, Course, PracticeRules } from "@/lib/types";
+import type { Activity, Course, PracticeRules } from "@/lib/types";
 import { useState, type FormEvent } from "react";
 export function useActivityEditor(
   courseId: number,
   onSaved: () => void,
   course: Course | null,
+  chapterId: number,
 ) {
   const [editing, setEditing] = useState<Activity | null>(null),
     [open, setOpen] = useState(false),
@@ -14,33 +15,33 @@ export function useActivityEditor(
     [title, setTitle] = useState(""),
     [id, setId] = useState(""),
     [chapter, setChapter] = useState(0),
-    [kind, setKind] = useState<Activity["kind"]>("lesson"),
-    [resources, setResources] = useState<ActivityResource[]>([]),
+    [kind, setKind] = useState<Activity["kind"]>("practice"),
     [pointIds, setPointIds] = useState<number[]>([]),
     [rules, setRules] = useState<PracticeRules>({ goals: [] }),
     [practiceMode, setPracticeMode] = useState<"fixed" | "goals">("goals"),
     [published, setPublished] = useState(true),
-    [npc, setNpc] = useState(""),
-    [assistant, setAssistant] = useState(true),
+    [practiceKind, setPracticeKind] = useState<"objective" | "programming">("objective"),
+    [required, setRequired] = useState(true),
+    [order, setOrder] = useState(1),
     [selected, setSelected] = useState<string[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false);
   useDraft(open && dirty);
   const goalPractice = kind === "practice" && practiceMode === "goals";
-  function edit(a: Activity | null, pick = false) {
+  function edit(a: Activity | null, pick = false, category: "objective" | "programming" | "assessment" = "objective") {
     setEditing(a);
     setId(a?.id ?? newId("activity"));
     setTitle(a?.title ?? "");
-    setChapter(a?.chapter_id ?? course?.chapters[0]?.id ?? 0);
-    setKind(a?.kind ?? "lesson");
-    setResources(structuredClone(a?.resources ?? []));
+    setChapter(chapterId);
+    setKind(a?.kind ?? (category === "assessment" ? "assessment" : "practice"));
     setPointIds(a?.knowledge_point_ids ?? []);
     setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
     setPracticeMode(a?.kind === "practice" && !a.practice_rules ? "fixed" : "goals");
     setPublished(a?.published ?? true);
-    setNpc(a?.npc_key ?? "");
-    setAssistant(a?.assistant_allowed ?? true);
+    setPracticeKind(a?.practice_kind ?? (category === "programming" ? "programming" : "objective"));
+    setRequired(a?.required ?? true);
+    setOrder(a?.order_index ?? 1 + Math.max(0, ...(course?.activities ?? []).filter(item => item.chapter_id === chapterId).map(item => item.order_index ?? 0)));
     setSelected(a?.question_ids ?? []);
     setQuestionMode(pick);
     setError("");
@@ -67,9 +68,8 @@ export function useActivityEditor(
     try {
       const body = {
         title,
-        npc_key: npc || null,
-        assistant_allowed: kind === "assessment" ? false : assistant,
-        resources,
+        ...(kind === "practice" && {practice_kind: practiceKind}),
+        published, required: kind === "assessment" || required, order_index: order,
         ...((kind === "assessment" || (kind === "practice" && !goalPractice)) &&
           (!editing || selected.length !== editing.question_ids.length || selected.some((id,i) => id !== editing.question_ids[i])) &&
           { question_ids: selected }),
@@ -117,8 +117,6 @@ export function useActivityEditor(
     setChapter,
     kind,
     setKind,
-    resources,
-    setResources,
     pointIds,
     setPointIds,
     goalPractice,
@@ -128,10 +126,7 @@ export function useActivityEditor(
     setRules,
     published,
     setPublished,
-    npc,
-    setNpc,
-    assistant,
-    setAssistant,
+    practiceKind, required, setRequired, order, setOrder,
     selected,
     setSelected,
     error,

@@ -17,16 +17,17 @@ from .integration_models import AssistantModelSettings
 from .models import User
 
 router = APIRouter(prefix="/teacher/assistant/model", tags=["assistant-settings"])
-DEFAULTS = {"context_window": 32768, "compression_threshold": 24576, "model_calls": 6,
+DEFAULTS = {"enabled": True, "context_window": 32768, "compression_threshold": 24576, "model_calls": 6,
             "tool_calls": 12, "output_tokens": 2048, "timeout_seconds": 120, "request_tokens": 262144}
 CAPS = {"model_calls": 20, "tool_calls": 40, "output_tokens": 8192, "timeout_seconds": 300, "request_tokens": 2000000}
 
 
 class ModelInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
     expected_revision: int = Field(ge=0)
     base_url: str = Field(max_length=500)
-    model: str = Field(min_length=1, max_length=200)
+    model: str = Field(max_length=200)
     api_key: str | None = Field(default=None, max_length=4096)
     clear_key: bool = False
     reasoning_effort: Literal["", "none", "minimal", "low", "medium", "high"] = ""

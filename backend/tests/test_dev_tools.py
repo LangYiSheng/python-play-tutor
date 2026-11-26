@@ -28,6 +28,7 @@ from app.models import (
     CourseInstance,
     LearningEvent,
     LearningRecord,
+    MaterialParticipation,
     Membership,
     NodeState,
     PlayerPosition,
@@ -41,7 +42,7 @@ from app.models import (
 from app.world_config import load_world_config
 
 RESET_PATH = "/api/dev/progress/reset"
-RESET_MODELS = (LearningEvent, NodeState, PlayerQuest, StorySession, ActivityProgress, LearningRecord,
+RESET_MODELS = (LearningEvent, NodeState, PlayerQuest, StorySession, MaterialParticipation, ActivityProgress, LearningRecord,
                 SubmissionPayload, Submission, WorldFlag, PlayerPosition, AssessmentAttempt, BuildingUnlock, PracticeSession)
 
 
@@ -82,6 +83,7 @@ def add_progress(db, user_id, classroom_id):
                       node_id="welcome", evidence={}),
         StorySession(user_id=user_id, classroom_id=classroom_id, story_id="first-steps", npc_key="mayor_py",
                      node_id="end", status="ended"),
+        MaterialParticipation(user_id=user_id, classroom_id=classroom_id, chapter_id=179, material_id=186, evidence={"pages": [10723]}),
         ActivityProgress(user_id=user_id, classroom_id=classroom_id, activity_id="ch1-lesson", visited_pages=[10723], completed=True),
         LearningRecord(user_id=user_id, classroom_id=classroom_id, activity_id="ch1-lesson", data={"test": True}),
         SubmissionPayload(submission_id=submission.id, cases=[], public_count=0),
@@ -158,10 +160,11 @@ def test_reset_is_atomic_scoped_and_repeatable(dev_client, db, student, teacher,
     repeated = dev_client.post(RESET_PATH, json={"classroom_id": cid, "confirmed": True}, headers=student["headers"])
     assert repeated.status_code == 200 and all(value == 0 for value in repeated.json()["deleted"].values())
 
-    # The reset does not recreate tasks; the next ordinary world read does.
+    # Fixed NPCs remain available after clearing a save.
     world = dev_client.get(f"/api/world?classroom_id={cid}", headers=student["headers"]).json()
     assert world["player"] == load_world_config()["default_spawn"] and world["flags"] == []
-    assert world["quests"] and all(quest["status"] == "active" for quest in world["quests"])
+    assert {npc["key"] for npc in world["npcs"]} == {"librarian", "professor", "coach", "mayor"}
+    assert counts(db) == {model.__tablename__: 2 for model in RESET_MODELS}
     assert dev_client.get("/api/auth/me", headers=student["headers"]).status_code == 200
 
 

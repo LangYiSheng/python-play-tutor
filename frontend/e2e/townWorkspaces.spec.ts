@@ -1,4 +1,4 @@
-import { provisionStudent } from "./studentAccount";
+import { provisionStudent, visitLibrary } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect, type APIRequestContext, type Page, type APIResponse, type TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -126,7 +126,7 @@ test("town library uses a centered workspace and preserves chapter search and fi
   test.setTimeout(180_000);
   const setup = await prepare(request, "图书馆");
   await enter(page, setup.identity, setup.first);
-  await page.getByRole("button", { name: "学习资料", exact: true }).click();
+  await visitLibrary(page);
   const panel = workspace(page);
   await expect(panel.getByRole("heading", { level: 2, name: "小镇图书馆", exact: true })).toBeVisible();
   await expect(panel.locator("h2")).toHaveCount(1);

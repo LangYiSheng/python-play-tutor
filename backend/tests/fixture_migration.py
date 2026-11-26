@@ -11,7 +11,7 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.course_instances import classroom_course, content_mapping
+from fixture_instances import classroom_course, content_mapping
 from fixture_instances import CourseCloneError, clone_current_course
 from app.models import (
     ActivityProgress, AssessmentAttempt, Chapter, ChapterRelease, Classroom, LearningRecord,

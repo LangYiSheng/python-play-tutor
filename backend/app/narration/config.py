@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .contracts import AuthoringSettings
 
 def settings(db: Session | None = None) -> AuthoringSettings:
-    from ..service_settings import configuration
+    from ..service_connections import configuration
     return cast(AuthoringSettings, configuration("authoring", db))
 
 

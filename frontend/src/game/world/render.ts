@@ -82,30 +82,13 @@ export function buildWorld(
     const building = config.buildings.find(
       (item) => item.object_name === prop.name,
     );
-    const authored = state.runtime?.interactions?.find(
-      (item) =>
-        item.map_key === scene.mapKey &&
-        "object_id" in item.target &&
-        [
-          prop.name,
-          prop.interactionId,
-          building?.id,
-          building?.portal_id,
-        ].includes(item.target.object_id),
-    );
-    if (authored) {
-      image.setInteractive({ useHandCursor: true });
-      image.on(
-        "pointerdown",
-        fromWorldCanvas(scene.game.canvas, () => scene.approach(authored.id)),
-      );
-    } else if (building) {
+    if (building) {
       image.setInteractive({ useHandCursor: true });
       image.on(
         "pointerdown",
         fromWorldCanvas(scene.game.canvas, () => scene.approach(building.id)),
       );
-    } else if (prop.interactionId && !state.runtime?.interactions) {
+    } else if (prop.interactionId === "library_shelf") {
       image.setInteractive({ useHandCursor: true });
       image.on(
         "pointerdown",
@@ -133,36 +116,10 @@ export function buildWorld(
       label.on(
         "pointerdown",
         fromWorldCanvas(scene.game.canvas, () =>
-          scene.approach(authored?.id ?? building.id),
+          scene.approach(building.id),
         ),
       );
     }
-  }
-  for (const interaction of state.runtime?.interactions ?? []) {
-    if (
-      interaction.map_key !== scene.mapKey ||
-      !("region" in interaction.target)
-    )
-      continue;
-    const region = interaction.target.region;
-    scene.add
-      .rectangle(
-        region.x * 16,
-        region.y * 16,
-        region.width * 16,
-        region.height * 16,
-        0,
-        0,
-      )
-      .setOrigin(0)
-      .setDepth(-1)
-      .setInteractive({ useHandCursor: true })
-      .on(
-        "pointerdown",
-        fromWorldCanvas(scene.game.canvas, () =>
-          scene.approach(interaction.id),
-        ),
-      );
   }
   if (worldConfig.portal_marker && scene.textures.exists("portal-marker")) {
     for (const target of scene.objects.filter((item) => item.portal)) {

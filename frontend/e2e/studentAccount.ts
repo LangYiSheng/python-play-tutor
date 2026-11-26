@@ -29,3 +29,10 @@ export async function signInStudent(page: Page, { student_id, password }: { stud
   await page.getByLabel("密码", { exact: true }).fill(password);
   await page.getByRole("button", { name: "进入小镇", exact: true }).click();
 }
+
+export async function visitLibrary(page: Page) {
+  await page.locator(".hud-dock").getByRole("button", { name: "去图书馆", exact: true }).click();
+  const dialogue = page.getByRole("dialog", { name: "角色对白" });
+  await expect(dialogue).toBeVisible({ timeout: 45_000 });
+  await dialogue.getByRole("button", { name: /查看学习资料/ }).click();
+}

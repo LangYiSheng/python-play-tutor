@@ -4,26 +4,21 @@ import {
   migrateReadingPosition,
   pdfResumePage,
 } from "../../shared/readingPosition";
-import type { Activity, ActivityProgress, Material } from "../../shared/types";
+import type { Material } from "../../shared/types";
 
 interface LessonSourceContext {
   userId: number | undefined;
   classroomId: number | null;
   currentOwner: () => boolean;
-  activityId: () => string;
-  materialId: () => number | undefined;
+  materialId: () => number;
   initialPage: () => number | undefined;
-  fetchActivity: (id: string) => Promise<Activity>;
   beforeLoad: () => void;
-  prepareVideo: (materialId: number) => void;
-  ready: () => void;
+  ready?: () => void;
 }
 
 /** Owns the current reading source, resume position and private media lifetime. */
 export function useLessonSource(context: LessonSourceContext) {
-  const activity = ref<Activity>();
   const material = ref<Material>();
-  const progress = ref<ActivityProgress>();
   const loading = ref(true);
   const error = ref("");
   const pageIndex = ref(0);
@@ -39,7 +34,7 @@ export function useLessonSource(context: LessonSourceContext) {
   const currentPage = computed(() => material.value?.pages[pageIndex.value]);
   const readingKey = computed(
     () =>
-      `read:${context.userId}:${context.classroomId}:${material.value ? `material-${material.value.id}` : context.activityId()}`,
+      `read:${context.userId}:${context.classroomId}:${`material-${material.value?.id ?? context.materialId()}`}`,
   );
   const fileUrl = computed(() =>
     material.value
@@ -75,7 +70,7 @@ export function useLessonSource(context: LessonSourceContext) {
         material.value.id,
       );
     const saved = Number(sessionStorage.getItem(readingKey.value) ?? 0);
-    const resumePage = (initial ? context.initialPage() : undefined) ?? progress.value?.resources?.find(row => row.material_id === material.value?.id)?.page_no;
+    const resumePage = (initial ? context.initialPage() : undefined);
     const requested = resumePage
       ? (material.value?.pages.findIndex(
           (page) => page.page_no === resumePage,
@@ -95,7 +90,6 @@ export function useLessonSource(context: LessonSourceContext) {
 
   async function loadMedia(request: number) {
     if (material.value?.kind !== "video") return;
-    context.prepareVideo(material.value.id);
     mediaController = new AbortController();
     try {
       const blob = await api.blob(fileUrl.value, mediaController.signal);
@@ -115,27 +109,9 @@ export function useLessonSource(context: LessonSourceContext) {
     error.value = "";
     releaseMedia();
     try {
-      const materialId = context.materialId();
-      if (materialId) {
-        const loaded = await api.get<Material>(
-          `/materials/${materialId}?classroom_id=${context.classroomId}`,
-        );
-        if (!current(request)) return;
-        activity.value = undefined;
-        material.value = loaded;
-      } else {
-        const loaded = await context.fetchActivity(context.activityId());
-        if (!current(request)) return;
-        activity.value = loaded;
-        material.value = (loaded.resources.find(row => row.material_id === loaded.progress?.material_id) ?? loaded.resources[0])?.material;
-      }
-      progress.value = activity.value?.progress;
-      if (activity.value?.resources.length) {
-        const saved = await api.get<ActivityProgress>(`/activities/${activity.value.id}/progress?classroom_id=${context.classroomId}`);
-        if (!current(request)) return;
-        progress.value = saved;
-        material.value = (activity.value.resources.find(row => row.material_id === saved.material_id) ?? activity.value.resources[0])?.material;
-      }
+      const loaded = await api.get<Material>(`/materials/${context.materialId()}?classroom_id=${context.classroomId}`);
+      if (!current(request)) return;
+      material.value = loaded;
       restorePosition(true);
       await loadMedia(request);
     } catch (cause) {
@@ -144,23 +120,9 @@ export function useLessonSource(context: LessonSourceContext) {
     } finally {
       if (current(request)) {
         loading.value = false;
-        context.ready();
+        context.ready?.();
       }
     }
-  }
-
-  async function switchMaterial(id: number) {
-    const resource = activity.value?.resources.find(row => row.material_id === id);
-    if (!resource || resource.material_id === material.value?.id || !currentOwner()) return;
-    const request = ++generation;
-    citationGeneration++;
-    context.beforeLoad();
-    loading.value = true;
-    releaseMedia();
-    material.value = resource.material;
-    restorePosition();
-    await loadMedia(request);
-    if (current(request)) { loading.value = false; context.ready(); }
   }
 
   async function showCitation(id: number, page: number) {
@@ -187,9 +149,7 @@ export function useLessonSource(context: LessonSourceContext) {
     releaseMedia();
   });
   return {
-    activity,
     material,
-    progress,
     loading,
     error,
     pageIndex,
@@ -204,6 +164,5 @@ export function useLessonSource(context: LessonSourceContext) {
     load,
     selectPage,
     showCitation,
-    switchMaterial,
   };
 }

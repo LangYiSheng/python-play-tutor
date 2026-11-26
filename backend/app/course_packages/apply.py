@@ -7,9 +7,10 @@ from uuid import uuid4
 
 from sqlalchemy import delete, select
 
-from app.course_content.snapshot import FIELDS, content_rows, row_key, stable_id
+from app.course_packages.snapshot import FIELDS, content_rows, stable_id
 from app.course_exchange_models import CoursePackageState
-from app.course_instances import CONTENT_MODELS, MODEL_NAMES, content_mapping, lock_content_tables, remap_references
+from app.course_instances import MODEL_NAMES, content_mapping, lock_content_tables, remap_references
+from app.course_packages.contracts import PACKAGE_MODELS
 from app.course_packages.manifest import PackageError
 from app.materials.storage import get_storage
 from app.models import (
@@ -22,19 +23,16 @@ from app.models import (
     KnowledgePoint,
     Material,
     MaterialChapter,
-    Npc,
-    QuestDefinition,
     Question,
     QuestionChapter,
     QuestionKnowledgePoint,
     QuestionSecret,
-    StoryDefinition,
 )
 
 
 def _delete_content(db, instance, incoming):
     rows = content_rows(db, instance)
-    removing = {model: [row_key(row) for row in values if stable_id(row) not in incoming[MODEL_NAMES[model]]] for model, values in rows.items()}
+    removing = {model: [row.id for row in values if stable_id(row) not in incoming[MODEL_NAMES[model]]] for model, values in rows.items()}
     # All relation removals are explicit; never depend on database cascades for learner rows.
     for relation, field, model in (
         (ActivityQuestion, ActivityQuestion.activity_id, Activity),
@@ -51,9 +49,9 @@ def _delete_content(db, instance, incoming):
     ):
         if removing[model]:
             db.execute(delete(relation).where(field.in_(removing[model])))
-    for model in (StoryDefinition, QuestDefinition, Activity, Question, KnowledgePoint, Material, Npc, CourseExample, Chapter):
+    for model in (Activity, Question, KnowledgePoint, Material, CourseExample, Chapter):
         if removing[model]:
-            db.execute(delete(model).where((model.key if model is Npc else model.id).in_(removing[model])))
+            db.execute(delete(model).where(model.id.in_(removing[model])))
     db.flush()
 
 
@@ -65,8 +63,6 @@ def import_bundle(db, instance, bundle, root):
     chapters = list(db.scalars(select(Chapter).where(Chapter.course_instance_id == instance.id)))
     removed_chapters = [row.id for row in chapters if stable_id(row) not in incoming["chapter"]]
     db.execute(delete(ChapterRelease).where(ChapterRelease.chapter_id.in_(removed_chapters)))
-    for chapter in chapters:
-        chapter.prerequisite_chapter_id = None
     db.flush()
     if replace:
         _delete_content(db, instance, incoming)
@@ -79,13 +75,13 @@ def import_bundle(db, instance, bundle, root):
         row.order_index = -index - 1
     db.flush()
     pairs = {}
-    for model in CONTENT_MODELS:
+    for model in PACKAGE_MODELS:
         kind, pairs[model] = MODEL_NAMES[model], []
         for source in data[kind]:
             row = existing[model].get(source["id"])
             if row is None:
-                values = {field: deepcopy(source[field]) for field in FIELDS[model]}
-                for field, target in (("chapter_id", "chapter"), ("material_id", "material"), ("quest_id", "quest"), ("npc_key", "npc")):
+                values = {field: deepcopy(source[field]) for field in FIELDS[model] if field in source}
+                for field, target in (("chapter_id", "chapter"), ("material_id", "material")):
                     if field in values and values[field] is not None:
                         values[field] = maps[target][values[field]]
                 for field in ("content", "definition"):
@@ -93,25 +89,19 @@ def import_bundle(db, instance, bundle, root):
                         values[field] = {}
                 if hasattr(model, "owner_id"):
                     values["owner_id"] = instance.teacher_id
-                if model in {Question, Npc, Activity, QuestDefinition, StoryDefinition}:
-                    values["key" if model is Npc else "id"] = f"c{instance.id}-{uuid4().hex[:16]}"
+                if model in {Question, Activity}:
+                    values["id"] = f"c{instance.id}-{uuid4().hex[:16]}"
                 row = model(course_instance_id=instance.id, stable_id=source["id"], **values)
                 db.add(row)
                 db.flush()
-            maps[kind][source["id"]] = row_key(row)
+            maps[kind][source["id"]] = row.id
             pairs[model].append((source, row))
     adapter, assets = get_storage(), {}
-    character_refs = {row[kind][6:] for row in data["npc"] for kind in ("portrait", "sprite") if row[kind].startswith("asset:")}
     for asset in bundle["assets"]:
-        if asset.get("character_kind") and asset["id"] not in character_refs:
-            continue
         source = root / asset["path"]
         key = f"course-assets/{asset['sha256']}{source.suffix.lower()}"
         if asset["path"].startswith("narrations/"):
             key = f"course-narrations/{instance.id}/{asset['id']}-{asset['sha256']}{source.suffix.lower()}"
-        if asset.get("character_kind"):
-            identity = hashlib.sha256(asset["id"].encode()).hexdigest()[:24]
-            key = f"characters/{instance.id}/{identity}-{asset['sha256']}{source.suffix.lower()}"
         try:
             size = adapter.size(key)
         except Exception as exc:
@@ -128,10 +118,8 @@ def import_bundle(db, instance, bundle, root):
         assets[asset["id"]] = {**asset, "storage_key": key}
     for model, values in pairs.items():
         for source, row in values:
-            fields = {field: source[field] for field in FIELDS[model]}
-            converted = deepcopy(fields) if model is Npc else remap_references(fields, maps)
-            if model is QuestDefinition:
-                converted["definition"]["id"] = row.id
+            fields = {field: source[field] for field in FIELDS[model] if field in source}
+            converted = remap_references(fields, maps)
             if model is Activity and "practice_rules" in converted["content"]:
                 from app.practice_rules import PracticeRules
                 converted["content"]["practice_rules"] = PracticeRules.model_validate(converted["content"]["practice_rules"]).model_dump()
@@ -148,22 +136,31 @@ def import_bundle(db, instance, bundle, root):
 
     import_narrations(db, bundle, maps, assets)
     relations = (
-        (Material, MaterialChapter, "material_id", "chapter_ids", "chapter_id", "chapter"),
         (Question, QuestionChapter, "question_id", "chapter_ids", "chapter_id", "chapter"),
         (Question, QuestionKnowledgePoint, "question_id", "knowledge_point_ids", "knowledge_point_id", "knowledge_point"),
         (Activity, ActivityQuestion, "activity_id", "question_ids", "question_id", "question"),
     )
     for model, relation, field, source_field, target_field, kind in relations:
         for source, row in pairs[model]:
-            db.execute(delete(relation).where(getattr(relation, field) == row_key(row)))
+            db.execute(delete(relation).where(getattr(relation, field) == row.id))
             for index, key in enumerate(source[source_field]):
-                values = {field: row_key(row), target_field: maps[kind][key]}
+                values = {field: row.id, target_field: maps[kind][key]}
                 if relation is ActivityQuestion:
                     values["order_index"] = index
                 db.add(relation(**values))
-    for source, row in pairs[Activity]:
-        from app.course_content.resources import set_resources
-        set_resources(db, row, remap_references(source["resources"], maps))
+    for source, material in pairs[Material]:
+        points = {maps["chapter"][p["chapter_id"]]: p for p in source["task_points"]}
+        links = {link.chapter_id: link for link in db.scalars(
+            select(MaterialChapter).where(MaterialChapter.material_id == material.id))}
+        for chapter_id, link in links.items():
+            if chapter_id not in points:
+                db.delete(link)
+        for chapter_id, point in points.items():
+            link = links.get(chapter_id)
+            if link is None:
+                link = MaterialChapter(material_id=material.id, chapter_id=chapter_id)
+                db.add(link)
+            link.required, link.rule, link.order_index = point["required"], deepcopy(point["rule"]), point["order_index"]
     for source in bundle["secrets"]:
         key = maps["question"][source["id"]]
         row = db.get(QuestionSecret, key)
@@ -174,35 +171,11 @@ def import_bundle(db, instance, bundle, root):
     if not replace:
         db.flush()
         _delete_content(db, instance, incoming)
-    for source in bundle["course"]["prerequisites"]:
-        values = remap_references(source, maps)
-        db.get(Chapter, values["chapter_id"]).prerequisite_chapter_id = values["prerequisite_chapter_id"]
     state = db.get(CoursePackageState, instance.id)
     if state is None:
         state = CoursePackageState(course_instance_id=instance.id)
         db.add(state)
-    previous_config = state.configuration or {}
-    live_keys = {asset["storage_key"] for asset in assets.values()}
-    garbage = [
-        *previous_config.get("_character_garbage", []),
-        *(
-            asset["storage_key"]
-            for asset in previous_config.get("_assets", [])
-            if asset.get("character_kind") and asset["storage_key"] not in live_keys
-        ),
-    ]
-    for npc in data["npc"]:
-        for kind in ("portrait", "sprite"):
-            if npc[kind].startswith("asset:"):
-                assets[npc[kind][6:]]["owner_npc_id"] = npc["id"]
-    from app.course_packages.quick_orchestration import restore_template
-
-    state.configuration = {
-        **deepcopy(bundle["configuration"]),
-        **restore_template(bundle, {} if replace else previous_config.get("_quick_orchestration", {})),
-        "_assets": list(assets.values()),
-        "_character_garbage": list(dict.fromkeys(garbage)),
-    }
+    state.configuration = {"_assets": list(assets.values())}
     instance.package_id, instance.name, instance.package_version = manifest["package_id"], manifest["name"], manifest["package_version"]
     instance.revision += 1
     db.flush()

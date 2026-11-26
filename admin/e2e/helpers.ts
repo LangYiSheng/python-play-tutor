@@ -7,7 +7,6 @@ import {
 } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
-import type { Authoring } from "../src/features/authoring/model";
 
 export async function chooseOption(page: Page, trigger: Locator, label: string) {
   await trigger.click();
@@ -41,35 +40,15 @@ export async function setup(
   );
   const headers = { Authorization: `Bearer ${identity.access_token}` },
     tag = Date.now().toString(),
-    classroom = await json<{ id: number }>(
-      await request.post("/api/classrooms", {
-        headers,
-        data: { name: `${name} ${tag}` },
-      }),
-    );
-  await json(
-    await request.post(`/api/teacher/classrooms/${classroom.id}/course/empty`, {
-      headers,
-      data: { confirmed: true, name: `${name}课程` },
-    }),
-  );
-  const scoped = (p: string) => `/api${p}?classroom_id=${classroom.id}`;
+    course = await json<{id:number}>(await request.post("/api/teacher/courses",{headers,data:{name:name+"课程 "+tag}})),
+    classroom = await json<{id:number}>(await request.post("/api/teacher/courses/"+course.id+"/classrooms",{headers,data:{name:name+" "+tag}}));
+  const scoped = (p: string) => "/api" + p.replace("/teacher/","/teacher/courses/"+course.id+"/");
   const chapter = await json<{ id: number }>(
     await request.post(scoped("/teacher/chapters"), {
       headers,
       data: { title: "回归章节", order_index: 1 },
     }),
   );
-  const authoringPath = `/api/teacher/classrooms/${classroom.id}/authoring`;
-  const doc = await json<Authoring>(await request.get(authoringPath, { headers }));
-  const stable = `npc-${tag}`;
-  await json(await request.put(authoringPath, { headers, data: {
-    expected_revision: doc.revision, flows: doc.flows, quests: doc.quests, configuration: doc.configuration,
-    npcs: [{ id: stable, name: "回归向导", portrait: "builtin:portrait:professor", sprite: "builtin:sprite:chara_2",
-      persona: "", placement: { map_key: "town_hub", tile_x: 22, tile_y: 36, direction: "down" }, appearance_condition: { always: true } }],
-  } }));
-  const ids = await json<{ npc: Record<string, string> }>(await request.get(`/api/teacher/classrooms/${classroom.id}/course/ids`, { headers }));
-  const npc = { key: ids.npc[stable] };
   await page.addInitScript(
     ({ token, userId, cid }) => {
       sessionStorage.setItem("pythontopia-reborn-session", token);
@@ -81,13 +60,13 @@ export async function setup(
       cid: classroom.id,
     },
   );
-  await page.goto("/teacher/classroom");
-  await expect(page.getByLabel("当前班级")).toContainText(`${name} ${tag}`);
+  await page.goto("/teacher/content-list?course="+course.id+"&class="+classroom.id);
+  await expect(page.getByRole("heading",{name:"内容列表"})).toBeVisible();
   return {
     headers,
     cid: classroom.id,
     chapterId: chapter.id,
-    npcKey: npc.key,
+    courseId:course.id,
     tag,
     scoped,
   };

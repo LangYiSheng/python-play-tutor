@@ -280,7 +280,7 @@ def clone_current_course(db, classroom, *, package_id="legacy-current", name="å½
 def configure_fixture_world(db, instance):
     """Explicit clone-time migration of current teaching anchors and legacy access."""
     from app.world_config import interaction_anchors, load_world_config
-    from app.teaching.authoring.service import scoped_key
+    from app.teacher_scope import scoped_key
     from app.course_exchange_models import CoursePackageState
     from app.models import BuildingUnlock
     interactions = []

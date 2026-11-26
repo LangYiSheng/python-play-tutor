@@ -5,9 +5,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import sqlalchemy as sa
-from sqlalchemy.orm import Session
 
-from app.experience.state import definition_hash
 from test_independent_content_migration import old_content, migrate, engine_for
 
 
@@ -41,11 +39,11 @@ def test_existing_activity_progress_and_valid_checkpoint_survive(tmp_path):
             db.execute(tables["experience_checkpoints"].insert().values(id=name, user_id=2, classroom_id=cid, name=name,
                 snapshot=saved, definition_hash=fingerprint, created_at=datetime.now(timezone.utc)))
         before = db.execute(sa.select(tables["submissions"])).mappings().all()
-    migrate(path)
-    migrate(path)
+    migrate(path, "e51b92fa60c3")
+    migrate(path, "e51b92fa60c3")
     metadata = sa.MetaData()
     metadata.reflect(engine)
-    with engine.connect() as db, Session(engine) as session:
+    with engine.connect() as db:
         resource = db.execute(sa.select(metadata.tables["activity_materials"])).mappings().one()
         assert resource["learning"] == {"reading": {"scope": "pages", "page_ids": [41]}}
         assert resource["required"] and resource["order_index"] == 0
@@ -53,7 +51,7 @@ def test_existing_activity_progress_and_valid_checkpoint_survive(tmp_path):
         assert current["visited_pages"] == [41] and current["completed"]
         assert current["media_progress"] == {"watched_seconds": 12, "selected_material_id": material["id"], "reading_positions": {str(material["id"]): 1}, "reading_pages": {str(material["id"]): [41]}}
         checkpoints = {row["id"]: row for row in db.execute(sa.select(metadata.tables["experience_checkpoints"])).mappings()}
-        assert checkpoints["valid"]["definition_hash"] == definition_hash(session, cid)
+        assert checkpoints["valid"]["definition_hash"] == migration._definition_hash(db, instance, True)
         assert checkpoints["obsolete"]["definition_hash"] == "already-invalid"
         assert checkpoints["valid"]["snapshot"]["activity_progress"][0]["media_progress"] == current["media_progress"]
         assert checkpoints["valid"]["snapshot"]["client_state"] == {"draft": "keep"}

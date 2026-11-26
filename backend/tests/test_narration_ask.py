@@ -1,7 +1,7 @@
 """Narration uses the existing authorized learning assistant, never a second model path."""
 from app import assistant
 from app.assistant_context import MessageInput, build_tools
-from app.course_exchange_models import CoursePackageState
+from app.integration_models import AssistantModelSettings
 from app.models import User
 from app.narration import repository
 from test_narration_generation import doc_material
@@ -11,8 +11,7 @@ def test_removed_endpoint_cannot_bypass_disabled_assistant(client, db, classroom
     calls = []
     monkeypatch.setattr("app.narration.client.chat", lambda *a, **kw: calls.append(True))
     material = doc_material(db, classroom, "授权原文")
-    state = db.get(CoursePackageState, db.info["fixture_course_instance_id"])
-    state.configuration = {**state.configuration, "assistant": {**state.configuration.get("assistant", {}), "enabled": False}}
+    db.add(AssistantModelSettings(id=1, configuration={"enabled": False}))
     db.commit()
     assert client.post("/api/assistant/sessions", json={"classroom_id": classroom["id"], "material_id": material.id}, headers=student["headers"]).status_code == 403
     assert client.post(f"/api/materials/{material.id}/narrations/1/ask?classroom_id={classroom['id']}", json={"question": "为什么"}, headers=student["headers"]).status_code == 404

@@ -4,7 +4,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   page,
   request,
 }, info) => {
-  const { headers, cid, chapterId, npcKey, tag, scoped } = await setup(
+  const { headers, chapterId, courseId, tag, scoped } = await setup(
     page,
     request,
     "内容回归",
@@ -88,14 +88,15 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
           title: `复用活动${i}`,
           chapter_id: chapterId,
           kind,
-          npc_key: npcKey,
-          assistant_allowed: false,
+          ...(kind === "practice" ? {practice_kind:"objective"} : {}),
+          published: false,
         },
       }),
     );
     activities.push(a.id);
   }
-  await go(page, "学习活动");
+  await go(page, "章节");
+  await page.getByRole("button",{name:"回归章节",exact:true}).click();
   for (let i = 0; i < 2; i++) {
     await page.getByLabel(`选题复用活动${i}`).click();
     await page
@@ -117,7 +118,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   }
   const course = await json<{
     activities: { id: string; question_ids: string[] }[];
-  }>(await request.get(scoped("/teacher/courses"), { headers }));
+  }>(await request.get(scoped("/teacher/catalog"), { headers }));
   for (const id of activities)
     expect(course.activities.find((a) => a.id === id)?.question_ids).toEqual([
       second.id,
@@ -148,7 +149,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const remaining = await json<{ id: string }[]>(await request.get(scoped("/teacher/questions"), { headers }));
   expect(remaining.some(item => item.id === unused.id || item.id === question.id)).toBe(false);
-  const afterDelete = await json<{ activities: { question_ids: string[] }[] }>(await request.get(scoped("/teacher/courses"), { headers }));
+  const afterDelete = await json<{ activities: { question_ids: string[] }[] }>(await request.get(scoped("/teacher/catalog"), { headers }));
   for (const activity of afterDelete.activities) expect(activity.question_ids).not.toContain(question.id);
   await go(page, "资料");
   async function upload(name: string, file: Buffer, fileName: string) {
@@ -199,7 +200,7 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   expect(
     (
       await request.get(
-        `/api/teacher/materials/${original.id}/file?classroom_id=${cid}`,
+        `/api/teacher/courses/${courseId}/materials/${original.id}/file`,
       )
     ).status(),
   ).toBe(401);

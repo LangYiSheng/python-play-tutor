@@ -56,7 +56,7 @@ def point_page(db, user, course_id, page, size, search, chapter_id):
 def teacher_courses(db: Session, user: User, course_id: int | None = None, view="full"):
     instance_id = teacher_instance_id(db, user, course_id)
     chapters = [
-        {"id": c.id, "title": c.title, "order_index": c.order_index, "prerequisite_chapter_id": c.prerequisite_chapter_id, "owner_id": c.owner_id}
+        {"id": c.id, "title": c.title, "order_index": c.order_index, "owner_id": c.owner_id}
         for c in db.scalars(
             select(Chapter)
             .where(Chapter.course_instance_id == instance_id)
@@ -84,8 +84,9 @@ def teacher_courses(db: Session, user: User, course_id: int | None = None, view=
                 "chapter_id": a.chapter_id,
                 "title": a.title,
                 "kind": a.kind,
-                "npc_key": a.npc_key,
-                "assistant_allowed": a.assistant_allowed,
+                "practice_kind": a.content.get("practice_kind", "objective") if a.kind == "practice" else None,
+                "required": a.kind == "assessment" or a.content.get("required", True),
+                "order_index": a.content.get("order_index", 0),
                 "resources": [resource_payload(row) for row in a.resources],
                 "owner_id": a.owner_id,
                 "knowledge_point_ids": a.content.get("knowledge_point_ids", []),

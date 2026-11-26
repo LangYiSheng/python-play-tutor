@@ -82,22 +82,29 @@ def test_author_and_submit_interactive_with_private_verification(client, db, tea
 
 
 def test_interactive_excluded_from_assessment_and_course_exchange(client, db, teacher, student, classroom, tmp_path):
+    classroom = create_test_class(client, headers=teacher["headers"], json={"name": "交互专项课程"}).json()
     opts = {"params": {"classroom_id": classroom["id"]}, "headers": teacher["headers"]}
-    created = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json=DEFINITION)
+    base = f"/api/teacher/courses/{classroom['course_id']}"
+    chapter = client.post(base + "/chapters", headers=teacher["headers"], json={"title": "栈与队列"}).json()["id"]
+    client.put(f"/api/teacher/classrooms/{classroom['id']}/releases/{chapter}", headers=teacher["headers"], json={"status": "published"}).raise_for_status()
+    client.post("/api/classrooms/join", headers=student["headers"], json={"join_code": classroom["join_code"]}).raise_for_status()
+    definition = {**DEFINITION, "chapter_ids": [chapter]}
+    created = client.post(base + "/questions", **opts, json=definition)
     assert created.status_code == 201, created.text
     question_id = created.json()["id"]
-    exam_id = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", **opts,
-                          json={"id": "stack-assessment", "chapter_id": 179, "title": "单元测验", "kind": "assessment"}).json()["id"]
+    exam_id = client.post(base + "/activities", **opts, json={
+        "id": "stack-assessment", "chapter_id": chapter, "title": "单元测验",
+        "kind": "assessment", "published": False}).json()["id"]
     binding = f"/api/teacher/courses/{classroom['course_id']}/activities/{exam_id}/questions"
     assert client.put(binding, **opts, json={"question_ids": [question_id]}).status_code == 422
-    existing = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json={**DEFINITION, "id": "assessed", "kind": "fill",
+    existing = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", **opts, json={**definition, "id": "assessed", "kind": "fill",
                                                                     "interactive": None, "answer": "answer"}).json()["id"]
     activity_url = f"/api/teacher/courses/{classroom['course_id']}/activities/{exam_id}"
-    assert client.put(activity_url, **opts, json={"title": "第一场测验", "question_ids": [existing]}).status_code == 200
+    assert client.put(activity_url, **opts, json={"title": "第一场测验", "published": True, "question_ids": [existing]}).status_code == 200
     paper = client.put(f"/api/activities/{exam_id}/assessment", headers=student["headers"], json={
         "classroom_id": classroom["id"], "revision": 0, "answers": [{"question_id": existing, "answer": "草稿"}]})
     assert paper.status_code == 200, paper.text
-    rejected = client.put(activity_url, **opts, json={"title": "另一个标题", "question_ids": []})
+    rejected = client.put(activity_url, **opts, json={"title": "另一个标题", "published": False, "question_ids": []})
     assert rejected.status_code == 409, rejected.text
     # The fixture shares a session across requests. End it as the production dependency does.
     db.rollback()

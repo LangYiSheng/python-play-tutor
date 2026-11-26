@@ -169,9 +169,6 @@ async def cleanup_worker():
     while True:
         try:
             await asyncio.to_thread(cleanup_exchange, exchange_root())
-            from app.character_assets import cleanup_character_assets
-
-            await asyncio.to_thread(cleanup_character_assets)
         except Exception:
             logger.exception("Course exchange cleanup failed; retrying next cycle")
         await asyncio.sleep(INTERVAL_SECONDS)

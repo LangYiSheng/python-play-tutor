@@ -8,6 +8,7 @@ import { api } from "../src/shared/api";
 import type { AssessmentAttempt, AssessmentAnswer, Submission } from "../src/shared/types";
 function setup(kind = "assessment") {
   const pinia = createPinia(); setActivePinia(pinia); const session = useSession();
+  vi.spyOn(session, "refreshTasks").mockResolvedValue();
   session.user = { id: 1, name: "测试居民", student_id: "124639931179929", role: "student" }; session.classroomId = 2;
   session.world = { player: { map_key: "town_hub", tile_x: 22, tile_y: 36, direction: "down" }, npcs: [], quests: [], chapters: [], flags: [] };
   const questions = ["q1", "q2"].map(id => ({ id, title: id, kind: "boolean" as const, prompt: `判断 ${id}`, options: [], samples: [] }));
@@ -48,7 +49,7 @@ describe("assessment and practice presentation", () => {
           items: [{ ...item, status: "accepted" }, { ...item, appended: true, question_id: extra!.id, status: "accepted" }] } },
     });
     vi.spyOn(api, "post").mockResolvedValueOnce(result(first!.id, "wrong_answer")).mockResolvedValueOnce(result(first!.id, "accepted")).mockResolvedValueOnce(result(extra!.id, "accepted"));
-    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test", storySessionId: "story" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
     try {
       await flushPromises();
       const card = () => wrapper.getComponent({ name: "PracticeQuestionCard" });
@@ -78,8 +79,7 @@ describe("assessment and practice presentation", () => {
       expect(wrapper.get(".practice-question-heading").text()).not.toContain("追加题");
       expect(skill().get("span").text()).toBe("2 / 2");
       expect(wrapper.get(".skill-count").text()).toContain("已达标 1 / 1");
-      await wrapper.get(".practice-goal-summary .practice-complete").trigger("click");
-      expect(wrapper.emitted("complete")).toHaveLength(1);
+      expect(wrapper.get(".practice-goal-summary").text()).toContain("已通过 2 / 2 题");
     } finally { wrapper.unmount(); }
   });
   it("groups the personal outline by assigned point and navigates using the original question numbers", async () => {
@@ -203,7 +203,7 @@ describe("assessment and practice presentation", () => {
     vi.spyOn(api, "get").mockResolvedValue(paper());
     vi.spyOn(api, "put").mockImplementation(async (_path, body) => paper({ id: "attempt", revision: 1, answers: (body as { answers: AssessmentAnswer[] }).answers }) as never);
     const post = vi.spyOn(api, "post").mockImplementation(async (_path, body) => paper({ id: "attempt", status: "graded", revision: 2, locked: true, answers: (body as { answers: AssessmentAnswer[] }).answers, results: [result("q1", "wrong_answer"), result("q2", "accepted")], correct_count: 1, score: 50, completed: true }) as never);
-    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test", storySessionId: "story" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
     await flushPromises();
     expect(wrapper.findAll(".practice-question-card")).toHaveLength(1);
     expect(wrapper.find(".question-list,.question-position,.learning-meta,.answer-hint,.draft-note").exists()).toBe(false);
@@ -359,7 +359,7 @@ describe("multiple-choice answers", () => {
       answers: (body as { answers: AssessmentAnswer[] }).answers,
       results: [result('q1', 'wrong_answer'), result('q2', 'accepted')],
     }));
-    const wrapper = mount(PracticeWorkspace, { props: { activityId: 'test', storySessionId: 'story' }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: 'test' }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
     await flushPromises();
     expect(wrapper.findAll('input[type="checkbox"]:checked')).toHaveLength(2);
     await wrapper.findAll('button').find(button => button.text() === '试卷模式')!.trigger('click');

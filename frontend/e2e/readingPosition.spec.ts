@@ -1,4 +1,4 @@
-import { provisionStudent } from "./studentAccount";
+import { provisionStudent, visitLibrary } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import { test, expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -36,7 +36,7 @@ test("library reading position survives removal of the former numeric cache suff
   const welcome = page.getByRole("dialog", { name: "欢迎回到小镇", exact: true });
   await welcome.getByRole("button", { name: "按任意键继续", exact: true }).click();
   await expect(welcome).toBeHidden();
-  await page.getByRole("button", { name: /学习资料/ }).click();
+  await visitLibrary(page);
   await page.locator(".library-list button").filter({ hasText: material.title }).click();
   await expect(page.locator(".reader-position progress")).toHaveAttribute("value",String(material.pages[1].page_no));
   expect(await page.evaluate(key => ({ current: sessionStorage.getItem(key), oldFirst: sessionStorage.getItem(`${key}-1`), oldSecond: sessionStorage.getItem(`${key}-2`) }), currentKey))

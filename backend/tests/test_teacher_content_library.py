@@ -28,7 +28,7 @@ def test_bank_question_can_be_unclassified_draft_then_reused_without_activity_co
     activities = []
     for key, chapter in (("bank-practice", 179), ("bank-assessment", 180)):
         created = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=headers, json={
-            "id": key, "chapter_id": chapter, "title": key, "kind": "practice", "npc_key": "arena_guard"})
+            "id": key, "chapter_id": chapter, "title": key, "kind": "practice", "published": False})
         assert created.status_code == 201, created.text
         key = created.json()["id"]
         activities.append(key)
@@ -51,7 +51,7 @@ def test_bank_question_can_be_unclassified_draft_then_reused_without_activity_co
 def test_question_selection_rejects_invalid_status_chapter_duplicates_and_owner(client, db, teacher, classroom):
     headers = teacher["headers"]
     created = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=headers, json={"id": "bank-target", "chapter_id": 179,
-        "title": "Target", "kind": "assessment", "npc_key": "arena_guard"})
+        "title": "Target", "kind": "assessment", "published": False})
     assert created.status_code == 201
     activity_id = created.json()["id"]
     question_ids = {}
@@ -97,9 +97,12 @@ def test_material_upload_without_chapter_then_multichapter_metadata_and_teacher_
     assert client.get(f"/api/teacher/courses/{classroom['course_id']}/materials/{key}/file", headers=student["headers"]).status_code == 403
     updated = client.put(f"/api/teacher/courses/{classroom['course_id']}/materials/{key}", headers=headers, json={"title": "Shared chapters", "chapter_ids": [179, 180]})
     assert updated.status_code == 200 and updated.json()["chapter_ids"] == [179, 180]
-    assert client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=headers, json={"id": "library-reading", "chapter_id": 180,
-        "title": "Read", "kind": "reading", "resources": [{"material_id": key, "required": True, "learning": {}}], "npc_key": "librarian_doc"}).status_code == 201
-    assert client.put(f"/api/teacher/courses/{classroom['course_id']}/materials/{key}", headers=headers, json={"chapter_ids": [179]}).status_code == 409
+    requirements = f"/api/teacher/courses/{classroom['course_id']}/chapters/180/material-tasks"
+    assert client.put(f"{requirements}/{key}", headers=headers, json={"required": True, "rule": {}}).status_code == 200
+    assert next(row for row in client.get(requirements, headers=headers).json()["items"] if row["material_id"] == key)["required"]
+    changed = client.put(f"/api/teacher/courses/{classroom['course_id']}/materials/{key}", headers=headers, json={"chapter_ids": [179]})
+    assert changed.status_code == 200 and changed.json()["chapter_ids"] == [179]
+    assert key not in {row["material_id"] for row in client.get(requirements, headers=headers).json()["items"]}
     assert client.delete(f"/api/teacher/courses/{classroom['course_id']}/materials/{key}", headers=headers).status_code == 409
     bad = client.post(f"/api/teacher/courses/{classroom['course_id']}/materials/upload", headers=headers, data={"title": "wrong type", "material_id": key},
                       files={"file": ("library.pdf", b"%PDF-1.4", "application/pdf")})
@@ -120,7 +123,7 @@ def test_assessment_selection_matches_hundred_answer_limit_atomically(client, db
 
     headers = teacher["headers"]
     created = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=headers, json={"id": "bounded-paper", "chapter_id": 179,
-        "title": "Bounded paper", "kind": "assessment", "npc_key": "arena_guard", "assistant_allowed": False})
+        "title": "Bounded paper", "kind": "assessment", "published": False})
     assert created.status_code == 201
     activity_id = created.json()["id"]
     ids = [f"bounded-question-{index}" for index in range(101)]
@@ -135,6 +138,11 @@ def test_assessment_selection_matches_hundred_answer_limit_atomically(client, db
     rejected = client.put(path, headers=headers, json={"question_ids": ids}, params={"classroom_id": classroom["id"]})
     assert rejected.status_code == 422
     assert [q.id for q in activity_questions(db, activity_id)] == ids[:100]
+    published = client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/{activity_id}", headers=headers, json={"published": True})
+    assert published.status_code == 200, published.text
+    practice = db.get(Activity, "ch1-practice")
+    practice.content = {**practice.content, "required": False}
+    db.commit()
     saved = client.put(f"/api/activities/{activity_id}/assessment", headers=student["headers"], json={
         "classroom_id": classroom["id"], "revision": 0, "answers": [{"question_id": key, "answer": True} for key in ids[:100]]})
     assert saved.status_code == 200 and len(saved.json()["answers"]) == 100
@@ -211,17 +219,15 @@ def test_admin_cannot_assign_dependencies_unavailable_to_activity_owner(client, 
     db.flush()
     from app.content_relations import set_question_chapters
     set_question_chapters(db, admin_question.id, [179])
-    admin_material = make_material(db, title="Admin material", chapter_ids=[179], owner_id=admin.id, kind="text", status="ready",
+    admin_material = make_material(db, title="Admin material", chapter_ids=[], owner_id=admin.id, kind="text", status="ready",
                                    content={"pages": [{"id": 2, "page_no": 1, "text": "Admin private"}]})
     db.commit()
     admin_headers = {"Authorization": "Bearer " + issue(db, admin)["access_token"]}
     before_shared = [q.id for q in activity_questions(db, "ch1-practice")]
     assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/ch1-practice/questions", headers=admin_headers, json={"question_ids": [question_id]}).status_code == 403
     assert [q.id for q in activity_questions(db, "ch1-practice")] == before_shared
-    assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/ch1-lesson", headers=admin_headers, json={"resources": [{"material_id": own_material.id, "required": True, "learning": {}}]}).status_code == 403
-    assert db.get(Activity, "ch1-lesson").resources[0].material_id == 186
     created = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", headers=headers, json={"id": "teacher-owner-activity", "chapter_id": 179,
-        "title": "Teacher owned", "kind": "practice", "resources": [{"material_id": own_material.id, "required": True, "learning": {}}], "npc_key": "arena_guard"})
+        "title": "Teacher owned", "kind": "practice", "published": False})
     assert created.status_code == 201
     activity_id = created.json()["id"]
     assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/{activity_id}/questions", headers=admin_headers,
@@ -229,6 +235,11 @@ def test_admin_cannot_assign_dependencies_unavailable_to_activity_owner(client, 
     assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/{activity_id}/questions", headers=admin_headers,
         json={"question_ids": ["admin-private-q"]}).status_code == 403
     assert [q.id for q in activity_questions(db, activity_id)] == [question_id]
-    assert client.put(f"/api/teacher/courses/{classroom['course_id']}/activities/{activity_id}", headers=admin_headers,
-        json={"resources": [{"material_id": admin_material.id, "required": True, "learning": {}}]}).status_code == 403
-    assert db.get(Activity, activity_id).resources[0].material_id == own_material.id
+    material_tasks = f"/api/teacher/courses/{classroom['course_id']}/chapters/179/material-tasks"
+    permitted = client.put(f"{material_tasks}/{own_material.id}", headers=admin_headers, json={"required": True})
+    assert permitted.status_code == 200, permitted.text
+    denied = client.put(f"{material_tasks}/{admin_material.id}", headers=admin_headers, json={"required": True})
+    assert denied.status_code in {403, 404}
+    rows = client.get(material_tasks, headers=headers).json()["items"]
+    assert own_material.id in {row["material_id"] for row in rows}
+    assert admin_material.id not in {row["material_id"] for row in rows}

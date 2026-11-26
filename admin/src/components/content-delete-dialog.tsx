@@ -14,7 +14,7 @@ type Preview = {
   classrooms: {id: number; name: string; students: number; ending_sessions: number}[];
   blockers: { message: string; path?: string }[]; affected_students: number; ending_sessions: number; history_policy: string;
 };
-const names: Record<string, string> = { chapter: "章节", material: "资料", question: "题目", activity: "活动", knowledge_point: "知识点", quest: "任务", story: "教学流程" };
+const names: Record<string, string> = { chapter: "章节", material: "资料", question: "题目", activity: "活动", knowledge_point: "知识点" };
 
 export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
   courseId: number; targets: { kind: DeletionKind; id: string }[]; onClose: () => void; onDone: () => void;
@@ -69,7 +69,7 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
           {preview.ending_sessions > 0 ? <p className="text-sm">将结束 {preview.ending_sessions} 个相关进行中互动，互动记录与进度保留。</p> : null}
           {preview.blockers.length > 0 ? <div className="rounded-md border border-destructive/30 p-3"><h3 className="font-semibold">需要先处理</h3>
             {preview.blockers.map((b, i) => <p className="mt-2 text-sm" key={i}>{b.message}{b.path ? <span className="mt-1 block break-all text-xs text-muted-foreground">位置：{b.path}</span> : null}</p>)}
-            <p className="mt-2 text-xs text-muted-foreground">关闭弹窗，到教学流程或对应内容页修正后重新预览。</p>
+            <p className="mt-2 text-xs text-muted-foreground">关闭弹窗，到对应章节或内容页修正后重新预览。</p>
           </div> : null}
         </div> : <div className="space-y-4">
           <p className="text-sm">将删除 {preview.remove.length} 项内容、解除 {preview.detach.length} 处关联。学生提交、试卷、成绩和进度保留。</p>

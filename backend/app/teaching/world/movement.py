@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.course_content.access import authorize_classroom
 from app.models import PlayerPosition, User
-from app.teaching.quests.state import world_payload
+from app.teaching.world.fixed import world_payload
 from app.teaching.world.contracts import PositionInput, TransitionInput
 from app.world_config import load_world_config
 
@@ -42,14 +42,6 @@ def transition(body: TransitionInput, db: Session, user: User):
         or abs(current["tile_x"] - source["tile_x"]) + abs(current["tile_y"] - source["tile_y"]) > source["radius"]
     ):
         raise HTTPException(422, "请先到达对应地图入口附近")
-    if portal.get("building_id"):
-        from app.teaching.world.runtime import active_interactions, building_access
-
-        if any(item["target"].get("object_id") in {portal["id"], portal["building_id"]} for item in active_interactions(db, user, body.classroom_id)):
-            raise HTTPException(409, "请先完成建筑入口交互")
-        access = building_access(db, user, body.classroom_id)[portal["building_id"]]
-        if not access["can_enter"]:
-            raise HTTPException(403, access["blocked_message"])
     if not position:
         position = PlayerPosition(user_id=user.id, classroom_id=body.classroom_id)
         db.add(position)

@@ -10,10 +10,8 @@ import {
   IdCard,
   LayoutDashboard,
   CalendarDays,
-  BookOpen,
   Network,
   List,
-  GitBranch,
   ChevronDown,
   ChevronLeft,
   LogOut,
@@ -24,10 +22,8 @@ import {
   Settings,
   ExternalLink,
   LoaderCircle,
-  MessageCircleQuestionMark,
   ShieldCheck,
   FileAudio,
-  ListPlus,
 } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,16 +57,10 @@ import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
 const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
-import { Activities } from "@/features/activities/activities-page";
-import { CourseSettings } from "@/pages/course-settings";
 import { Packages } from "@/pages/packages";
 import { Teaching } from "@/pages/teaching";
 const Synthesis = lazy(() => import("@/pages/synthesis").then(module => ({ default: module.Synthesis })));
 const Judge = lazy(() => import("@/pages/judge").then(module => ({ default: module.Judge })));
-const QuickOrchestration = lazy(() => import("@/features/quick-orchestration/page").then(module => ({ default: module.QuickOrchestration })));
-const Authoring = lazy(() =>
-  import("@/features/authoring/authoring-page").then((module) => ({ default: module.Authoring })),
-);
 import { ClassroomManagement, Accounts, GlobalOverview, GlobalSettings } from "@/features/management/pages";
 
 const globalNav = [
@@ -94,25 +84,18 @@ const contentNav = [
   { key: "content-graph", title: "知识图谱", icon: Network },
   { key: "content-list", title: "内容列表", icon: List },
 ] as const;
-const activityNav = [
-  { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
-  { key: "activities", title: "学习活动", icon: BookOpen },
-  { key: "authoring", title: "教学流程", icon: GitBranch },
-] as const;
 const settingsNav = [
-  { key: "settings", title: "课程答疑设置", icon: MessageCircleQuestionMark },
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
-const courseNav = [...statisticsNav, ...classNav, ...contentNav, ...activityNav, ...settingsNav,
+const courseNav = [...statisticsNav, ...classNav, ...contentNav, ...settingsNav,
   { key: "students", title: "学生管理", icon: Users }] as const;
 const hubNav = [{ key: "courses", title: "课程选择", icon: School }, { key: "packages", title: "课程包管理", icon: Package }] as const;
 const pages = [...hubNav, ...globalNav, ...courseNav] as const;
 type Page = (typeof pages)[number]["key"];
 const courseScreens = {
-  settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
+  synthesis: Synthesis,
   "content-list": ContentList,
-  "quick-orchestration": QuickOrchestration,
 };
 const legacyContentTabs = new Map([["curriculum", "chapters"], ["materials", "materials"], ["questions", "questions"]]);
 function currentPage(): Page {
@@ -461,7 +444,6 @@ function Workbench() {
         ? {} : entry?.initialReview;
       return <KnowledgeGraph courseId={course.id} initialReview={initialReview} />;
     }
-    if (page === "activities") return <Activities courseId={course.id} teacherId={course.teacher_id} />;
     if (!(page in courseScreens)) return null;
     const Screen = courseScreens[page as keyof typeof courseScreens];
     return <Screen courseId={course.id} />;
@@ -535,7 +517,6 @@ function Workbench() {
             {group("statistics-nav", "学情统计", ChartNoAxesCombined, statisticsNav)}
             {link(classNav[1])}
             <p className="nav-label">课程内容</p>{contentNav.map(link)}
-            <p className="nav-label">课程活动</p>{activityNav.map(link)}
             <div className="course-settings-nav">{group("settings-nav", "设置", Settings, settingsNav)}</div>
           </nav>}
         </div>

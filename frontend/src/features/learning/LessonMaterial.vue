@@ -3,7 +3,7 @@
     资料尚未就绪，请稍后再来阅读。
   </p>
   <template v-else>
-    <PdfReader
+    <PdfReader @ready="emit('pageReady', $event)"
       @timeline="emit('timeline', $event)"
       v-if="['pdf', 'presentation'].includes(material.kind)"
       :url="fileUrl"
@@ -32,14 +32,6 @@
           :src="mediaBlob"
           @timeupdate="video.updateTime"
           @loadedmetadata="video.restoreVideoPosition"
-          @play="video.startVideoTracking"
-          @playing="video.startVideoTracking"
-          @pause="video.stopVideoTracking"
-          @ended="video.stopVideoTracking"
-          @waiting="video.stopVideoTracking"
-          @seeking="video.stopVideoTracking"
-          @seeked="video.resumeVideoTracking"
-          @ratechange="video.videoRateChanged"
           preload="metadata"
           class="course-video"
           aria-label="课程视频"
@@ -108,6 +100,7 @@ const props = defineProps<{
   video: ReturnType<typeof useLessonVideo>;
 }>();
 const emit = defineEmits<{
+  pageReady: [page: number | null];
   page: [page: number];
   index: [index: number];
   timeline: [segments: LectureSegment[]];

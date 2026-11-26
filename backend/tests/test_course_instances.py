@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.course_instances import content_mapping
+from fixture_instances import content_mapping
 
 from fixture_instances import CourseCloneError, clone_current_course
 from app.integration_models import AssistantSession, SubmissionPayload
@@ -227,21 +227,6 @@ def test_public_flow_is_copied_without_inventing_default_chapter(db):
     assert db.scalar(select(func.count()).select_from(Chapter).where(Chapter.course_instance_id == instance.id)) == 7
 
 
-def test_cloned_arrival_definitions_keep_valid_story_and_goal_links(db):
-    from app.teaching.quests.validation import validate_definition
-    from app.teaching.story.validation import validate_story
-
-    _, _, alpha, _ = classes(db)
-    instance = clone_current_course(db, alpha)
-    db.commit()
-    ids = content_mapping(db, instance)
-    quest = db.get(QuestDefinition, ids["quest"]["arrival"])
-    validate_definition(quest.definition, db)
-    for story in db.scalars(select(StoryDefinition).where(StoryDefinition.course_instance_id == instance.id)):
-        owner = db.get(QuestDefinition, story.quest_id) if story.quest_id else None
-        validate_story(story.content, db, owner.definition if owner else None, story_id=story.id)
-
-
 @pytest.mark.parametrize("status", ["running", "cancel_requested"])
 def test_clone_refuses_in_flight_assistant_stream(db, status):
     from app.integration_models import AssistantCall
@@ -317,7 +302,7 @@ def test_postgres_concurrent_same_class_clones_one_instance(pg_course_engine):
 
 
 def test_postgres_fresh_head_matches_models_and_repeated_source_import(pg_course_engine):
-    from app.course_instances import CONTENT_MODELS
+    from fixture_instances import CONTENT_MODELS
     from fixture_seed import seed
     url = pg_course_engine.url.render_as_string(hide_password=False)
     migrate(url, "upgrade", "head")

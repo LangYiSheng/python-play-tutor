@@ -77,6 +77,24 @@ it("reads retained grades from the history endpoint and distinguishes zero from 
   expect(fetch).toHaveBeenCalledWith("/api/teacher/classrooms/7/history/5", expect.anything());
 });
 
+it("shows the learner's chapter tasks and measured reading time", async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    student: { name: "小林", student_id: "5" }, submissions: [],
+    chapters: [{ id: 2, title: "Python 基础", completed: false, tasks: [
+      { id: "reading:2:3", title: "变量讲义", kind: "reading", required: true, completed: false, locked: false, current: 2, total: 4, unit: "页" },
+    ] }],
+    participation: [{ id: "reading:2:3", title: "变量讲义", chapter: "Python 基础", kind: "reading",
+      created_at: null, read_pages: 2, read_seconds: 15 }],
+  })));
+  render(<RecordViewer classroomId={7} studentId={5} onClose={vi.fn()} />);
+  await user.click(screen.getByRole("tab", { name: "章节任务" }));
+  expect(await screen.findByText("Python 基础")).toBeVisible();
+  expect(screen.getByText("未完成 · 2/4 页")).toBeVisible();
+  await user.click(screen.getByRole("tab", { name: "活动参与" }));
+  expect(await screen.findByText("已读 2 页，有效阅读 15 秒")).toBeVisible();
+});
+
 it("includes completed wrong answers and timeouts in the overview", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ items: [{
     classroom_id: 7, classroom_name: "一班", teacher_id: 12, teacher_name: "任老师", student_count: 2, task_completed: 1, task_total: 2,

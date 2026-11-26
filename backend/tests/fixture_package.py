@@ -24,6 +24,41 @@ from fixture_seed import seed
 from app.materials.storage import get_storage
 
 
+def chapter_task_fixture(db, instance):
+    """Populate format-4 assignments for the isolated exchange test course."""
+    from sqlalchemy import select
+    from app.content_relations import activity_questions, set_activity_questions
+    from app.models import Activity, MaterialChapter
+
+    for activity in db.scalars(select(Activity).where(Activity.course_instance_id == instance.id)).all():
+        if activity.kind in {"lesson", "reading"}:
+            for resource in activity.resources:
+                link = db.get(MaterialChapter, (resource.material_id, activity.chapter_id))
+                if link:
+                    link.required = resource.required
+                    link.rule = {"scope": "all"} if resource.required else {}
+            db.delete(activity)
+            continue
+        questions = activity_questions(db, activity.id)
+        content = {"required": True, "order_index": 1, "published": bool(questions),
+                   "knowledge_point_ids": activity.content.get("knowledge_point_ids", [])}
+        if activity.kind == "practice":
+            objective = [q.id for q in questions if q.kind != "python"]
+            code = [q.id for q in questions if q.kind == "python"]
+            content["practice_kind"] = "objective" if objective or not code else "programming"
+            set_activity_questions(db, activity.id, objective or code)
+            if objective and code:
+                extra = Activity(id="programming-" + uuid4().hex, stable_id=activity.stable_id + "-code",
+                                 chapter_id=activity.chapter_id, owner_id=activity.owner_id, kind="practice",
+                                 title="编程练习", course_instance_id=instance.id,
+                                 content={**content, "practice_kind": "programming", "required": False})
+                db.add(extra)
+                db.flush()
+                set_activity_questions(db, extra.id, code)
+        activity.content = content
+    db.flush()
+
+
 @contextmanager
 def isolated_storage(root):
     settings = {"REBORN_STORAGE": "local", "REBORN_STORAGE_ROOT": str(root)}
@@ -80,6 +115,7 @@ def build_fixture_package(source, content, output, *, package_id, name, package_
                 db.commit()
                 package = root / "package"
                 package.mkdir()
+                chapter_task_fixture(db, instance)
                 write_package(db, instance, package)
                 bundle = load_bundle(package)
                 archive = root / "converted.zip"

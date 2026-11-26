@@ -118,15 +118,16 @@ export function Insights({courseId}: {courseId: number}) {
       {heading === "活动参与人次" && <p className="hint mt-4">同一学生在本班参与同一活动计一次。</p>}</section>)}</>;
 }
 
-interface ResourceProgress {material_id: number; read_count: number; read_total: number; watched_seconds: number; required_seconds: number}
-interface Result {resources?: ResourceProgress[]; completed: boolean; assessment_status?: string; score?: number | null; accepted?: number; assigned?: number; fraction?: number}
+interface ResourceProgress {material_id: number; read_count: number; read_total: number; seconds: number; required_seconds: number; video: boolean}
+interface Result {current?: number; total?: number; unit?: string; resources?: ResourceProgress[]; completed: boolean; assessment_status?: string; score?: number | null; accepted?: number; assigned?: number; fraction?: number}
 interface Report {students: {id: number; student_id: string; name: string; enrolled: boolean}[];
-  activities: {material_titles: Record<number, string>; id: string; title: string; chapter: string; opened: boolean; completed: number; results: Record<number,Result>}[]}
+  activities: {kind: string; required: boolean; material_titles: Record<number, string>; id: string; title: string; chapter: string; opened: boolean; completed: number; results: Record<number,Result>}[]}
 function progress(result?: Result) {
   if (!result) return "未开始";
   if (result.assessment_status) return result.score != null ? grade(result) + " 分" : grade(result);
   if (result.completed) return "已完成";
   if (result.accepted !== undefined) return `已通过 ${result.accepted}${result.assigned ? " / " + result.assigned : ""} 题`;
+  if (result.current !== undefined && result.total !== undefined) return `${result.current} / ${result.total} ${result.unit ?? ""}`;
   if (result.fraction !== undefined) return Math.round(result.fraction * 100) + "%";
   return "进行中";
 }
@@ -159,13 +160,15 @@ export function ClassReport({classroomId, grades}: {classroomId: number; grades:
       {d.activities.map(a => <TableHead key={a.id}>{a.chapter} · {a.title}</TableHead>)}</TableRow></TableHeader><TableBody>
       {students.map(s => <TableRow key={s.id}><TableCell><Button variant="link" onClick={() => setLearner(s.id)}>{s.name} · {s.student_id}{!s.enrolled && "（已离班）"}</Button></TableCell>
         {d.activities.map(a => <TableCell key={a.id}>{grade(a.results[s.id])}</TableCell>)}</TableRow>)}</TableBody></ManagementTable></div>
-    : <div className="surface"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>章节</TableHead><TableHead>活动</TableHead><TableHead>开放状态</TableHead><TableHead>完成人数</TableHead></TableRow></TableHeader>
+    : <div className="surface"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>章节</TableHead><TableHead>任务点</TableHead><TableHead>要求</TableHead><TableHead>开放状态</TableHead><TableHead>完成人数</TableHead></TableRow></TableHeader>
       <TableBody>{activities.map(a => <TableRow key={a.id}><TableCell>{a.chapter}</TableCell><TableCell><Button variant="link" onClick={() => setActivity(a.id)}>{a.title}</Button></TableCell>
-        <TableCell>{a.opened ? "已开放" : "尚未开放"}</TableCell><TableCell>{a.completed} / {d.students.length}</TableCell></TableRow>)}</TableBody></ManagementTable></div>}
+        <TableCell>{a.required ? "必做" : "选做"}</TableCell><TableCell>{a.opened ? "已开放" : "尚未开放"}</TableCell><TableCell>{a.completed} / {d.students.length}</TableCell></TableRow>)}</TableBody></ManagementTable></div>}
     {selected && <Dialog open onOpenChange={open => {if (!open) setActivity("");}}><DialogContent><DialogHeader><DialogTitle>{selected.title}</DialogTitle></DialogHeader>
       <div className="max-h-[60vh] overflow-auto"><PaginatedRows rows={d.students}>{visible => <Table><TableHeader><TableRow><TableHead>学生</TableHead><TableHead>实际进度</TableHead></TableRow></TableHeader>
       <TableBody>{visible.map(s => <TableRow key={s.id}><TableCell>{s.name} · {s.student_id}</TableCell><TableCell>{progress(selected.results[s.id])}
-        {selected.results[s.id]?.resources?.map(r => <p className="hint" key={r.material_id}>{selected.material_titles[r.material_id]} · {
-          r.read_total ? `已读 ${r.read_count} / ${r.read_total} 页` : `已观看 ${Math.floor(r.watched_seconds)} 秒`}</p>)}</TableCell></TableRow>)}</TableBody></Table>}</PaginatedRows></div>
+        {selected.results[s.id]?.resources?.map(r => <div className="hint" key={r.material_id}>
+          {r.read_total > 0 && <p>已读 {r.read_count} / {r.read_total} 页</p>}
+          {(r.required_seconds > 0 || r.video) && <p>{r.video ? "有效观看" : "有效阅读"} {r.seconds} 秒{r.required_seconds > 0 && ` / 要求 ${r.required_seconds} 秒`}</p>}
+        </div>)}</TableCell></TableRow>)}</TableBody></Table>}</PaginatedRows></div>
     </DialogContent></Dialog>}{learner !== null && <RecordViewer showGrades history={d.students.some(s => s.id === learner && !s.enrolled)} classroomId={classroomId} studentId={learner} onClose={() => setLearner(null)}/>}</>;
 }

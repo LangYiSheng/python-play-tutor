@@ -31,11 +31,12 @@ def test_fixture_package_isolated_and_paused(tmp_path, monkeypatch):
     unpack_archive(destination, directory)
     bundle = load_bundle(directory)
     assert bundle["manifest"]["package_id"] == "offline-test"
-    assert "releases" not in bundle["course"] and "prerequisites" in bundle["course"]
-    shelf = next(row for row in bundle["data"]["story"] if row["id"] == "legacy-world-library_shelf")
-    assert shelf["content"]["nodes"][0] == {
-        "id": "start", "type": "action", "action": "open_workspace", "workspace": "library", "next": "end",
-    }
+    assert bundle["manifest"]["schema_version"] == 4
+    assert not {"releases", "prerequisites"} & bundle["course"].keys()
+    assert not {"npc", "story", "quest"} & bundle["data"].keys()
+    assert any(task["required"] for row in bundle["data"]["material"] for task in row["task_points"])
+    practices = [a for a in bundle["data"]["activity"] if a["kind"] == "practice"]
+    assert practices and all(a["content"]["practice_kind"] in {"objective", "programming"} for a in practices)
     assert "users" not in bundle and "student" not in bundle
     original = destination.read_bytes()
     with pytest.raises(PackageError):

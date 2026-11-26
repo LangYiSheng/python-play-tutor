@@ -6,32 +6,30 @@ from app.course_scope import course_class_ids
 
 from sqlalchemy import select
 
-from app.course_content.snapshot import snapshot_content, stable_id
-from app.course_instances import CONTENT_MODELS, MODEL_NAMES, content_mapping
-from app.course_packages.contracts import CONFIG_FILES
+from app.course_packages.snapshot import stable_id
+from app.course_packages.snapshot import package_snapshot
+from app.course_instances import MODEL_NAMES, content_mapping
+from app.course_packages.contracts import PACKAGE_MODELS
 from app.integration_models import AssistantSession
 from app.materials.storage import get_storage
 from app.practice_rules import practice_question_available, without_legacy_retry_interval
-from app.models import ActivityProgress, AssessmentAttempt, Classroom, LearningRecord, Material, PlayerQuest, PracticeSession, StorySession, Submission
+from app.models import ActivityProgress, AssessmentAttempt, Classroom, LearningRecord, Material, MaterialParticipation, PracticeSession, Submission
 
 
 def has_learning_history(db, course_id):
-    from app.models import BuildingUnlock, PlayerPosition, WorldFlag
+    from app.models import PlayerPosition
 
     return any(
         db.scalar(select(model).where(model.classroom_id.in_(course_class_ids(course_id))).limit(1)) is not None
         for model in (
-            PlayerQuest,
-            StorySession,
+            MaterialParticipation,
             ActivityProgress,
             LearningRecord,
             Submission,
             AssessmentAttempt,
             PracticeSession,
             AssistantSession,
-            WorldFlag,
             PlayerPosition,
-            BuildingUnlock,
         )
     )
 
@@ -40,8 +38,8 @@ def preview_impact(db, instance, bundle):
     from app.course_packages.narrations import preview_narrations, revision
 
     narration_revision = revision(db, instance)
-    snapshot = snapshot_content(db, instance) if instance else None
-    previous = snapshot[0] if snapshot else {kind: [] for kind in MODEL_NAMES.values()}
+    snapshot = package_snapshot(db, instance) if instance else None
+    previous = snapshot[0] if snapshot else {MODEL_NAMES[model]: [] for model in PACKAGE_MODELS}
     diff = {}
 
     def compare(kind, old, new):
@@ -55,23 +53,12 @@ def preview_impact(db, instance, bundle):
         compare(kind, {row["id"]: row for row in previous[kind]}, {row["id"]: row for row in incoming})
     diff["narrations"] = preview_narrations(db, instance, bundle)
     compare("answers", {row["id"]: row for row in snapshot[1]} if snapshot else {}, {row["id"]: row for row in bundle["secrets"]})
-    old_config = snapshot[3] if snapshot else {}
-    compare("configuration", {key: old_config.get(key, {}) for key in CONFIG_FILES}, bundle["configuration"])
-    previous_recipe = old_config.get("_quick_orchestration", {}).get("recipe")
-    incoming_recipe = bundle["course"].get("quick_orchestration")
-    if previous_recipe is not None or incoming_recipe is not None:
-        compare("quick_orchestration", {"课程流程": previous_recipe} if previous_recipe else {},
-                {"课程流程": incoming_recipe} if incoming_recipe else {})
-    compare(
-        "prerequisites",
-        {row["chapter_id"]: row for row in snapshot[2]} if snapshot else {},
-        {row["chapter_id"]: row for row in bundle["course"]["prerequisites"]},
-    )
+    old_config = snapshot[2] if snapshot else {}
     old_assets = {row["id"]: row["sha256"] for row in old_config.get("_assets", [])}
     if snapshot:
         material_assets = {row["id"]: row["asset_id"] for row in previous["material"]}
         adapter = get_storage()
-        for material in snapshot[4][Material]:
+        for material in snapshot[3][Material]:
             if material.storage_key:
                 try:
                     digest = hashlib.sha256()
@@ -90,7 +77,7 @@ def preview_impact(db, instance, bundle):
     if instance:
         from app.db import RetirableContent
 
-        for model in CONTENT_MODELS:
+        for model in PACKAGE_MODELS:
             if not issubclass(model, RetirableContent):
                 continue
             incoming_ids = {row["id"] for row in bundle["data"][MODEL_NAMES[model]]}
@@ -108,12 +95,9 @@ def preview_impact(db, instance, bundle):
     if instance and has_learning_history(db, instance.id):
         if instance.package_id != bundle["manifest"]["package_id"]:
             blockers.append("课程已有班级学习记录，请新建课程后导入其他课程包")
-        elif any(diff[kind]["removed"] for kind in MODEL_NAMES.values()):
+        elif any(diff[MODEL_NAMES[model]]["removed"] for model in PACKAGE_MODELS):
             blockers.append("课程已有班级学习记录，本次更新包含删除定义；请保留原ID并停用内容后重新预览")
     if instance:
-        from app.characters import character_issues
-
-        blockers.extend(issue.diagnostic()["message"] for issue in character_issues(db, instance, bundle["data"]))
         incoming = {kind: {row["id"]: row for row in values} for kind, values in bundle["data"].items()}
         current = {kind: {row["id"]: row for row in values} for kind, values in previous.items()}
         maps = content_mapping(db, instance)
@@ -122,8 +106,8 @@ def preview_impact(db, instance, bundle):
         # current parents or fail later as an unexplained integrity error.
         from sqlalchemy import or_
 
-        table_kinds = {model.__tablename__: MODEL_NAMES[model] for model in CONTENT_MODELS}
-        for model in CONTENT_MODELS:
+        table_kinds = {model.__tablename__: MODEL_NAMES[model] for model in PACKAGE_MODELS}
+        for model in PACKAGE_MODELS:
             if not issubclass(model, RetirableContent):
                 continue
             references = []
@@ -143,10 +127,6 @@ def preview_impact(db, instance, bundle):
         attempts = list(db.scalars(select(AssessmentAttempt).where(AssessmentAttempt.classroom_id.in_(course_class_ids(instance.id)))))
         practices = list(db.scalars(select(PracticeSession).where(PracticeSession.classroom_id.in_(course_class_ids(instance.id)))))
         submissions = list(db.scalars(select(Submission).where(Submission.classroom_id.in_(course_class_ids(instance.id)))))
-        active_stories = list(
-            db.scalars(select(StorySession).where(StorySession.classroom_id.in_(course_class_ids(instance.id)), StorySession.status.in_(["active", "waiting"])))
-        )
-
         room_names = dict(db.execute(select(Classroom.id, Classroom.name).where(Classroom.course_id == instance.id)).all())
 
         def protect(kind, stable_id, class_ids, reason):
@@ -157,16 +137,6 @@ def preview_impact(db, instance, bundle):
             learning_impact.append({"kind": kind, "stable_id": stable_id, "affected_records": sum(counts.values()), "reason": reason})
             blockers.append(reason)
 
-        from app.authoring_protection import changed_quest_structure
-
-        for stable in diff["quest"]["updated"]:
-            old, new = current["quest"][stable], incoming["quest"][stable]
-            if changed_quest_structure(old["definition"], new["definition"]):
-                progress_count = db.scalars(
-                    select(PlayerQuest.classroom_id)
-                    .where(PlayerQuest.classroom_id.in_(course_class_ids(instance.id)), PlayerQuest.quest_id == maps["quest"][stable])
-                )
-                protect("quest", stable, progress_count, f"任务「{old['title']}」已有班级进度，请在教学流程编辑器中确认重置后再调整任务结构")
         for stable in diff["question"]["updated"]:
             key = maps["question"][stable]
             if current["question"][stable]["kind"] != incoming["question"][stable]["kind"]:
@@ -183,34 +153,13 @@ def preview_impact(db, instance, bundle):
             old, new = current["activity"][stable], incoming["activity"][stable]
             key = maps["activity"][stable]
             changed_rules = old["content"].get("practice_rules") != without_legacy_retry_interval(new["content"].get("practice_rules"))
-            if changed_rules or old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
+            if changed_rules or old["content"].get("practice_kind") != new["content"].get("practice_kind") or old["kind"] != new["kind"] or (old["kind"] == "assessment" and old["question_ids"] != new["question_ids"]):
                 class_ids = [row.classroom_id for rows in (attempts, submissions, practices) for row in rows if row.activity_id == key]
                 for model in (ActivityProgress, LearningRecord):
                     class_ids.extend(db.scalars(select(model.classroom_id).where(
                         model.classroom_id.in_(course_class_ids(instance.id)), model.activity_id == key)))
                 protect("activity", stable, class_ids, "活动已有学习或测验证据，改变活动类型、练习目标或测验题集需要新的活动ID")
-        changed_activities = {maps["activity"][stable] for stable in diff["activity"]["updated"]}
-        changed_assets = set(diff["assets"]["updated"] + diff["assets"]["removed"])
-        changed_materials = set(diff["material"]["updated"]) | {
-            row["id"] for row in previous["material"] if row["asset_id"] in changed_assets or row["preview_asset_id"] in changed_assets
-        }
-        changed_questions = set(diff["question"]["updated"] + diff["answers"]["updated"])
-        changed_activities.update(
-            maps["activity"][stable]
-            for stable, row in current["activity"].items()
-            if any(item["material_id"] in changed_materials for item in row["resources"]) or changed_questions.intersection(row["question_ids"])
-        )
-        for stable in maps["story"]:
-            affected = [
-                session
-                for session in active_stories
-                if session.story_id == maps["story"][stable]
-                and (stable in diff["story"]["updated"] or stable in diff["story"]["removed"] or session.pending_activity_id in changed_activities)
-            ]
-            protect("story", stable, [r.classroom_id for r in affected], "流程仍有进行中或等待活动的会话，请先完成或关闭后重新预览更新")
-    warnings = ["导入更新课程内容和前置顺序，各班的开放时间和暂停状态单独维护。", "同ID内容更新保留历史证据与成绩，不重新评分"]
-    if bundle.get("legacy_schedule"):
-        warnings.append("旧版课程包中的章节前置关系将导入课程，原开放时间和暂停状态不会应用到教学班。")
+    warnings = ["各班的开放时间和暂停状态单独维护。", "同 ID 更新保留学习证据与成绩。"]
     return {
         "narration_revision": narration_revision,
         "diff": diff,

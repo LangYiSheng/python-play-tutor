@@ -1,4 +1,4 @@
-import { provisionStudent, signInStudent } from "./studentAccount";
+import { provisionStudent, signInStudent, visitLibrary } from "./studentAccount";
 import { importCourse } from "./courseFixture";
 import {
   test,
@@ -320,7 +320,7 @@ test("usable world HUD, modal focus, history, text scaling and keyboard controls
 
   await page.keyboard.press("Escape");
   await expect(workspace).toBeHidden();
-  await page.locator(".hud-dock").getByRole("button", { name: /学习资料/ }).click();
+  await visitLibrary(page);
   await expect(workspace.locator(".library-workspace")).toBeVisible();
   await expectSingleWorkspace(page);
   await expectFocusInside(workspace);

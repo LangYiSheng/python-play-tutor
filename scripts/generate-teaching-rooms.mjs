@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mayorHall, { shell as mayorShell } from "./rooms/mayor-hall.mjs";
+import workshop from "./rooms/workshop.mjs";
 import practiceHall from "./rooms/practice-hall.mjs";
 
 const maps = fileURLToPath(new URL("../frontend/public/assets/maps/", import.meta.url));
@@ -29,13 +30,14 @@ const framing = floor("timber_framing", 0, 13, props + "teaching-rooms/timber-fr
 const exit = floor("exit_door", 8, 13, props + "teaching-rooms/threshold.png", 48, 16);
 
 const rooms = {
-  mayor_hall: {furnish: mayorHall, wall: mayorShell.wall, plank: 4818},
-  arena: {furnish: practiceHall, wall: [1186, 1187, 1188, 1298, 1299, 1300, 1746, 1747, 1748], plank: 4930},
+  mayor_hall: {label: "镇长办公室", furnish: mayorHall, wall: mayorShell.wall, plank: 4818},
+  workshop: { label: "教学工坊", furnish: workshop, wall: mayorShell.wall, plank: 4930 },
+  arena: {label: "练习会馆", furnish: practiceHall, wall: [1186, 1187, 1188, 1298, 1299, 1300, 1746, 1747, 1748], plank: 4930},
 };
-for (const [key, {furnish, wall, plank}] of Object.entries(rooms)) {
+for (const [key, {label, furnish, wall, plank}] of Object.entries(rooms)) {
   const room = structuredClone(library);
   room.properties.find(p => p.name === "mapKey").value = key;
-  room.properties.find(p => p.name === "label").value = key === "arena" ? "练习会馆" : "镇长大厅";
+  room.properties.find(p => p.name === "label").value = label;
   room.layers = room.layers.filter(layer => layer.name !== "reading_rug");
   const ground = room.layers.find(layer => layer.name === "ground");
   ground.data = ground.data.map((_, index) => {

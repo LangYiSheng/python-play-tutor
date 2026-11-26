@@ -14,9 +14,8 @@ from app import (
     assessments,
     assistant,
     auth,
-    character_assets,
     classroom_courses,
-    course_settings,
+    platform_roles,
     courses,
     curriculum,
     dev_tools,
@@ -25,14 +24,11 @@ from app import (
 )
 from app.classrooms import router as classrooms
 from app.course_content import router as course_content
-from app.course_content import review as content_review
+from app.course_content import knowledge_graph, review as content_review
 from app.course_packages import router as course_exchange
 from app.course_packages.cleanup import cleanup_worker
 from app.materials import router as storage
-from app.teaching.authoring import router as world_authoring
-from app.teaching.quests import router as quests
-from app.teaching.quick_template import router as quick_template
-from app.teaching.story import router as story
+from app.chapter_tasks import router as chapter_tasks
 from app.teaching.world import router as world
 
 from . import assistant_settings, content_deletions, judge_management, narration, service_settings
@@ -86,7 +82,7 @@ def create_app() -> FastAPI:
         allow_origins=CORS_ORIGINS,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Range", "X-Dialogue-Format"],
+        allow_headers=["Authorization", "Content-Type", "Range"],
     )
     for module in (
         admin_workbench,
@@ -96,22 +92,19 @@ def create_app() -> FastAPI:
         course_content,
         content_review,
         world,
-        quests,
+        chapter_tasks,
         practice,
         assistant,
         storage,
-        character_assets,
-        course_settings,
+        platform_roles,
         curriculum,
-        story,
         assessments,
         student_accounts,
         classroom_courses,
         course_exchange,
-        world_authoring,
-        quick_template,
     ):
         app.include_router(module.router, prefix="/api")
+    app.include_router(knowledge_graph.router, prefix="/api/teacher/courses/{course_id}")
     # Narration authoring is additive and isolated; see app/narration.
     from app.course_content.reports import router as report_router
     app.include_router(report_router, prefix="/api")

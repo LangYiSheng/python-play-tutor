@@ -3,18 +3,15 @@ import type { Ref } from "vue";
 import { api, notify } from "../api";
 import {
   clearClassroomCaches,
-  restoreExperienceCaches,
   type ExperienceClientState,
 } from "../devTools";
 import type { Classroom, User, World } from "../types";
-import type { createReadingProgress } from "./reading";
 
 interface ExperienceContext {
   user: Ref<User | null>;
   classes: Ref<Classroom[]>;
   classroomId: Ref<number | null>;
   world: Ref<World | null>;
-  reading: ReturnType<typeof createReadingProgress>;
   invalidateRequests: () => void;
   resetClientState: () => void;
 }
@@ -24,7 +21,6 @@ export function createExperienceCoordinator({
   classes,
   classroomId,
   world,
-  reading,
   invalidateRequests,
   resetClientState,
 }: ExperienceContext) {
@@ -40,7 +36,6 @@ export function createExperienceCoordinator({
   }
   async function prepareExperience() {
     await Promise.all([...restartPreparations].map((prepare) => prepare()));
-    await reading.pending;
   }
   async function restartCurrentClassroom(experience?: {
     path: string;
@@ -71,12 +66,6 @@ export function createExperienceCoordinator({
     try {
       await Promise.all([...restartPreparations].map((prepare) => prepare()));
       if (!current()) return false;
-      for (;;) {
-        const pending = reading.pending;
-        await pending;
-        if (!current()) return false;
-        if (pending === reading.pending) break;
-      }
       invalidateRequests();
       world.value = null;
       await nextTick();
@@ -97,21 +86,12 @@ export function createExperienceCoordinator({
       )
         throw new Error("重新开始的结果与当前账号或班级不一致，请刷新后核对。");
       try {
-        if (experience?.restore)
-          restoreExperienceCaches(owner, classroom, result.client_state ?? {});
-        else if (
+        if (
           !experience &&
           clearClassroomCaches(owner, classroom).failedStorage
         )
           notify(
             "学习记录已重置，本机缓存未能完全清除；请清除本站缓存后重新进入。",
-          );
-        if (experience)
-          sessionStorage.setItem(
-            `experience-resume:${owner}:${classroom}`,
-            JSON.stringify(
-              result.client_state?.workspace ?? { kind: "journal" },
-            ),
           );
       } catch {
         notify(

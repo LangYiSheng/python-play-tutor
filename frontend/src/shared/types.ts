@@ -41,30 +41,6 @@ export interface Npc {
   direction: string;
   sprite: { id: string; url: string; frame_width: number; frame_height: number };
 }
-export type NodeStatus = "ready" | "locked" | "complete" | "skipped";
-export interface QuestNode {
-  id: string;
-  type: string;
-  title: string;
-  target: string;
-  activity_id?: string;
-  dialogue_id?: string;
-  navigation_target?: string;
-  dependencies: string[];
-  aggregation: "ALL" | "ANY";
-  optional: boolean;
-  status: NodeStatus;
-  choices?: { id: string; text?: string; label?: string }[];
-}
-export interface Quest {
-  kind: "main" | "side";
-  id: string;
-  title: string;
-  chapter_id: number | null;
-  story_id?: string;
-  status: string;
-  nodes: QuestNode[];
-}
 export interface Chapter {
   id: number;
   title: string;
@@ -74,13 +50,10 @@ export interface Chapter {
 export interface CharacterIdentity { key: string; name: string; portrait: string; sprite: Npc["sprite"] }
 export interface World {
   default_role: CharacterIdentity | null;
-  story_available?: boolean;
   player: Player;
   npcs: Npc[];
-  quests: Quest[];
   chapters: Chapter[];
   flags: string[];
-  interactions?: CourseInteraction[];
   building_access?: Record<string, BuildingAccess>;
   building_unlock?: string[];
 }
@@ -89,16 +62,6 @@ export interface BuildingAccess {
   unlocked: boolean;
   can_enter: boolean;
   blocked_message: string;
-}
-export interface CourseInteraction {
-  id: string;
-  label: string;
-  prompt: string;
-  trigger: "click" | "enter";
-  map_key: string;
-  target: { object_id: string } | { region: { x: number; y: number; width: number; height: number } };
-  points: { map_key: string; tile_x: number; tile_y: number }[];
-  radius: number;
 }
 export interface Page {
   id: string | number;
@@ -194,19 +157,6 @@ export interface ActivityProgress {
   score?: number | null;
   max_score?: 100;
 }
-export interface StoryView {
-  mode?: "task" | "ambient" | "public";
-  /** Present on template responses, null for town-wide dialogue. */
-  chapter_id?: number | null;
-  id: string;
-  revision: number;
-  status: "active" | "waiting" | "ended";
-  npc_key: string | null;
-  interaction_id?: string | null;
-  node: (StoryDialogue & { type?: "dialogue" }) | { id: string; type: "action"; action: "open_workspace"; workspace: "library" | "journal" | "classroom" } | { id: string; type: "action"; action: "enter_building"; building_id: string } | null;
-  activity: { id: string; kind: string; page_no?: number | null } | null;
-  world?: World;
-}
 export type SubmissionStatus =
   | "prepared"
   | "dispatching"
@@ -267,19 +217,9 @@ export interface AssessmentAttempt {
   passed: boolean;
   legacy: boolean;
 }
-export interface EventEvidence {
-  npc_key?: string;
-  dialogue_id?: string;
-  choice?: string;
-  object_id?: string;
-  map_key?: string;
-  tile_x?: number;
-  tile_y?: number;
-  record_id?: string;
-  submission_id?: string;
-}
 export type Workspace =
-  | { kind: "lesson" | "practice"; activity_id: string; page_no?: number; question_no?: number; video_time?: number; story_session_id?: string }
-  | { kind: "material"; material_id: number; page_no?: number; video_time?: number }
+  | { kind: "taskList"; category: Exclude<import("./chapterTasks").TaskKind, "reading"> }
+  | { kind: "practice"; activity_id: string; page_no?: number; question_no?: number; video_time?: number }
+  | { kind: "material"; material_id: number; chapter_id?: number; page_no?: number; video_time?: number }
   | { kind: "journal" | "library" | "classroom" | "settings" | "map" | "developer" }
   | null;

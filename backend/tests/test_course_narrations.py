@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from app.content_relations import set_material_chapters
-from app.course_content.snapshot import stable_id
+from app.course_packages.snapshot import stable_id
 from app.course_packages.apply import import_bundle
 from app.course_packages.manifest import PackageError
 from app.course_packages.reader import load_bundle

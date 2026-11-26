@@ -6,16 +6,16 @@ from sqlalchemy import delete, func, select, union_all, update
 from app.course_instances import CONTENT_MODELS
 from app.integration_models import AssistantSession
 from app.models import (
-    Activity, ActivityProgress, AssessmentAttempt, BuildingUnlock, Classroom, CourseInstance, LearningEvent, LearningRecord,
-    Membership, PlayerPosition, PlayerQuest, PracticeSession, StorySession, Submission, TownPreviewStudent, User, WorldFlag,
+    Activity, ActivityProgress, AssessmentAttempt, Classroom, CourseInstance, LearningRecord,
+    MaterialParticipation, Membership, PlayerPosition, PracticeSession, Submission, TownPreviewStudent, User,
 )
 from app.classrooms.access import classroom_payload, own_classroom
 
 # A removed membership does not remove the learner's evidence. Teacher experience saves
 # remain intact, but never count as evidence of a formal student's participation.
 HISTORY_MODELS = (
-    PlayerQuest, StorySession, ActivityProgress, LearningEvent, LearningRecord, Submission,
-    PracticeSession, AssessmentAttempt, AssistantSession, WorldFlag, PlayerPosition, BuildingUnlock,
+    MaterialParticipation, ActivityProgress, LearningRecord, Submission,
+    PracticeSession, AssessmentAttempt, AssistantSession, PlayerPosition,
 )
 
 
@@ -114,24 +114,4 @@ def history_detail(db, user, classroom_id, student_id):
     history = history_rows(classroom_id)
     if not db.scalar(select(select(history.c.user_id).where(history.c.user_id == student_id).exists())):
         raise HTTPException(404, "此学生在该班级没有历史记录")
-    return {**record_payload(classroom_id, student_id, db), "assessments": student_assessments(db, classroom_id, student_id)}
-
-
-def student_assessments(db, classroom_id, student_id):
-    from app.assessments import assessment_payload
-
-    learner = db.get(User, student_id)
-    query = (select(AssessmentAttempt, Activity)
-             .join(Activity, Activity.id == AssessmentAttempt.activity_id)
-             .where(AssessmentAttempt.classroom_id == classroom_id, AssessmentAttempt.user_id == student_id)
-             .order_by(AssessmentAttempt.created_at)
-             .execution_options(include_deleted=True))
-    assessments = []
-    for attempt, activity in db.execute(query):
-        result = {"status": "draft", "score": None, "max_score": 100}
-        if attempt.state in {"submitted", "legacy"}:
-            # Locked papers use their persisted question/submission IDs, even after content changes.
-            paper = assessment_payload(db, learner, classroom_id, activity)
-            result = {key: paper[key] for key in ("status", "score", "max_score")}
-        assessments.append({"id": attempt.id, "activity_id": activity.id, "activity_title": activity.title, **result})
-    return assessments
+    return record_payload(classroom_id, student_id, db)

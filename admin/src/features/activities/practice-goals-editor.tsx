@@ -7,13 +7,14 @@ import type { Point, PracticeGoal, PracticeRules, QuestionCandidate } from "@/li
 const questionKinds = Object.keys(kinds) as QuestionCandidate["kind"][];
 
 interface Props {
+  practiceKind?: "objective" | "programming";
   rules: PracticeRules;
   points: Point[];
   candidates: QuestionCandidate[] | null;
   onChange: (rules: PracticeRules) => void;
 }
 
-export function PracticeGoalsEditor({ rules, points, candidates, onChange }: Props) {
+export function PracticeGoalsEditor({ practiceKind, rules, points, candidates, onChange }: Props) {
   function setGoals(goals: PracticeGoal[]) {
     onChange({ ...rules, goals });
   }
@@ -61,7 +62,7 @@ export function PracticeGoalsEditor({ rules, points, candidates, onChange }: Pro
                   onChange={event => updateGoal({ ...goal, total: Number(event.target.value) })} />
                 {pool && <span className="hint">可用 {pool.length} 题</span>}
               </label>
-              {questionKinds.map(kind => {
+              {questionKinds.filter(kind => !practiceKind || (kind === "python") === (practiceKind === "programming")).map(kind => {
                 const available = pool?.filter(q => q.kind === kind).length;
                 const required = goal.by_kind[kind] ?? 0;
                 return (

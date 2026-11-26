@@ -69,7 +69,7 @@ def test_library_no_credentials_is_honestly_unavailable(client, student, classro
     assert client.post(f'/api/assistant/sessions/{sid}/messages', headers=student['headers'], json={'message': '解释'}).status_code == 503
 
 
-def test_migration_keeps_existing_assistant_calls(tmp_path):
+def test_upgrade_clears_old_assistant_sessions_and_calls(tmp_path):
     path = tmp_path / 'assistant.sqlite3'
     url = 'sqlite:///' + path.as_posix()
     migrate(url, 'upgrade', '221d0f8caf6e')
@@ -82,8 +82,8 @@ def test_migration_keeps_existing_assistant_calls(tmp_path):
     migrate(url, 'upgrade', 'head')
     migrate(url, 'check')
     with engine.begin() as c:
-        assert c.execute(text("SELECT tokens FROM assistant_calls WHERE id='saved-call'")).scalar() == 12
-        c.execute(text("UPDATE assistant_sessions SET activity_id=NULL WHERE id='saved'"))
+        assert c.scalar(select(func.count()).select_from(AssistantCall)) == 0
+        assert c.scalar(select(func.count()).select_from(AssistantSession)) == 0
         assert not c.execute(text('PRAGMA foreign_key_check')).all()
         assert c.scalar(select(User.id).where(User.id == 2)) == 2
     engine.dispose()

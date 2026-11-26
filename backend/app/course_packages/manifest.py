@@ -31,7 +31,7 @@ WORLD_ID = "pythontopia-town"
 WORLD_SCHEMA_VERSION = 1
 
 
-CAPABILITIES = frozenset({"reading", "video", "practice", "assessment", "dialogue", "tasks", "library"})
+CAPABILITIES = frozenset({"reading", "video", "practice", "assessment", "chapter_tasks", "library"})
 
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\Z")
@@ -202,8 +202,8 @@ def read_manifest(raw):
     except (yaml.YAMLError, RecursionError, ValueError) as exc:
         raise PackageError("manifest YAML格式无效") from exc
     _fields(data, {"schema_version", "package_id", "name", "package_version", "created_at", "requires", "entry"}, {"updated_at", "exported_at", "origin"})
-    if type(data["schema_version"]) is not int or data["schema_version"] != 3:
-        raise PackageError("仅支持v2课程包，请使用新版角色格式")
+    if type(data["schema_version"]) is not int or data["schema_version"] != 4:
+        raise PackageError("仅支持格式 4 的章节任务点课程包")
     if data.get("origin", "supplied") not in ("supplied", "exported"):
         raise PackageError("origin只能为supplied或exported")
     if data.get("origin") == "exported" and "exported_at" not in data:
@@ -232,7 +232,7 @@ def read_manifest(raw):
     if len(capabilities) != len(set(capabilities)) or set(capabilities) - CAPABILITIES:
         raise PackageError("能力清单重复或包含不支持的能力")
     if relative_package_path(data["entry"]) != "curriculum/course.yaml":
-        raise PackageError("格式1的entry必须为curriculum/course.yaml")
+        raise PackageError("entry必须为curriculum/course.yaml")
     return data
 
 
@@ -253,7 +253,7 @@ def _assets(root, files, limits):
         _fields(
             row,
             {"id", "path", "media_type", "size_bytes", "sha256", "source", "license"},
-            {"character_kind", "frame_width", "frame_height", "width", "height", "original_name"},
+            {"original_name"},
         )
         _identifier(row["id"], "资源id")
         path = relative_package_path(row["path"])

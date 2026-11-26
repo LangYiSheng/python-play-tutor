@@ -4,8 +4,6 @@ import { createPinia, setActivePinia } from "pinia";
 import { defineComponent, h, nextTick, ref } from "vue";
 import { focusableControls, useModalFocus } from "../src/shared/modalFocus";
 import { useSession } from "../src/shared/session";
-import GameHUD from "../src/features/GameHUD.vue";
-import type { Quest, QuestNode, World } from "../src/shared/types";
 
 const mounted: VueWrapper[] = [];
 
@@ -244,106 +242,5 @@ describe("workspace return navigation", () => {
     expect(session.previousWorkspace).toBeUndefined();
     session.back();
     expect(session.workspace).toBeNull();
-  });
-});
-
-function node(
-  id: string,
-  status: QuestNode["status"],
-  options: Partial<QuestNode> = {},
-): QuestNode {
-  return {
-    id,
-    title: id,
-    type: "TALK_TO_NPC",
-    target: "mayor_py",
-    dependencies: [],
-    aggregation: "ALL",
-    optional: false,
-    status,
-    ...options,
-  };
-}
-
-function quest(id: string, options: Partial<Quest> = {}): Quest {
-  return {
-    id,
-    title: id,
-    kind: "main",
-    chapter_id: 179,
-
-    status: "active",
-    nodes: [],
-    ...options,
-  };
-}
-
-function hud(quests: Quest[], trackedQuest = "") {
-  const pinia = createPinia();
-  setActivePinia(pinia);
-  const session = useSession();
-  session.world = {
-    player: { map_key: "town_hub", tile_x: 22, tile_y: 36, direction: "down" },
-    quests,
-    npcs: [],
-    chapters: [],
-    flags: [],
-  } satisfies World;
-  session.trackedQuest = trackedQuest;
-  const wrapper = mount(GameHUD, { global: { plugins: [pinia] } });
-  mounted.push(wrapper);
-  return { session, wrapper };
-}
-
-describe("HUD next step and required progress", () => {
-  it("shows an active main quest instead of a completed manual selection", async () => {
-    const { session, wrapper } = hud(
-      [
-        quest("已交付的来信", { status: "complete" }),
-        quest("支线找书", {
-          kind: "side",
-          nodes: [node("询问管理员", "ready")],
-        }),
-        quest("下一段主线", {
-          nodes: [
-            node("阅读下一课", "ready", {
-              type: "STUDY_LESSON",
-              activity_id: "chapter-two-reading",
-            }),
-          ],
-        }),
-      ],
-      "已交付的来信",
-    );
-    expect(wrapper.get(".quest-title").text()).toBe("下一段主线");
-    expect(wrapper.get(".quest-next").text()).toBe("阅读下一课");
-    await wrapper.get(".quest-go").trigger("click");
-    expect(session.workspace).toEqual({
-      kind: "lesson",
-      activity_id: "chapter-two-reading",
-    });
-
-    session.trackedQuest = "支线找书";
-    await nextTick();
-    expect(wrapper.get(".quest-title").text()).toBe("支线找书");
-  });
-
-  it("counts only required steps on the selected branch", () => {
-    const { wrapper } = hud([
-      quest("分支委托", {
-        nodes: [
-          node("已完成的必做步骤", "complete"),
-          node("当前必做步骤", "ready"),
-          node("未选择的分支", "skipped"),
-          node("已完成的可选步骤", "complete", { optional: true }),
-          node("未做的可选步骤", "locked", { optional: true }),
-        ],
-      }),
-    ]);
-    const progress = wrapper.get('[role="progressbar"]');
-    expect(progress.attributes("aria-valuenow")).toBe("1");
-    expect(progress.attributes("aria-valuemax")).toBe("2");
-    expect(progress.attributes("aria-valuetext")).toBe("已完成 1 / 2 步");
-    expect(wrapper.get(".quest-next").text()).toBe("当前必做步骤");
   });
 });

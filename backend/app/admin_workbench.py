@@ -13,7 +13,7 @@ from .account_deletion import delete_account_data, owned_classroom_ids
 from .course_scope import lock_course_content
 from .db import get_db
 from .judge_management import python_submission
-from .models import (AuthSession, Classroom, CourseInstance, Material, Membership, PlayerQuest, Question,
+from .models import (AuthSession, Classroom, CourseInstance, Material, Membership, Question,
                      Submission, TownPreviewStudent, User)
 from .narration.management import run_state
 from .narration.models import NarrationRun
@@ -157,18 +157,18 @@ def overview(db: Database, teacher_id: int | None = None, classroom_id: int | No
                    "synthesis_counts": {}, "judge_counts": {}}
             for c, name in db.execute(query.order_by(Classroom.id))}
     previews = select(TownPreviewStudent.student_user_id)
-    students = (select(Membership.classroom_id, func.count()).join(User, Membership.user_id == User.id)
-                .where(Membership.classroom_id.in_(rows), User.role == "student", User.id.not_in(previews))
-                .group_by(Membership.classroom_id))
-    for key, count in db.execute(students):
-        rows[key]["student_count"] = count
-    quests = (select(PlayerQuest.classroom_id, PlayerQuest.status, func.count())
-              .where(PlayerQuest.classroom_id.in_(rows), PlayerQuest.user_id.not_in(previews))
-              .group_by(PlayerQuest.classroom_id, PlayerQuest.status))
-    for key, status, count in db.execute(quests):
-        rows[key]["task_total"] += count
-        if status == "complete":
-            rows[key]["task_completed"] = count
+    from .chapter_tasks.service import chapter_state, open_chapters
+
+    members = db.execute(select(Membership.classroom_id, User).join(User, Membership.user_id == User.id)
+                         .where(Membership.classroom_id.in_(rows), User.role == "student", User.id.not_in(previews)))
+    chapters_by_room = {key: open_chapters(db, db.get(Classroom, key)) for key in rows}
+    for key, student in members:
+        room = db.get(Classroom, key)
+        rows[key]["student_count"] += 1
+        for chapter in chapters_by_room[key]:
+            tasks = chapter_state(db, student, room, chapter)["tasks"]
+            rows[key]["task_total"] += sum(t["required"] for t in tasks)
+            rows[key]["task_completed"] += sum(t["required"] and t["completed"] for t in tasks)
     state = run_state()
     synthesis = (select(Classroom.id, state, func.count()).select_from(NarrationRun)
                  .join(Material, Material.id == NarrationRun.material_id)

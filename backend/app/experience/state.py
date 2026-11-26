@@ -8,23 +8,13 @@ from sqlalchemy import select
 from app.course_scope import course_clause, instance_id
 from app.models import (
     Activity,
-    ActivityProgress,
     ActivityQuestion,
-    ActivityMaterial,
-    BuildingUnlock,
     Chapter,
     ChapterRelease,
     CourseInstance,
     Material,
-    NodeState,
-    Npc,
     PlayerPosition,
-    PlayerQuest,
-    QuestDefinition,
     Question,
-    StoryDefinition,
-    StorySession,
-    WorldFlag,
 )
 from app.world_config import load_world_config
 
@@ -36,7 +26,7 @@ def digest(value):
 def definition_hash(db, classroom_id):
     # Include current definitions, not only authoring revision: imports and media replacements also invalidate saves.
     result = {"world": load_world_config()}
-    for model in (Chapter, Material, Activity, Question, QuestDefinition, StoryDefinition, Npc):
+    for model in (Chapter, Material, Activity, Question):
         result[model.__tablename__] = sorted(
             [
                 {c.name: getattr(row, c.name) for c in model.__table__.columns
@@ -59,20 +49,10 @@ def definition_hash(db, classroom_id):
             .order_by(ActivityQuestion.activity_id, ActivityQuestion.order_index)
         )
     ]
-    result["activity_materials"] = [
-        (row.activity_id, row.material_id, row.order_index, row.required, row.learning)
-        for row in db.scalars(select(ActivityMaterial).join(Activity).where(course_clause(db, Activity, classroom_id))
-                             .order_by(ActivityMaterial.activity_id, ActivityMaterial.order_index))]
     return digest(result)
 
 
-STATE_FIELDS = {
-    WorldFlag: ("key",),
-    BuildingUnlock: ("course_instance_id", "building_id"),
-    PlayerPosition: ("map_key", "tile_x", "tile_y", "direction"),
-    ActivityProgress: ("activity_id", "page_no", "visited_pages", "completed", "media_progress"),
-    StorySession: ("story_id", "npc_key", "interaction_id", "anchor", "node_id", "status", "pending_activity_id", "return_mapping"),
-}
+POSITION_FIELDS = ("map_key", "tile_x", "tile_y", "direction")
 
 
 def own_rows(db, model, user, classroom_id):
@@ -80,24 +60,8 @@ def own_rows(db, model, user, classroom_id):
 
 
 def snapshot(db, user, classroom_id):
-    data = {}
-    for model, fields in STATE_FIELDS.items():
-        rows = own_rows(db, model, user, classroom_id)
-        if model is StorySession:
-            rows = [row for row in rows if row.status in {"active", "waiting"}]
-        data[model.__tablename__] = sorted([{field: getattr(row, field) for field in fields} for row in rows], key=lambda row: digest(row))
-    data["quests"] = []
-    for quest in sorted(own_rows(db, PlayerQuest, user, classroom_id), key=lambda row: row.quest_id):
-        states = db.scalars(select(NodeState).where(NodeState.player_quest_id == quest.id).order_by(NodeState.node_id))
-        data["quests"].append(
-            {
-                "quest_id": quest.quest_id,
-                "status": quest.status,
-                "completed_at": quest.completed_at.isoformat() if quest.completed_at else None,
-                "states": [{k: getattr(row, k) for k in ("node_id", "status", "choice", "evidence")} for row in states],
-            }
-        )
-    return data
+    return {"player_positions": [{key: getattr(row, key) for key in POSITION_FIELDS}
+                                 for row in own_rows(db, PlayerPosition, user, classroom_id)]}
 
 
 def state_token(db, user, classroom_id):

@@ -55,7 +55,7 @@ def authorized_session(db, user, session_id):
         authorize_library_assistant(db, user, session.classroom_id, session.material_id)
         return session, None
     activity = authorize_activity(db, user, session.classroom_id, session.activity_id)
-    if not activity.assistant_allowed or activity.kind == "assessment":
+    if activity.kind == "assessment":
         raise HTTPException(403, "此活动禁止使用助教")
     session.material_id = activity_material(db, user, session.classroom_id, activity)
     return session, activity
@@ -82,9 +82,9 @@ def activity_material(db, user, classroom_id, activity):
 @router.get("/status")
 def status(user: Annotated[User, Depends(current_user)], db: Annotated[Session, Depends(get_db)]):
     config = configuration(db)
-    available = bool(config["api_key"] and config["model"])
+    available = bool(config["enabled"] and config["api_key"] and config["model"])
     count = db.scalar(select(func.coalesce(func.sum(AssistantCall.model_calls), 0)).where(AssistantCall.user_id == user.id))
-    return {"available": available, "reason": None if available else "助教未配置模型凭据，其他学习功能可继续使用", "model_calls": count}
+    return {"available": available, "reason": None if available else ("平台暂未开放答疑" if not config["enabled"] else "助教未配置模型凭据，其他学习功能可继续使用"), "model_calls": count}
 
 
 @router.post("/sessions", status_code=201)
@@ -92,7 +92,7 @@ def new_session(body: NewSession, user: Annotated[User, Depends(current_user)], 
     from app.course_content.access import authorize_activity
     from .course_assistant import activity_npc, default_npc
     activity = authorize_activity(db, user, body.classroom_id, body.activity_id) if body.activity_id is not None else None
-    if activity and (not activity.assistant_allowed or activity.kind == "assessment"):
+    if activity and (activity.kind == "assessment"):
         raise HTTPException(403, "此活动禁止使用助教")
     material_id = (activity_material(db, user, body.classroom_id, activity) if activity else
                    authorize_library_assistant(db, user, body.classroom_id, body.material_id).id)

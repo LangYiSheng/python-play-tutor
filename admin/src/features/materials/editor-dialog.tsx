@@ -16,9 +16,11 @@ import type { useMaterialEditor } from "./use-editor";
 export function MaterialDialog({
   editor,
   course,
+  fixedChapter,
 }: {
   editor: ReturnType<typeof useMaterialEditor>;
-  course: { data: Course | null };
+  course: { data: Pick<Course, "chapters"> | null };
+  fixedChapter?: boolean;
 }) {
   const {
     editing,
@@ -81,7 +83,7 @@ export function MaterialDialog({
               }}
             />
           </div>
-          <fieldset className="field">
+          {!fixedChapter && <fieldset className="field">
             <legend>关联章节</legend>
             <div className="check-list">
               {course.data?.chapters.map((c) => (
@@ -102,7 +104,7 @@ export function MaterialDialog({
               ))}
             </div>
             <p className="hint">可以暂不归类，之后再关联章节。</p>
-          </fieldset>
+          </fieldset>}
           <DialogFooter>
             <Button
               type="button"

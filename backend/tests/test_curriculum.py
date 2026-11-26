@@ -64,7 +64,6 @@ def test_private_chapter_cannot_be_seen_bound_or_published_by_another_teacher(cl
         "chapter_id": cid,
         "title": "Cross private chapter",
         "kind": "practice",
-        "npc_key": "mayor_py",
         "knowledge_point_ids": [point["id"]]}
     assert client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", json=bad_activity, headers=other["headers"]).status_code == 403
     assert (
@@ -75,16 +74,13 @@ def test_private_chapter_cannot_be_seen_bound_or_published_by_another_teacher(cl
             headers=other["headers"]).status_code
         == 403
     )
-    definition = {
-        "id": "stolen-quest",
-        "title": "Stolen",
-        "chapter_id": cid,
-        "nodes": [{"id": "talk", "type": "TALK_TO_NPC", "title": "Talk", "target": "mayor_py", "dependencies": []}],
-        "effects": []}
-    assert client.post(f"/api/teacher/courses/{classroom['course_id']}/quests", json={"definition": definition}, headers=other["headers"]).status_code == 403
     # Private chapter is hidden from students until their own class owner publishes it.
     assert "PRIVATE_CHAPTER" not in client.get(f"/api/world?classroom_id={classroom['id']}", headers=student["headers"]).text
-    own_activity = {**bad_activity, "id": "private-own"}
+    authored = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", headers=teacher["headers"],
+                           json={"id": "private-q", "title": "Verify", "kind": "boolean", "prompt": "True?",
+                                 "answer": True, "chapter_ids": [cid], "status": "ready"})
+    assert authored.status_code == 201, authored.text
+    own_activity = {**bad_activity, "id": "private-own", "question_ids": [authored.json()["id"]]}
     created = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", json=own_activity, headers=teacher["headers"])
     assert created.status_code == 201
     activity_id = created.json()["id"]
@@ -110,9 +106,8 @@ def test_activity_kc_binding_validates_owner_course_and_current_binding(client, 
         "id": "point-bound",
         "chapter_id": 179,
         "title": "Bound",
-        "kind": "lesson",
-        "npc_key": "mayor_py",
-        "resources": [{"material_id": 186, "required": True, "learning": {}}],
+        "kind": "practice",
+        "question_ids": ["ch1-abstraction"],
         "knowledge_point_ids": [1809, own["id"]]}
     response = client.post(f"/api/teacher/courses/{classroom['course_id']}/activities", json=payload, headers=teacher["headers"])
     assert response.status_code == 201, response.text

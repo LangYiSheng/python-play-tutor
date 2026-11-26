@@ -240,7 +240,7 @@ def populate_baseline(engine):
             assert not connection.execute(text("PRAGMA foreign_key_check")).all()
 
 
-def test_upgrade_seeded_baseline_preserves_foreign_keys_records_and_grades(tmp_path):
+def test_upgrade_preserves_curriculum_and_clears_retired_learner_state(tmp_path):
     path = tmp_path / "existing.sqlite3"
     url = "sqlite:///" + path.as_posix()
     migrate(url, "upgrade", "221d0f8caf6e")
@@ -253,14 +253,14 @@ def test_upgrade_seeded_baseline_preserves_foreign_keys_records_and_grades(tmp_p
         assert connection.execute(text("PRAGMA foreign_keys")).scalar() == 1
         assert connection.execute(text("SELECT count(*) FROM chapters WHERE owner_id IS NULL")).scalar() == 7
         assert connection.execute(text("SELECT count(*) FROM knowledge_points WHERE owner_id IS NULL")).scalar() == 65
-        assert connection.execute(text("SELECT status FROM submissions WHERE id='historic-submission'")).scalar() == "accepted"
-        assert connection.execute(text("SELECT count(*) FROM learning_records WHERE id='historic-reading'")).scalar() == 1
-        assert connection.execute(text("SELECT status FROM player_quests WHERE id=1")).scalar() == "complete"
-        assert connection.execute(text("SELECT count(*) FROM learning_events WHERE event_id='historic-event'")).scalar() == 1
+        assert connection.execute(text("SELECT count(*) FROM submissions")).scalar() == 0
+        assert connection.execute(text("SELECT count(*) FROM learning_records")).scalar() == 0
+        assert connection.execute(text("SELECT count(*) FROM player_quests")).scalar() == 0
+        assert connection.execute(text("SELECT count(*) FROM learning_events")).scalar() == 0
         assert not connection.execute(text("PRAGMA foreign_key_check")).all()
     with Session(engine) as db:
         seed(db)
-        assert db.execute(text("SELECT status FROM submissions WHERE id='historic-submission'")).scalar() == "accepted"
+        assert db.execute(text("SELECT count(*) FROM submissions")).scalar() == 0
         assert not db.execute(text("PRAGMA foreign_key_check")).all()
     engine.dispose()
 
@@ -292,9 +292,9 @@ def test_postgresql_revision2_preserves_existing_records_in_temporary_schema():
         with engine.connect() as connection:
             assert connection.execute(text("SELECT count(*) FROM chapters WHERE owner_id IS NULL")).scalar() == 7
             assert connection.execute(text("SELECT count(*) FROM knowledge_points WHERE owner_id IS NULL")).scalar() == 65
-            assert connection.execute(text("SELECT status FROM submissions WHERE id='historic-submission'")).scalar() == "accepted"
-            assert connection.execute(text("SELECT status FROM player_quests WHERE id=1")).scalar() == "complete"
-            assert connection.execute(text("SELECT count(*) FROM learning_events WHERE event_id='historic-event'")).scalar() == 1
+            assert connection.execute(text("SELECT count(*) FROM submissions")).scalar() == 0
+            assert connection.execute(text("SELECT count(*) FROM player_quests")).scalar() == 0
+            assert connection.execute(text("SELECT count(*) FROM learning_events")).scalar() == 0
             assert (
                 connection.execute(
                     text(
@@ -305,7 +305,7 @@ def test_postgresql_revision2_preserves_existing_records_in_temporary_schema():
             )
         with Session(engine) as db:
             seed(db)
-            assert db.execute(text("SELECT status FROM submissions WHERE id='historic-submission'")).scalar() == "accepted"
+            assert db.execute(text("SELECT count(*) FROM submissions")).scalar() == 0
     finally:
         engine.dispose()
         with admin.begin() as connection:

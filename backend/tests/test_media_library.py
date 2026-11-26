@@ -82,8 +82,11 @@ def test_unreleased_chapter_is_not_published_by_library_flag(client, db, student
     assert client.get(f"/api/materials/{media.id}?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 403
 
 
-def test_ordinary_unbound_teacher_upload_is_not_implicitly_published(client, db, student, teacher, classroom):
-    media = add_media(db, owner_id=teacher["id"], library_available=False, source={"kind": "upload"})
+def test_upload_without_chapter_association_stays_private(client, db, student, teacher, classroom):
+    from app.content_relations import set_material_chapters
+    media = add_media(db, owner_id=teacher["id"], source={"kind": "upload"})
+    set_material_chapters(db, media.id, [])
+    db.commit()
     assert media.id not in library_ids(client, student, classroom)
     assert client.get(f"/api/materials/{media.id}?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 403
 
@@ -114,10 +117,10 @@ def test_library_publication_does_not_bypass_class_membership_or_owner(client, d
 
 
 @pytest.mark.parametrize("flag", [False, "true", 1])
-def test_unbound_material_requires_explicit_boolean_publication(client, db, student, classroom, flag):
+def test_published_chapter_material_is_visible_despite_obsolete_library_flag(client, db, student, classroom, flag):
     media = add_media(db, library_available=flag)
-    assert media.id not in library_ids(client, student, classroom)
-    assert client.get(f"/api/materials/{media.id}?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 403
+    assert media.id in library_ids(client, student, classroom)
+    assert client.get(f"/api/materials/{media.id}?classroom_id={classroom['id']}", headers=student["headers"]).status_code == 200
 
 
 @pytest.mark.parametrize("source", [{}, "external import", {"kind": "upload"}])

@@ -6,17 +6,17 @@
 
 OverlayHost为日志、图书馆、地图、班级、设置、资料阅读与练习提供同一页头与近满屏透明外壳。gameDesign.css只在.game-workspace内定义令牌、图标标题、返回按钮、滚动条及原生单选/多选/下拉/开关/滑块的共同样式；各页不再覆写外壳尺寸和页头主题。townWorkspaces.css、learningUi.css和页面局部样式负责独立纸面卡片与透明间隙，教师主题保持独立。设计入口为design/README.md。LibraryWorkspace基于已授权/library响应，在客户端按章节分组并搜索/筛选；视图状态与滚动位置使用用户/班级隔离的sessionStorage键，阅读返回后恢复。筛选不改变服务端发布或授权。
 
-ClassroomPanel从当前session.classes和world展示教师姓名与服务器任务状态，不增加进度写入接口。session.switchClassroom先等待阅读保存并读取目标world，确认账号、令牌、原班级和请求代次仍一致后才整体切换；失败保留原班级，成功清除旧故事/导航/追踪状态和返回历史，工作区仍停留在我的班级。本机已按用户和班级隔离的阅读、编辑草稿不被删除。加入操作复用现有接口并刷新成员班级列表，不自动强切班级。
+ClassroomPanel从当前session.classes和world展示教师姓名与服务器任务状态，不增加进度写入接口。session.switchClassroom先等待阅读保存并读取目标world，确认账号、令牌、原班级和请求代次仍一致后才整体切换；失败保留原班级，成功清除旧导航及追踪状态和返回历史，工作区仍停留在我的班级。本机已按用户和班级隔离的阅读、编辑草稿不被删除。加入操作复用现有接口并刷新成员班级列表，不自动强切班级。
 
 SettingsPanel使用账户、界面、音乐、操作、关于的可键盘导航标签页。字号和动效复用uiPreferences，musicVolume经有效数值检查并限制在0到1，直接传给当前世界的环境音频对象；没有为设置创建另一套Phaser.Game或轮询。播放开关属于当前会话，音量属于本机偏好。关于页复用LicenseContent承载许可与来源，设置内不再提供班级或资料库跳转。
 
 `backend/app` 是一个 FastAPI 项目：auth、courses、course_content、classrooms、teaching、course_packages、materials、practice、assistant 共用 SQLAlchemy 模型、数据库会话和鉴权。无旧 Java 服务和业务兼容层。PostgreSQL 是正式状态源，Alembic 是唯一迁移机制。SQLite 只用于轻量测试。登录使用随机不透明 bearer 会话令牌，数据库只存摘要；密码采用独立盐的 scrypt。
 
-当前内置主线仅为arrival“初来小镇：第一堂 Python 课”。任务引擎仍支持通用分支与依赖，课程资源的章节数不等于已编写的主线数量。旧共享任务从当前配置退出，学生历史与当前任务定义分开保存。
+
 
 ## 核心流
 
-前端请求事件、剧情请求、视频会话和提交幂等键统一使用`shared/uuid.ts`生成UUID v4；HTTP测试环境缺少`crypto.randomUUID`时使用`crypto.getRandomValues`，不退回Math.random或时间戳。失败重试继续复用原键，服务端鉴权、唯一约束及证据校验保持不变。
+提交与播放会话使用 `shared/uuid.ts` 生成幂等标识。服务端校验班级授权及当前章节任务条件。
 
 `bootstrap.initialize_admin`在API lifespan内执行，PostgreSQL事务级advisory lock串行化首个管理员检查/创建；已有管理员时不再读取配置并覆盖密码。`users.must_change_password`由迁移`c3187f5db204`添加，既有用户默认为false；教师创建/重置学生时设true，`current_user`在服务端限制至改密/本人/退出接口。登录、改密、重置、停用与删除锁定用户行。改密、重置和停用在同一事务撤销会话，自助改密签发新的当前会话。删除账号在事务内清理关联存档；删除教师时锁定其负责的课程，核对班级归属后清理课程与历史。资料等存储对象可能被其他课程或交换包复用，课程的数据库引用随课程清除。
 
@@ -29,17 +29,17 @@ flowchart TD
     Chapter[章节] --> KC[知识点：学习目标]
     Chapter -->|关联，可多章复用| Material[资料库：课件、文本、视频]
     Chapter -->|关联，可多章复用| Question[独立题库]
-    KC --> Activity[活动：学习、练习、测试卡片]
-    Material -->|绑定资料| Activity
-    Question -->|有序选题关系| Activity
-    Quest[任务：顺序与完成要求] --> Activity
-    Story[剧情：NPC对白与引导] --> Activity
-    Activity --> Progress[学生记录：阅读位置、提交与成绩]
+    Chapter --> Activity[客观练习、编程练习与测验]
+    Material --> Reading[本章必读要求与参与证据]
+    Question --> Activity
+    Reading -->|必读达标| Practice[两类练习同时开放]
+    Practice -->|必做练习达标| Exam[章节测验]
+    Activity --> Progress[作答与成绩]
 ```
 
-资料与题目独立保存，MaterialChapter、QuestionChapter和QuestionKnowledgePoint维护结构化关联；未归类内容只供管理，不因标签公开给学生。资料不设必读/补充分类，具体阅读页与视频完成条件仍由活动配置。Question保存owner_id、source_type与审核状态，来源仅ai_generated/imported，参考资料/页码单独保存于可选source；后台录入归入imported。ActivityQuestion是活动选题与顺序的唯一状态源；题目不再持有activity_id，也不在Activity.content中保留question_ids副本。答案与隐藏用例继续私有保存，同题不同活动的提交、进度、测验与幂等凭据相互隔离。
+资料与题目独立保存。MaterialChapter 保存章节资料关联、阅读规则及排序。QuestionChapter 和 QuestionKnowledgePoint 保存题目归属。ActivityQuestion 保存固定题单及顺序。同题用于不同活动时，分别记录作答、进度和成绩。
 
-YAML描述当前任务、剧情和活动，只有显式导入时按ID更新数据库。课件文本、当前文件引用和教学配置存在PostgreSQL，实际上传文件存在私有存储；学生记录存于独立表。没有每学生复制教材或按内容版本选择的流程。
+显式导入的格式 4 课程包更新当前课程定义。PostgreSQL 保存章节、课件元信息、教学配置和学生记录，私有存储保存上传文件。
 
 固定地图的权威配置为 `shared/world/world.json`：地图尺寸/出生点、建筑名称/用途/门前锚点、对象目录与portal源/目标；课程交互和通行策略通过本班鉴权接口下发。前端在构建时导入，后端加载同一文件；建筑交互点从建筑anchor派生，避免两处维护坐标。小镇和图书馆均由Tiled图层与素材对象渲染，建筑通过object_name关联。房屋贴图和仅含中文名称的名牌均可点击导航，门口显示小型透明素材箭头。
 
@@ -47,41 +47,37 @@ map工作区复用静态地图资源绘制预览，不创建额外Phaser.Game；
 
 玩家地图标记读取session.mapPosition：独立内存快照可保存Sprite当前浮点位置，打开地图通过WorldHandle.getMapPosition同步抓取，运动完成与暂停时刷新；不等待位置PUT成功，也不改变原1.5秒持久保存节流。world.player仍是整数服务器快照，浮点显示坐标不作为事件证据或保存payload。账号、班级、世界切换清空旧live位置并隔离旧回调，跨图仍由服务器destination决定。玩家标记始终显示，窄屏仅滚动map-stage使其可见，不移动页面焦点或重置用户筛选。
 
-交互可用points声明同一语义的多处真实位置。library_shelf保留旧ID，绑定10组书架；地图右侧只呈现一个语义项，运行场景展开各物理锚点，点击指定书柜或导航时选择相应可达位置。服务端物件证据在任一真实锚点半径2内才接受；历史脚本与事件不改写，旧任务及对白中“西侧书架”只在显示层改称。场景每帧按实际插值位置更新附近提示，暂停、编辑输入或离开半径时清除；关闭建筑不进入E候选。
+地图以建筑门口和四名角色的实际站位提供交互。靠近可交互位置时显示提示，进入学习工作区时暂停移动。
 
 跨图通过POST /world/transition；服务端校验当前图、入口距离和本班建筑通行策略，成功后返回配置落点与世界状态。普通PUT /world/position只允许同图更新，防止绕过入口。前端保存源位置后请求传送，收到权威落点才切图；网络结果不确定时读取世界对账，不盲目重复传送。旧室内存档可原位继续并出馆。
 
-1. 学生携带会话和明确 classroom_id 请求世界。服务端检查成员、发布、开放时间和前置，为当前用户创建引用当前定义的任务实例。
-2. Vue 发送带 event_id 的交互证据；任务引擎验证当前可执行节点、人物/地点或学习记录/正式提交，事务保存事件、节点状态和世界标记。唯一约束处理重复请求；ALL/ANY 和分支由白名单解释器计算。
+1. 学生携带会话和 classroom_id 请求固定世界和章节任务点。
+2. 服务端读取本班已开放章节，并按章汇总必读资料和活动的真实完成证据。提交前重新检查当前要求。
 3. 教学资料保留 material_id/page_id。上传进入私有存储与可恢复处理状态；文件流再次鉴权。阅读参与单独入库，不冒充掌握度。
 4. 概念题在服务端比对私有答案。编程提交先入库，私有用例留在后端，后台由 GoJudgeAdapter 调用独立 go-judge Python 沙箱，再在后端比较实际输出和预期值；预期值不发送给执行器，任务不依赖浏览器存活。送交结果不确定时保留待对账状态，禁止盲目重送。基础设施故障与错误答案分开。
 5. 主动助教消息进入活动或资料范围隔离的会话。统一 create_agent 分别装配学习/练习提示词和工具；固定前缀只包含活动目标、角色人设和简短规则。状态在每次提问时冻结，由服务端核验并与上轮比较，以独立数据尾缀追加；不修改旧消息。完整授权文本用于词法检索，读取工具支持分页/分段，当前题反馈区分本机公开样例与服务端正式提交。
 
 ## 持久化
 
-图书馆直接阅读使用资料级助教会话：`assistant_sessions.activity_id` 可空，`material_id` 指向当前授权资料；不创建虚拟Activity或任务，使用课程默认角色。学习工具仅访问当前资料；练习资料由活动显式资料及当前题引用资料确定，不再任意选择章节首份资料，提交查询严格绑定当前题。恢复历史及每次提问重新检查用户、班级、章节和当前内容授权。客户端恢复键按用户、班级和活动或资料区分；普通操作不产生模型请求。
+图书馆直接阅读使用资料级助教会话：`assistant_sessions.activity_id` 可空，`material_id` 指向当前授权资料；不创建虚拟Activity或任务，使用图书管理员角色。学习工具仅访问当前资料；练习资料由活动显式资料及当前题引用资料确定，不再任意选择章节首份资料，提交查询严格绑定当前题。恢复历史及每次提问重新检查用户、班级、章节和当前内容授权。客户端恢复键按用户、班级和活动或资料区分；普通操作不产生模型请求。
 
 迁移 f942bc358da1 增加助教会话 revision/runtime、调用幂等键/预约额度/私有 trace 和全站模型配置。会话保存固定提示词与模板版本、上轮状态及模型消息链；聊天记录和每次工具请求/返回作为历史保留。压缩中间件在模型调用前统计系统提示、工具定义、消息和回复预留，默认32768上下文/24576触发，保留最近两轮及当前轮，不拆工具请求与返回配对。摘要与当前完整状态恢复后续聊；压缩失败只在原上下文仍可容纳时继续，否则明确失败。取消留下的不完整工具批次不作为后续模型输入，原审计仍保留。重启不自动重发模型请求。角色变更只影响新会话，权限与停用即时生效。
 
-全站模型连接由管理员维护，课程设置只包含角色、开关和收紧后的预算。API Key 使用 Fernet 加密，主密钥位于私有持久化存储；模型配置不进入课程包。未保存后台配置时使用环境连接，保存后整体采用数据库配置。学习与练习共享连接但工具清单独立；模型、工具、时间、单请求累计预算和每日额度共同生效，摘要调用也记账。未知模型采用保守 token 估算，不假定供应商窗口容量。
+全站模型连接由管理员维护，管理员统一维护全平台答疑角色、开关和预算。API Key 使用 Fernet 加密，主密钥位于私有持久化存储；模型配置不进入课程包。未保存后台配置时使用环境连接，保存后整体采用数据库配置。学习与练习共享连接但工具清单独立；模型、工具、时间、单请求累计预算和每日额度共同生效，摘要调用也记账。未知模型采用保守 token 估算，不假定供应商窗口容量。
 
-章节YAML经校验后按稳定ID写入StoryDefinition、QuestDefinition和Activity，已有ID原位更新。不存在内容快照或多版选择。Material直接保存当前正文、文件引用与处理状态；Activity保存KC；ActivityMaterial保存有序资料、必读标记和每份学习规则，题集与顺序由ActivityQuestion保存。学生任务、节点、ActivityProgress、Submission和LearningRecord独立保存，不被导入重建或清空。剧情会话保存对白位置和等待活动，event_id去重、revision拒绝过期推进，每用户/班级仅一个active或waiting演出。导入和编辑拒绝破坏活跃会话节点及其等待活动；历史会话与学习证据保留。
+章节资料要求保存在 MaterialChapter，参与证据按学生、班级、章节和资料保存。Activity 保存本章练习或测验，题集与顺序由 ActivityQuestion 保存。
 
-Vue会话协调对话、唯一工作区和Phaser导航。新任务的navigation_target先带玩家走到NPC，通过对话选择打开活动；小镇进入图书馆后继续走到馆员，离馆后也能续走到目标。读页请求串行落库，返回剧情前等待保存完成。阅读位置、参与页、代码草稿和成绩各自保存；普通演出与页码保存均不调用模型。已完成章节演出在另一章有可执行NPC目标时交还该章交互，避免章节总结挡住后续任务。
+AssessmentAttempt 按用户、班级、测验保存草稿、题目 ID 和正式提交凭据。草稿修订号防止并发覆盖。交卷后统一锁定答案并建立每题的 Submission。已交试卷完成全部判定后计入章节进度。
 
-用户/会话、班级/成员、章节/KC、当前材料、当前活动、NPC、当前任务定义/实例/节点、世界位置/标记、题目/私有用例/提交、学习事件/参与记录、章节发布、助教会话/调用记录分别建模。JSON 保存受校验的任务脚本和内容，不承载全部业务状态。
+成绩在公开payload中按 `correct_count * 100 // total` 派生为0–100整数，未判完为null，不改写既有逐题判定。
 
-AssessmentAttempt按用户、班级、测验活动唯一保存答题草稿、题目ID和真实提交凭据。草稿revision只防并发覆盖；整卷交卷先事务锁定答案并创建各题Submission，再沿用现有判题通道。它不复制教材或题目正文，不引入内容快照或版本管理。完整旧成绩首次打开时绑定为只读历史试卷，原Submission保持不变；部分旧作答可带入草稿，未知判题状态保持锁定并等待对账。进度与剧情统一使用整卷已判定证据，全部答对另以passed表示。
 
-成绩在公开payload中按 `correct_count * 100 // total` 派生为0–100整数，未判完为null，不改写既有逐题判定。剧情受限条件解释器读取授权的目标/任务/章节状态与该真实分数；branch选择首个命中路由，random只在自动推进时选择一次并把最终对白位置落在StorySession中。选项when在显示和提交时均由服务端验证，不能通过手工choice绕过。
-
-日常与公共流程存入StoryDefinition，quest_id可空；chapter_id为空时是公共流程，否则继续受本班章节发布鉴权，不创建QuestDefinition或PlayerQuest。三种模式task/public/ambient复用会话、修订和幂等机制。只有ambient禁止活动绑定、任务检查点与效果；public可以打开活动并通过真实完成证据执行unlock_building，不为公共业务伪造任务。日常响应不初始化任务，只保存对白游标和请求凭据；当前NPC的可执行教学与等待活动优先。world.story_available独立报告授权演出存在性，前端即使没有任务故事也能进入/恢复日常。StoryDefinition的quest_id和chapter_id均可空，以支持无任务、无章节公共流程；没有新增内容快照、聊天历史版本或独立闲聊引擎。
 
 ## 环境隔离
 
 Reborn Compose 项目、数据库、卷、对象存储前缀和端口独立。主栈默认包含 db/api/web/judge 四个服务，统一Compose管理；judge是独立Python隔离容器，无宿主机端口，仅API加入其内部网络。API启动只执行结构迁移、必要管理员初始化与服务启动，不再自动导入课程或归档题。课程包来自显式外部来源，后台修改不因镜像更新/重启被seed覆盖；数据库卷保存元信息与关系，私有文件卷保存媒体和解析产物。默认数据库不对外发布，开发覆盖文件也只绑定 loopback。开发、验收与生产使用独立环境，部署操作遵循显式授权。
 
-教师后台 `/teacher/` 由独立 React 应用提供，使用项目维护的 shadcn/ui 组件源码。表单草稿、选择和预览按班级隔离。React Flow 只负责编辑界面中的节点、端口、连线与布局，画布修改转换回现有受限流程定义。后台样式仅在后台 HTML 加载，权限、发布与成绩由服务端判定。
+教师后台 `/teacher/` 使用 React 和项目维护的 shadcn/ui 组件。教师在课程章节详情内编辑任务点，权限、发布和成绩由服务端判定。
 
 `TownPreviewStudent` 按教师与班级唯一关联专属学生身份。体验会话使用独立标签页的学生令牌，服务端复核签发它的教师会话与班级权限，再按课堂作用域复用正常游戏与存档。体验学生不占正式成员关系，班级统计排除其学习事件、提交和参与记录。重玩接口只接受体验身份和绑定班级，普通开发重置仍受双开关约束。
 
@@ -90,27 +86,19 @@ Reborn Compose 项目、数据库、卷、对象存储前缀和端口独立。�
 
 ## 班级课程与前端边界
 
-课程实例保存负责教师；classrooms.course_id 指向课程。章节、资料、知识点、题库、活动、角色和教学流程保存 course_instance_id 与包内稳定 ID。同课各班共用当前定义。成员、开放安排、学习证据和教师体验身份归属班级。课程包及媒体见[内容规范](content-authoring.md#班级课程完整包设计)。
+课程实例保存负责教师，班级通过 classrooms.course_id 引用课程。章节、资料、知识点、题目和活动保存课程归属及包内稳定 ID。同课各班共用内容，开放安排、学习证据和教师体验身份归属班级。[内容规范](content-authoring.md#班级课程完整包设计)
 
 教师按课程 ID 鉴权并编辑，学生按班级授权后解析课程。课程内容写入与学生读取使用同一课程锁；班级排期独立保存。升级时每个旧班自动成为一门课及其原班，保留内容主键和班级学习证据。
 
 PostgreSQL使用班级事务级共享/独占advisory gate。普通运行读写先取共享gate，编辑、导入、导出、实例迁移先取独占gate，再锁实例与业务行；revision检测预览与保存之间的变化。媒体转换从queued到processing/ready/failed同样更新修订，不能让异步写入绕过导入冲突检测。运行中的助教调用阻止课程迁移/导入，未知判题派发保持原状态等待对账。SQLite测试不代替PostgreSQL并发验证。
 
-导入先对ZIP和所有资源/领域引用做校验与影响预览，确认时重新鉴权、核对24小时有效期、包哈希、revision和学习影响，事务更新当前定义。相同请求返回原回执；被历史引用的删除、已有学习记录的跨课程替换、进行中的流程依赖和正式测验结构变化会拒绝。导出在独占gate下生成一致的完整包，缺失或仍转换的媒体拒绝导出，不交付假完整产物。私有暂存ZIP不直接公开；预览过期不自动删除运行媒体。
+导入先对ZIP和所有资源/领域引用做校验与影响预览，确认时重新鉴权、核对24小时有效期、包哈希、revision和学习影响，事务更新当前定义。相同请求返回原回执；被历史引用的删除、已有学习记录的跨课程替换、正式测验结构变化会拒绝。导出在独占gate下生成一致的完整包，缺失或仍转换的媒体拒绝导出，不交付假完整产物。私有暂存ZIP不直接公开；预览过期不自动删除运行媒体。
 
 React后台位于admin/，以/teacher/独立HTML和Vite构建；游戏仍由frontend/提供/world。两个应用共用FastAPI和登录会话协议，通过正常页面导航切换，各自拥有DOM、路由、状态和样式。后台的Tailwind与shadcn/ui不进入学生bundle；离开游戏时销毁唯一Phaser实例，不用微前端或互嵌组件。React官方支持按独立子路径接入：[官方说明](https://react.dev/learn/add-react-to-an-existing-project#using-react-for-an-entire-subroute-of-your-existing-website)（2026-11-10经Context7核对）。
 
-### 动态世界与流程
+### 固定小镇与章节任务点
 
-shared/world/world.json及Tiled资源拥有地图几何、稳定对象、建筑室内、门户落点和箭头显示规则。Npc 保存统一角色身份、素材引用、人设和可空放置及出现条件；CoursePackageState 保存课程交互、建筑策略、课程助教设置、私有资源元信息和图布局。鉴权/world只返回本班可见交互与building_access；前端自动从固定门户生成箭头，入口流程可绑定建筑，不能绕过流程或服务端通行验证。enter区域按真实保存位置判断，离开后再次进入才重触发；位置更新不跨图。
-
-公共流程不需要虚拟章节，章节流程受发布/前置授权控制。会话恢复优先于重新选择，具体五层入口顺序由[流程规范](content-authoring.md#公共流程章节流程与条件)定义，同层同优先级冲突在校验及运行时拒绝。action节点打开图书馆/日志/班级工作区或请求进入建筑；客户端收到服务端确认才执行界面效果。活动节点保持waiting，依据真实阅读/提交证据决定返回分支。纯日常不写学习/解锁；公共业务流程解锁必须有服务端可验证的完成条件。
-
-BuildingUnlock 以学生、班级、课程实例和建筑 ID 标识；不再读取旧 library_unlocked 标记，不新增逐栋布尔列。出口始终允许已在室内的学生安全返回。角色素材受内置目录或课程私有图片清单验证；位置、区域和对象引用受可达性验证，课程不能注入任意脚本、SQL或执行代码。
-
-教师编辑器读写与完整包相同的稳定ID模型，图布局不参与执行。预览使用所选学生在其教学班的真实状态报告分支路径和首个停靠节点，不创建学习、判题、解锁或AI记录。保存流程或任务结构时按现有定向重置保护处理；角色移动或撤回存在进行中互动时硬阻断，名称/外观/人设变更不重置学习进度。会话开始时保存已验证的物理锚点；活动完成令入口/NPC出现条件不再满足，不会截断原会话。推进/返回仍校验本班课程、章节权限及原锚点附近，进入建筑后更新为服务端落点。显式结束允许学生在离开原位置或章节暂停后关闭本人会话，不读取失授权内容。
-
-统一角色资料通过 world/npcs.yaml 交换，assistant/settings.yaml 只保存课程开关、预算和 default_npc_id。图书馆使用课程默认答疑角色；活动 npc_key 为空则继承课程默认，非空则覆盖。流程 speaker_npc_id 引用同一角色身份，角色人设参与新助教会话的固定提示词。自定义图像经统一解码校验后存私有存储，素材 URL 带哈希并按班级授权。Phaser 按角色素材渲染，不生成装饰游走角色；所有对白经 StoryDefinition/StorySession 与服务端检查点执行。
+地图、四位角色的位置和职责由程序提供。管理员统一维护各角色的立绘、像素形象、人设与平台答疑设置。学习进度由本班真实的阅读记录、练习通过题目、已判定的试卷计算。
 
 ## 浏览器公开样例执行
 
@@ -128,9 +116,9 @@ SubmissionDiagnostic与SubmissionPayload分离：认领时记开始时间，完�
 
 ## 教学内容移除与历史证据
 
-Chapter、KnowledgePoint、Material、Question、Activity、QuestDefinition与StoryDefinition使用可空deleted_at区分当前定义和历史保留行。ORM默认添加当前内容条件；仅授权历史查询显式include_deleted，身份缓存返回的实体仍经课程/删除状态校验。章节当前排序槽使用条件唯一索引，原稳定ID继续唯一。
+Chapter、KnowledgePoint、Material、Question、Activity 使用可空deleted_at区分当前定义和历史保留行。ORM默认添加当前内容条件；仅授权历史查询显式include_deleted，身份缓存返回的实体仍经课程/删除状态校验。章节当前排序槽使用条件唯一索引，原稳定ID继续唯一。
 
-ContentDeletionPreview保存教师/班级/课程归属、修订、目标、影响及历史指纹、确认文字和幂等结果。服务端预览和执行共用依赖闭包，课程排他锁与学生共享锁协调，确认事务复核后统一标记、解绑和递增修订。关联记录不随内容物理删除；完整任务/流程保留原定义。私有媒体继续保留，导出排除只属于已移除资料的媒体。行为规则见[内容规范](content-authoring.md#级联删除与学生历史保留)。
+ContentDeletionPreview保存教师/班级/课程归属、修订、目标、影响及历史指纹、确认文字和幂等结果。服务端预览和执行共用依赖闭包，课程排他锁与学生共享锁协调，确认事务复核后统一标记、解绑和递增修订。关联记录不随内容物理删除。私有媒体继续保留，导出排除只属于已移除资料的媒体。行为规则见[内容规范](content-authoring.md#级联删除与学生历史保留)。
 
 ## 逐页讲解与学习助教集成
 
@@ -144,7 +132,7 @@ ContentDeletionPreview保存教师/班级/课程归属、修订、目标、影�
 
 ## 体验检查点
 
-ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定义指纹，迁移c38d01fe72b9接b72c49e018a3。只包含WorldFlag、BuildingUnlock、PlayerPosition、ActivityProgress、当前StorySession必要状态及PlayerQuest/NodeState；客户端补充限定作用域的阅读和草稿缓存。没有课程定义副本、Submission、AssessmentAttempt、LearningEvent或AssistantSession回滚。恢复复用PlayerQuest主键以保留事件引用，重建未结束对白的新ID，拒绝过期指纹。课程锁与本人行锁串行化状态变更，检查未决评测和助教调用；详情见[体验接口](api-contract.md#体验开发工具)。
+ExperienceCheckpoint 按用户和班级保存地图位置与界面状态。恢复时服务端复核体验身份、位置和当前内容。
 
 ## 模块组织与依赖边界
 
@@ -154,10 +142,10 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 
 | 模块 | 职责与边界 |
 | --- | --- |
-| `frontend/src/shared/session/` | `index.ts` 是唯一身份、班级和世界快照所有者；navigation、position、story、reading、experience 分别处理工作区导航、实时位置、对白幂等请求、串行阅读保存和恢复前准备。子模块显式接收引用与回调，不自行创建相互依赖的 store。 |
+| `frontend/src/shared/session/` | 管理身份、班级、当前世界、位置、工作区导航、任务追踪与体验恢复。 |
 | `frontend/src/shared/mediaCache.ts`、`pdfCache.ts`、`mediaMaintenance.ts` | 学生端有界内存媒体缓存：音频与页面图共 50 MB、PDF 文档 40 MB，保留最近使用项并做 LRU；15 分钟空闲淘汰未引用项，标签页隐藏 30 分钟清理未引用项，登录、切班、退出登录全部销毁。鉴权媒体仍由 HTTP `private, no-store` 交付，缓存只在内存中，不写入浏览器磁盘。 |
-| `frontend/src/features/developer/` | DeveloperWorkspace 组装账户概要、内容定位、任务阶段、体验检查点四个图标侧标签。模块内 API 和请求协调器负责权限范围、并发动作与迟到结果；重置指向当前学生在当前班级的进度。 |
-| `frontend/src/features/learning/` | LessonWorkspace 组装阅读与支持侧栏；LessonMaterial 负责 PDF、文本、视频展示；source、reading evidence、video、completion、goals 分别管理资料生命周期、阅读证据、播放采样、显式完成和目标展示。旧资料的迟到响应不能覆盖新资料，离开释放媒体 URL。 |
+| `frontend/src/features/developer/` | 按当前体验身份和班级提供内容定位、检查点和重置。 |
+| `frontend/src/features/learning/` | 阅读工作区管理资料来源、播放状态、章节阅读证据和学习目标。 |
 | `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |
 | `frontend/scripts/generate-python-completions.py`、`frontend/public/python-completions/` | 维护期从 Python 标准库生成 manifest 和按模块 JSON（成员、签名、首行说明），编辑器输入 `模块.` 时懒加载；不手写成员表，不执行学生代码，不引入语言服务器。 |
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
@@ -184,7 +172,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 
 ### 教师端
 
-`admin/src/App.tsx` 直接装配功能入口。教学流程放入 `features/authoring/`：页面只组装，草稿/保存校验、流程操作、预览独立；graph、flows/nodes、quests、map、characters、conditions 各拥有对应模型、状态与视图。资料、题库、活动分别归入 `features/materials/`、`questions/`、`activities/`；逐页讲解审校在资料模块内区分请求、审校状态、媒体生命周期、页面预览与编辑。通用控件留在 `components/ui/`，不反向依赖业务页面。不为保持旧路径新建空路由页面或 re-export。
+`admin/src/App.tsx` 装配后台入口。章节详情复用 `features/materials/`、`features/questions/` 和 `features/activities/` 维护课件、题单与任务点。`features/management/` 提供平台角色维护界面。
 
 ### 后端
 
@@ -194,8 +182,8 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 | `course_content/` | snapshot 保存当前定义快照供比较和交换；access/learning/evidence/presentation 共用授权、学习规则、证据与公开响应；activities/questions/releases/progress 维护活动、题库、发布和统计。定义快照不是学生可切换的课程版本。 |
 | `classrooms/` | 班级、成员、教师独立体验身份；课程内容不再混入班级接口文件。 |
 | `materials/` | storage 是本地/S3存储适配，uploads/conversion/jobs 负责上传解析与后台转换，delivery 负责私有文件与 Range 交付；用户媒体统一 no-store，学生 PDF/PPT 阅读器按 Range 取块，不整份下载。access/presentation/service/router 维护授权、响应和接口。 |
-| `teaching/` | authoring、story、quests、world、conditions 分开定义校验、编写、运行状态、证据处理与 HTTP 装配。定义校验不依赖 HTTP 路由或应用编排，运行规则不反向调用教师编辑服务。quick_template 把教师的模板和内容选择编译为相同的活动、任务、地图角色及对白。模板目录为教师后台提供环节和地点，学生端直接执行生成的定义。 |
-| `experience/` | navigation/stages/checkpoints 分别拥有内容定位、任务阶段预览应用和检查点；access/state/contracts/router 共享本人作用域、状态快照和接口。 |
+| `chapter_tasks/`、`teaching/world/` | 计算已开放章节和任务进度，复核活动准入，提供固定地图和角色位置。 |
+| `experience/` | 管理体验身份的内容定位、位置检查点及其权限。 |
 | `narration/` | 保留已有讲稿、校准、TTS与仓储边界。请求契约、资料授权、任务命令和环境默认值独立维护，HTTP路由与失败重试管理共用任务命令，不互调路由函数。 |
 
 数据库事务边界由对应的应用操作确定，完整的仓储操作可封装自己的事务、锁与任务租约；拆出的子步骤不得提前提交破坏原子性，幂等回执与业务修改须保持一致。复用规则通过明确公共函数导入，不跨模块访问私有函数，不以函数内导入掩盖循环依赖。`models.py`、Alembic历史和现有学生数据不因目录整理改变。
@@ -206,7 +194,7 @@ ExperienceCheckpoint按user_id/classroom_id保存命名体验快照和当前定�
 
 `node scripts/check-modules.mjs` 检查明确的导入边界和已退场入口；`python scripts/check-python-imports.py` 静态检查后端的循环依赖与跨模块私有访问，包含函数内和常量动态导入。两项按模块改动在本机执行，配套合成测试覆盖规则。行数超过500或超过10行长于200字符只提醒人工复核，不能通过压行、机械切片或无意义转调达标。编译器、行为测试与浏览器仍负责真实正确性，依赖检查不替代它们。操作步骤见[开发手册](development.md)。
 
-多资料阅读的聚合与规则校验归 `course_content/resources.py`，累计证据仍在 `ActivityProgress`，其中 `media_progress.reading_pages/reading_positions` 按资料ID保存，视频的时间/覆盖/会话也按资料隔离。移除活动单资料列通过一次性迁移处理，课程包格式3显式交换资源关联，不增设旧格式运行适配层。
+阅读任务的规则校验和进度聚合位于 `chapter_tasks/`。MaterialParticipation 为同一学生在不同班级、章节阅读同份资料分别保存证据。
 
 ### 题型扩展入口
 

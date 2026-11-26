@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 from sqlalchemy import select
 
-from app.course_content.snapshot import snapshot_content
+from app.course_packages.snapshot import package_snapshot
 from app.course_packages.apply import import_bundle
 from app.course_packages.impact import preview_impact
 from app.course_packages.reader import load_bundle
@@ -28,30 +28,46 @@ def test_matching_can_reassign_shared_questions_and_overlap_minima_with_total():
         allocate_initial(rules, pool)
 
 
-def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client, classroom, teacher, student, db, tmp_path):
+@pytest.fixture
+def authored_class(client, teacher, student):
+    headers = teacher["headers"]
+    classroom = create_test_class(client, headers=headers, json={"name": "独立出题测试"}).json()
+    course_url = f"/api/teacher/courses/{classroom['course_id']}"
+    for index in (1, 2):
+        chapter = client.post(course_url + "/chapters", headers=headers, json={"title": f"第{index}章"}).json()
+        classroom[f"chapter_{index}"] = chapter["id"]
+        assert client.put(f"/api/teacher/classrooms/{classroom['id']}/releases/{chapter['id']}", headers=headers,
+                          json={"status": "published"}).status_code == 200
+    assert client.post("/api/classrooms/join", headers=student["headers"], json={"join_code": classroom["join_code"]}).status_code == 200
+    return classroom
+
+
+def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client, authored_class, teacher, student, db, tmp_path):
+    classroom = authored_class
     scope = f"?classroom_id={classroom['id']}"
     headers = teacher["headers"]
     base = f"/api/teacher/courses/{classroom['course_id']}/activities"
     point = client.post(f"/api/teacher/courses/{classroom['course_id']}/knowledge-points" + scope, headers=headers,
-                        json={"chapter_id": 179, "title": "专用抽题目标"}).json()["id"]
+                        json={"chapter_id": classroom["chapter_1"], "title": "专用抽题目标"}).json()["id"]
     rules = {"goals": [{"knowledge_point_id": point, "by_kind": {"boolean": 1}}]}
-    body = {"id": "adaptive", "chapter_id": 179, "title": "知识点练习", "kind": "practice", "practice_rules": rules}
+    body = {"id": "adaptive", "chapter_id": classroom["chapter_1"], "title": "知识点练习", "kind": "practice", "practice_rules": rules}
     assert client.post(base + scope, headers=headers, json=body).status_code == 422
-    assert client.post(base + scope, headers=headers, json={**body, "chapter_id": 180, "published": False}).status_code == 422
+    assert client.post(base + scope, headers=headers, json={**body, "chapter_id": classroom["chapter_2"], "published": False}).status_code == 422
     draft = client.post(base + scope, headers=headers, json={**body, "published": False})
     assert draft.status_code == 201, draft.text
     activity_id = draft.json()["id"]
     assert client.get(f"/api/activities/{activity_id}" + scope, headers=student["headers"]).status_code == 403
     edit = base + "/" + activity_id
     assert client.put(edit + scope, headers=headers, json={"published": True}).status_code == 422
+    db.rollback()  # The shared TestClient session normally ends at the request boundary.
     assert client.put(edit + "/questions" + scope, headers=headers, json={"question_ids": []}).status_code == 422
     question = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions" + scope, headers=headers, json={
         "id": "adaptive-only", "title": "判断", "prompt": "测试", "answer": True, "kind": "boolean",
-        "chapter_ids": [179], "knowledge_point_ids": [point], "status": "ready"})
+        "chapter_ids": [classroom["chapter_1"]], "knowledge_point_ids": [point], "status": "ready"})
     assert question.status_code == 201, question.text
     question_id = question.json()["id"]
     assert client.put(edit + scope, headers=headers, json={"practice_rules": None}).status_code == 200
-    assert client.put(edit + "/questions" + scope, headers=headers, json={"question_ids": [question_id]}).status_code == 200
+    assert client.put(edit + scope, headers=headers, json={"question_ids": [question_id], "published": True}).status_code == 200
     fixed = client.get(f"/api/activities/{activity_id}" + scope, headers=student["headers"])
     assert fixed.status_code == 200, fixed.text
     assert [q["id"] for q in fixed.json()["questions"]] == [question_id]
@@ -59,7 +75,7 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
     assert client.put(f"/api/teacher/courses/{classroom['course_id']}/questions/" + question_id + scope, headers=headers, json={"status": "disabled"}).status_code == 409
 
     instance = db.scalar(select(CourseInstance).where(CourseInstance.id == classroom["course_id"]))
-    data = snapshot_content(db, instance)[0]
+    data = package_snapshot(db, instance)[0]
     portable = next(row for row in data["activity"] if row["id"] == "adaptive")
     stable_point = db.get(KnowledgePoint, point).stable_id
     assert portable["content"]["practice_rules"]["goals"][0]["knowledge_point_id"] == stable_point
@@ -86,7 +102,8 @@ def test_rule_draft_publication_deletion_protection_and_package_roundtrip(client
     assert any("练习目标" in message for message in preview_impact(db, instance, changed)["blockers"])
 
 
-def test_hidden_only_python_reserved_for_assessments(client, classroom, teacher, admin_account, student, db, tmp_path):
+def test_hidden_only_python_reserved_for_assessments(client, authored_class, teacher, admin_account, student, db, tmp_path):
+    classroom = authored_class
     from app.course_packages.manifest import PackageError
     from app.course_packages.validation import validate_bundle
     from app.practice_rules import candidate_pool
@@ -94,20 +111,20 @@ def test_hidden_only_python_reserved_for_assessments(client, classroom, teacher,
     scope = f"?classroom_id={classroom['id']}"
     headers = teacher["headers"]
     point = client.post(f"/api/teacher/courses/{classroom['course_id']}/knowledge-points" + scope, headers=headers,
-                        json={"chapter_id": 179, "title": "编程目标题池"}).json()["id"]
+                        json={"chapter_id": classroom["chapter_1"], "title": "编程目标题池"}).json()["id"]
     case = {"input": "1", "output": "1"}
     definition = {"id": "hidden-only", "title": "编程", "prompt": "回显", "kind": "python",
-                  "chapter_ids": [179], "knowledge_point_ids": [point], "status": "ready", "hidden_cases": [case]}
+                  "chapter_ids": [classroom["chapter_1"]], "knowledge_point_ids": [point], "status": "ready", "hidden_cases": [case]}
     question = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions" + scope, headers=headers, json=definition)
     assert question.status_code == 201, question.text
     question_id = question.json()["id"]
     edit_question = f"/api/teacher/courses/{classroom['course_id']}/questions/" + question_id + scope
     activity_url = f"/api/teacher/courses/{classroom['course_id']}/activities"
     assessment = client.post(activity_url + scope, headers=headers,
-                             json={"id": "server-exam", "chapter_id": 179, "title": "测验", "kind": "assessment"}).json()["id"]
+                             json={"id": "server-exam", "chapter_id": classroom["chapter_1"], "title": "测验", "kind": "assessment", "question_ids": [question_id]}).json()["id"]
     assert client.put(f"{activity_url}/{assessment}/questions" + scope, headers=headers, json={"question_ids": [question_id]}).status_code == 200
     rules = {"goals": [{"knowledge_point_id": point, "by_kind": {"python": 1}}]}
-    body = {"id": "browser-adaptive", "chapter_id": 179, "title": "浏览器练习", "kind": "practice", "practice_rules": rules}
+    body = {"id": "browser-adaptive", "chapter_id": classroom["chapter_1"], "title": "浏览器练习", "kind": "practice", "practice_kind": "programming", "practice_rules": rules}
     assert client.post(activity_url + scope, headers=headers, json=body).status_code == 422
     assert client.put(edit_question, headers=headers, json={"samples": [case]}).status_code == 200
     created = client.post(activity_url + scope, headers=admin_account["headers"], json=body)

@@ -95,18 +95,22 @@ def test_delete_student_removes_saves_without_removing_the_course(client, db, ad
     assert not db.execute(text("PRAGMA foreign_key_check")).all()
 
 
-def test_delete_teacher_removes_owned_courses_and_preserves_other_classrooms(client, db, admin_account, teacher, student, classroom):
+def test_delete_teacher_removes_owned_courses_and_preserves_other_classrooms(client, db, admin_account, student, classroom):
     db.commit()
     db.execute(text("PRAGMA foreign_keys=ON"))
     admin = admin_account["headers"]
-    cid = classroom["id"]
-    instance_id = db.info["fixture_course_instance_id"]
+    from test_curriculum import another_teacher
+    from app.models import PlayerPosition
+    teacher = another_teacher(db)
+    target = create_test_class(client, headers=teacher["headers"], json={"name": "待删课程"}).json()
+    cid, instance_id = target["id"], target["course_id"]
     preview_id = client.post(f"/api/teacher/classrooms/{cid}/town-session", headers=admin).json()["user"]["id"]
-    retained = create_test_class(client, headers=admin, json={"name": "另一个班"}).json()
+    retained = classroom
     db.add_all([
-        Membership(classroom_id=retained["id"], user_id=student["id"]),
-        PlayerQuest(classroom_id=cid, user_id=student["id"], quest_id="remove-with-class", status="complete"),
-        PlayerQuest(classroom_id=retained["id"], user_id=student["id"], quest_id="keep-with-class", status="complete"),
+        Membership(classroom_id=cid, user_id=student["id"]),
+        Material(course_instance_id=instance_id, owner_id=teacher["id"], stable_id="delete-test", title="临时课件"),
+        PlayerPosition(classroom_id=cid, user_id=student["id"]),
+        PlayerPosition(classroom_id=retained["id"], user_id=student["id"]),
     ])
     db.commit()
     assert client.delete(f"/api/admin/accounts/{admin_account['id']}", headers=admin).status_code == 403
@@ -117,7 +121,7 @@ def test_delete_teacher_removes_owned_courses_and_preserves_other_classrooms(cli
     assert db.scalar(select(Material.id).where(Material.course_instance_id == instance_id)) is None
     assert db.get(User, student["id"])
     assert db.get(Membership, (student["id"], retained["id"]))
-    assert list(db.scalars(select(PlayerQuest.quest_id))) == ["keep-with-class"]
+    assert list(db.scalars(select(PlayerPosition.classroom_id))) == [retained["id"]]
     assert not db.execute(text("PRAGMA foreign_key_check")).all()
 
 
@@ -126,15 +130,20 @@ def test_scoped_global_monitoring(client, db, admin_account, teacher, student, c
     preview_id = client.post(f"/api/teacher/classrooms/{cid}/town-session", headers=teacher["headers"]).json()["user"]["id"]
     assert db.get(TownPreviewStudent, preview_id)
     material = db.scalar(select(Material).where(Material.course_instance_id == db.info["fixture_course_instance_id"]))
+    from app.models import MaterialChapter, MaterialParticipation
+    link = db.scalar(select(MaterialChapter).where(MaterialChapter.material_id == material.id))
+    link.required, link.rule = True, {"scope": "count", "count": 1}
     for uid in (preview_id, student["id"]):
-        db.add(PlayerQuest(user_id=uid, classroom_id=cid, quest_id="test-global", status="complete"))
+        db.add(MaterialParticipation(user_id=uid, classroom_id=cid, chapter_id=link.chapter_id, material_id=material.id,
+                                     evidence={"pages": [material.content["pages"][0]["id"]]}))
     db.add(NarrationRun(material_id=material.id, kind="generate", status="done", started_at=now()))
     db.commit()
     params = {"classroom_id": cid, "teacher_id": teacher["id"]}
     response = client.get("/api/admin/overview", params=params, headers=admin_account["headers"])
     assert response.status_code == 200, response.text
     row, = response.json()["items"]
-    assert row["task_total"] == row["task_completed"] == row["student_count"] == 1
+    assert row["task_completed"] == row["student_count"] == 1
+    assert row["task_total"] == 2  # Required document and the published chapter assessment.
     assert row["synthesis_counts"] == {"done": 1}
     for path in ("/api/admin/overview", "/api/admin/synthesis", "/api/teacher/judge/service",
                  "/api/teacher/judge/submissions", "/api/admin/accounts?role=student"):

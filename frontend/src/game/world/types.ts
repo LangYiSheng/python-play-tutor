@@ -28,7 +28,6 @@ export interface WorldCallbacks {
   mapPosition?: (player: Player) => void;
   transition: (portalId: string, source: Player) => Promise<Player | null>;
   interact: (target: string, type: "npc" | "object") => void;
-  enterRegion?: (target: string, player: Player) => Promise<void>;
   hint: (text: string) => void;
   progress: (value: number) => void;
   error: (text: string) => void;
@@ -75,7 +74,6 @@ export interface WorldSceneSurface extends Phaser.Scene {
   renderMaps: Map<string, RenderMap>;
   queuedTextures: Set<string>;
   lastHint: string;
-  enteredRegions: Set<string>;
   build(): void;
   resize(): void;
   approach(key: string, preferredPoint?: { x: number; y: number }): void;
@@ -86,5 +84,4 @@ export interface WorldSceneSurface extends Phaser.Scene {
   position(): Player;
   mapPosition(): Player;
   save(): void;
-  checkRegionEntry(): Promise<void>;
 }
