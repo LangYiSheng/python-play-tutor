@@ -5,7 +5,7 @@
 .activity-chapters button { display:flex; align-items:center; width:100%; gap:.65rem; padding:.72rem; text-align:left; font-size:.875rem; line-height:1.4; border-radius:.45rem; overflow-wrap:anywhere; }
 .activity-chapters svg { flex:none; }
 .activity-chapters button:hover { background:var(--muted); }
-.activity-chapters button[aria-current] { background:var(--accent); color:var(--accent-foreground); font-weight:600; box-shadow:inset 3px 0 var(--primary); }
+.activity-chapters button[aria-current] { background:var(--accent); color:var(--accent-foreground); font-weight:600; }
 .activity-panel-heading { padding:1.25rem; border-bottom:1px solid var(--border); }
 .activity-rows { margin:0; padding:0 1.25rem; }
 .activity-rows li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:.85rem; padding:1rem 0; }

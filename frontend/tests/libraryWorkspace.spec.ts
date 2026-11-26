@@ -48,7 +48,27 @@ describe("chapter library", () => {
     expect(wrapper.findAll(".library-card")).toHaveLength(1);
     expect(wrapper.get(".library-card").text()).toContain("共用讲义");
   });
-  it("groups only authorized materials by chapter and combines chapter, type and normalized search", async () => {
+  it("shows chapter reading progress even when search hides a required material", async () => {
+    vi.spyOn(api, "get").mockResolvedValue(items);
+    const session = useSession();
+    const task = { id:"read:186", material_id:186, title:"第一章计算思维", kind:"reading" as const, required:true, completed:false,
+      locked:false, lock_reason:null, current:2, total:35, unit:"页" };
+    session.taskChapters = [{id:179,title:"第一章",order_index:1,completed:false,tasks:[task,
+      {...task, id:"read:193", material_id:193, required:false, completed:true}]}];
+    const wrapper = await library();
+    expect(wrapper.findAll(".required-label")).toHaveLength(1);
+    expect(wrapper.get(".library-chapter-heading").text()).toContain("2 / 35 页");
+    await wrapper.get('input[type="search"]').setValue("小游戏");
+    expect(wrapper.find(".required-label").exists()).toBe(false);
+    expect(wrapper.get(".library-chapter-heading").text()).toContain("2 / 35 页");
+    session.taskChapters[0]!.tasks[1]!.required = true;
+    await nextTick();
+    expect(wrapper.get(".library-chapter-heading").text()).toContain("必读已完成 1 / 2 份");
+    session.taskChapters[0]!.tasks.forEach(item => item.required = false);
+    await nextTick();
+    expect(wrapper.get(".library-chapter-heading").text()).toContain("无必读资料");
+  });
+  it("groups only authorized materials by chapter and combines chapter and normalized search", async () => {
     const get = vi.spyOn(api, "get").mockResolvedValue(items);
     const post = vi.spyOn(api, "post");
     const wrapper = await library();
@@ -57,12 +77,11 @@ describe("chapter library", () => {
     expect(wrapper.get('[aria-label="资料章节"]').text()).not.toContain("未开放资料");
     expect(wrapper.find("h2").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("留一页");
-    await wrapper.get('[aria-label="资料类型"]').findAll("button")[2]!.trigger("click");
-    expect(wrapper.findAll(".library-card")).toHaveLength(1);
-    expect(wrapper.get(".library-card").text()).toContain("课程视频");
-    expect(wrapper.get(".library-card").text()).toContain("4:34");
+    expect(wrapper.find('[aria-label="资料类型"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("课程视频");
+    expect(wrapper.text()).toContain("4:34");
     await wrapper.get('input[type="search"]').setValue(" 计算 思维 ");
-    expect(wrapper.findAll(".library-card")).toHaveLength(1);
+    expect(wrapper.findAll(".library-card")).toHaveLength(2);
     await wrapper.get('[aria-label="资料章节"]').findAll("button")[2]!.trigger("click");
     expect(wrapper.text()).toContain("没有找到匹配的资料");
     await wrapper.get(".library-empty button").trigger("click");
@@ -72,13 +91,12 @@ describe("chapter library", () => {
     expect(wrapper.get(".library-card").text()).toContain("Python 语言基础");
     expect(post).not.toHaveBeenCalled();
   });
-  it("returns from reading with the same search, type, chapter and scroll position", async () => {
+  it("returns from reading with the same search, chapter and scroll position", async () => {
     vi.spyOn(api, "get").mockResolvedValue(items);
     const session = useSession();
     const navigate = vi.spyOn(session, "navigate");
     const wrapper = await library();
     await wrapper.get('input[type="search"]').setValue("计算");
-    await wrapper.get('[aria-label="资料类型"]').findAll("button")[2]!.trigger("click");
     await wrapper.get('[aria-label="资料章节"]').findAll("button")[1]!.trigger("click");
     (wrapper.get(".library-content").element as HTMLElement).scrollTop = 231;
     await wrapper.get(".library-card").trigger("click");
@@ -87,7 +105,6 @@ describe("chapter library", () => {
     mounted.splice(mounted.indexOf(wrapper), 1);
     const returned = await library();
     expect(returned.get('input[type="search"]').element).toHaveProperty("value", "计算");
-    expect(returned.get('[aria-label="资料类型"]').findAll("button")[2]!.attributes("aria-pressed")).toBe("true");
     expect(returned.get('[aria-label="资料章节"]').findAll("button")[1]!.attributes("aria-pressed")).toBe("true");
     expect((returned.get(".library-content").element as HTMLElement).scrollTop).toBe(231);
   });

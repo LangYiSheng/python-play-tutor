@@ -16,20 +16,23 @@
       <main ref="content" class="town-content library-content" :aria-busy="loading">
         <div class="town-toolbar library-toolbar">
           <label class="town-field library-search"><span>搜索资料</span><input v-model="query" type="search" placeholder="搜索资料名称或章节" autocomplete="off" @input="resetScroll"/></label>
-          <div class="library-type-filters game-segmented" role="group" aria-label="资料类型">
-            <button v-for="item in types" :key="item.id" :class="{ 'is-current': type === item.id }" :aria-pressed="type === item.id" @click="selectType(item.id)">{{ item.label }}</button>
-          </div>
           <span class="library-result-count" role="status" aria-live="polite">{{ filteredCount }} 份资料</span>
         </div>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-else-if="loading" class="town-empty" role="status">正在加载资料…</p>
         <template v-else>
           <section v-for="group in filteredChapters" :key="group.id" class="library-chapter" :aria-labelledby="`library-chapter-${group.id}`">
-            <header class="library-chapter-heading"><h3 class="game-card-title" :id="`library-chapter-${group.id}`"><GameIcon name="book"/>{{ group.title }}</h3><span>{{ group.materials.length }} 份</span></header>
+            <header class="library-chapter-heading"><h3 class="game-card-title" :id="`library-chapter-${group.id}`"><GameIcon name="book"/>{{ group.title }}</h3><span>{{ group.readingProgress }}</span></header>
             <div class="library-list">
               <button v-for="material in group.materials" :key="material.id" class="library-card" :disabled="material.status !== 'ready'" @click="open(material, group.id)">
                 <span class="library-material-icon" :class="{ 'is-video': material.kind === 'video' }" aria-hidden="true"><GameIcon :name="material.kind === 'video' ? 'video' : 'book'"/></span>
-                <span class="library-card-copy"><strong>{{ material.title }}</strong><small>{{ kindLabels[material.kind] ?? '课程资料' }}<span v-if="chapterTask(group.id, material.id)"> · {{ chapterTask(group.id, material.id)!.required ? "必读" : "选读" }} · {{ taskProgress(chapterTask(group.id, material.id)!) }}</span><span v-if="duration(material)"> · {{ duration(material) }}</span></small></span>
+                <span class="library-card-copy">
+                  <span class="library-card-title">
+                    <span v-if="group.tasks.get(material.id)?.required" class="required-label">必读</span>
+                    <strong>{{ material.title }}</strong>
+                  </span>
+                  <small>{{ kindLabels[material.kind] ?? '课程资料' }}<template v-if="group.tasks.has(material.id)">{{ group.tasks.get(material.id)!.required ? '' : ' · 选读' }} · {{ taskProgress(group.tasks.get(material.id)!) }}</template><template v-if="duration(material)"> · {{ duration(material) }}</template></small>
+                </span>
                 <span class="library-card-action">{{ material.status === 'ready' ? material.kind === 'video' ? '观看' : '阅读' : material.status === 'failed' ? '处理失败' : '处理中' }}<GameIcon v-if="material.status === 'ready'" name="arrowRight"/></span>
               </button>
             </div>
@@ -48,12 +51,10 @@ import { api } from "../shared/api";
 import { useSession } from "../shared/session";
 import type { Material } from "../shared/types";
 
-type MaterialType = "all" | "lesson" | "video";
 type ChapterSelection = "all" | number;
-interface SavedView { query?: string; type?: MaterialType; chapter?: ChapterSelection; scroll?: number; }
+interface SavedView { query?: string; chapter?: ChapterSelection; scroll?: number; }
 const session = useSession(), content = ref<HTMLElement>(), materials = ref<Material[]>([]), error = ref(""), loading = ref(true);
-const query = ref(""), type = ref<MaterialType>("all"), chapter = ref<ChapterSelection>("all");
-const types = [{ id: "all", label: "全部资料" }, { id: "lesson", label: "课件" }, { id: "video", label: "视频" }] as const;
+const query = ref(""), chapter = ref<ChapterSelection>("all");
 const kindLabels: Record<string, string> = { text: "文本课件", pdf: "PDF 课件", presentation: "演示课件", video: "课程视频" };
 let ownerKey = "", generation = 0, disposed = false, scrollPosition = 0;
 const chapters = computed(() => {
@@ -68,17 +69,20 @@ const chapters = computed(() => {
   }
   return [...groups].map(([id, items]) => {
     const details = session.world?.chapters.find(item => item.id === id);
-    return { id, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, materials: items.sort((a,b) => {
-      const entries = session.taskChapters.find(c => c.id === id)?.tasks ?? [];
-      return entries.findIndex(t => t.material_id === a.id) - entries.findIndex(t => t.material_id === b.id);
-    }) };
+    const entries = session.taskChapters.find(c => c.id === id)?.tasks.filter(t => t.kind === "reading") ?? [];
+    const tasks = new Map(entries.map(task => [task.material_id, task]));
+    const required = entries.filter(task => task.required);
+    const readingProgress = !required.length ? "无必读资料" : required.length === 1
+      ? `必读进度 · ${taskProgress(required[0]!)}`
+      : `必读已完成 ${required.filter(task => task.completed).length} / ${required.length} 份`;
+    return { id, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, tasks, readingProgress,
+      materials: items.sort((a, b) => entries.findIndex(t => t.material_id === a.id) - entries.findIndex(t => t.material_id === b.id)) };
   }).sort((a, b) => a.order - b.order || a.id - b.id);
 });
 const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/g, "");
 const filteredChapters = computed(() => chapters.value.filter(group => chapter.value === "all" || group.id === chapter.value).map(group => ({
   ...group,
   materials: group.materials.filter(material =>
-    (type.value === "all" || (type.value === "video" ? material.kind === "video" : ["text", "pdf", "presentation"].includes(material.kind))) &&
     normalize(`${material.title} ${group.title} ${kindLabels[material.kind] ?? ""}`).includes(normalize(query.value))),
 })).filter(group => group.materials.length));
 const filteredCount = computed(() => new Set(filteredChapters.value.flatMap(group => group.materials.map(material => material.id))).size);
@@ -92,17 +96,15 @@ function saveView() {
   try {
     const scroll = loading.value ? scrollPosition : content.value?.scrollTop ?? scrollPosition;
     scrollPosition = scroll;
-    sessionStorage.setItem(`library-view:${ownerKey}`, JSON.stringify({ query: query.value, type: type.value, chapter: chapter.value, scroll }));
+    sessionStorage.setItem(`library-view:${ownerKey}`, JSON.stringify({ query: query.value, chapter: chapter.value, scroll }));
     sessionStorage.setItem(`library-scroll:${ownerKey}`, String(scroll));
   } catch { /* Browsing also works when optional device storage is unavailable. */ }
 }
 function resetScroll() { scrollPosition = 0; if (content.value) content.value.scrollTop = 0; }
 function selectChapter(id: ChapterSelection) { chapter.value = id; resetScroll(); }
-function selectType(id: MaterialType) { type.value = id; resetScroll(); }
-function clearFilters() { query.value = ""; type.value = "all"; chapter.value = "all"; resetScroll(); }
-function chapterTask(chapter: number, material: number) { return session.taskChapters.find(c => c.id === chapter)?.tasks.find(t => t.material_id === material); }
+function clearFilters() { query.value = ""; chapter.value = "all"; resetScroll(); }
 function open(material: Material, chapterId: number) { saveView(); session.navigate({ kind: "material", material_id: material.id, chapter_id: chapterId }); }
-watch([query, type, chapter], saveView, { flush: "post" });
+watch([query, chapter], saveView, { flush: "post" });
 watch(() => [session.user?.id, session.classroomId] as const, async ([userId, classroomId]) => {
   saveView();
   const current = ++generation;
@@ -116,7 +118,6 @@ watch(() => [session.user?.id, session.classroomId] as const, async ([userId, cl
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) saved = parsed;
   } catch { /* Ignore invalid optional preferences. */ }
   query.value = typeof saved.query === "string" ? saved.query : "";
-  type.value = types.some(item => item.id === saved.type) ? saved.type! : "all";
   chapter.value = saved.chapter === "all" || typeof saved.chapter === "number" ? saved.chapter : "all";
   const restoredScroll = Number(saved.scroll ?? sessionStorage.getItem(`library-scroll:${ownerKey}`) ?? 0);
   scrollPosition = Number.isFinite(restoredScroll) ? Math.max(0, restoredScroll) : 0;
@@ -150,7 +151,7 @@ onBeforeUnmount(() => { saveView(); disposed = true; generation++; });
 .library-search > input { width:100%; }
 .library-result-count { align-self:center; margin-left:auto; padding-top:22px; font-size:.875rem; color:#8a775c; white-space:nowrap; }
 .library-chapter { margin-bottom:20px; }
-.library-chapter-heading { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:8px; margin-bottom:12px; border-bottom:1px solid #d9c9ad; }
+.library-chapter-heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:8px; margin-bottom:12px; border-bottom:1px solid #d9c9ad; }
 .library-chapter-heading h3 { margin:0; color:#3b5147; font-size:.875rem; line-height:1.5; }
 .library-chapter-heading > span { flex-shrink:0; color:#8a775c; font-size:.875rem; }
 .library-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr)); gap:10px; }
@@ -159,6 +160,8 @@ onBeforeUnmount(() => { saveView(); disposed = true; generation++; });
 .library-material-icon { display:grid; place-items:center; width:32px; height:36px; background:#e1e8d7; border:1px solid #c1cdb2; border-radius:7px; color:#5d7953; }
 .library-material-icon.is-video { color:#9b7143; background:#f0dfbe; border-color:#d9c19a; }
 .library-material-icon svg { width:18px; height:18px; }
+.library-card-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px; }
+.required-label { padding:1px 7px; border-radius:var(--game-control-radius); background:var(--game-forest); color:var(--game-paper-raised); font-size:var(--game-caption-size); font-weight:700; }
 .library-card-copy { display:flex; flex-direction:column; gap:6px; min-width:0; }
 .library-workspace .library-list strong { font-size:.9375rem; line-height:1.6; overflow-wrap:anywhere; }
 .library-workspace .library-list small { color:#88775d; font-size:.875rem; line-height:1.5; }

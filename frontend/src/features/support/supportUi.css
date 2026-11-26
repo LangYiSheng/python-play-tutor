@@ -143,30 +143,6 @@
   line-height: 1.7;
 }
 
-.game-workspace .support-progress-bar {
-  width: 100%;
-  height: var(--support-bar-height, 8px);
-  border: 0;
-  border-radius: 8px;
-  overflow: hidden;
-  appearance: none;
-  background: var(--game-line);
-}
-
-.game-workspace .support-progress-bar::-webkit-progress-bar {
-  background: var(--game-line);
-}
-
-.game-workspace .support-progress-bar::-webkit-progress-value {
-  background: var(--game-forest);
-  border-radius: 8px;
-}
-
-.game-workspace .support-progress-bar::-moz-progress-bar {
-  background: var(--game-forest);
-  border-radius: 8px;
-}
-
 .game-workspace .support-goal-items {
   display: grid;
   list-style: none;

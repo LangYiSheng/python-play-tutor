@@ -23,6 +23,9 @@ it("lists parallel goals per chapter and shows the whole selected chapter",async
   expect(w.text()).toContain("拜访教授，完成客观题练习（1/2）");
   expect(w.text()).toContain("拜访练习场教练，完成编程题练习");
   expect(w.text()).toContain("选做");
+  const progress = w.get('progress[aria-label="必做任务进度"]').element as HTMLProgressElement;
+  expect([progress.value, progress.max]).toEqual([1, 3]);
+  expect(w.findAll(".task-summary progress")).toHaveLength(4);
   await w.findAll(".journal-goal").at(-1)!.trigger("click");
   expect(session.trackedQuest).toBe("2:reading");
   expect(w.get("main").text()).toContain("请先阅读必读资料");

@@ -122,7 +122,7 @@ async function noModelCalls(request: APIRequestContext, student: Header) {
   expect((await json<{ model_calls: number }>(await request.get("/api/assistant/status", { headers: student }))).model_calls).toBe(0);
 }
 
-test("town library uses a centered workspace and preserves chapter search and filters across reading", async ({ page, request }, testInfo) => {
+test("town library uses a centered workspace and preserves chapter selection and search across reading", async ({ page, request }, testInfo) => {
   test.setTimeout(180_000);
   const setup = await prepare(request, "图书馆");
   await enter(page, setup.identity, setup.first);
@@ -138,22 +138,15 @@ test("town library uses a centered workspace and preserves chapter search and fi
   const firstChapter = panel.getByRole("navigation", { name: "资料章节" }).getByRole("button", { name: /第一章/ });
   await firstChapter.click();
   await expect(panel.locator(".library-card")).toHaveCount(4);
-  const filters = panel.getByRole("group", { name: "资料类型" });
-  await filters.getByRole("button", { name: "视频", exact: true }).click();
-  await expect(panel.locator(".library-card")).toHaveCount(3);
-  await filters.getByRole("button", { name: "课件", exact: true }).click();
-  await expect(panel.locator(".library-card")).toHaveCount(1);
-  await panel.getByLabel("搜索资料").fill("计 算");
-  await expect(panel.locator(".library-card")).toHaveCount(1);
+  await expect(panel.getByRole("group", { name: "资料类型" })).toHaveCount(0);
   await panel.getByLabel("搜索资料").fill("不存在的资料检索");
   await expect(panel.locator(".library-card")).toHaveCount(0);
   await expect(panel.getByText("没有找到匹配的资料", { exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "清除筛选", exact: true }).click();
   await expect(panel.locator(".library-card")).toHaveCount(41);
   await firstChapter.click();
-  await filters.getByRole("button", { name: "课件", exact: true }).click();
   await panel.getByLabel("搜索资料").fill("计算");
-  await panel.locator(".library-card").click();
+  await panel.locator(".library-card").filter({hasText:"PDF 课件"}).first().click();
   await expect(panel.locator(".pdf-reader")).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
   await expect(panel.locator("#pdf-reading-position")).toContainText("45");
   await sameCanvas(page);
@@ -161,10 +154,8 @@ test("town library uses a centered workspace and preserves chapter search and fi
   await expect(panel.locator(".library-workspace")).toBeVisible();
   await expect(panel.getByLabel("搜索资料")).toHaveValue("计算");
   await expect(firstChapter).toHaveAttribute("aria-pressed", "true");
-  await expect(filters.getByRole("button", { name: "课件", exact: true })).toHaveAttribute("aria-pressed", "true");
   await panel.getByLabel("搜索资料").fill("");
   await panel.getByRole("navigation", { name: "资料章节" }).getByRole("button", { name: /全部章节/ }).click();
-  await filters.getByRole("button", { name: "全部资料", exact: true }).click();
   await reducedViewportChecks(page, testInfo, "town-library");
   for (let step = 0; step < 9; step++) {
     await page.keyboard.press("Tab");

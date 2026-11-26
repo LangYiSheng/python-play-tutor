@@ -349,11 +349,11 @@ test("seven game workspaces share the real shell, controls and readable 100–20
   await expect(panel(page).locator(".library-card")).not.toHaveCount(0);
   await shell(page, "小镇图书馆", town, baseline);
   await panel(page).getByRole("navigation", { name: "资料章节" }).getByRole("button", { name: /第一章/ }).click();
-  await panel(page).getByRole("group", { name: "资料类型" }).getByRole("button", { name: "课件", exact: true }).click();
   await panel(page).getByLabel("搜索资料").fill("计算");
-  await expect(panel(page).locator(".library-card")).toHaveCount(1);
+  const chapterPdf = panel(page).locator(".library-card").filter({hasText:"PDF 课件"}).first();
+  await expect(chapterPdf).toBeVisible();
   await shot(page, info, "02-library");
-  await panel(page).locator(".library-card").click();
+  await chapterPdf.click();
   await expect(panel(page).locator(".pdf-reader")).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
   expect(await panel(page).getByRole("img", { name: "PDF课件当前页" }).evaluate(element => (element as HTMLCanvasElement).width)).toBeGreaterThan(100);
   await shell(page, "资料阅读", { layout: ".learning-layout", surfaces: [".pdf-page-surface"] }, baseline);
@@ -385,11 +385,10 @@ test("seven game workspaces share the real shell, controls and readable 100–20
   await page.keyboard.press("Escape");
   await expect(panel(page).locator(".library-workspace")).toBeVisible();
   await expect(panel(page).getByLabel("搜索资料")).toHaveValue("计算");
-  await expect(panel(page).getByRole("group", { name: "资料类型" }).getByRole("button", { name: "课件", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await panel(page).locator(".library-card").click();
+  await chapterPdf.click();
   await panel(page).getByRole("button", { name: /返回小镇图书馆/ }).click();
   await expect(panel(page).locator(".library-workspace")).toBeVisible();
-  await panel(page).locator(".library-card").click();
+  await chapterPdf.click();
   await closeButton(page).click();
   await expect(panel(page)).toBeHidden();
   await sameCanvas(page, canvas);
