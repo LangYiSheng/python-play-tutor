@@ -39,6 +39,8 @@ it("switches from login into password setup in the same entry card", async () =>
   expect(wrapper.get("h2").text()).toBe("设置密码");
   expect(wrapper.findAll('input[type="password"]')).toHaveLength(2);
   expect(wrapper.find('input[autocomplete="current-password"]').exists()).toBe(false);
+  expect(wrapper.findAll('.password-form small[aria-live="polite"]')).toHaveLength(2);
+  expect(wrapper.find(".password-form .error").exists()).toBe(false);
 });
 
 it("validates confirmation, retains failed input, then rotates session and continues", async () => {
@@ -51,8 +53,9 @@ it("validates confirmation, retains failed input, then rotates session and conti
   await wrapper.get("form").trigger("submit");
   expect(post).not.toHaveBeenCalled();
   expect(wrapper.get('input[aria-invalid="true"]').attributes("aria-describedby")).toBeTruthy();
-  expect(wrapper.text()).toContain("不一致");
+  expect(wrapper.get("small.error").text()).toContain("不一致");
   await inputs[1].setValue("private-password");
+  expect(wrapper.find("small.error").exists()).toBe(false);
   await wrapper.get("form").trigger("submit");
   await flushPromises();
   expect(wrapper.get('[role="alert"]').text()).toBe("暂时无法保存");
@@ -82,7 +85,11 @@ it("keeps current password verification in ordinary account settings", async () 
   const post = vi.spyOn(api, "post").mockRejectedValue(new Error("当前密码不正确"));
   const inputs = wrapper.findAll("input");
   expect(inputs).toHaveLength(3);
+  expect(wrapper.find(".error").exists()).toBe(false);
+  await inputs[1].setValue("short");
+  expect(wrapper.get("small.error").text()).toBe("密码至少需要 8 位");
   for (const [index, value] of ["old-password", "new-password", "new-password"].entries()) await inputs[index].setValue(value);
+  expect(wrapper.find("small.error").exists()).toBe(false);
   await wrapper.get("form").trigger("submit");
   await flushPromises();
   expect(post).toHaveBeenCalledWith("/auth/password", { current_password: "old-password", new_password: "new-password" });

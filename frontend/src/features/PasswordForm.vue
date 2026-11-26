@@ -6,12 +6,12 @@
     <div class="password-field">
       <label>新密码<input v-model="newPassword" type="password" autocomplete="new-password" required :disabled="busy"
         :aria-invalid="Boolean(passwordError)" :aria-describedby="passwordError ? passwordFeedback : undefined" /></label>
-      <small :id="passwordFeedback" class="error" aria-live="polite">{{ passwordError }}</small>
+      <small :id="passwordFeedback" :class="{ error: passwordError }" aria-live="polite">{{ passwordError }}</small>
     </div>
     <div class="password-field">
       <label>确认新密码<input v-model="confirmation" type="password" autocomplete="new-password" required :disabled="busy"
         :aria-invalid="Boolean(confirmationError)" :aria-describedby="confirmationError ? confirmationFeedback : undefined" /></label>
-      <small :id="confirmationFeedback" class="error" aria-live="polite">{{ confirmationError }}</small>
+      <small :id="confirmationFeedback" :class="{ error: confirmationError }" aria-live="polite">{{ confirmationError }}</small>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="success" role="status">密码已修改，其他设备的登录已失效。</p>
