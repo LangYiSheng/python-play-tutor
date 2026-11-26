@@ -174,14 +174,6 @@
     overflow: hidden;
   }
 }
-.sidebar-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-.sidebar-collapsed .sidebar {
-  visibility: hidden;
-  overflow: hidden;
-  padding: 0;
-}
 @media (max-width: 900px) {
   .topbar:has(.class-picker) {
     height: auto;

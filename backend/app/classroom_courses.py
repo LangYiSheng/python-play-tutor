@@ -31,6 +31,7 @@ from .course_instances import content_mapping
 router = APIRouter(prefix="/teacher/courses", tags=["courses"])
 Db = Annotated[Session, Depends(get_db)]
 Teacher = Annotated[User, Depends(require_teacher)]
+ACTIVE_SUBMISSION_STATUSES = ("dispatching", "queued", "running")
 
 
 class Name(BaseModel):
@@ -127,7 +128,7 @@ def _active_learning_task(db, classroom_ids):
     if not classroom_ids:
         return False
     judging = select(Submission.id).where(
-        Submission.classroom_id.in_(classroom_ids), Submission.status.in_(("dispatching", "queued", "running")),
+        Submission.classroom_id.in_(classroom_ids), Submission.status.in_(ACTIVE_SUBMISSION_STATUSES),
     )
     if db.scalar(select(judging.exists())):
         return True
@@ -208,8 +209,9 @@ def delete_course(course_id: int, db: Db, user: Teacher, expected_revision: Anno
         raise HTTPException(409, "课程已更新，请刷新删除预览后重试。")
     # Fence narration acquisition and a judge claiming a prepared submission while deleting.
     db.scalars(_course_rows(Material, course_id).order_by(Material.id).with_for_update()).all()
-    db.scalars(select(Submission.id).where(Submission.classroom_id.in_(classroom_ids), Submission.status == "prepared")
-               .order_by(Submission.id).with_for_update()).all()
+    db.scalars(select(Submission.id).where(
+        Submission.classroom_id.in_(classroom_ids), Submission.status.in_(("prepared", *ACTIVE_SUBMISSION_STATUSES)),
+    ).order_by(Submission.id).with_for_update()).all()
     blocked_reason = _deletion_blocker(db, course_id, classroom_ids)
     if blocked_reason:
         raise HTTPException(409, blocked_reason)

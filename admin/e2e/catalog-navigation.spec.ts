@@ -28,6 +28,10 @@ test("保留所选班级，独立浏览课程题库分页", async ({page}) => {
   await page.goto("/teacher/teaching?course=1&class=9");
   const nav = page.getByRole("navigation", {name: "课程导航"});
   await expect(page.getByLabel("当前班级")).toContainText("第二班");
+  await page.getByRole("button", {name: "收起导航", exact: true}).click();
+  await expect(page.getByRole("button", {name: "展开导航", exact: true})).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("link", {name: "定时开放"})).toBeVisible();
+  await expect(nav.getByRole("link", {name: "定时开放"})).toHaveAttribute("aria-current", "page");
   await nav.getByRole("link", {name: "章节与课件"}).click();
   await page.getByRole("button", {name: "上传资料", exact: true}).click();
   await page.getByLabel("资料名称").fill("取消的资料");
@@ -52,4 +56,9 @@ test("保留所选班级，独立浏览课程题库分页", async ({page}) => {
   }
   expect(requests.some(url => url.pathname === "/api/teacher/courses/1/catalog" && url.searchParams.get("view") === "chapters")).toBe(true);
   expect(prompts).toEqual([]);
+  await page.setViewportSize({width: 390, height: 844});
+  await page.reload();
+  await expect(page.getByRole("button", {name: "展开导航", exact: true})).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("link", {name: "定时开放"})).toBeVisible();
+  await expect(nav.getByRole("link", {name: "定时开放"})).toHaveAttribute("aria-current", "page");
 });
