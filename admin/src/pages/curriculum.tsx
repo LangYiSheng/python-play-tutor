@@ -1,15 +1,15 @@
-import { ChapterTasks } from "@/features/activities/activities-page";
+import { ChapterMaterials } from "@/features/activities/chapter-materials";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { DeleteSelection, SelectTablePage, SelectTableRow, useTableDelete } from "@/components/table-delete";
 import { useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CurriculumDialog } from "@/features/content-workspace/curriculum-dialog";
-import { Pager, ErrorNotice, Loading, TableSearch } from "@/components/common";
+import { Pager, PageHeader, ErrorNotice, Loading, TableSearch } from "@/components/common";
 import { scoped } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useCatalogPage } from "@/lib/use-catalog-page";
@@ -33,7 +33,17 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / size)));
   const rows = tab === "points" ? filtered : filtered.slice((currentPage - 1) * size, currentPage * size);
   const add = <Button onClick={() => edit(null)} disabled={course.loading}><Plus />新增{tab === "chapters" ? "章节" : "知识点"}</Button>;
-  if (tab === "chapters" && detail) return <ChapterTasks courseId={courseId} chapter={detail} onBack={() => setDetail(null)}/>;
+  if (tab === "chapters" && detail) {
+    const params = new URLSearchParams(location.search);
+    params.set("course", String(courseId));
+    params.set("chapter", String(detail.id));
+    params.delete("tab");
+    return <div className="space-y-4">
+      <Button variant="ghost" onClick={() => setDetail(null)}><ChevronLeft/>返回章节</Button>
+      <PageHeader title={detail.title}><ButtonLink variant="outline" href={`/teacher/activities?${params}`}>管理本章活动</ButtonLink></PageHeader>
+      <ChapterMaterials courseId={courseId} chapter={detail}/>
+    </div>;
+  }
   return (
     <>
       <ErrorNotice message={course.error || points.error} />

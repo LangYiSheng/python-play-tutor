@@ -10,6 +10,7 @@ import {
   IdCard,
   LayoutDashboard,
   CalendarDays,
+  ClipboardList,
   Network,
   List,
   ChevronDown,
@@ -53,6 +54,7 @@ import { CoursePicker, Insights, ClassReport } from "@/pages/course-workspace";
 import { useResource } from "@/lib/use-resource";
 import type { CourseInstance } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ActivityManagement } from "@/features/activities/activities-page";
 import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
@@ -83,6 +85,7 @@ const classNav = [
 const contentNav = [
   { key: "content-graph", title: "知识图谱", icon: Network },
   { key: "content-list", title: "内容列表", icon: List },
+  { key: "activities", title: "活动管理", icon: ClipboardList },
 ] as const;
 const settingsNav = [
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
@@ -94,6 +97,7 @@ const hubNav = [{ key: "courses", title: "课程选择", icon: School }, { key: 
 const pages = [...hubNav, ...globalNav, ...courseNav] as const;
 type Page = (typeof pages)[number]["key"];
 const courseScreens = {
+  activities: ActivityManagement,
   synthesis: Synthesis,
   "content-list": ContentList,
 };

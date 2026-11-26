@@ -20,6 +20,8 @@ test("从章节上传 PDF 并发布整份必读任务点", async ({page,request}
   await expect(required).toBeChecked();
   const response=await request.get(scoped(`/teacher/chapters/${chapterId}/material-tasks`),{headers});
   expect((await response.json()).items).toMatchObject([{title:"单页讲义",required:true,rule:{}}]);
+  await page.getByRole("link",{name:"管理本章活动"}).click();
+  await expect(page.getByRole("heading",{name:"活动管理",exact:true})).toBeVisible();
   for(const title of ["新增客观题练习","新增编程题练习","新增测验"]) {
     await page.getByRole("button",{name:title}).click();
     await expect(page.getByRole("dialog",{name:title})).toBeVisible();

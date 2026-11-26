@@ -1,8 +1,7 @@
-import { Curriculum } from "../src/pages/curriculum";
 import { afterEach, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChapterTasks } from "../src/features/activities/activities-page";
+import { ActivityManagement } from "../src/features/activities/activities-page";
 
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => vi.unstubAllGlobals());
@@ -30,7 +29,11 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
     return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<ChapterTasks courseId={7} chapter={{id:1,title:"第一章",order_index:1,owner_id:null}} onBack={()=>{}}/>);
+  render(<ActivityManagement courseId={7}/>);
+  await user.click(await screen.findByRole("button", {name:"第二章"}));
+  expect(screen.getByText("本章暂无活动")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "选题章节测验" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", {name:"第一章"}));
   const create = await screen.findByRole("button", { name: "新增客观题练习" });
   await waitFor(() => expect(create).toBeEnabled());
   await user.click(create);
@@ -85,7 +88,7 @@ it("selects shared and untagged questions once and saves their final positions w
     return json(url.includes("/catalog") ? course : url.includes("/question-candidates") ? questions : []);
   }));
   const user = userEvent.setup();
-  render(<ChapterTasks courseId={7} chapter={{id:1,title:"第一章",order_index:1,owner_id:null}} onBack={()=>{}}/>);
+  render(<ActivityManagement courseId={7}/>);
   await user.click(await screen.findByRole("button", {name: "选题固定题单"}));
   await user.click(screen.getByRole("checkbox", {name: "B 变量题"}));
   await user.click(screen.getByRole("button", {name: /表达式/}));
@@ -113,7 +116,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
     return json(url.includes("/catalog") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
   }));
   const user = userEvent.setup();
-  render(<ChapterTasks courseId={7} chapter={{id:1,title:"第一章",order_index:1,owner_id:null}} onBack={()=>{}}/>);
+  render(<ActivityManagement courseId={7}/>);
   await user.click(await screen.findByRole("button", { name: "删除综合复习" }));
   expect(await within(screen.getByRole("dialog")).findByText("一起删除（1）")).toBeVisible();
   await user.click(screen.getByRole("button", {name: "取消"}));
@@ -126,7 +129,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
   expect(screen.getByRole("button", {name: "确认级联删除"})).toBeDisabled();
   await user.click(screen.getByRole("checkbox", {name: "我已核对删除范围，确认保留学生历史记录"}));
   await user.click(screen.getByRole("button", {name: "确认级联删除"}));
-  expect(await screen.findByText("本章暂无客观题练习。")).toBeVisible();
+  expect(await screen.findByText("本章暂无活动")).toBeVisible();
   expect(calls).toEqual([{confirmation: "综合复习", confirmed: true}]);
 });
 
@@ -145,7 +148,7 @@ it("creates a fixed practice and switches an existing goal practice back to a fi
     return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<ChapterTasks courseId={7} chapter={{id:1,title:"第一章",order_index:1,owner_id:null}} onBack={()=>{}}/>);
+  render(<ActivityManagement courseId={7}/>);
   await user.click(await screen.findByRole("button", { name: "编辑变量目标" }));
   expect(screen.getByRole("radio", { name: "按知识点出题" })).toBeChecked();
   await user.click(screen.getByRole("radio", { name: "固定题单" }));
@@ -164,7 +167,7 @@ it("creates a fixed practice and switches an existing goal practice back to a fi
 
 it("counts the class teacher's practice pool when an administrator creates an activity", async () => {
 
-  history.replaceState({}, "", "/teacher/content-list?course=32");
+  history.replaceState({}, "", "/teacher/activities?course=32");
   const question = { kind: "single_choice", status: "ready", chapter_ids: [1], knowledge_point_ids: [11], samples: [] };
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     if (url.endsWith("/auth/me")) return json({ id: 1, name: "管理员", role: "admin" });
@@ -178,7 +181,7 @@ it("counts the class teacher's practice pool when an administrator creates an ac
     return json([]);
   }));
   const user = userEvent.setup();
-  render(<Curriculum courseId={32} tab="chapters"/>);
+  render(<ActivityManagement courseId={32}/>);
   await user.click(await screen.findByRole("button", {name:"第一章"}));
   const create = await screen.findByRole("button", { name: "新增客观题练习" });
   await waitFor(() => expect(create).toBeEnabled());

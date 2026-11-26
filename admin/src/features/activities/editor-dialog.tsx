@@ -25,7 +25,7 @@ export function ActivityDialog({
 }: {
   editor: ReturnType<typeof useActivityEditor>;
   course: { data: Course | null };
-  questions: { data: QuestionCandidate[] | null };
+  questions: { data: QuestionCandidate[] | null; error: string };
   candidates: QuestionCandidate[];
 }) {
   const {
@@ -60,7 +60,7 @@ export function ActivityDialog({
             {editing ? "编辑" : "新增"}{kind === "assessment" ? "测验" : editor.practiceKind === "programming" ? "编程题练习" : "客观题练习"}
           </DialogTitle>
           <DialogDescription>
-            完成条件由服务端依据真实学习记录判定。
+            {course.data?.chapters.find(c => c.id === chapter)?.title}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -70,9 +70,9 @@ export function ActivityDialog({
           onChange={() => setDirty(true)}
         >
           <div className="dialog-scroll">
-            <ErrorNotice message={error} />
+            <ErrorNotice message={error || questions.error} />
             <EditorTabs initial={questionMode ? "按知识点选题" : "活动信息"} pages={[
-              { label: "活动信息", content: <>
+              { label: "活动信息", content: <div className="activity-form-grid"><section className="activity-form-card"><h3>基本信息</h3>
                 <div className="field">
                   <Label htmlFor="a-title">活动名称</Label>
                   <Input
@@ -82,32 +82,35 @@ export function ActivityDialog({
                     onChange={(e) => setTitle(e.target.value)}
                   />
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                </section>
+                <section className="activity-form-card publish-options"><h3>发布设置</h3>
+                <div className="grid gap-4">
                   <label className="field">显示顺序<Input type="number" min={0} max={100000} required value={editor.order} onChange={e => editor.setOrder(Number(e.target.value))}/></label>
                   <label className="field">发布状态<SelectField value={editor.published ? "published" : "draft"} onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
                     <option value="published">已发布</option><option value="draft">草稿</option></SelectField></label>
                 </div>
                 {kind === "practice" && <label className="flex gap-2"><input type="checkbox" checked={editor.required} onChange={e => editor.setRequired(e.target.checked)}/>必做练习</label>}
+                </section>
                 {kind === "practice" && (
-                  <fieldset className="field">
+                  <fieldset className="activity-form-card mode-options">
                     <legend>出题方式</legend>
-                    <div className="flex gap-6">
+                    <div className="mode-choices">
                       <label className="flex items-center gap-2">
-                        <input type="radio" name="practice-mode" value="fixed"
+                        <input aria-label="固定题单" type="radio" name="practice-mode" value="fixed"
                           checked={editor.practiceMode === "fixed"} onChange={() => editor.setPracticeMode("fixed")} />
-                        固定题单
+                        <span>固定题单<small>为全班指定相同的题目</small></span>
                       </label>
                       <label className="flex items-center gap-2">
-                        <input type="radio" name="practice-mode" value="goals"
+                        <input aria-label="按知识点出题" type="radio" name="practice-mode" value="goals"
                           checked={editor.practiceMode === "goals"} onChange={() => editor.setPracticeMode("goals")} />
-                        按知识点出题
+                        <span>按知识点出题<small>按知识点目标为学生分配题目</small></span>
                       </label>
                     </div>
                     {editor.goalPractice && editing && editing.question_ids.length > 0 && !editing.practice_rules &&
                       <p className="hint">保存后会移除原固定题单，按知识点目标分配题目。</p>}
                   </fieldset>
                 )}
-              </> },
+              </div> },
               ...(editor.goalPractice ? [{label: "知识点目标", content: <>
                     <PracticeGoalsEditor practiceKind={editor.practiceKind} rules={editor.rules}
                       points={(course.data?.knowledge_points ?? []).filter(point => point.chapter_id === chapter)}
@@ -118,9 +121,7 @@ export function ActivityDialog({
                 ["按知识点选题", "题目顺序"].map(label => ({ label, content: <PaperEditor order={label === "题目顺序"} assessment={kind === "assessment"}
                   candidates={candidates} questions={questions.data ?? []} points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
                   selected={selected} onChange={ids => { setSelected(ids); setDirty(true); }} /> })) : []),
-              { label: "内容关联", content: editor.goalPractice ? <div className="space-y-2"><strong>关联知识点</strong>
-                <p>{editor.rules.goals.map(g => course.data?.knowledge_points.find(p => p.id === g.knowledge_point_id)?.title).join("、") || "尚未选择"}</p>
-                <p className="hint">在「知识点目标」中调整本章练习范围。</p></div> : <KnowledgePointPicker
+              ...(!editor.goalPractice ? [{ label: "关联知识点", content: <KnowledgePointPicker
                   key={id}
                   chapters={(course.data?.chapters ?? []).filter(c => c.id === chapter)}
                   points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
@@ -130,10 +131,11 @@ export function ActivityDialog({
                     setPointIds(ids);
                     setDirty(true);
                   }}
-                /> },
+                /> }] : []),
             ]} />
           </div>
           <DialogFooter>
+            <span className="activity-editor-summary">{editor.published ? "保存后发布" : "保存为草稿"} · {editor.goalPractice ? `${editor.rules.goals.length} 个知识点目标` : `题单共 ${selected.length} 题`}</span>
             <Button
               type="button"
               variant="outline"
