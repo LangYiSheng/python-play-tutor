@@ -112,15 +112,15 @@ def new_session(body: NewSession, user: Annotated[User, Depends(current_user)], 
 def reserve_call(db, user, session, minimum=1, maximum=12000, client_id=None, request_hash=None):
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     db.scalar(select(Classroom).where(Classroom.id == session.classroom_id).with_for_update())
-    timeout = configuration(db, include_key=False)["timeout_seconds"]
-    stale_before = datetime.now(timezone.utc) - timedelta(seconds=timeout + 30)
+    config = configuration(db, include_key=False)
+    stale_before = datetime.now(timezone.utc) - timedelta(seconds=config["timeout_seconds"] + 30)
     db.execute(update(AssistantCall).where(AssistantCall.user_id == user.id, AssistantCall.status.in_(["running", "cancel_requested"]),
                                          AssistantCall.created_at < stale_before)
                .values(status="interrupted", tokens=AssistantCall.reserved_tokens, error="回复中断，未自动重试"))
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     available = maximum
     for field, value, requests, tokens in [
-        (AssistantCall.user_id, user.id, int(os.getenv("REBORN_AI_USER_DAILY_REQUESTS", "12")), int(os.getenv("REBORN_AI_USER_DAILY_TOKENS", "120000"))),
+        (AssistantCall.user_id, user.id, config["user_daily_requests"], int(os.getenv("REBORN_AI_USER_DAILY_TOKENS", "120000"))),
         (AssistantCall.classroom_id, session.classroom_id, int(os.getenv("REBORN_AI_CLASS_DAILY_REQUESTS", "100")), int(os.getenv("REBORN_AI_CLASS_DAILY_TOKENS", "1200000"))),
     ]:
         rows = list(db.scalars(select(AssistantCall).where(field == value, AssistantCall.created_at >= today)))
