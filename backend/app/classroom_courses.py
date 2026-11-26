@@ -1,4 +1,5 @@
 """Manage independently owned courses and their teaching classes."""
+from datetime import timedelta
 from hashlib import sha256
 from typing import Annotated
 from uuid import uuid4
@@ -9,19 +10,22 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .account_deletion import delete_course_data
+from .account_deletion import delete_course_with_history
+from .assistant_settings import configuration as assistant_configuration
 from .auth import require_teacher
 from .db import get_db
+from .integration_models import AssistantCall
 from .lectio.jobs import has_active_course_jobs
 from .lectio.models import LectioExam
 from .models import (
-    Activity, ActivityMaterial, ActivityQuestion, Chapter, Classroom, CourseInstance, KnowledgePoint, Material, MaterialChapter,
-    MaterialParticipation, Question, QuestionChapter, QuestionKnowledgePoint, User,
+    Activity, ActivityMaterial, ActivityQuestion, AssessmentAttempt, Chapter, Classroom, CourseInstance, KnowledgePoint, Material,
+    MaterialChapter, MaterialParticipation, Membership, Question, QuestionChapter, QuestionKnowledgePoint, Submission,
+    TownPreviewStudent, User, now,
 )
 from .narration.models import MaterialTagDict, NarrationJob
 from .narration.repository import job_running
 from .teacher_scope import own_course
-from .classrooms.lifecycle import management_list
+from .classrooms.lifecycle import history_rows, management_list
 from .course_instances import content_mapping
 
 router = APIRouter(prefix="/teacher/courses", tags=["courses"])
@@ -83,17 +87,64 @@ def _course_rows(model, course_id):
     return select(model.id).where(model.course_instance_id == course_id).execution_options(include_deleted=True)
 
 
-def _deletion_confirmation(course, user):
+def _deletion_confirmation(course, user, classrooms, counts):
     # SQLite can reuse a deleted integer ID. Bind confirmation to this course's incarnation.
-    values = (user.id, course.id, course.revision, course.created_at.isoformat(), course.package_id)
+    values = (user.id, course.id, course.revision, course.created_at.isoformat(), course.package_id, classrooms, sorted(counts.items()))
     return sha256(repr(values).encode()).hexdigest()
 
 
-def _deletion_blocker(db, course_id, classroom_count):
-    if classroom_count:
-        return "课程有现有或历史教学班，无法删除。"
+def _course_classrooms(db, course_id, *, for_update=False):
+    query = select(Classroom.id, Classroom.name, Classroom.status).where(Classroom.course_id == course_id).order_by(Classroom.id)
+    if for_update:
+        query = query.with_for_update()
+    return [tuple(row) for row in db.execute(query)]
+
+
+def _deletion_impact(db, course_id, classroom_ids):
+    counts = {"classrooms": len(classroom_ids)}
+    for key, model in {
+        "chapters": Chapter, "materials": Material, "knowledge_points": KnowledgePoint, "questions": Question,
+        "activities": Activity, "exam_drafts": LectioExam,
+    }.items():
+        counts[key] = db.scalar(select(func.count()).select_from(_course_rows(model, course_id).subquery()).execution_options(include_deleted=True))
+    for key, model in {
+        "reading_records": MaterialParticipation, "submissions": Submission, "assessment_attempts": AssessmentAttempt,
+    }.items():
+        counts[key] = db.scalar(select(func.count()).select_from(model).where(model.classroom_id.in_(classroom_ids)))
+    history = history_rows()
+    learned = select(history.c.user_id).where(history.c.classroom_id.in_(classroom_ids))
+    members = select(Membership.user_id).where(Membership.classroom_id.in_(classroom_ids))
+    learners = members.union(learned).subquery()
+    previews = select(TownPreviewStudent.student_user_id)
+    counts["students"] = db.scalar(
+        select(func.count()).select_from(learners).join(User, User.id == learners.c.user_id)
+        .where(User.role == "student", User.id.not_in(previews))
+    )
+    return counts
+
+
+def _active_learning_task(db, classroom_ids):
+    if not classroom_ids:
+        return False
+    judging = select(Submission.id).where(
+        Submission.classroom_id.in_(classroom_ids), Submission.status.in_(("dispatching", "queued", "running")),
+    )
+    if db.scalar(select(judging.exists())):
+        return True
+    timeout = assistant_configuration(db, include_key=False)["timeout_seconds"]
+    active_since = now() - timedelta(seconds=timeout + 30)
+    asking = select(AssistantCall.id).where(
+        AssistantCall.classroom_id.in_(classroom_ids), AssistantCall.status.in_(("running", "cancel_requested")),
+        AssistantCall.created_at >= active_since,
+    )
+    return bool(db.scalar(select(asking.exists())))
+
+
+def _deletion_blocker(db, course_id, classroom_ids):
     if has_active_course_jobs(db, course_id):
         return "课程还有备课任务在处理，请等待任务结束后重试。"
+    if _active_learning_task(db, classroom_ids):
+        return "本课程仍有评测或助教任务在处理，请等待任务结束后重试。"
     materials = _course_rows(Material, course_id)
     chapters = _course_rows(Chapter, course_id)
     questions = _course_rows(Question, course_id)
@@ -125,7 +176,9 @@ def _deletion_blocker(db, course_id, classroom_count):
                 ActivityQuestion.question_id.in_(questions) & ActivityQuestion.activity_id.not_in(activities))),
         select(MaterialTagDict.id).where(MaterialTagDict.source_material_id.in_(materials), MaterialTagDict.course_instance_id != course_id),
         select(MaterialParticipation.user_id).where(
-            or_(MaterialParticipation.chapter_id.in_(chapters), MaterialParticipation.material_id.in_(materials))),
+            or_(MaterialParticipation.chapter_id.in_(chapters), MaterialParticipation.material_id.in_(materials)),
+            MaterialParticipation.classroom_id.not_in(classroom_ids),
+        ),
     )
     if any(db.scalar(select(statement.exists()).execution_options(include_deleted=True)) for statement in retained_links):
         return "课程仍被其他课程或学习记录引用，无法删除。"
@@ -135,15 +188,11 @@ def _deletion_blocker(db, course_id, classroom_count):
 @router.get("/{course_id}/deletion-preview")
 def deletion_preview(course_id: int, db: Db, user: Teacher):
     course = own_course(db, user, course_id)
-    classrooms = db.scalar(select(func.count()).select_from(Classroom).where(Classroom.course_id == course_id))
-    counts = {"classrooms": classrooms}
-    for key, model in {
-        "chapters": Chapter, "materials": Material, "knowledge_points": KnowledgePoint, "questions": Question,
-        "activities": Activity, "exam_drafts": LectioExam,
-    }.items():
-        counts[key] = db.scalar(select(func.count()).select_from(_course_rows(model, course_id).subquery()).execution_options(include_deleted=True))
-    blocked_reason = _deletion_blocker(db, course_id, classrooms)
-    return {"name": course.name, "revision": course.revision, "confirmation": _deletion_confirmation(course, user),
+    classrooms = _course_classrooms(db, course_id)
+    classroom_ids = [row[0] for row in classrooms]
+    counts = _deletion_impact(db, course_id, classroom_ids)
+    blocked_reason = _deletion_blocker(db, course_id, classroom_ids)
+    return {"name": course.name, "revision": course.revision, "confirmation": _deletion_confirmation(course, user, classrooms, counts),
             "can_delete": blocked_reason is None,
             "blocked_reason": blocked_reason, "counts": counts}
 
@@ -152,17 +201,20 @@ def deletion_preview(course_id: int, db: Db, user: Teacher):
 def delete_course(course_id: int, db: Db, user: Teacher, expected_revision: Annotated[int, Query(ge=1)],
                   confirmation: Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")]):
     course = own_course(db, user, course_id, exclusive=True)
-    if course.revision != expected_revision or confirmation != _deletion_confirmation(course, user):
+    classrooms = _course_classrooms(db, course_id, for_update=True)
+    classroom_ids = [row[0] for row in classrooms]
+    counts = _deletion_impact(db, course_id, classroom_ids)
+    if course.revision != expected_revision or confirmation != _deletion_confirmation(course, user, classrooms, counts):
         raise HTTPException(409, "课程已更新，请刷新删除预览后重试。")
-    classrooms = db.scalar(select(func.count()).select_from(Classroom).where(Classroom.course_id == course_id))
-    if not classrooms:
-        # Narration acquisition locks the material before claiming or creating its job.
-        db.scalars(_course_rows(Material, course_id).order_by(Material.id).with_for_update()).all()
-    blocked_reason = _deletion_blocker(db, course_id, classrooms)
+    # Fence narration acquisition and a judge claiming a prepared submission while deleting.
+    db.scalars(_course_rows(Material, course_id).order_by(Material.id).with_for_update()).all()
+    db.scalars(select(Submission.id).where(Submission.classroom_id.in_(classroom_ids), Submission.status == "prepared")
+               .order_by(Submission.id).with_for_update()).all()
+    blocked_reason = _deletion_blocker(db, course_id, classroom_ids)
     if blocked_reason:
         raise HTTPException(409, blocked_reason)
     try:
-        delete_course_data(db, [], [course_id])
+        delete_course_with_history(db, course_id, classroom_ids)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

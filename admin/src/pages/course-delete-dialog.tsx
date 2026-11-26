@@ -12,6 +12,10 @@ import { useResource } from "@/lib/use-resource";
 
 const countLabels = {
   classrooms: "教学班",
+  students: "受影响学生",
+  reading_records: "阅读记录",
+  submissions: "作答记录",
+  assessment_attempts: "测验记录",
   chapters: "章节",
   materials: "学习资料",
   knowledge_points: "知识点",
@@ -87,7 +91,11 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
           </div>)}
         </dl>}
         {preview && (preview.can_delete ? <>
-          <p className="text-sm">删除后，本课程及上方所列内容将永久移除。</p>
+          <p className="text-sm text-destructive">
+            {preview.counts.classrooms
+              ? "本课程及其所有关联教学班、教学内容、班级名册、阅读进度、作答、成绩、答疑记录和小镇存档将永久删除。"
+              : "删除后，本课程及其教学内容将永久移除。"}
+          </p>
           <div className="field">
             <Label htmlFor="course-delete-name">输入课程全名确认</Label>
             <Input id="course-delete-name" autoComplete="off" maxLength={200} value={confirmation}
