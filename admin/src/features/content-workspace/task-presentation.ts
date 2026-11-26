@@ -7,7 +7,7 @@ const taskNames: Record<string, string> = {
 };
 const stageNames: Record<string, string> = {
   digest: "梳理原文", calibrate: "校准整理稿", apply: "应用校准修正", script: "生成讲解稿",
-  generate: "生成讲解稿", audio: "合成逐页配音", done: "执行结束",
+  knowledge: "抽取知识点", generate: "生成讲解稿", audio: "合成逐页配音", done: "执行结束",
 };
 export function stageTitle(key: string) {
   return stageNames[key] ?? key;

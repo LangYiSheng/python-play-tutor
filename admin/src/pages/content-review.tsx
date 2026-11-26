@@ -55,7 +55,7 @@ function PendingContent({ classroomId, revision = 0, onOpenMaterial }: Props) {
         </li>;
       })}
       {questions > 0 && <li>
-        <ButtonLink className="review-row" variant="ghost" href="/teacher/content-list?tab=questions&status=draft&reviewable=true">
+        <ButtonLink className="review-row" variant="ghost" href="/teacher/assessments?tab=bank&status=draft&reviewable=true">
           <FileQuestionMark aria-hidden/><span className="review-row-copy">
             <strong>待审题目</strong><small>{questions} 道题目草稿</small>
           </span><ChevronRight aria-hidden/>

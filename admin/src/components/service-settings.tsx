@@ -72,9 +72,16 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     if (!draft || !saved || busy) return;
     setBusy(true); setError('');
     try {
+      const cleaned = Object.fromEntries(
+        fields[service].map(({ key: name, min }) => {
+          const raw = draft[name];
+          return [name, min === undefined && typeof raw === 'string' ? raw.trim() : raw];
+        }),
+      );
+      const trimmedKey = key.trim();
       const value = await api.put<Settings>(path, {
-        ...Object.fromEntries(fields[service].map(({ key: name }) => [name, draft[name]])),
-        expected_revision: saved.revision, api_key: key || null, clear_key: clearKey,
+        ...cleaned,
+        expected_revision: saved.revision, api_key: trimmedKey || null, clear_key: clearKey,
       });
       setSaved(value); setDraft(value); setKey(''); setClearKey(false);
       toast.add({ title: '设置已保存', type: 'success' });

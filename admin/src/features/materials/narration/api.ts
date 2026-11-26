@@ -1,4 +1,18 @@
 import { api } from "@/lib/api";
+import type { ScriptStyleOptions } from "@/lib/lectio-api";
+
+export type { ScriptStyleOptions, ScriptStylePreset } from "@/lib/lectio-api";
+
+function cleanScriptOptions(options?: ScriptStyleOptions): Record<string, unknown> {
+  if (!options) return {};
+  const out: Record<string, unknown> = {};
+  if (options.style_preset && options.style_preset !== "natural") out.style_preset = options.style_preset;
+  if (options.custom_style?.trim()) out.custom_style = options.custom_style.trim();
+  if (options.use_pacing) out.use_pacing = true;
+  if (options.section_minutes != null) out.section_minutes = options.section_minutes;
+  if (options.chapter_minutes != null) out.chapter_minutes = options.chapter_minutes;
+  return out;
+}
 
 export type NarrationStatus =
   | "draft"
@@ -142,10 +156,14 @@ export interface NarrationJobState {
   queued: boolean;
   done: number;
   total: number;
+  percent?: number | null;
+  position?: string;
+  progress_unit?: "groups" | "pages" | "steps" | null;
   message: string;
   failed: { page_no: number; error?: string }[];
   stage?: string;
   chain?: string[];
+  retryable?: boolean;
   started_at: string | null;
 }
 
@@ -159,6 +177,7 @@ export const narrationApi = {
     materialId: number,
     pageNo: number,
     targetSeconds?: number,
+    options?: ScriptStyleOptions,
   ) =>
     api.post<{
       page_no: number;
@@ -167,13 +186,17 @@ export const narrationApi = {
       model: string;
     }>(
       `${base(classroomId, materialId)}/${pageNo}/generate`,
-      targetSeconds ? { target_seconds: targetSeconds } : {},
+      {
+        ...(targetSeconds ? { target_seconds: targetSeconds } : {}),
+        ...cleanScriptOptions(options),
+      },
     ),
   generateRange: (
     classroomId: number,
     materialId: number,
     firstPage: number,
     lastPage: number,
+    options?: ScriptStyleOptions,
   ) =>
     api.post<{ job: NarrationJobState }>(
       `${base(classroomId, materialId)}/generate`,
@@ -182,14 +205,20 @@ export const narrationApi = {
         last_page: lastPage,
         // 串行：后面的页会读到前面已生成的讲解，过渡句不再凭空编。
         mode: "serial",
+        ...cleanScriptOptions(options),
       },
     ),
   job: (classroomId: number, materialId: number) =>
     api.get<NarrationJobState>(`${base(classroomId, materialId)}/job`),
-  pipeline: (classroomId: number, materialId: number) =>
+  retryJob: (classroomId: number, materialId: number, expectedStartedAt: string) =>
+    api.post<NarrationJobState>(
+      `/teacher/classrooms/${classroomId}/synthesis/${materialId}/retry`,
+      { expected_started_at: expectedStartedAt },
+    ),
+  pipeline: (classroomId: number, materialId: number, options?: ScriptStyleOptions) =>
     api.post<{ job: NarrationJobState }>(
       `${base(classroomId, materialId)}/pipeline`,
-      {},
+      cleanScriptOptions(options),
     ),
   acceptBatch: (
     classroomId: number,
@@ -227,6 +256,20 @@ export const narrationApi = {
       `${base(classroomId, materialId)}/${pageNo}`,
       { text },
     ),
+  saveContent: (
+    classroomId: number,
+    materialId: number,
+    pageNo: number,
+    body: { title?: string; topic?: string; tags?: string[]; text?: string },
+  ) =>
+    api.put<{
+      page_no: number;
+      title: string;
+      topic: string;
+      tags: string[];
+      text: string;
+      source: string;
+    }>(`${base(classroomId, materialId)}/${pageNo}/content`, body),
   accept: (classroomId: number, materialId: number, pageNo: number) =>
     api.post<{ page_no: number; status: string }>(
       `${base(classroomId, materialId)}/${pageNo}/accept`,
@@ -264,6 +307,8 @@ export const narrationApi = {
     }>(`${base(classroomId, materialId)}/${pageNo}/audio`, {}),
   pageImage: (classroomId: number, materialId: number, pageNo: number) =>
     `${base(classroomId, materialId)}/${pageNo}/page-image`,
+  pagePdf: (classroomId: number, materialId: number, pageNo: number) =>
+    `${base(classroomId, materialId)}/${pageNo}/page-pdf`,
   audioFile: (classroomId: number, materialId: number, pageNo: number) =>
     `/teacher/classrooms/${classroomId}/materials/${materialId}/narrations/${pageNo}/audio/file`,
 };

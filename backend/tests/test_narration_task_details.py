@@ -94,8 +94,65 @@ def test_model_diagnostic_never_persists_provider_text(monkeypatch, error, expec
         return (httpx.Response(error, text="sensitive") if error == 200 else
                 httpx.Response(error, json={"error": {"message": "sensitive"}}))
     client = httpx.Client
+    monkeypatch.setattr(model_client, "_sleep", lambda _s: None)
     monkeypatch.setattr(httpx, "Client", lambda **kw: client(transport=httpx.MockTransport(respond), **kw))
     with pytest.raises((model_client.ModelFailed, model_client.ModelUnavailable)) as result:
         model_client.chat([], model="test", settings={"api_key": "sensitive", "base_url": "https://model.invalid",
             "max_tokens": 32, "effort": "none", "timeout": 2})
     assert expected in str(result.value) and "sensitive" not in str(result.value)
+
+
+def test_model_client_retries_empty_content_and_transient_errors(monkeypatch):
+    import json
+    sent_bodies: list[dict] = []
+    responses = [
+        httpx.Response(429, json={"error": {"message": "rate limit"}}),
+        httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "   "}}]}),
+        httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": '{"fixes": [], "issues": []}'}}]}),
+    ]
+
+    def respond(request):
+        sent_bodies.append(json.loads(request.content.decode("utf-8")))
+        return responses.pop(0)
+
+    client_cls = httpx.Client
+    monkeypatch.setattr(model_client, "_sleep", lambda _s: None)
+    monkeypatch.setattr(httpx, "Client", lambda **kw: client_cls(transport=httpx.MockTransport(respond), **kw))
+
+    reply = model_client.chat(
+        [{"role": "user", "content": "hi"}],
+        model="deepseek-flash",
+        effort="low",
+        require_text=False,
+        settings={"api_key": "k", "base_url": "https://model.invalid", "max_tokens": 4000, "effort": "low", "timeout": 5},
+    )
+    assert reply["raw"] == {"fixes": [], "issues": []}
+    assert len(sent_bodies) == 3
+    assert sent_bodies[0]["reasoning_effort"] == "low"
+    assert sent_bodies[1]["reasoning_effort"] == "low"
+    assert sent_bodies[2]["reasoning_effort"] == "none"
+    assert sent_bodies[2]["max_tokens"] == 8000
+
+
+def test_model_client_raises_empty_hint_after_retries_exhausted(monkeypatch):
+    calls = 0
+
+    def respond(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": ""}}]})
+
+    client_cls = httpx.Client
+    monkeypatch.setattr(model_client, "_sleep", lambda _s: None)
+    monkeypatch.setattr(httpx, "Client", lambda **kw: client_cls(transport=httpx.MockTransport(respond), **kw))
+
+    with pytest.raises(model_client.ModelFailed) as exc:
+        model_client.chat(
+            [{"role": "user", "content": "hi"}],
+            model="deepseek-flash",
+            require_text=False,
+            settings={"api_key": "k", "base_url": "https://model.invalid", "max_tokens": 4000, "effort": "none", "timeout": 5},
+        )
+    assert calls == 3
+    assert exc.value.hint == "empty"
+    assert "模型返回空内容" in str(exc.value)

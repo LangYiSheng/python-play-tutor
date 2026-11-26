@@ -151,9 +151,11 @@ def import_bundle(db, classroom, instance, bundle, root):
                 if source["preview_asset_id"]:
                     row.content = {**row.content, "preview_key": assets[source["preview_asset_id"]]["storage_key"]}
     db.flush()
+    from app.course_packages.exams import import_exams
     from app.course_packages.narrations import import_narrations
 
     import_narrations(db, bundle, maps, assets)
+    import_exams(db, instance, bundle, replace=replace)
     relations = (
         (Material, MaterialChapter, "material_id", "chapter_ids", "chapter_id", "chapter"),
         (Question, QuestionChapter, "question_id", "chapter_ids", "chapter_id", "chapter"),

@@ -3,6 +3,7 @@
 Own task leases, durable progress and per-page commits; page reads never call these.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from fastapi import HTTPException
@@ -10,16 +11,23 @@ from sqlalchemy.orm import Session
 
 from ..models import Material, User
 from ..teacher_scope import require_scope, teacher_instance_id
-from . import audio, calibrate, config, digest, repository, service, tts
+from . import audio, calibrate, config, defaults, digest, repository, service, tts
 from . import client as model_client
 from .access import require_narratable, teacher_material
-from .contracts import AudioRecord, GeneratedPage
+from .contracts import AudioRecord, GeneratedPage, SpeechSettings
 from .models import NarrationJob
-from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
+from .request_contracts import GenerateInput, PageGenerateInput, PipelineInput, RangeInput
 
 
-PIPELINE = ("digest", "calibrate", "apply", "script")
-STAGE_LABELS = {"digest": "梳理文本", "calibrate": "整册校准", "apply": "应用修正", "script": "生成讲解稿"}
+PIPELINE = ("digest", "calibrate", "apply", "script", "knowledge")
+STAGE_LABELS = {
+    "digest": "梳理文本",
+    "calibrate": "整册校准",
+    "apply": "应用修正",
+    "script": "生成讲解稿",
+    "knowledge": "抽取知识点",
+}
+AUDIO_WORKERS = defaults.worker_count("REBORN_TTS_WORKERS", 2)
 
 
 def generate_narration(
@@ -35,7 +43,18 @@ def generate_narration(
         db, material, "generate", user, request={"operation": "generate_page", "page_no": page_no, "body": body.model_dump() if body else {}}
     ):
         try:
-            result = service.generate_page(db, material, page_no, instance_id=instance_id, target_seconds=body.target_seconds if body else None)
+            result = service.generate_page(
+                db,
+                material,
+                page_no,
+                instance_id=instance_id,
+                target_seconds=body.target_seconds if body else None,
+                style_preset=body.style_preset if body else "natural",
+                custom_style=body.custom_style if body else "",
+                section_minutes=body.section_minutes if body else None,
+                chapter_minutes=body.chapter_minutes if body else None,
+                use_pacing=body.use_pacing if body else False,
+            )
         except service.NarrationUnavailable as exc:
             raise HTTPException(409, str(exc)) from exc
         except LookupError as exc:
@@ -89,6 +108,11 @@ def run_generate_range(db: Session, material: Material, request: dict[str, Any],
             instance_id=instance_id,
             target_seconds=body.target_seconds,
             only_pages=request.get("only_pages"),
+            style_preset=body.style_preset,
+            custom_style=body.custom_style,
+            section_minutes=body.section_minutes,
+            chapter_minutes=body.chapter_minutes,
+            use_pacing=body.use_pacing,
         )
     except (service.NarrationUnavailable, LookupError, ValueError) as exc:
         repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
@@ -153,25 +177,84 @@ def run_digest(db: Session, material: Material, request: dict[str, Any], *,
     db.commit()
     written: list[int] = []
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0, "cache_miss_tokens": 0}
-    for index, group in enumerate(groups, start=1):
-        repository.check_cancel(db, material.id)
-        repository.beat(db, material.id, done=index - 1, total=total,
-                        checkpoint={"group": index, "pages": group})
-        db.commit()
-        repository.ensure_lease(db, material.id)
-        try:
-            pages, spent = digest.run_window(db, material, group, settings, effort)
-            written.extend(pages)
-            for key in usage:
-                usage[key] += spent.get(key, 0)
-        except (model_client.ModelFailed, ValueError) as exc:
-            repository.release(db, material.id, status="failed", message=str(exc), extra={
-                "done": index - 1, "total": total,
-                "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group],
-                **(extra or {})})
-            return False
-        repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页", checkpoint={})
-        db.commit()
+    use_parallel = digest.run_window is digest._DEFAULT_RUN_WINDOW and digest.WINDOW_WORKERS > 1 and total > 1
+    if not use_parallel:
+        for index, group in enumerate(groups, start=1):
+            repository.check_cancel(db, material.id)
+            repository.beat(db, material.id, done=index - 1, total=total,
+                            checkpoint={"group": index, "pages": group})
+            db.commit()
+            repository.ensure_lease(db, material.id)
+            try:
+                pages, spent = digest.run_window(db, material, group, settings, effort)
+                written.extend(pages)
+                for key in usage:
+                    usage[key] += spent.get(key, 0)
+            except (model_client.ModelFailed, ValueError) as exc:
+                repository.release(db, material.id, status="failed", message=str(exc), extra={
+                    "done": index - 1, "total": total,
+                    "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in group],
+                    **(extra or {})})
+                return False
+            repository.beat(db, material.id, done=index, total=total, message=f"第 {group[0]} 页", checkpoint={})
+            db.commit()
+    else:
+        workers = digest.WINDOW_WORKERS
+        completed = 0
+        for start in range(0, total, workers):
+            batch = groups[start:start + workers]
+            repository.check_cancel(db, material.id)
+            repository.ensure_lease(db, material.id)
+            batch_pages = [no for grp in batch for no in grp]
+            repository.beat(db, material.id, done=completed, total=total,
+                            checkpoint={"group": start + 1, "pages": batch_pages[:digest.WINDOW * 2]})
+            db.commit()
+
+            prepared = []
+            try:
+                for group in batch:
+                    content, states, images, per_page = digest.prepare_window(db, material, group)
+                    prepared.append((group, content, states, images, per_page))
+            except ValueError as exc:
+                failed_group = batch[len(prepared)]
+                repository.release(db, material.id, status="failed", message=str(exc), extra={
+                    "done": completed, "total": total,
+                    "failed": [{"page_no": page_no, "error": str(exc)[:200]} for page_no in failed_group],
+                    **(extra or {})})
+                return False
+
+            material_title = material.title
+            outcomes: list[tuple[list[dict[str, Any]] | None, dict[str, int], str, BaseException | None]] = []
+            with ThreadPoolExecutor(max_workers=len(prepared)) as pool:
+                futs = [
+                    pool.submit(digest.call_window, material_title, group, content, images, settings, effort, per_page=per_page)
+                    for group, content, _, images, per_page in prepared
+                ]
+                for fut in futs:
+                    try:
+                        pages_res, spent, model_name = fut.result()
+                        outcomes.append((pages_res, spent, model_name, None))
+                    except BaseException as exc:  # noqa: BLE001
+                        outcomes.append((None, {}, "", exc))
+
+            for (group, _, states, _, _), (pages_out, spent, model_name, err) in zip(prepared, outcomes):
+                if err is not None:
+                    if isinstance(err, (model_client.ModelFailed, ValueError)):
+                        repository.release(db, material.id, status="failed", message=str(err), extra={
+                            "done": completed, "total": total,
+                            "failed": [{"page_no": page_no, "error": str(err)[:200]} for page_no in group],
+                            **(extra or {})})
+                        return False
+                    raise err
+                assert pages_out is not None
+                repository.ensure_lease(db, material.id)
+                pages = digest.commit_window(db, material, pages_out, states, model_name, settings, effort)
+                written.extend(pages)
+                for key in usage:
+                    usage[key] += spent.get(key, 0)
+                completed += 1
+                repository.beat(db, material.id, done=completed, total=total, message=f"第 {group[0]} 页", checkpoint={})
+                db.commit()
     if chained:
         repository.beat(db, material.id, done=total, total=total, message=f"已整理 {len(written)} 页")
         db.commit()
@@ -234,6 +317,7 @@ def run_calibration(db: Session, material: Material, *,
 
 
 def pipeline_deck(classroom_id: int, material_id: int, db: Session, user: User,
+                  body: PipelineInput | None = None,
                   resume: dict[str, Any] | None = None) -> NarrationJob:
     """Queue 梳理 → 校准 → 应用 → 讲解稿 as one task; 老师只点一次。"""
     instance_id = teacher_instance_id(db, user, classroom_id)
@@ -251,9 +335,10 @@ def pipeline_deck(classroom_id: int, material_id: int, db: Session, user: User,
         raise HTTPException(409, reason)
     resume = resume or {}
     chain = list(resume.get("chain") or PIPELINE)
-    body = resume.get("body") or {"first_page": 1, "last_page": max(pages)}
+    extra_opts: dict[str, Any] = body.model_dump(exclude_none=True) if body is not None else {}
+    req_body: dict[str, Any] = dict(resume.get("body") or {"first_page": 1, "last_page": max(pages), **extra_opts})
     return repository.enqueue(db, material, "pipeline", user, request={
-        "operation": "pipeline", "body": body, "chain": chain,
+        "operation": "pipeline", "body": req_body, "chain": chain,
         "only_pages": db.info.get("narration_retry_pages") or resume.get("only_pages")})
 
 
@@ -273,6 +358,85 @@ def _apply_latest(db: Session, material: Material, extra: dict[str, Any] | None)
     return True
 
 
+class _AuthoringKnowledgeLLM:
+    """Adapter letting Lectio knowledge extraction reuse narration.client retries and test stubs."""
+
+    def __init__(self, settings: dict[str, Any], *, check_cancel: Any = None) -> None:
+        self._settings = settings
+        self.model = str(settings.get("model") or "")
+        self._check_cancel = check_cancel
+
+    def chat_json(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        effort: str | None = None,
+        temperature: float | None = None,
+    ) -> tuple[Any, dict[str, Any]]:
+        if self._check_cancel is not None:
+            self._check_cancel()
+        del temperature
+        reply = model_client.chat(
+            messages,
+            settings=self._settings,  # type: ignore[arg-type]
+            model=(model or self.model).strip(),
+            max_tokens=max_tokens or self._settings["max_tokens"],
+            effort=effort or self._settings["effort"] or "none",
+            require_text=False,
+        )
+        return reply["raw"], dict(reply.get("usage") or {})
+
+
+def _extract_knowledge(db: Session, material: Material, extra: dict[str, Any] | None) -> bool:
+    from ..lectio import knowledge_service
+    from ..lectio.engine.llm import LLMFailed, LLMUnavailable
+
+    repository.ensure_lease(db, material.id)
+    repository.beat(
+        db,
+        material.id,
+        done=0,
+        total=1,
+        message="正在抽取知识点…",
+        checkpoint={"action": "extract_knowledge"},
+    )
+    db.commit()
+    llm = _AuthoringKnowledgeLLM(
+        dict(config.settings(db)),
+        check_cancel=lambda: repository.check_cancel(db, material.id),
+    )
+    try:
+        result = knowledge_service.extract_material_knowledge(
+            db,
+            material,
+            llm=llm,
+            check_cancel=lambda: repository.check_cancel(db, material.id),
+        )
+    except repository.CancellationRequested:
+        raise
+    except (
+        model_client.ModelUnavailable,
+        model_client.ModelFailed,
+        LLMUnavailable,
+        LLMFailed,
+        RuntimeError,
+        LookupError,
+        ValueError,
+    ) as exc:
+        db.rollback()
+        repository.release(db, material.id, status="failed", message=str(exc), extra=extra)
+        return False
+    if result.get("skipped"):
+        note = str(result.get("reason") or "已跳过知识点抽取")
+    else:
+        note = f"已抽取 {result['total_extracted']} 个知识点（新增 {result['created']}，更新 {result['updated']}）"
+    repository.beat(db, material.id, done=1, total=1, message=note, checkpoint={})
+    db.commit()
+    return True
+
+
 def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> None:
     """Worker side: 逐段执行链；失败停在原地，重试从这一段继续。"""
     chain = list(request.get("chain") or PIPELINE)
@@ -286,7 +450,7 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
         remaining = {"chain": chain, "stage": stage, "failed_stage": stage}
         repository.set_chain(db, material.id, chain, stage)
         repository.beat(db, material.id, message=f"{STAGE_LABELS.get(stage, stage)}…",
-                        total=1 if stage == "apply" else 0)
+                        total=1 if stage in {"apply", "knowledge"} else 0)
         db.commit()
         if stage == "digest":
             ok = run_digest(db, material, request, chained=True, extra=remaining)
@@ -298,6 +462,8 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
             body = {**(request.get("body") or {}), "first_page": 1, "last_page": max(pages)}
             ok = run_generate_range(db, material, {"body": body, "only_pages": request.get("only_pages")},
                                     chained=True, extra=remaining)
+        elif stage == "knowledge":
+            ok = _extract_knowledge(db, material, remaining)
         else:
             repository.release(db, material.id, status="failed", message=f"未知阶段 {stage}", extra=remaining)
             return
@@ -306,7 +472,7 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
         chain.pop(0)
         repository.set_chain(db, material.id, chain, chain[0] if chain else "done")
         db.commit()
-    repository.release(db, material.id, message="梳理、校准、讲解稿已完成", extra={"done": 1, "total": 1})
+    repository.release(db, material.id, message="梳理、校准、讲解稿与知识点已完成", extra={"done": 1, "total": 1})
 
 
 def synthesize_audio(page_no: int, classroom_id: int, material_id: int, db: Session, user: User) -> AudioRecord:
@@ -372,26 +538,95 @@ def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) ->
     ]
     repository.beat(db, material.id, done=0, total=len(wanted))
     db.commit()
-    for item in repository.rows(db, material.id):
-        if (item.page_no < first or item.page_no > last
-                or (only_pages is not None and item.page_no not in only_pages)):
-            continue
-        if item.status != "accepted" or not item.text.strip():
-            continue
+    workers = max(1, AUDIO_WORKERS)
+    wanted_pages = [item.page_no for item in wanted]
+    for start in range(0, len(wanted_pages), workers):
+        chunk = wanted_pages[start:start + workers]
         repository.check_cancel(db, material.id)
-        repository.beat(db, material.id, checkpoint={"pages": [item.page_no]})
+        repository.beat(db, material.id, checkpoint={"pages": chunk})
         db.commit()
-        try:
-            result = audio.synthesize_page(db, material, item.page_no)
-            (reused if result["reused"] else made).append(item.page_no)
-            repository.beat(db, material.id, done=len(made) + len(reused) + len(failed), total=len(wanted),
-                            message=f"音频第 {item.page_no} 页", checkpoint={})
-            db.commit()
-        except (tts.SpeechFailed, ValueError, LookupError) as exc:
-            db.rollback()
-            failed.append({"page_no": item.page_no, "error": str(exc)[:160]})
-            repository.beat(db, material.id, done=len(made) + len(reused) + len(failed), total=len(wanted), checkpoint={})
-            db.commit()
+
+        to_synth: list[tuple[int, str, str, SpeechSettings]] = []
+        for page_no in chunk:
+            try:
+                reused_rec, pending = audio.prepare_page_tts(db, material, page_no)
+            except (tts.SpeechFailed, tts.SpeechUnavailable, ValueError, LookupError) as exc:
+                db.rollback()
+                failed.append({"page_no": page_no, "error": str(exc)[:160]})
+                repository.beat(
+                    db,
+                    material.id,
+                    done=len(made) + len(reused) + len(failed),
+                    total=len(wanted),
+                    message=f"音频第 {page_no} 页",
+                    checkpoint={},
+                )
+                db.commit()
+                continue
+            if reused_rec is not None:
+                reused.append(page_no)
+                repository.beat(
+                    db,
+                    material.id,
+                    done=len(made) + len(reused) + len(failed),
+                    total=len(wanted),
+                    message=f"音频第 {page_no} 页",
+                    checkpoint={},
+                )
+                db.commit()
+            elif pending is not None:
+                text, text_digest, engine = pending
+                to_synth.append((page_no, text, text_digest, engine))
+
+        if not to_synth:
+            continue
+
+        outcomes: list[tuple[bytes | None, str, int, BaseException | None]] = []
+        if len(to_synth) == 1:
+            _, text, _, engine = to_synth[0]
+            try:
+                audio_bytes, fmt, secs = audio.synthesize_audio_bytes(text, engine)
+                outcomes.append((audio_bytes, fmt, secs, None))
+            except BaseException as exc:  # noqa: BLE001
+                outcomes.append((None, "", 0, exc))
+        else:
+            with ThreadPoolExecutor(max_workers=len(to_synth)) as pool:
+                futs = [pool.submit(audio.synthesize_audio_bytes, text, engine) for _, text, _, engine in to_synth]
+                for fut in futs:
+                    try:
+                        audio_bytes, fmt, secs = fut.result()
+                        outcomes.append((audio_bytes, fmt, secs, None))
+                    except BaseException as exc:  # noqa: BLE001
+                        outcomes.append((None, "", 0, exc))
+
+        for (page_no, _, text_digest, _), (payload, fmt, secs, err) in zip(to_synth, outcomes):
+            try:
+                if err is not None:
+                    raise err
+                assert payload is not None
+                audio.commit_synthesized_page(db, material, page_no, text_digest, payload, fmt, secs)
+                made.append(page_no)
+                repository.beat(
+                    db,
+                    material.id,
+                    done=len(made) + len(reused) + len(failed),
+                    total=len(wanted),
+                    message=f"音频第 {page_no} 页",
+                    checkpoint={},
+                )
+                db.commit()
+            except (tts.SpeechFailed, tts.SpeechUnavailable, ValueError, LookupError) as exc:
+                db.rollback()
+                failed.append({"page_no": page_no, "error": str(exc)[:160]})
+                repository.beat(
+                    db,
+                    material.id,
+                    done=len(made) + len(reused) + len(failed),
+                    total=len(wanted),
+                    message=f"音频第 {page_no} 页",
+                    checkpoint={},
+                )
+                db.commit()
     repository.release(
         db,
         material.id,

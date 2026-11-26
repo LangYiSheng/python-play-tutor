@@ -288,9 +288,11 @@ def validate_bundle(bundle, root):
         from app.teaching.authoring.validation import validate_configuration
 
         validate_configuration(bundle["configuration"], data)
+        from app.course_packages.exams import validate_exams
         from app.course_packages.narration_contract import validate_narrations
 
         validate_narrations(bundle, root)
+        validate_exams(bundle)
     except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
         if isinstance(exc, PackageError):
             raise

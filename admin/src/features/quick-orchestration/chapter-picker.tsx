@@ -73,8 +73,8 @@ export function ChapterPicker({ chapters, selected, problems, withQuiz, finalId,
   const [focusId, setFocusId] = useState(selected[0]?.chapter_id);
   const [filter, setFilter] = useState("");
   const [openError, setOpenError] = useState("");
-  function openManager(page: "curriculum" | "materials") {
-    const tab = window.open("/teacher/" + page, "_blank");
+  function openManager(path: "content-graph?view=list" | "courseware") {
+    const tab = window.open("/teacher/" + path, "_blank");
     if (tab) {
       tab.opener = null;
       setOpenError("");
@@ -126,8 +126,8 @@ export function ChapterPicker({ chapters, selected, problems, withQuiz, finalId,
       <div><h2 className="text-lg">授课章节</h2>
         <p className="hint">勾选章节后，会带入本章可用课件和全部知识点。</p></div>
       <div className="flex flex-wrap gap-1">
-        <Button variant="link" size="sm" onClick={() => openManager("curriculum")}>管理章节与知识点<ExternalLink /></Button>
-        <Button variant="link" size="sm" onClick={() => openManager("materials")}>管理课件<ExternalLink /></Button>
+        <Button variant="link" size="sm" onClick={() => openManager("content-graph?view=list")}>管理章节与知识点<ExternalLink /></Button>
+        <Button variant="link" size="sm" onClick={() => openManager("courseware")}>管理课件<ExternalLink /></Button>
         <Button variant="ghost" size="sm" onClick={onRefresh}><RefreshCw />{refreshing ? "刷新中…" : "刷新内容"}</Button>
       </div>
     </div>

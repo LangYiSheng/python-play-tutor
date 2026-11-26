@@ -150,6 +150,28 @@
   max-width: 1600px;
   margin: 0 auto;
 }
+@media (min-width: 1024px) {
+  .workspace:has(> .courseware-main) {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .workspace:has(> .courseware-main) > .topbar {
+    flex: none;
+  }
+  .main-content.courseware-main {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
 .sidebar-collapsed {
   grid-template-columns: 0 minmax(0, 1fr);
 }

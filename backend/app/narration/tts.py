@@ -13,6 +13,8 @@ Weights for a self-hosted engine are fetched outside the image; nothing is baked
 """
 
 import base64
+import random
+import time
 from typing import cast
 
 import httpx
@@ -25,6 +27,26 @@ from .defaults import environment_protocol
 DEEPSEEK_FORMATS = {"wav", "pcm"}
 DASHSCOPE_FORMATS = {"mp3", "wav", "pcm", "opus"}
 DASHSCOPE_SAMPLE_RATE = 24000
+MAX_TTS_RETRIES = 3
+TTS_RETRY_DELAYS = (0.8, 1.8, 3.2)
+NO_RETRY_TRANSPORT = (httpx.LocalProtocolError, httpx.UnsupportedProtocol, httpx.InvalidURL)
+
+
+def _sleep(seconds: float) -> None:
+    if seconds > 0:
+        time.sleep(seconds)
+
+
+def _retry_delay(response: httpx.Response | None, attempt: int) -> float:
+    base = TTS_RETRY_DELAYS[min(attempt, len(TTS_RETRY_DELAYS) - 1)]
+    headers = getattr(response, "headers", None) if response is not None else None
+    raw = (headers.get("retry-after") or "").strip() if headers else ""
+    if raw:
+        try:
+            base = min(6.0, max(0.3, float(raw)))
+        except ValueError:
+            pass
+    return base + random.uniform(0.05, 0.25)
 
 
 class SpeechUnavailable(RuntimeError):
@@ -56,7 +78,7 @@ def unavailable_reason(db: Session | None = None) -> str | None:
 
 def endpoint(base_url: str, path: str) -> str:
     """Accept a service root, /v1 root or complete supported speech endpoint."""
-    root = base_url.rstrip("/")
+    root = base_url.strip().rstrip("/")
     for suffix in ("/api/v1/services/audio/tts/SpeechSynthesizer", "/v1/tools/tts", "/v1/audio/speech", "/v1"):
         if root.endswith(suffix):
             root = root[:-len(suffix)]
@@ -99,27 +121,40 @@ def _request(config: SpeechSettings, text: str) -> tuple[str, dict[str, object]]
 def synthesize(text: str, *, settings_override: SpeechSettings | None = None) -> bytes:
     """Return audio bytes for one page; the caller decides where to store them."""
     config = settings_override or settings()
-    if not config["base_url"]:
+    base_url = (config["base_url"] or "").strip()
+    if not base_url:
         raise SpeechUnavailable("未配置语音合成服务")
     path, body = _request(config, text)
     headers = {"Content-Type": "application/json"}
-    if config["api_key"]:
-        headers["Authorization"] = f"Bearer {config['api_key']}"
-    try:
-        with httpx.Client(timeout=config["timeout"]) as client:
-            response = client.post(endpoint(config["base_url"], path), headers=headers, json=body)
-    except httpx.HTTPError as exc:
-        raise SpeechFailed(f"语音合成{transport_reason(exc)}") from exc
-    if response.status_code in {401, 403}:
-        raise SpeechFailed(f"语音合成服务鉴权失败（HTTP {response.status_code}）")
-    if response.status_code == 400:
-        raise SpeechFailed("语音合成服务拒绝了请求（HTTP 400），请核对参数及内容审核要求")
-    if response.status_code == 429:
-        raise SpeechFailed("语音合成受到限流（HTTP 429），请稍后重试或降低并发")
-    if response.status_code in {503, 504}:
-        raise SpeechFailed(f"语音合成服务暂时无法完成请求（HTTP {response.status_code}），请检查服务是否繁忙")
-    if response.status_code != 200:
-        raise SpeechFailed(f"语音合成服务返回 {response.status_code}")
+    api_key = (config["api_key"] or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    attempt = 0
+    while True:
+        try:
+            with httpx.Client(timeout=config["timeout"]) as client:
+                response = client.post(endpoint(base_url, path), headers=headers, json=body)
+        except httpx.HTTPError as exc:
+            if not isinstance(exc, NO_RETRY_TRANSPORT) and attempt < MAX_TTS_RETRIES:
+                _sleep(_retry_delay(None, attempt))
+                attempt += 1
+                continue
+            raise SpeechFailed(f"语音合成{transport_reason(exc)}") from exc
+        if response.status_code in {401, 403}:
+            raise SpeechFailed(f"语音合成服务鉴权失败（HTTP {response.status_code}）")
+        if response.status_code == 400:
+            raise SpeechFailed("语音合成服务拒绝了请求（HTTP 400），请核对参数及内容审核要求")
+        if (response.status_code == 429 or response.status_code >= 500) and attempt < MAX_TTS_RETRIES:
+            _sleep(_retry_delay(response, attempt))
+            attempt += 1
+            continue
+        if response.status_code == 429:
+            raise SpeechFailed("语音合成受到限流（HTTP 429），请稍后重试或降低并发")
+        if response.status_code in {503, 504}:
+            raise SpeechFailed(f"语音合成服务暂时无法完成请求（HTTP {response.status_code}），请检查服务是否繁忙")
+        if response.status_code != 200:
+            raise SpeechFailed(f"语音合成服务返回 {response.status_code}")
+        break
     if config.get("protocol", environment_protocol()) == "dashscope":
         audio = _dashscope_audio(config, response)
     else:

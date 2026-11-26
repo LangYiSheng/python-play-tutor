@@ -21,6 +21,11 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def worker_count(name: str, default: int) -> int:
+    """Safely parse bounded worker concurrency from env (empty/invalid falls back to default)."""
+    return max(1, min(8, _int(name, default)))
+
+
 def authoring_environment() -> AuthoringSettings:
     model = (os.getenv("REBORN_AUTHORING_AI_MODEL") or DEFAULT_MODEL).strip()
     return AuthoringSettings(

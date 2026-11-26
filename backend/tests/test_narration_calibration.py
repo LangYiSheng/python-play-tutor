@@ -190,3 +190,63 @@ def test_window_sends_digest_raw_neighbors_and_images(client, db, classroom, tea
     assert [call["pages"] for call in calls] == [[1, 2, 3, 4], [5, 6]]
     assert calls[0]["images"] == 4, "300 字的页在 600 阈值下仍发图"
     assert calls[1]["images"] == 2, "两页都发图，不按上限静默截断"
+
+
+def test_calibration_respects_configured_effort(client, db, classroom, teacher, monkeypatch, run_jobs):
+    """整册校准遵循作者期配置中的 effort，不再硬编码 low 触发思考模式。"""
+    monkeypatch.setenv("REBORN_AUTHORING_AI_EFFORT", "none")
+    material = doc_material(db, classroom, "一" * 300, "二" * 300)
+    db.commit()
+    digests(db, material, [body(1), body(2)])
+    seen_efforts: list[str] = []
+
+    def fake_chat(messages, *, settings, model, effort=None, **kwargs):
+        user = messages[1]["content"]
+        text = user if isinstance(user, str) else next(p["text"] for p in user if p.get("type") == "text")
+        payload = json.loads(text[text.index("\n\n{"):])
+        if "tags" in payload:
+            return {"raw": {t: t for t in payload["tags"]}, "text": "", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+        seen_efforts.append(str(effort))
+        return {"raw": {"fixes": [], "issues": []}, "text": "", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+
+    monkeypatch.setattr("app.narration.calibrate.model_client.chat", fake_chat)
+    assert queue(client, classroom, material, teacher).status_code == 202
+    run_jobs()
+    entry = report(client, classroom, material, teacher).json()
+    assert entry["complete"] is True
+    assert entry["effort"] == "none"
+    assert seen_efforts == ["none"]
+
+
+def test_calibration_recovers_from_empty_reply_by_shrinking_and_splitting(
+        client, db, classroom, teacher, monkeypatch, run_jobs):
+    """整窗与缩窗都持续返回空内容时，自动拆成两半完成校准，不拖垮整册。"""
+    from app.narration import client as model_client
+
+    material = doc_material(db, classroom, *(("页" * 300) for _ in range(4)))
+    db.commit()
+    digests(db, material, [body(i) for i in range(1, 5)])
+    monkeypatch.setattr("app.narration.calibrate.render.render_page", lambda material, page_no: b"\xff\xd8" + bytes(32))
+    seen_windows: list[list[int]] = []
+
+    def flaky_chat(messages, *, settings, model, **kwargs):
+        user = messages[1]["content"]
+        text = user if isinstance(user, str) else next(p["text"] for p in user if p.get("type") == "text")
+        payload = json.loads(text[text.index("\n\n{"):])
+        if "tags" in payload:
+            return {"raw": {t: t for t in payload["tags"]}, "text": "", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+        pages = [page["page_no"] for page in payload["pages"]]
+        seen_windows.append(pages)
+        if len(pages) == 4:
+            raise model_client.ModelFailed("模型返回空内容，请重试", hint="empty")
+        fixes = [{"page_no": "3", "text": body(3) + "（已修正）", "reason": "错字"}] if 3 in pages else []
+        return {"raw": {"fixes": fixes, "issues": []}, "text": "", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+
+    monkeypatch.setattr("app.narration.calibrate.model_client.chat", flaky_chat)
+    assert queue(client, classroom, material, teacher).status_code == 202
+    run_jobs()
+    entry = report(client, classroom, material, teacher).json()
+    assert entry["complete"] is True
+    assert seen_windows == [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2], [3, 4]]
+    assert entry["shrunk_windows"] == [1]
+    assert [f["page_no"] for f in entry["fixes"]] == [3]

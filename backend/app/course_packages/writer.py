@@ -137,9 +137,11 @@ def write_package(db, instance, root):
                 },
             }
         )
+    from app.course_packages.exams import export_exams
     from app.course_packages.narrations import export_narrations
 
     export_narrations(db, instance, root, data["material"], assets)
+    export_exams(db, instance, root)
     _write_jsonl(root / "assets/index.jsonl", assets)
     validate_package(root)
     return manifest

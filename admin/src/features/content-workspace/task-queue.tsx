@@ -9,12 +9,12 @@ import { taskNodeId } from "./graph-layout";
 import { stageTitle, taskFailed, taskPercent, taskStage, taskStatus, taskTitle, taskWork, type TaskSnapshot } from "./task-presentation";
 
 type Command = "cancel" | "retry";
-type Pending = { command: Command; job: TaskSnapshot; material: string };
-type Controls = { request: (target: Pending) => void };
+export type TaskCommand = { command: Command; job: TaskSnapshot; material: string };
+type Controls = { request: (target: TaskCommand) => void };
 
 export function useTaskCommands(classroomId: number | undefined, refresh: () => void) {
-  const [pending, setPending] = useState<Pending | null>(null), [busy, setBusy] = useState(false);
-  function request(target: Pending) {
+  const [pending, setPending] = useState<TaskCommand | null>(null), [busy, setBusy] = useState(false);
+  function request(target: TaskCommand) {
     setPending(target);
   }
   async function submit() {
@@ -42,7 +42,7 @@ export function useTaskCommands(classroomId: number | undefined, refresh: () => 
       <DialogContent><DialogHeader><DialogTitle>{retry ? "重试" : "取消"}{taskTitle(pending.job)}？</DialogTitle>
         <DialogDescription>{pending.material} · {taskStatus(pending.job)}</DialogDescription></DialogHeader>
         <p className="text-sm">{retry ? "将按原配置重新发起任务，可能产生模型或配音费用。"
-          : pending.job.status === "failed" ? "将从图谱任务队列移除这条失败记录。已保存的内容和历史失败记录将保留。"
+          : pending.job.status === "failed" ? "将从任务队列移除这条失败记录。已保存的内容和历史失败记录将保留。"
           : "排队任务会立即取消。已开始的步骤会先收尾，已保存的结果会保留。"}</p>
         <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setPending(null)}>返回</Button>
           <Button disabled={busy} onClick={() => void submit()}>{retry ? "确认重试" : "确认取消任务"}</Button></DialogFooter>

@@ -142,3 +142,38 @@ def test_digest_requires_authoring_credentials(monkeypatch, client, db, classroo
     monkeypatch.delenv("REBORN_AUTHORING_AI_API_KEY")
     response = start(client, classroom, teacher, material)
     assert response.status_code == 409
+
+
+def test_transient_missing_page_is_repaired_and_job_started_at_is_utc(monkeypatch, client, db, classroom, teacher, run_jobs):
+    material = doc_material(db, classroom, *(("页" * 300) for _ in range(8)))
+    db.commit()
+    dropped_once = {"done": False}
+    seen_calls: list[list[int]] = []
+
+    def flaky_chat(messages, *, settings, model, **kwargs):
+        user = messages[1]["content"]
+        text = user if isinstance(user, str) else user[0]["text"]
+        payload = json.loads(text[text.index("\n\n{"):])
+        wanted = [page["page_no"] for page in payload["pages"]]
+        seen_calls.append(wanted)
+        returned = list(wanted)
+        if 4 in returned and len(returned) > 1 and not dropped_once["done"]:
+            dropped_once["done"] = True
+            returned = [p for p in returned if p != 4]
+        pages = [
+            {"page_no": p, "title": f"主题{p}", "topic": "一句话主题", "tags": ["概念"], "text": f"整理后的第{p}页"}
+            for p in returned
+        ]
+        return {"raw": {"pages": pages}, "text": "", "bridge_in": "", "anchors": [], "usage": {}, "model": model}
+
+    monkeypatch.setattr("app.narration.digest.model_client.chat", flaky_chat)
+
+    start(client, classroom, teacher, material)
+    run_jobs()
+
+    rows = repository.content_rows(db, material.id)
+    assert [row.page_no for row in rows] == list(range(1, 9))
+    assert [4] in seen_calls, "缺第 4 页后应只对缺失的第 4 页做一次补调"
+    job = client.get(url(classroom, material, "/job"), headers=teacher["headers"]).json()
+    assert job["status"] == "done"
+    assert job["started_at"] and (job["started_at"].endswith("+00:00") or job["started_at"].endswith("Z"))

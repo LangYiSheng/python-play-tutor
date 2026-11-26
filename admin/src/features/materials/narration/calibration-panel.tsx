@@ -20,7 +20,7 @@ export function CalibrationPanel({
   if (!report) {
     return (
       <section className="surface p-4 text-sm">
-        <p className="hint">还没有校准报告。点「一键梳理文本」会整理原文、校准并生成讲解稿。</p>
+        <p className="hint">还没有校准报告。点「一键梳理文本」会整理原文、校准、生成讲解稿并抽取知识点。</p>
       </section>
     );
   }

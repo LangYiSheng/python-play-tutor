@@ -40,3 +40,29 @@
     grid-template-columns: 1fr;
   }
 }
+.question-links-aside .editor-columns {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.question-links-aside .knowledge-columns > * {
+  height: 112px;
+  overflow: hidden;
+}
+.question-links-aside .knowledge-columns > :last-child {
+  height: 188px;
+  overflow: hidden;
+}
+.question-links-aside .knowledge-rows {
+  padding: 6px 8px;
+}
+.question-links-aside .knowledge-rows .editor-list-item,
+.question-links-aside .knowledge-rows label {
+  min-height: 2rem;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.question-links-aside .pager {
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}

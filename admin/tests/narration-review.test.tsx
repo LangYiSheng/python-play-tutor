@@ -162,7 +162,7 @@ it("queues the one-click pipeline and shows which stage is running", async () =>
       kind: "pipeline",
       status: "done",
       stage: "calibrate",
-      chain: ["calibrate", "apply", "script"],
+      chain: ["calibrate", "apply", "script", "knowledge"],
       done: 0,
       total: 0,
       message: "",
@@ -178,6 +178,7 @@ it("queues the one-click pipeline and shows which stage is running", async () =>
   await waitFor(() => expect(screen.getAllByText(/整理原文/).length).toBeGreaterThan(0));
   expect(screen.getAllByText(/整册校准/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/生成讲解稿/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/抽取知识点/).length).toBeGreaterThan(0);
 });
 
 it("lists calibration fixes and tag merges, and says the fixes were applied", async () => {
@@ -224,4 +225,113 @@ it("shows the digest read-only and folds the raw text", async () => {
   expect(screen.getByText(/原始文本（12 字）/)).toBeTruthy();
   expect(screen.queryByLabelText("本页标题")).toBeNull();
   expect(screen.queryByRole("button", { name: /保存标题与标签/ })).toBeNull();
+});
+
+it("falls back to exact single-page /page-pdf when /page-image is unavailable", async () => {
+  const getUrls: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      getUrls.push(url);
+      if (url.endsWith("/page-image")) return new Response("missing", { status: 404 });
+      if (url.endsWith("/page-pdf")) {
+        return new Response(new Blob(["%PDF-1.4"], { type: "application/pdf" }), {
+          status: 200,
+          headers: { "Content-Type": "application/pdf" },
+        });
+      }
+      if (url.endsWith("/quota")) return json({ used_today: 4, daily_limit: 300, available: true });
+      if (url.endsWith("/audio"))
+        return json({ available: true, voice: "Meilin", model: "zonos3-mini", pages: [] });
+      if (url.endsWith("/narrations")) return json(list);
+      if (url.endsWith("/job"))
+        return json({ running: false, queued: false, kind: "calibrate", status: "done", done: 1, total: 1, message: "", failed: [] });
+      if (url.includes("/calibrate")) return json(report);
+      return json({});
+    }),
+  );
+  const user = userEvent.setup();
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+
+  const frame1 = await screen.findByTitle("第 1 页课件预览");
+  expect(frame1.getAttribute("src")).toContain("#toolbar=0&navpanes=0&scrollbar=0&view=Fit");
+  expect(frame1.getAttribute("src")).not.toContain("#page=");
+
+  await user.click(screen.getByRole("button", { name: /第 2 页/ }));
+  const frame2 = await screen.findByTitle("第 2 页课件预览");
+  expect(frame2.getAttribute("src")).toContain("#toolbar=0&navpanes=0&scrollbar=0&view=Fit");
+  expect(getUrls.filter((u) => u.endsWith("/page-image"))).toHaveLength(1);
+  expect(getUrls.some((u) => u.endsWith("/narrations/2/page-pdf"))).toBe(true);
+});
+
+it("renders a live progress bar with percentage and position while a job runs", async () => {
+  stub([], {
+    job: {
+      id: 9,
+      material_id: 7,
+      running: true,
+      queued: false,
+      kind: "pipeline",
+      status: "running",
+      stage: "digest",
+      chain: ["digest", "calibrate", "apply", "script"],
+      done: 3,
+      total: 9,
+      percent: 33,
+      progress_unit: "groups",
+      position: "第 4 组 · 第 13–16 页",
+      message: "正在处理第 4 组",
+      failed: [],
+      started_at: new Date().toISOString(),
+    },
+  });
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+  const bar = await screen.findByRole("progressbar", { name: "任务进度" });
+  expect(bar).toHaveAttribute("aria-valuenow", "33");
+  expect(screen.getByText("3 / 9 组（33%）")).toBeTruthy();
+  expect(screen.getByText("第 4 组 · 第 13–16 页")).toBeTruthy();
+});
+
+it("offers a one-click retry failed pages button on failed audio jobs", async () => {
+  const calls: { url: string; method: string; body?: unknown }[] = [];
+  const startedAt = "2026-11-26T02:19:39.715835+00:00";
+  stub(calls, {
+    job: {
+      id: 20,
+      material_id: 7,
+      running: false,
+      queued: false,
+      kind: "audio",
+      status: "failed",
+      done: 62,
+      total: 62,
+      percent: 100,
+      progress_unit: "pages",
+      position: "失败页：第 4、8 页",
+      message: "音频完成 60 页，失败 2 页",
+      failed: [
+        { page_no: 4, error: "语音合成受到限流（HTTP 429），请稍后重试或降低并发" },
+        { page_no: 8, error: "语音合成受到限流（HTTP 429），请稍后重试或降低并发" },
+      ],
+      retryable: true,
+      started_at: startedAt,
+    },
+  });
+  const user = userEvent.setup();
+  render(<NarrationReview classroomId={3} materialId={7} title="第 1 讲" onClose={() => {}} />);
+
+  const retryBtn = await screen.findByRole("button", { name: /一键重试失败页（2 页）/ });
+  expect(screen.getByText(/语音合成受到限流（HTTP 429）/)).toBeTruthy();
+  await user.click(retryBtn);
+
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (call) =>
+          call.url.endsWith("/teacher/classrooms/3/synthesis/7/retry") &&
+          call.method === "POST" &&
+          (call.body as { expected_started_at?: string })?.expected_started_at === startedAt,
+      ),
+    ).toBe(true),
+  );
 });

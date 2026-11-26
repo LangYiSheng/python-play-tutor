@@ -35,6 +35,7 @@ def has_learning_history(db, classroom_id):
 
 
 def preview_impact(db, instance, bundle):
+    from app.course_packages.exams import current_rows as current_exam_rows, preview_exams
     from app.course_packages.narrations import preview_narrations, revision
 
     narration_revision = revision(db, instance)
@@ -52,6 +53,8 @@ def preview_impact(db, instance, bundle):
     for kind, incoming in bundle["data"].items():
         compare(kind, {row["id"]: row for row in previous[kind]}, {row["id"]: row for row in incoming})
     diff["narrations"] = preview_narrations(db, instance, bundle)
+    if current_exam_rows(db, instance) or bundle.get("exams_present") or bundle.get("exams"):
+        diff["exams"] = preview_exams(db, instance, bundle)
     compare("answers", {row["id"]: row for row in snapshot[1]} if snapshot else {}, {row["id"]: row for row in bundle["secrets"]})
     old_config = snapshot[3] if snapshot else {}
     compare("configuration", {key: old_config.get(key, {}) for key in CONFIG_FILES}, bundle["configuration"])

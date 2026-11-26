@@ -78,13 +78,10 @@ test("真实班级、学生、内容、编辑器与包往返", async ({ page }, 
   await page.getByRole("button", { name: "新增题目", exact: true }).click();
   await page.getByLabel("题目名称").fill("验收单选题");
   await page.getByLabel("题干").fill("哪一个是 Python 输出函数？");
-  await page.getByRole("tab", {name:"答案",exact:true}).click();
   await page.getByLabel("选项1", { exact: true }).fill("print");
   await page.getByLabel("选项2", { exact: true }).fill("write");
   await page.getByLabel("选项1为正确答案").check();
-  await page.getByRole("tab", {name: "内容关联"}).click();
   await page.getByLabel("关联验收第一章").check();
-  await page.getByRole("tab", {name: "题目信息"}).click();
   await chooseOption(page, page.getByRole("dialog").getByLabel("状态", { exact: true }), "可用");
   await page.getByRole("button", { name: "保存题目", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);

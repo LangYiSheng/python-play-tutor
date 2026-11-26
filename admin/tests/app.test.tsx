@@ -3,10 +3,15 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../src/App";
 import { setToken } from "../src/lib/api";
-vi.mock("../src/pages/content-list", async () => {
+vi.mock("../src/features/courseware/courseware-page", async () => {
   const { useDraft } = await import("../src/lib/drafts");
-  return { ContentListPage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
+  return { CoursewarePage: () => { useDraft(true); return <input aria-label="未保存资料" defaultValue="保留草稿" />; } };
 });
+vi.mock("../src/features/assessments/assessments-page", () => ({
+  AssessmentsPage: ({ classroomId }: { classroomId: number }) => (
+    <div data-testid="assessments-page" data-search={location.search}>题库与组卷 {classroomId}</div>
+  ),
+}));
 vi.mock("../src/features/content-workspace/knowledge-graph", () => ({
   KnowledgeGraph: ({ classroomId, initialReview }: { classroomId: number; initialReview?: { materialId?: number } }) =>
     <><h1>图谱班级 {classroomId}</h1>{initialReview && <aside aria-label="待审批">{initialReview.materialId ?? "全部课件"}</aside>}</>,
@@ -42,7 +47,7 @@ it("cancelling draft discard prevents class creation and keeps the current class
   const user = userEvent.setup();
   render(<App />);
   await screen.findByLabelText("未保存资料");
-  expect(location.pathname + location.search).toBe("/teacher/content-list?tab=materials");
+  expect(location.pathname + location.search).toBe("/teacher/courseware");
   expect(screen.queryByRole("button", { name: "创建班级" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("link", { name: "班级管理" }));
   expect(window.confirm).toHaveBeenCalled();
@@ -109,6 +114,10 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
     });
     expect(new Set(icons).size).toBe(group.length);
   }
+  for (const name of ["章节与课件", "知识图谱", "题库与组卷"]) {
+    expect(screen.getByRole("link", { name })).toBeVisible();
+  }
+  expect(screen.queryByRole("link", { name: "内容列表" })).not.toBeInTheDocument();
   const toggle = screen.getByRole("button", { name: "收起导航" });
   expect(toggle).toHaveAttribute("aria-expanded", "true");
   expect(document.getElementById(toggle.getAttribute("aria-controls")!)).toContainElement(screen.getByRole("navigation", { name: "班级导航" }));
@@ -153,4 +162,13 @@ it("redirects a teacher from an admin deep link without loading site-wide data",
   expect(location.pathname).toBe("/teacher/classes");
   expect(screen.queryByRole("link", { name: "全局概览" })).not.toBeInTheDocument();
   expect(fetch.mock.calls.some(([url]) => url.includes("/api/admin/"))).toBe(false);
+});
+it("redirects legacy content-list question deep links to assessments bank tab", async () => {
+  setToken("teacher-session");
+  history.replaceState({}, "", "/teacher/content-list?tab=questions&status=draft&reviewable=true");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => json(url.endsWith("/auth/me")
+    ? { id: 2, name: "教师", role: "teacher" } : [{ id: 5, name: "甲班" }])));
+  render(<App />);
+  expect(await screen.findByTestId("assessments-page")).toHaveTextContent("题库与组卷 5");
+  expect(location.pathname + location.search).toBe("/teacher/assessments?tab=bank&status=draft&reviewable=true");
 });

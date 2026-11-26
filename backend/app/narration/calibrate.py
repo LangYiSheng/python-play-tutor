@@ -12,6 +12,7 @@
 """
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import time
@@ -23,12 +24,13 @@ from sqlalchemy.orm import Session
 
 from ..models import Material, now
 from . import client as model_client
-from . import config, input_policy, render, repository
+from . import config, defaults, input_policy, render, repository
 from .contracts import AppliedCalibration, AuthoringSettings, CalibrationIssue
 from .input_policy import prefers_image
 from .models import NarrationCalibration, PageContent
 
 WINDOW = 4
+CALIBRATE_WORKERS = defaults.worker_count("REBORN_NARRATION_WORKERS", 4)
 SUMMARY_LIMIT = 1800  # 兼容旧报告字段，本轮不再生成摘要
 ISSUE_LIMIT = 120
 FIX_LIMIT = 40
@@ -100,8 +102,9 @@ def image_input(material: Material, source_text: str) -> bool:
     return prefers_image(material, source_text, purpose="digest")
 
 
-def prefix_text(material: Material) -> str:
-    return "\n".join([TEMPLATE, f"材料：{material.title}", "输出字段：fixes、issues。"])
+def prefix_text(material: Material | str) -> str:
+    title = material if isinstance(material, str) else material.title
+    return "\n".join([TEMPLATE, f"材料：{title}", "输出字段：fixes、issues。"])
 
 
 def prefix_fingerprint(material: Material) -> str:
@@ -118,8 +121,13 @@ def revision(row: PageContent) -> str:
          row.updated_at.isoformat() if row.updated_at else None], ensure_ascii=False, sort_keys=True))
 
 
+def _effort(settings: AuthoringSettings) -> str:
+    return (settings.get("effort") or "none").strip() or "none"
+
+
 def deck_fingerprint(material: Material, items: list[PageContent], settings: AuthoringSettings) -> str:
-    parts = [CALIBRATE_VERSION, prefix_fingerprint(material), tag_fingerprint(), settings["vision_model"], "low",
+    parts = [CALIBRATE_VERSION, prefix_fingerprint(material), tag_fingerprint(),
+             settings["model"], settings["vision_model"], _effort(settings),
              str(WINDOW), str(WINDOW_TEXT_BUDGET), input_policy.policy_fingerprint()]
     parts += [f"{row.page_no}:{revision(row)}" for row in items]
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
@@ -134,7 +142,7 @@ def _empty_state(material: Material, items: list[PageContent], fingerprint: str,
         "calibrate_version": CALIBRATE_VERSION,
         "prefix_hash": prefix_fingerprint(material),
         "model": settings["vision_model"],
-        "effort": "low",
+        "effort": _effort(settings),
         "windows": len(windows(items)),
         "windows_done": 0,
         "next_index": 0,
@@ -238,14 +246,40 @@ def _window_payload(db: Session, material: Material, group: list[PageContent], s
     return body, images, shrunk
 
 
-def _call(material: Material, payload: dict[str, Any], images: list[dict[str, Any]],
-          settings: AuthoringSettings, max_tokens: int | None = None) -> dict[str, Any]:
+def _call(material: Material | str, payload: dict[str, Any], images: list[dict[str, Any]],
+          settings: AuthoringSettings, max_tokens: int | None = None,
+          effort: str | None = None) -> dict[str, Any]:
     content = prefix_text(material) + "\n\n" + json.dumps(payload, ensure_ascii=False, sort_keys=True)
     user: Any = [{"type": "text", "text": content}, *images] if images else content
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+    model = settings["vision_model"] if images else settings["model"]
     return cast(dict[str, Any], model_client.chat(
-        messages, settings=settings, model=settings["vision_model"], effort="low",
+        messages, settings=settings, model=model, effort=effort or _effort(settings),
         max_tokens=max_tokens or settings["max_tokens"], require_text=False))
+
+
+def _coerce_page_no(raw_no: Any) -> int | None:
+    if isinstance(raw_no, bool):
+        return None
+    if isinstance(raw_no, int):
+        return raw_no
+    if isinstance(raw_no, str) and raw_no.strip().isdigit():
+        return int(raw_no.strip())
+    return None
+
+
+def _combine_replies(replies: list[dict[str, Any]]) -> dict[str, Any]:
+    fixes: list[Any] = []
+    issues: list[Any] = []
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0, "cache_miss_tokens": 0}
+    for reply in replies:
+        raw = reply.get("raw") or {}
+        fixes.extend(raw.get("fixes") or [])
+        issues.extend(raw.get("issues") or [])
+        part_usage = reply.get("usage") or {}
+        for key in usage:
+            usage[key] += int(part_usage.get(key) or 0)
+    return {"raw": {"fixes": fixes, "issues": issues}, "usage": usage}
 
 
 def fix_allowed(before: str, after: str) -> bool:
@@ -270,7 +304,7 @@ def _merge(state: dict[str, Any], reply: dict[str, Any], group: list[PageContent
     for issue in (raw.get("issues") or [])[:8]:
         if not isinstance(issue, dict):
             continue
-        page_no, kind = issue.get("page_no"), issue.get("kind")
+        page_no, kind = _coerce_page_no(issue.get("page_no")), issue.get("kind")
         if page_no not in by_page or kind not in {"ocr", "order", "tag", "flow"}:
             continue
         key = (page_no, kind)
@@ -284,7 +318,7 @@ def _merge(state: dict[str, Any], reply: dict[str, Any], group: list[PageContent
     for fix in (raw.get("fixes") or [])[:8]:
         if not isinstance(fix, dict):
             continue
-        page_no = fix.get("page_no")
+        page_no = _coerce_page_no(fix.get("page_no"))
         if page_no not in by_page or page_no in fixed_pages or len(fixes) >= FIX_LIMIT:
             continue
         before = by_page[page_no].text.strip()
@@ -346,6 +380,25 @@ def _merge_tags(db: Session, material: Material, items: list[PageContent], state
     state["tag_stats"] = stats
 
 
+def _call_with_output_retry(
+    material: Material | str,
+    payload: dict[str, Any],
+    images: list[dict[str, Any]],
+    settings: AuthoringSettings,
+) -> tuple[dict[str, Any] | None, int, bool]:
+    """线程安全单窗调用；返回 (reply 或 None, output_retries, need_shrink)。"""
+    try:
+        return _call(material, payload, images, settings), 0, False
+    except model_client.ModelFailed as exc:
+        hint = getattr(exc, "hint", None)
+        if hint == "output":
+            reply = _call(material, payload, images, settings, max_tokens=min(settings["max_tokens"] * 3, 32000))
+            return reply, 1, False
+        if hint in {"length", "empty"}:
+            return None, 0, True
+        raise
+
+
 def advance(db: Session, material: Material, row: NarrationCalibration, items: list[PageContent]) -> NarrationCalibration:
     groups = windows(items)
     state = dict(row.report or {})
@@ -355,44 +408,89 @@ def advance(db: Session, material: Material, row: NarrationCalibration, items: l
     if state.get("windows") != len(groups) or index > len(groups):
         index = 0
     ran = 0
+    workers = max(1, CALIBRATE_WORKERS)
     while index < len(groups) and (ran == 0 or time.monotonic() < deadline):
         repository.check_cancel(db, material.id)
         repository.ensure_lease(db, material.id)
-        group = groups[index]
-        repository.beat(db, material.id, done=index, total=len(groups),
-                        checkpoint={"group": index + 1, "pages": [page.page_no for page in group]})
+        batch_indices = list(range(index, min(len(groups), index + workers)))
+        batch_pages = [page.page_no for i in batch_indices for page in groups[i]]
+        repository.beat(
+            db,
+            material.id,
+            done=index,
+            total=len(groups),
+            checkpoint={"group": index + 1, "pages": batch_pages[:WINDOW * 2]},
+        )
         db.commit()
-        payload, images, shrunk = _window_payload(db, material, group, state, budget=WINDOW_TEXT_BUDGET,
-                                                  image_limit=len(group))
-        try:
-            reply = _call(material, payload, images, settings)
-        except model_client.ModelFailed as exc:
-            repository.check_cancel(db, material.id)
-            hint = getattr(exc, "hint", None)
-            if hint == "output":
-                # 输出被截断：这一窗内容本身没问题，加大输出预算重试一次。
-                state["output_retries"] = int(state.get("output_retries") or 0) + 1
-                reply = _call(material, payload, images, settings,
-                              max_tokens=min(settings["max_tokens"] * 3, 32000))
-            elif hint == "length":
-                payload, images, shrunk = _window_payload(db, material, group, state, budget=SHRUNK_TEXT_BUDGET,
-                                                          image_limit=SHRUNK_IMAGE_LIMIT)
-                reply = _call(material, payload, images, settings)
+
+        prepared: list[tuple[int, list[PageContent], dict[str, Any], list[dict[str, Any]], bool]] = []
+        for win_idx in batch_indices:
+            group = groups[win_idx]
+            payload, images, shrunk = _window_payload(
+                db, material, group, state, budget=WINDOW_TEXT_BUDGET, image_limit=len(group)
+            )
+            prepared.append((win_idx, group, payload, images, shrunk))
+
+        material_title = material.title
+        outcomes: list[tuple[dict[str, Any] | None, int, bool, BaseException | None]] = []
+        if len(prepared) == 1:
+            try:
+                reply, out_retries, need_shrink = _call_with_output_retry(
+                    material_title, prepared[0][2], prepared[0][3], settings
+                )
+                outcomes.append((reply, out_retries, need_shrink, None))
+            except BaseException as exc:  # noqa: BLE001
+                outcomes.append((None, 0, False, exc))
+        else:
+            with ThreadPoolExecutor(max_workers=len(prepared)) as pool:
+                futs = [
+                    pool.submit(_call_with_output_retry, material_title, payload, images, settings)
+                    for _, _, payload, images, _ in prepared
+                ]
+                for fut in futs:
+                    try:
+                        reply, out_retries, need_shrink = fut.result()
+                        outcomes.append((reply, out_retries, need_shrink, None))
+                    except BaseException as exc:  # noqa: BLE001
+                        outcomes.append((None, 0, False, exc))
+
+        for (win_idx, group, _, _, shrunk), (reply, out_retries, need_shrink, err) in zip(prepared, outcomes):
+            if err is not None:
+                repository.check_cancel(db, material.id)
+                raise err
+            if out_retries:
+                state["output_retries"] = int(state.get("output_retries") or 0) + out_retries
+            if need_shrink:
+                repository.check_cancel(db, material.id)
+                shrunk_payload, shrunk_images, _ = _window_payload(
+                    db, material, group, state, budget=SHRUNK_TEXT_BUDGET, image_limit=SHRUNK_IMAGE_LIMIT
+                )
+                try:
+                    reply = _call(material, shrunk_payload, shrunk_images, settings)
+                except model_client.ModelFailed as exc:
+                    if getattr(exc, "hint", None) != "empty" or len(group) <= 1:
+                        raise
+                    mid = len(group) // 2
+                    sub_replies: list[dict[str, Any]] = []
+                    for sub_group in (group[:mid], group[mid:]):
+                        sub_payload, sub_images, _ = _window_payload(
+                            db, material, sub_group, state, budget=SHRUNK_TEXT_BUDGET, image_limit=SHRUNK_IMAGE_LIMIT
+                        )
+                        sub_replies.append(_call(material, sub_payload, sub_images, settings))
+                    reply = _combine_replies(sub_replies)
                 shrunk = True
-            else:
-                raise
-        if shrunk:
-            state["shrunk_windows"] = [*(state.get("shrunk_windows") or []), group[0].page_no]
-        _merge(state, reply, group, index)
-        index += 1
-        ran += 1
-        state["next_index"] = index
-        # 每次写入必须换一个新对象：重复赋同一个 dict，SQLAlchemy 认为没有变化，不会落库。
-        row.report = dict(state)
-        row.windows = len(groups)
-        db.flush()
-        repository.beat(db, material.id, done=index, total=len(groups), checkpoint={})
-        db.commit()
+            assert reply is not None
+            if shrunk:
+                state["shrunk_windows"] = [*(state.get("shrunk_windows") or []), group[0].page_no]
+            _merge(state, reply, group, win_idx)
+            index = win_idx + 1
+            ran += 1
+            state["next_index"] = index
+            row.report = dict(state)
+            row.windows = len(groups)
+            db.flush()
+            repository.beat(db, material.id, done=index, total=len(groups), checkpoint={})
+            db.commit()
     state["next_index"] = index
     if index >= len(groups) and not state.get("complete"):
         repository.check_cancel(db, material.id)

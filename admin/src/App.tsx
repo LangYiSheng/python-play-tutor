@@ -10,8 +10,9 @@ import {
   LayoutDashboard,
   CalendarDays,
   BookOpen,
+  ClipboardList,
+  Compass,
   Network,
-  List,
   GitBranch,
   ChevronDown,
   LogOut,
@@ -55,7 +56,8 @@ import { Login } from "@/pages/login";
 import { Students } from "@/pages/students";
 import { ClassOverview } from "@/pages/class-overview";
 const KnowledgeGraph = lazy(() => import("@/features/content-workspace/knowledge-graph").then(module => ({ default: module.KnowledgeGraph })));
-const ContentList = lazy(() => import("@/pages/content-list").then(module => ({ default: module.ContentListPage })));
+const Courseware = lazy(() => import("@/features/courseware/courseware-page").then(module => ({ default: module.CoursewarePage })));
+const Assessments = lazy(() => import("@/features/assessments/assessments-page").then(module => ({ default: module.AssessmentsPage })));
 import { Activities } from "@/features/activities/activities-page";
 import { CourseSettings } from "@/pages/course-settings";
 import { Packages } from "@/pages/packages";
@@ -79,10 +81,11 @@ const classNav = [
   { key: "classroom", title: "班级概况", icon: LayoutDashboard },
   { key: "students", title: "学生账号", icon: IdCard },
   { key: "teaching", title: "教学管理", icon: CalendarDays },
+  { key: "courseware", title: "章节与课件", icon: BookOpen },
   { key: "content-graph", title: "知识图谱", icon: Network },
-  { key: "content-list", title: "内容列表", icon: List },
+  { key: "assessments", title: "题库与组卷", icon: ClipboardList },
   { key: "quick-orchestration", title: "快速编排", icon: ListPlus },
-  { key: "activities", title: "学习活动", icon: BookOpen },
+  { key: "activities", title: "学习活动", icon: Compass },
   { key: "authoring", title: "教学流程", icon: GitBranch },
   { key: "packages", title: "课程包", icon: Package },
   { key: "settings", title: "本班答疑设置", icon: MessageCircleQuestionMark },
@@ -93,10 +96,10 @@ const pages = [...globalNav, ...classNav] as const;
 type Page = (typeof pages)[number]["key"];
 const classroomScreens = {
   packages: Packages, students: Students, teaching: Teaching, settings: CourseSettings, synthesis: Synthesis, authoring: Authoring,
-  "content-list": ContentList,
+  courseware: Courseware,
+  assessments: Assessments,
   "quick-orchestration": QuickOrchestration,
 };
-const legacyContentTabs = new Map([["curriculum", "chapters"], ["materials", "materials"], ["questions", "questions"]]);
 function currentPage(): Page {
   const part = location.pathname.split("/")[2];
   if (part === "content-review") {
@@ -107,13 +110,39 @@ function currentPage(): Page {
     history.replaceState({ ...history.state, initialReview }, "", "/teacher/content-graph");
     return "content-graph";
   }
-  const legacyTab = legacyContentTabs.get(part);
-  if (legacyTab) {
+  if (part === "curriculum" || part === "materials") {
     const url = new URL(location.href);
-    url.pathname = "/teacher/content-list";
-    url.searchParams.set("tab", legacyTab);
+    url.pathname = "/teacher/courseware";
     history.replaceState(history.state, "", url);
-    return "content-list";
+    return "courseware";
+  }
+  if (part === "questions") {
+    const url = new URL(location.href);
+    url.pathname = "/teacher/assessments";
+    if (!url.searchParams.has("tab")) url.searchParams.set("tab", "bank");
+    history.replaceState(history.state, "", url);
+    return "assessments";
+  }
+  if (part === "content-list") {
+    const url = new URL(location.href);
+    const tab = url.searchParams.get("tab");
+    if (tab === "questions") {
+      url.pathname = "/teacher/assessments";
+      url.searchParams.set("tab", "bank");
+      history.replaceState(history.state, "", url);
+      return "assessments";
+    }
+    if (tab === "points") {
+      url.pathname = "/teacher/content-graph";
+      url.searchParams.delete("tab");
+      url.searchParams.set("view", "list");
+      history.replaceState(history.state, "", url);
+      return "content-graph";
+    }
+    url.pathname = "/teacher/courseware";
+    url.searchParams.delete("tab");
+    history.replaceState(history.state, "", url);
+    return "courseware";
   }
   return pages.some((n) => n.key === part) ? (part as Page) : "classes";
 }
@@ -212,7 +241,7 @@ function Workbench() {
         const next = currentPage();
         setPage(user?.role !== "admin" && globalNav.some(item => item.key === next && item.adminOnly) ? replaceWithClasses() : next);
       }
-      else history.pushState({}, "", `/teacher/${page}`);
+      else history.pushState({}, "", `/teacher/${page}${location.search}`);
     };
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
@@ -225,7 +254,7 @@ function Workbench() {
   }
   function changeClass(id: number) {
     if (id === classroomId || !canLeave()) return;
-    if (page === "content-list") {
+    if (page === "assessments") {
       const url = new URL(location.href);
       for (const filter of ["point", "pointName"]) url.searchParams.delete(filter);
       history.replaceState(history.state, "", url);
@@ -359,7 +388,7 @@ function Workbench() {
     </div>;
     if (page === "classroom") return <ClassOverview classroom={classroom}
       onRenamed={name => setClasses(rows => rows.map(row => row.id === classroom.id ? { ...row, name } : row))}
-      onContent={() => navigate("content-graph")} onImport={() => navigate("packages")} />;
+      onContent={() => navigate("courseware")} onImport={() => navigate("packages")} />;
     if (page === "judge") return <Judge classroomId={classroom.id} canManage={false} />;
     if (page === "content-graph") {
       const entry = history.state;
@@ -397,7 +426,7 @@ function Workbench() {
             {classNav.map(item => (
               <div key={item.key}>
                 {item.key === "classroom" && <p className="nav-label">班级教学</p>}
-                {item.key === "content-graph" && <p className="nav-label">课程内容</p>}
+                {item.key === "courseware" && <p className="nav-label">课程内容</p>}
                 {item.key === "quick-orchestration" && <p className="nav-label">课程编排</p>}
                 {item.key === "settings" && <p className="nav-label">任务与设置</p>}
                 {link(item)}
@@ -473,7 +502,15 @@ function Workbench() {
             {openingTown ? <LoaderCircle data-icon="inline-end" className="animate-spin motion-reduce:animate-none" /> : <ExternalLink data-icon="inline-end" />}
           </Button>}
         </header>
-        <main className={page === "content-graph" && classroom ? "main-content graph-main" : "main-content"}>
+        <main
+          className={
+            page === "content-graph" && classroom
+              ? "main-content graph-main"
+              : page === "courseware" && classroom
+                ? "main-content courseware-main"
+                : "main-content"
+          }
+        >
           <ErrorNotice message={error} />
           <Suspense key={`${user.id}:${classPage ? classroomId : "global"}:${page}`} fallback={<Loading />}>
             {renderPage(user)}

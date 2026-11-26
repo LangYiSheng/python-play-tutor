@@ -142,3 +142,32 @@ def test_speech_test_uses_the_saved_connection(client, db, teacher, monkeypatch,
 
     monkeypatch.setattr("app.service_settings.tts.synthesize", failed)
     assert client.post("/api/teacher/services/speech/test", headers=teacher["headers"]).status_code == 502
+
+
+def test_speech_settings_trim_leading_and_trailing_whitespace(client, db, teacher, monkeypatch, tmp_path):
+    monkeypatch.setenv("REBORN_AI_MASTER_KEY_FILE", str(tmp_path / "master.key"))
+    db.get(User, teacher["id"]).role = "admin"
+    db.commit()
+    current = client.get("/api/teacher/services/speech", headers=teacher["headers"]).json()
+    saved = client.put(
+        "/api/teacher/services/speech",
+        headers=teacher["headers"],
+        json={
+            "expected_revision": current["revision"],
+            "protocol": "dashscope",
+            "base_url": "  https://ws-demo.cn-beijing.maas.aliyuncs.com/  ",
+            "model": "  qwen-audio-3.1-tts-flash  ",
+            "voice": "  longanhuan_v3.1  ",
+            "format": "mp3",
+            "speed": 1,
+            "timeout": 120,
+            "api_key": "  sk-test-key  ",
+            "clear_key": False,
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["base_url"] == "https://ws-demo.cn-beijing.maas.aliyuncs.com"
+    assert body["model"] == "qwen-audio-3.1-tts-flash"
+    assert body["voice"] == "longanhuan_v3.1"
+    assert configuration("speech", db)["api_key"] == "sk-test-key"

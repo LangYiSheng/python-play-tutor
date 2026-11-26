@@ -116,3 +116,64 @@ def test_deleting_a_draft_removes_it_from_the_list(client, db, classroom, teache
     body = client.get(url(classroom, material), headers=teacher["headers"]).json()
     assert body["pages"][0]["narration"] is None
     assert client.delete(url(classroom, material, "/1"), headers=teacher["headers"]).status_code == 404
+
+
+def test_job_state_exposes_percent_position_and_progress_unit(client, db, classroom, teacher):
+    from datetime import datetime, timezone
+    from app.narration.models import NarrationJob
+
+    material = material_fixture(db, classroom, ["第一页", "第二页", "第三页", "第四页", "第五页"])
+    now = datetime.now(timezone.utc)
+    db.add(
+        NarrationJob(
+            material_id=material.id,
+            kind="pipeline",
+            status="running",
+            message="正在整理第 2 组",
+            started_at=now,
+            heartbeat_at=now,
+            progress={
+                "stage": "digest",
+                "chain": ["digest", "calibrate", "apply", "script"],
+                "done": 1,
+                "total": 4,
+                "queued": False,
+                "checkpoint": {"group": 2, "pages": [5, 6, 7, 8]},
+            },
+        )
+    )
+    db.commit()
+
+    res = client.get(url(classroom, material, "/job"), headers=teacher["headers"])
+    assert res.status_code == 200, res.text
+    snap = res.json()
+    assert snap["running"] is True
+    assert snap["done"] == 1
+    assert snap["total"] == 4
+    assert snap["percent"] == 25
+    assert snap["progress_unit"] == "groups"
+    assert snap["position"] == "第 2 组 · 第 5–8 页"
+
+
+def test_teacher_can_create_and_edit_page_digest_text(client, db, classroom, teacher):
+    material = material_fixture(db, classroom, ["原始解析文本"])
+    db.commit()
+
+    created = client.put(
+        url(classroom, material, "/1/content"),
+        json={"title": "计算工具演变", "topic": "从手动到自动", "tags": ["计算工具", "计算思维"], "text": "老师整理后的正文内容。"},
+        headers=teacher["headers"],
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["text"] == "老师整理后的正文内容。"
+    assert created.json()["source"] == "teacher"
+
+    updated = client.put(
+        url(classroom, material, "/1/content"),
+        json={"text": "再次修订后的整理稿正文。"},
+        headers=teacher["headers"],
+    )
+    assert updated.status_code == 200, updated.text
+    listed = client.get(url(classroom, material), headers=teacher["headers"]).json()
+    assert listed["pages"][0]["digest"]["text"] == "再次修订后的整理稿正文。"
+    assert listed["pages"][0]["digest"]["title"] == "计算工具演变"

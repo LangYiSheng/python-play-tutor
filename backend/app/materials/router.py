@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.auth import current_user, require_teacher
 from app.db import get_db
+from app.materials.batch_upload import upload_materials_batch as _upload_materials_batch
 from app.materials.contracts import MaterialUpdate
 from app.materials.delivery import material_file as _material_file
 from app.materials.delivery import teacher_material_file as _teacher_material_file
 from app.materials.service import delete_material as _delete_material
+from app.materials.service import retry_material as _retry_material
 from app.materials.service import teacher_material_preview as _teacher_material_preview
 from app.materials.service import teacher_materials as _teacher_materials
 from app.materials.service import material_page
@@ -31,10 +33,37 @@ async def upload_material(
     file: Annotated[UploadFile, File()],
     material_id: Annotated[int | None, Form()] = None,
     chapter_ids: Annotated[str | None, Form()] = None,
+    auto_create_chapter: Annotated[bool | None, Form()] = None,
     classroom_id: int | None = None,
 ):
     return await _upload_material(
-        user=user, db=db, title=title, file=file, material_id=material_id, chapter_ids=chapter_ids, classroom_id=classroom_id
+        user=user,
+        db=db,
+        title=title,
+        file=file,
+        material_id=material_id,
+        chapter_ids=chapter_ids,
+        auto_create_chapter=auto_create_chapter,
+        classroom_id=classroom_id,
+    )
+
+
+@router.post("/teacher/materials/upload-batch", status_code=201)
+async def upload_materials_batch(
+    user: Annotated[User, Depends(require_teacher)],
+    db: Annotated[Session, Depends(get_db)],
+    files: Annotated[list[UploadFile], File()],
+    chapter_ids: Annotated[str | None, Form()] = None,
+    auto_create_chapter: Annotated[bool | None, Form()] = None,
+    classroom_id: int | None = None,
+):
+    return await _upload_materials_batch(
+        user=user,
+        db=db,
+        files=files,
+        chapter_ids=chapter_ids,
+        auto_create_chapter=auto_create_chapter,
+        classroom_id=classroom_id,
     )
 
 
@@ -70,6 +99,13 @@ def delete_material(
     material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None
 ):
     return _delete_material(material_id=material_id, user=user, db=db, classroom_id=classroom_id)
+
+
+@router.post("/teacher/materials/{material_id}/retry")
+def retry_material(
+    material_id: int, user: Annotated[User, Depends(require_teacher)], db: Annotated[Session, Depends(get_db)], classroom_id: int | None = None
+):
+    return _retry_material(material_id=material_id, user=user, db=db, classroom_id=classroom_id)
 
 
 @router.get("/materials/{material_id}/file")

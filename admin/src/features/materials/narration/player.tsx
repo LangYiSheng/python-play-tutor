@@ -113,6 +113,7 @@ export function NarrationPlayer({
   // 翻页时画面已经就位，避免"音频先响、画面还在转圈"。
   const cacheRef = useRef<Record<number, string>>({});
   useEffect(() => {
+    setImageError("");
     if (pageNo === null) return;
     const index = Math.max(0, playable.indexOf(pageNo));
     const window = [
@@ -198,10 +199,11 @@ export function NarrationPlayer({
   }, [classroomId, materialId, pageNo, hasAudio]);
 
   useEffect(() => {
-    if (!audioRef.current) return;
-    audioRef.current.playbackRate = Number(speed);
     localStorage.setItem("narration-speed", speed);
-  }, [speed, clip]);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = Number(speed);
+    }
+  }, [speed, clip, pageNo, images]);
 
   const go = useCallback(
     (direction: 1 | -1) => {
@@ -317,23 +319,32 @@ export function NarrationPlayer({
                 )}
               </div>
               <p className="max-h-[22vh] w-full max-w-4xl overflow-y-auto rounded bg-muted p-3 text-sm leading-7 text-foreground">
-                {page?.narration?.status === "accepted"
-                  ? page.narration.text
-                  : "这一页还没有已接受的讲解，试听会跳过它。"}
+                {page?.narration?.status === "accepted" ? (
+                  <>
+                    {page.narration.text}
+                    {!hasAudio && (
+                      <span className="mt-1.5 block text-xs text-muted-foreground">
+                        （本页讲稿已接受但尚未合成语音，请在「口播与配音」点击「生成音频」或「生成全文配音」后再试听。）
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "这一页还没有已接受的讲解，试听会跳过它。"
+                )}
               </p>
             </>
           )}
         </div>
 
         {error && (
-          <p className="pt-2 text-center text-sm text-amber-300">{error}</p>
+          <p className="pt-2 text-center text-sm text-destructive">{error}</p>
         )}
 
         <footer className="mx-auto flex w-full max-w-6xl items-center justify-center gap-3 pt-3">
           <Button
             variant="secondary"
             size="sm"
-            disabled={!playable.length}
+            disabled={playable.length <= 1 || progress <= 1}
             onClick={() => go(-1)}
             aria-label="上一页"
           >
@@ -350,11 +361,20 @@ export function NarrationPlayer({
           <Button
             variant="secondary"
             size="sm"
-            disabled={!playable.length}
+            disabled={playable.length <= 1 || progress >= playable.length}
             onClick={() => go(1)}
             aria-label="下一页"
           >
             下一页 <ChevronRight />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ml-2"
+            onClick={onClose}
+          >
+            关闭试听
           </Button>
         </footer>
 
@@ -364,7 +384,13 @@ export function NarrationPlayer({
             src={clip}
             autoPlay
             className="hidden"
-            onPlay={() => setPlaying(true)}
+            onLoadedMetadata={(e) => {
+              e.currentTarget.playbackRate = Number(speed);
+            }}
+            onPlay={(e) => {
+              e.currentTarget.playbackRate = Number(speed);
+              setPlaying(true);
+            }}
             onPause={() => setPlaying(false)}
             onEnded={() => {
               setPlaying(false);

@@ -71,7 +71,7 @@ def describe(job: NarrationJob | NarrationRun | None, status: str, latest_db: Se
     stage = progress.get("failed_stage") or progress.get("stage") or OPERATION_STAGE.get(operation)
     if not stage and kind in {"calibrate", "digest", "audio"}:
         stage = kind
-    chain = [step for step in request.get("chain") or [] if step in ("digest", "calibrate", "apply", "script")]
+    chain = [step for step in request.get("chain") or [] if step in ("digest", "calibrate", "apply", "script", "knowledge")]
     done, total = progress.get("done", 0), progress.get("total", 0)
     failed = [{**item, "error": safe_message(str(item.get("error") or ""))}
               for item in progress.get("failed", []) if isinstance(item, dict)]
@@ -82,7 +82,7 @@ def describe(job: NarrationJob | NarrationRun | None, status: str, latest_db: Se
         unit = "pages" if operation == "generate_page" or status == "done" or "retry_pages" in progress else "groups"
     elif stage == "audio":
         unit = "pages"
-    elif stage in {"apply", "done"}:
+    elif stage in {"apply", "knowledge", "done"}:
         unit = "steps"
     checkpoint = progress.get("checkpoint") or {}
     position = ""
@@ -91,6 +91,8 @@ def describe(job: NarrationJob | NarrationRun | None, status: str, latest_db: Se
         position = "失败页：" + page_label(pages[:12]) + (f"（共 {len(pages)} 页）" if len(pages) > 12 else "")
     elif checkpoint.get("action") == "merge_tags":
         position = "各组已校准，正在合并整册标签" if status in {"running", "cancelling"} else "合并整册标签"
+    elif checkpoint.get("action") == "extract_knowledge":
+        position = "正在抽取章节知识点" if status in {"running", "cancelling"} else "抽取章节知识点"
     elif checkpoint.get("pages"):
         position = (f"第 {checkpoint['group']} 组 · " if checkpoint.get("group") else "") + page_label(checkpoint["pages"])
     elif request.get("page_no"):

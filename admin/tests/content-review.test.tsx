@@ -21,7 +21,7 @@ it("lists both course materials once and opens their existing editor at the firs
   await user.click(list.getByRole("button", {name:/数据存取 Part 2.*PDF.*5 页讲解稿待审/}));
   expect(open.mock.calls).toEqual([[9,4],[12,9]]);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(list.getByRole("link", {name:/待审题目.*3 道题目草稿/})).toHaveAttribute("href","/teacher/content-list?tab=questions&status=draft&reviewable=true");
+  expect(list.getByRole("link", {name:/待审题目.*3 道题目草稿/})).toHaveAttribute("href","/teacher/assessments?tab=bank&status=draft&reviewable=true");
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch.mock.calls[0]).toEqual(["/api/teacher/classrooms/7/content-review/materials?page=1&size=25",expect.anything()]);
 });

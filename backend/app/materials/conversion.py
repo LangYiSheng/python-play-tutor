@@ -5,18 +5,126 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import re
 import subprocess
 import time
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
+from defusedxml import ElementTree as ET
 import httpx
 
 from app.materials.uploads import MAX_UPLOAD, UploadValidationError, validate_upload
 
+_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_P_NS = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+_REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _extract_xml_paragraphs(xml_bytes: bytes) -> list[str]:
+    root = ET.fromstring(xml_bytes)
+    lines: list[str] = []
+    for para in root.iter(f"{_A_NS}p"):
+        text = "".join(node.text or "" for node in para.iter(f"{_A_NS}t")).strip()
+        if text:
+            lines.append(text)
+    return lines
+
+
+def _resolve_rel_target(base_part: str, target: str) -> str:
+    base_dir = PurePosixPath(base_part).parent
+    joined = PurePosixPath(target.lstrip("/")) if target.startswith("/") else base_dir / target
+    parts: list[str] = []
+    for part in joined.parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+        else:
+            parts.append(part)
+    return "/".join(parts)
+
+
+def _pptx_slide_paths(zf: zipfile.ZipFile) -> list[str]:
+    names = set(zf.namelist())
+    ordered: list[str] = []
+    if "ppt/presentation.xml" in names and "ppt/_rels/presentation.xml.rels" in names:
+        try:
+            rels_root = ET.fromstring(zf.read("ppt/_rels/presentation.xml.rels"))
+            rel_map = {
+                el.attrib.get("Id", ""): _resolve_rel_target("ppt/presentation.xml", el.attrib.get("Target", ""))
+                for el in rels_root.iter(f"{_REL_NS}Relationship")
+                if el.attrib.get("Id") and el.attrib.get("Target")
+            }
+            pres_root = ET.fromstring(zf.read("ppt/presentation.xml"))
+            for sld in pres_root.iter(f"{_P_NS}sldId"):
+                rid = sld.attrib.get(f"{_R_NS}id", "")
+                target = rel_map.get(rid, "")
+                if target in names and target not in ordered:
+                    ordered.append(target)
+        except ET.ParseError:
+            ordered = []
+    if ordered:
+        return ordered
+    slide_re = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
+    fallback = [(int(m.group(1)), name) for name in names if (m := slide_re.match(name))]
+    fallback.sort(key=lambda item: item[0])
+    return [name for _, name in fallback]
+
+
+def _pptx_notes_text(zf: zipfile.ZipFile, slide_part: str, names: set[str]) -> str:
+    slide_path = PurePosixPath(slide_part)
+    rels_part = f"{slide_path.parent}/_rels/{slide_path.name}.rels"
+    if rels_part not in names:
+        return ""
+    try:
+        rels_root = ET.fromstring(zf.read(rels_part))
+    except ET.ParseError:
+        return ""
+    for el in rels_root.iter(f"{_REL_NS}Relationship"):
+        if "notesSlide" in (el.attrib.get("Type") or ""):
+            notes_part = _resolve_rel_target(slide_part, el.attrib.get("Target", ""))
+            if notes_part in names:
+                try:
+                    lines = _extract_xml_paragraphs(zf.read(notes_part))
+                    return "\n".join(line for line in lines if not line.isdigit())
+                except ET.ParseError:
+                    return ""
+    return ""
+
+
+def _parse_pptx_pages(path: Path) -> list[dict[str, object]]:
+    with zipfile.ZipFile(path) as zf:
+        slide_parts = _pptx_slide_paths(zf)
+        if not slide_parts:
+            raise ValueError("PPTX 中未找到幻灯片页面")
+        if len(slide_parts) > 600:
+            raise ValueError("PPTX 超过600页处理限制")
+        names = set(zf.namelist())
+        pages: list[dict[str, object]] = []
+        for idx, part in enumerate(slide_parts, start=1):
+            lines = _extract_xml_paragraphs(zf.read(part))
+            notes = _pptx_notes_text(zf, part, names)
+            body = "\n".join(lines)
+            if notes:
+                body = f"{body}\n\n[讲者备注]\n{notes}" if body else f"[讲者备注]\n{notes}"
+            heading = next((line for line in lines if 1 <= len(line) <= 60), "")
+            pages.append(
+                {
+                    "id": idx,
+                    "page_no": idx,
+                    "title": heading or f"第{idx}页",
+                    "text": body[:40000],
+                }
+            )
+        return pages
+
 
 def _parse_in_process(source: str, output: str):
-    # Parsing untrusted PDF/text is separate from request processing and killable.
+    # Parsing untrusted PDF/PPTX/text is separate from request processing and killable.
     try:
         if os.name != "nt":
             import resource
@@ -34,6 +142,8 @@ def _parse_in_process(source: str, output: str):
                 {"id": i + 1, "page_no": i + 1, "title": f"第{i + 1}页", "text": (page.extract_text() or "")[:40000]}
                 for i, page in enumerate(reader.pages)
             ]
+        elif path.suffix == ".pptx":
+            pages = _parse_pptx_pages(path)
         else:
             text = path.read_text(encoding="utf-8-sig")
             if len(text) > 2_000_000:
@@ -169,3 +279,74 @@ def convert_presentation(source: Path, tmp: Path) -> Path:
         raise ValueError("PPT转换未产生有效PDF")
     validate_upload(result, ".pdf")
     return result
+
+
+_WINDOWS_COM_SCRIPT = r"""
+param([string]$Src, [string]$Dst)
+$ErrorActionPreference = 'Stop'
+$app = $null
+$pres = $null
+$existed = $false
+try {
+    foreach ($progId in @('PowerPoint.Application', 'KWPP.Application')) {
+        try {
+            $app = New-Object -ComObject $progId
+            break
+        } catch {
+            $app = $null
+        }
+    }
+    if (-not $app) { exit 2 }
+    try { $existed = ($app.Presentations.Count -gt 0) } catch { $existed = $false }
+    $pres = $app.Presentations.Open($Src, -1, 0, 0)
+    $pres.SaveAs($Dst, 32)
+} finally {
+    if ($pres) { try { $pres.Close() } catch {} }
+    if ($app) {
+        if (-not $existed) {
+            try { if ($app.Presentations.Count -eq 0) { $app.Quit() } } catch {}
+        }
+        try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($app) } catch {}
+    }
+    [GC]::Collect()
+}
+"""
+
+
+def convert_presentation_local_windows(source: Path, tmp: Path) -> Path | None:
+    """Development-only Windows fallback using local PowerPoint/WPS COM to export PDF."""
+    if os.name != "nt":
+        return None
+    script = tmp / "convert_ppt.ps1"
+    destination = tmp / "converted.pdf"
+    script.write_text(_WINDOWS_COM_SCRIPT, encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+                "-Src",
+                str(source.resolve()),
+                "-Dst",
+                str(destination.resolve()),
+            ],
+            capture_output=True,
+            timeout=90,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not destination.is_file():
+        return None
+    if not 0 < destination.stat().st_size <= MAX_UPLOAD:
+        return None
+    try:
+        validate_upload(destination, ".pdf")
+    except UploadValidationError:
+        return None
+    return destination

@@ -17,7 +17,17 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
   const [title, setTitle] = useState(editing?.title ?? "");
   const [order, setOrder] = useState(editing && "order_index" in editing ? editing.order_index : chapters.length + 1);
   const [chapter, setChapter] = useState(editing && "chapter_id" in editing ? editing.chapter_id : chapterId ?? chapters[0]?.id ?? 0);
-  const [summary, setSummary] = useState(editing && "content" in editing ? String(editing.content.summary_markdown ?? "") : "");
+  const initialSummary = (() => {
+    if (!editing || !("content" in editing)) return "";
+    const raw = editing.content.summary_markdown;
+    if (typeof raw === "string" && raw.trim()) return raw;
+    const lectio = editing.content.lectio;
+    if (lectio && typeof lectio === "object" && "brief" in lectio && typeof lectio.brief === "string") {
+      return lectio.brief;
+    }
+    return "";
+  })();
+  const [summary, setSummary] = useState(initialSummary);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [dirty, setDirty] = useState(false);
   useDraft(dirty);
   async function save(e: FormEvent) {
@@ -29,15 +39,22 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
     setBusy(true);
     setError("");
     try {
+      const existingContent = editing && "content" in editing ? editing.content : {};
+      const existingLectio =
+        existingContent.lectio && typeof existingContent.lectio === "object"
+          ? (existingContent.lectio as Record<string, unknown>)
+          : null;
+      const nextContent: Record<string, unknown> = {
+        ...existingContent,
+        summary_markdown: summary,
+        ...(existingLectio ? { lectio: { ...existingLectio, brief: summary.trim().slice(0, 120) } } : {}),
+      };
       const body =
         tab === "chapters"
           ? { title, order_index: order }
           : {
               title,
-              content: {
-                ...(editing && "content" in editing ? editing.content : {}),
-                summary_markdown: summary,
-              },
+              content: nextContent,
               ...(!editing ? { chapter_id: chapter } : {}),
             };
       const endpoint = `/teacher/${tab === "chapters" ? "chapters" : "knowledge-points"}${editing ? `/${editing.id}` : ""}`;
@@ -60,10 +77,11 @@ export function CurriculumDialog({ classroomId, tab, chapters, editing, chapterI
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {editing ? "编辑" : "新增"}
-              {tab === "chapters" ? "章节" : "知识点"}
+              {`${editing ? "编辑" : "新增"}${tab === "chapters" ? "章节" : "知识点"}`}
             </DialogTitle>
-            <DialogDescription>修改仅作用于当前班级课程。</DialogDescription>
+            <DialogDescription>
+              {editing ? "修改仅作用于当前班级课程。" : "新增内容仅作用于当前班级课程。"}
+            </DialogDescription>
           </DialogHeader>
           <form inert={busy} aria-busy={busy} onSubmit={save} onChange={() => setDirty(true)}>
             <ErrorNotice message={error} />
