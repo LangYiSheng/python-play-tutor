@@ -38,9 +38,7 @@
     </section>
     <LearningSupportPanel v-if="activity" :key="activity.id" id="practice-assistant-region" tabindex="-1" :hidden="compact && !showAssistant" :inert="compact && !showAssistant" :aria-hidden="compact && !showAssistant" :activity-id="activity.id" :allowed="activity.assistant_allowed" :code="assistantState.code ?? ''" :assistant-state="assistantState" :read-interactive-state="current?.kind === 'interactive' ? readInteractiveState : undefined" :role-name="roleName" :portrait-url="rolePortrait" :sprite="role?.sprite" :goals="learningGoals" :goals-label="personalPractice ? '知识点目标' : undefined" :question-outline="questionOutline" @cite="cite" @select-question="selectQuestion">
       <template #goals>
-        <ChapterGoals v-if="chapterTask" :chapter-id="activity.chapter_id" :current="chapterTask.id" :kind="chapterTask.kind" />
-        <template v-if="!isAssessment">
-        <section class="practice-goal-summary" aria-label="活动进度">
+        <section v-if="!isAssessment" class="practice-goal-summary" aria-label="活动进度">
           <div class="practice-goal-heading">
             <strong>{{ activity.title }}</strong>
           </div>
@@ -49,7 +47,6 @@
             <progress class="support-progress-bar" :value="passedCount" :max="Math.max(1, questions.length)" aria-label="活动总进度" />
           </div>
         </section>
-      </template>
       </template>
       <template v-if="personalPractice" #question-list>
         <PracticeQuestionGroups :goals="personalPractice.goals" :names="pointNames" :questions="questionOutline" @select-question="selectQuestion" />
@@ -74,7 +71,6 @@
   </LearningSplitLayout>
 </template>
 <script setup lang="ts">
-import ChapterGoals from "../ChapterGoals.vue";
 import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
 import type { InteractiveResult } from '../../../../shared/interactivePractice';
 import { randomUUID } from "../../shared/uuid";

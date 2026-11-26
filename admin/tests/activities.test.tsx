@@ -210,6 +210,8 @@ it("keeps required reading and advanced rules scoped to the selected chapter", a
   const user = userEvent.setup();
   render(<LearningTasks courseId={7}/>);
   const required = () => screen.findByRole("checkbox", { name:"共用课件必读" });
+  expect(screen.queryByRole("button", {name:"上传资料"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", {name:"关联已有资料"})).not.toBeInTheDocument();
   await user.click(await required());
   expect(await screen.findByText("读完整份")).toBeVisible();
   await user.click(screen.getByRole("button", { name:"共用课件高级设置" }));

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, ClipboardList, Code2, FileCheck2, Pencil, Plus, Trash2 } from "lucide-react";
+import { BookOpen, ClipboardList, Code2, FileCheck2, ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ export function LearningTasks({ courseId }: { courseId: number }) {
     <PageHeader title="学习任务" />
     <ErrorNotice message={course.error} />
     {course.loading ? <Loading /> : chapter && course.data ? <div className="activity-workspace">
-      <nav aria-label="选择章节" className="activity-chapters surface">
+      <nav aria-label="选择章节" className="activity-chapters">
         <h2>课程章节</h2>
         <div>{chapters.map(item => <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
           onClick={() => selectChapter(item.id)}><BookOpen size={16}/><span>{item.title}</span></button>)}</div>
@@ -73,8 +73,8 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
           <div className="hint">{category.label} · {a.kind === "assessment" || a.required !== false ? "必做" : "选做"} · {a.practice_rules ? `${a.practice_rules.goals.length} 个知识点目标` : `${a.question_ids.length} 道题`}</div></div>
         <span className="activity-status" data-published={a.published !== false}>{a.published === false ? "草稿" : "已发布"}</span>
         <div className="activity-actions">
-          {!a.practice_rules && <Button variant="ghost" size="sm" aria-label={`选题${a.title}`} onClick={() => editor.edit(a,true)}>选题</Button>}
-          <Button variant="outline" size="sm" aria-label={`编辑${a.title}`} onClick={() => editor.edit(a)}><Pencil/>编辑</Button>
+          {!a.practice_rules && <Button variant="ghost" size="sm" aria-label={`选题${a.title}`} onClick={() => editor.edit(a,true)}><ListChecks/>选题</Button>}
+          <Button variant="ghost" size="sm" aria-label={`编辑${a.title}`} onClick={() => editor.edit(a)}><Pencil/>编辑</Button>
           <Button variant="ghost" size="icon" title={`删除${a.title}`} aria-label={`删除${a.title}`} onClick={() => deletion.ask([a])}><Trash2/></Button>
         </div></li>;
     })}</ul> : <Empty title="本章暂无活动" description="选择上方的活动类型，添加本章的第一组练习或测验。" />}

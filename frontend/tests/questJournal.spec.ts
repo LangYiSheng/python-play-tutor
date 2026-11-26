@@ -36,6 +36,8 @@ it("switches the HUD between available targets and guides to its fixed NPC",asyn
   expect(w.get(".quest-next").text()).toContain("编程题练习");
   await w.findAll("button").find(b=>b.text()==="立即前往")!.trigger("click");
   expect(w.emitted("guide")).toEqual([["coach"]]);
+  await w.get('[aria-label="上一个追踪目标"]').trigger("click");
+  expect(w.get(".quest-next").text()).toContain("客观题练习");
 });
 it("offers unlocked practice across chapters and leaves locked items visible",async()=>{
   const {session,global}=setup(),w=mount(ChapterActivityList,{global,props:{category:"objective"}});

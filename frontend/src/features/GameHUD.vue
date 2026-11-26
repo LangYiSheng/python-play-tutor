@@ -11,9 +11,15 @@
     </header>
     <aside v-if="tracked" class="quest-tracker" aria-label="当前目标">
       <h2 class="quest-heading"><GameIcon name="journal" /><span>{{ tracked.chapter.title }}</span></h2>
-      <p class="quest-next">{{ tracked.title }}</p>
-      <button v-if="goals.length > 1" class="quest-go" aria-label="切换追踪目标" @click="cycle">切换目标 {{ goals.indexOf(tracked) + 1 }} / {{ goals.length }}</button>
-      <button class="quest-go" @click="$emit('guide', tracked.target)">立即前往<GameIcon name="compass" /></button>
+      <p class="quest-next" aria-live="polite">{{ tracked.title }}</p>
+      <div class="quest-actions">
+        <div v-if="goals.length > 1" class="quest-pager" role="group" aria-label="追踪目标">
+          <button aria-label="上一个追踪目标" title="上一个目标" @click="cycle(-1)"><GameIcon name="chevron" class="previous"/></button>
+          <span>{{ goals.indexOf(tracked) + 1 }} / {{ goals.length }}</span>
+          <button aria-label="切换追踪目标" title="下一个目标" @click="cycle(1)"><GameIcon name="chevron"/></button>
+        </div>
+        <button class="quest-go" @click="$emit('guide', tracked.target)"><GameIcon name="compass"/>立即前往</button>
+      </div>
     </aside>
     <nav class="hud-dock" aria-label="小镇菜单">
       <button data-world-focus @click="session.open({ kind: 'journal' })">
@@ -49,8 +55,8 @@ const session = useSession();
 defineEmits<{ guide: [key: string] }>();
 const goals = computed(() => chapterGoals(session.taskChapters, session.world?.npcs));
 const tracked = computed(() => goals.value.find(g => g.id === session.trackedQuest) ?? goals.value[0]);
-function cycle() {
-  if (tracked.value) session.trackedQuest = goals.value[(goals.value.indexOf(tracked.value) + 1) % goals.value.length]!.id;
+function cycle(step: number) {
+  if (tracked.value) session.trackedQuest = goals.value[(goals.value.indexOf(tracked.value) + step + goals.value.length) % goals.value.length]!.id;
 }
 const classroomName = computed(
   () =>

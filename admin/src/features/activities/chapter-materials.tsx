@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+import { SlidersHorizontal } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/select-field";
@@ -96,10 +98,10 @@ export function ChapterMaterials({courseId, chapter, editRequirements = false}: 
   const rows = tasks.data?.items ?? [];
   return <section className="surface p-4"><div className="mb-3 flex flex-wrap items-center gap-2">
     <h2 className="mr-auto font-semibold">学习资料</h2>
-    <Button variant="outline" disabled={tasks.loading || Boolean(tasks.error)} onClick={()=>setAttach(true)}>关联已有资料</Button>
-    <Button variant="outline" onClick={()=>{editor.edit(null);editor.setChapterIds([chapter.id]);}}>上传资料</Button></div>
+    {!editRequirements && <><Button variant="outline" disabled={tasks.loading || Boolean(tasks.error)} onClick={()=>setAttach(true)}>关联已有资料</Button>
+    <Button variant="outline" onClick={()=>{editor.edit(null);editor.setChapterIds([chapter.id]);}}>上传资料</Button></>}</div>
     <ErrorNotice message={error || tasks.error || materials.error}/>
-    {attach && <div className="mb-3 flex gap-2"><SelectField aria-label="选择课程资料" value={choice} onValueChange={setChoice}>
+    {!editRequirements && attach && <div className="mb-3 flex gap-2"><SelectField aria-label="选择课程资料" value={choice} onValueChange={setChoice}>
       <option value="">选择课程资料</option>{materials.data?.filter(m=>!rows.some(row=>row.material_id===m.id)).map(m=><option key={m.id} value={m.id}>{m.title}</option>)}
     </SelectField><Button disabled={busy || !choice} onClick={()=>void change({material_id:Number(choice),required:false,rule:{},order_index:rows.length+1})}>关联</Button>
     <Button variant="ghost" onClick={()=>setAttach(false)}>取消</Button></div>}
@@ -108,12 +110,14 @@ export function ChapterMaterials({courseId, chapter, editRequirements = false}: 
       <div className="min-w-0 flex-1 break-words"><p>{row.title}</p>
         {editRequirements && row.required && <p className="hint">{readingRequirement(row)}</p>}
       </div>
-      {editRequirements ? <>
-      <label className="flex gap-2"><input type="checkbox" aria-label={row.title+"必读"} checked={row.required} disabled={busy} onChange={e=>void change({...row,required:e.target.checked})}/>必读</label>
-      <Button variant="ghost" aria-label={row.title+"高级设置"} onClick={()=>setAdvanced(row)}>高级设置</Button>
-      </> : <small className="hint">{row.required ? "必读" : "选读"}</small>}
+      {editRequirements ? <div className="flex items-center gap-2">
+        <label className="inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm hover:bg-muted">
+          <Checkbox aria-label={row.title+"必读"} checked={row.required} disabled={busy} onCheckedChange={required=>void change({...row,required})}/>必读
+        </label>
+        <Button size="sm" variant="ghost" aria-label={row.title+"高级设置"} onClick={()=>setAdvanced(row)}><SlidersHorizontal/>高级设置</Button>
+      </div> : <small className="hint">{row.required ? "必读" : "选读"}</small>}
     </div>)}
     {advanced && <MaterialOptions item={advanced} onSave={put} onClose={()=>setAdvanced(null)}/>}
-    <MaterialDialog course={{data:{chapters:[chapter]}}} editor={editor} fixedChapter/>
+    {!editRequirements && <MaterialDialog course={{data:{chapters:[chapter]}}} editor={editor} fixedChapter/>}
   </section>;
 }

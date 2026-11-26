@@ -21,22 +21,14 @@
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-else-if="loading" class="town-empty" role="status">正在加载资料…</p>
         <template v-else>
-          <section v-for="group in filteredChapters" :key="group.id" class="library-chapter" :aria-labelledby="`library-chapter-${group.id}`">
-            <header class="library-chapter-heading"><h3 class="game-card-title" :id="`library-chapter-${group.id}`"><GameIcon name="book"/>{{ group.title }}</h3><span>{{ group.readingProgress }}</span></header>
-            <div class="library-list">
-              <button v-for="material in group.materials" :key="material.id" class="library-card" :disabled="material.status !== 'ready'" @click="open(material, group.id)">
-                <span class="library-material-icon" :class="{ 'is-video': material.kind === 'video' }" aria-hidden="true"><GameIcon :name="material.kind === 'video' ? 'video' : 'book'"/></span>
-                <span class="library-card-copy">
-                  <span class="library-card-title">
-                    <span v-if="group.tasks.get(material.id)?.required" class="required-label">必读</span>
-                    <strong>{{ material.title }}</strong>
-                  </span>
-                  <small>{{ kindLabels[material.kind] ?? '课程资料' }}<template v-if="group.tasks.has(material.id)">{{ group.tasks.get(material.id)!.required ? '' : ' · 选读' }} · {{ taskProgress(group.tasks.get(material.id)!) }}</template><template v-if="duration(material)"> · {{ duration(material) }}</template></small>
-                </span>
-                <span class="library-card-action">{{ material.status === 'ready' ? material.kind === 'video' ? '观看' : '阅读' : material.status === 'failed' ? '处理失败' : '处理中' }}<GameIcon v-if="material.status === 'ready'" name="arrowRight"/></span>
-              </button>
-            </div>
-          </section>
+          <ChapterCardGroup v-for="group in filteredChapters" :key="group.id" :title="group.title" :heading-id="`library-chapter-${group.id}`" :summary="group.readingProgress">
+            <ChapterContentCard v-for="material in group.materials" :key="material.id" :title="material.title"
+              :icon="material.kind === 'video' ? 'video' : 'book'" :badge="group.tasks.get(material.id)?.required ? '必读' : undefined"
+              :disabled="material.status !== 'ready'" @click="open(material, group.id)"
+              :action="material.status === 'ready' ? material.kind === 'video' ? '观看' : '阅读' : material.status === 'failed' ? '处理失败' : '处理中'">
+              {{ kindLabels[material.kind] ?? '课程资料' }}<template v-if="group.tasks.has(material.id)">{{ group.tasks.get(material.id)!.required ? '' : ' · 选读' }} · {{ taskProgress(group.tasks.get(material.id)!) }}</template><template v-if="duration(material)"> · {{ duration(material) }}</template>
+            </ChapterContentCard>
+          </ChapterCardGroup>
           <div v-if="!filteredCount" class="town-empty library-empty"><GameIcon name="book"/><p>{{ materials.length ? '没有找到匹配的资料' : '当前班级还没有开放资料' }}</p><button v-if="materials.length" class="town-secondary" @click="clearFilters">清除筛选</button></div>
         </template>
       </main>
@@ -44,6 +36,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import ChapterCardGroup from "./ChapterCardGroup.vue";
+import ChapterContentCard from "./ChapterContentCard.vue";
 import { taskProgress } from "../shared/chapterTasks";
 import GameIcon from "../shared/GameIcon.vue";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
@@ -150,26 +144,9 @@ onBeforeUnmount(() => { saveView(); disposed = true; generation++; });
 .library-search > span { display:block; margin-bottom:8px; font-size:.875rem; color:#76604c; }
 .library-search > input { width:100%; }
 .library-result-count { align-self:center; margin-left:auto; padding-top:22px; font-size:.875rem; color:#8a775c; white-space:nowrap; }
-.library-chapter { margin-bottom:20px; }
-.library-chapter-heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:8px; margin-bottom:12px; border-bottom:1px solid #d9c9ad; }
-.library-chapter-heading h3 { margin:0; color:#3b5147; font-size:.875rem; line-height:1.5; }
-.library-chapter-heading > span { flex-shrink:0; color:#8a775c; font-size:.875rem; }
-.library-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr)); gap:10px; }
-.library-workspace .library-list > .library-card { display:grid; grid-template-columns:32px minmax(0,1fr); gap:10px; align-items:start; min-height:112px; padding:12px; text-align:left; color:#354d42; border:1px solid #dbcbb1; border-radius:var(--game-radius); background:var(--game-paper-raised); box-shadow:none; }
-.library-workspace .library-list > .library-card:hover:not(:disabled) { background:#fffdf5; border-color:#ad9972; box-shadow:none; }
-.library-material-icon { display:grid; place-items:center; width:32px; height:36px; background:#e1e8d7; border:1px solid #c1cdb2; border-radius:7px; color:#5d7953; }
-.library-material-icon.is-video { color:#9b7143; background:#f0dfbe; border-color:#d9c19a; }
-.library-material-icon svg { width:18px; height:18px; }
-.library-card-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 7px; }
-.required-label { padding:1px 7px; border-radius:var(--game-control-radius); background:var(--game-forest); color:var(--game-paper-raised); font-size:var(--game-caption-size); font-weight:700; }
-.library-card-copy { display:flex; flex-direction:column; gap:6px; min-width:0; }
-.library-workspace .library-list strong { font-size:.9375rem; line-height:1.6; overflow-wrap:anywhere; }
-.library-workspace .library-list small { color:#88775d; font-size:.875rem; line-height:1.5; }
-.library-workspace .library-list > button > .library-card-action { grid-column:1/-1; display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:auto; color:#6c7d57; font-size:.875rem; }
-.library-card-action svg { width:18px; height:18px; }
 .library-empty { padding:32px 16px; }
 .library-empty > svg { width:28px; height:28px; color:#9e8b68; }
 .library-empty p { margin:16px 0 20px; }
-@media(max-width:1000px) { .library-toolbar { gap:14px; }.library-result-count { padding-top:0; }.library-workspace .library-list > .library-card { padding:12px; } }
-@media(max-width:700px) { .library-directory-label { display:none; }.library-sidebar .town-directory-item { display:flex; align-items:center; min-width:max-content; }.library-sidebar .town-directory-item > span:nth-child(2) { max-width:200px; white-space:normal; }.library-sidebar .town-directory-item > svg { display:none; }.library-search { max-width:none; flex-basis:100%; }.library-toolbar { margin-bottom:16px; }.library-result-count { margin-left:auto; }.library-list { grid-template-columns:minmax(0,1fr); }.library-workspace .library-list > .library-card { min-height:112px; } }
+@media(max-width:1000px) { .library-toolbar { gap:14px; }.library-result-count { padding-top:0; } }
+@media(max-width:700px) { .library-directory-label { display:none; }.library-sidebar .town-directory-item { display:flex; align-items:center; min-width:max-content; }.library-sidebar .town-directory-item > span:nth-child(2) { max-width:200px; white-space:normal; }.library-sidebar .town-directory-item > svg { display:none; }.library-search { max-width:none; flex-basis:100%; }.library-toolbar { margin-bottom:16px; }.library-result-count { margin-left:auto; } }
 </style>

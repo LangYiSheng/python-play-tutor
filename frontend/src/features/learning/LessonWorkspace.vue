@@ -81,7 +81,7 @@
       @select-time="seekVideo"
     >
       <template v-if="chapterTask" #goals>
-        <ChapterGoals :chapter-id="resolvedChapterId!" kind="reading" :current="chapterTask.id" />
+        <ChapterGoals :chapter-id="resolvedChapterId!" :current="chapterTask.id" />
         <p v-if="chapterError" class="error" role="alert">{{ chapterError }} <button @click="retryChapter">重试保存</button></p>
       </template>
       <template #goals-footer><p v-if="material?.notice" class="notice">{{ material.notice }}</p></template>
