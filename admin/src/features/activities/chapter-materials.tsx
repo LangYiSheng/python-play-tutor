@@ -60,7 +60,24 @@ function MaterialOptions({item, onSave, onClose}: {item: Task; onSave: (item: Ta
     </form></DialogContent></Dialog>;
 }
 
-export function ChapterMaterials({courseId, chapter}: {courseId: number; chapter: Chapter}) {
+function readingRequirement({kind, rule}: Task) {
+  const conditions: string[] = [];
+  if (kind === "video") {
+    if (rule.segments?.length) conditions.push(`观看 ${rule.segments.length} 个指定片段`);
+  } else if (rule.scope === "range") {
+    conditions.push(`阅读第 ${rule.start_page}–${rule.end_page} 页`);
+  } else if (rule.scope === "count") {
+    conditions.push(`阅读任意 ${rule.count} 个不同页`);
+  } else if (rule.scope === "all" || !rule.minimum_seconds) {
+    conditions.push("读完整份");
+  }
+  if (rule.minimum_seconds) conditions.push(`有效${kind === "video" ? "观看" : "阅读"} ${rule.minimum_seconds} 秒`);
+  return conditions.join("，") || "完整观看";
+}
+
+export function ChapterMaterials({courseId, chapter, editRequirements = false}: {
+  courseId: number; chapter: Chapter; editRequirements?: boolean;
+}) {
   const path = scoped(`/teacher/chapters/${chapter.id}/material-tasks`,courseId);
   const tasks = useResource<{items:Task[]}>(path);
   const [attach,setAttach] = useState(false), [choice,setChoice] = useState("");
@@ -79,7 +96,7 @@ export function ChapterMaterials({courseId, chapter}: {courseId: number; chapter
   const rows = tasks.data?.items ?? [];
   return <section className="surface p-4"><div className="mb-3 flex flex-wrap items-center gap-2">
     <h2 className="mr-auto font-semibold">学习资料</h2>
-    <Button variant="outline" onClick={()=>setAttach(true)}>关联已有资料</Button>
+    <Button variant="outline" disabled={tasks.loading || Boolean(tasks.error)} onClick={()=>setAttach(true)}>关联已有资料</Button>
     <Button variant="outline" onClick={()=>{editor.edit(null);editor.setChapterIds([chapter.id]);}}>上传资料</Button></div>
     <ErrorNotice message={error || tasks.error || materials.error}/>
     {attach && <div className="mb-3 flex gap-2"><SelectField aria-label="选择课程资料" value={choice} onValueChange={setChoice}>
@@ -87,9 +104,15 @@ export function ChapterMaterials({courseId, chapter}: {courseId: number; chapter
     </SelectField><Button disabled={busy || !choice} onClick={()=>void change({material_id:Number(choice),required:false,rule:{},order_index:rows.length+1})}>关联</Button>
     <Button variant="ghost" onClick={()=>setAttach(false)}>取消</Button></div>}
     {tasks.loading ? <Loading/> : !rows.length && <p className="hint">本章暂无学习资料。</p>}
-    {rows.map(row=><div key={row.material_id} className="flex items-center gap-4 border-t py-2"><span className="flex-1">{row.title}</span>
+    {rows.map(row=><div key={row.material_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t py-3">
+      <div className="min-w-0 flex-1 break-words"><p>{row.title}</p>
+        {editRequirements && row.required && <p className="hint">{readingRequirement(row)}</p>}
+      </div>
+      {editRequirements ? <>
       <label className="flex gap-2"><input type="checkbox" aria-label={row.title+"必读"} checked={row.required} disabled={busy} onChange={e=>void change({...row,required:e.target.checked})}/>必读</label>
-      <Button variant="ghost" onClick={()=>setAdvanced(row)}>高级设置</Button></div>)}
+      <Button variant="ghost" aria-label={row.title+"高级设置"} onClick={()=>setAdvanced(row)}>高级设置</Button>
+      </> : <small className="hint">{row.required ? "必读" : "选读"}</small>}
+    </div>)}
     {advanced && <MaterialOptions item={advanced} onSave={put} onClose={()=>setAdvanced(null)}/>}
     <MaterialDialog course={{data:{chapters:[chapter]}}} editor={editor} fixedChapter/>
   </section>;

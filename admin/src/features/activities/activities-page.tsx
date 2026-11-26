@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { scoped } from "@/lib/api";
 import type { Activity, Chapter, Course, QuestionCandidate } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
+import { ChapterMaterials } from "./chapter-materials";
 import { ActivityDialog } from "./editor-dialog";
 import { useActivityEditor } from "./use-editor";
 import "./workspace.css";
@@ -16,7 +17,7 @@ const categories = [
   { key: "assessment", label: "测验", icon: FileCheck2 },
 ] as const;
 
-export function ActivityManagement({ courseId }: { courseId: number }) {
+export function LearningTasks({ courseId }: { courseId: number }) {
   const course = useResource<Course>(scoped("/teacher/catalog", courseId));
   const [selected, setSelected] = useState(() => Number(new URLSearchParams(location.search).get("chapter")));
   const chapters = course.data?.chapters ?? [];
@@ -30,7 +31,7 @@ export function ActivityManagement({ courseId }: { courseId: number }) {
   }
 
   return <div className="space-y-4">
-    <PageHeader title="活动管理" />
+    <PageHeader title="学习任务" />
     <ErrorNotice message={course.error} />
     {course.loading ? <Loading /> : chapter && course.data ? <div className="activity-workspace">
       <nav aria-label="选择章节" className="activity-chapters surface">
@@ -38,8 +39,12 @@ export function ActivityManagement({ courseId }: { courseId: number }) {
         <div>{chapters.map(item => <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
           onClick={() => selectChapter(item.id)}><BookOpen size={16}/><span>{item.title}</span></button>)}</div>
       </nav>
-      <ChapterActivities key={chapter.id} courseId={courseId} chapter={chapter} course={course.data} reload={course.reload}/>
-    </div> : !course.error && <Empty title="暂无章节" description="请先在内容列表中创建章节，再添加练习或测验。" />}
+      <div key={chapter.id} className="min-w-0 space-y-4">
+        <h2 className="text-xl font-semibold">{chapter.title}</h2>
+        <ChapterMaterials courseId={courseId} chapter={chapter} editRequirements/>
+        <ChapterActivities courseId={courseId} chapter={chapter} course={course.data} reload={course.reload}/>
+      </div>
+    </div> : !course.error && <Empty title="暂无章节" description="请先在内容列表中创建章节。" />}
   </div>;
 }
 
@@ -55,7 +60,7 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
     .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.title.localeCompare(b.title, "zh-CN"));
   return <section className="surface min-w-0 self-start">
     <header className="activity-panel-heading">
-      <h2 className="text-xl font-semibold">{chapter.title}</h2>
+      <h3 className="font-semibold">练习与测验</h3>
       <div className="mt-4 flex flex-wrap gap-2">{categories.map(({key, label}) =>
         <Button key={key} variant="outline" onClick={() => editor.edit(null, false, key)}><Plus/>新增{label}</Button>)}</div>
     </header>

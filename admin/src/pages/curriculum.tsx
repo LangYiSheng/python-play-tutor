@@ -40,7 +40,7 @@ export function Curriculum({ courseId, tab }: { courseId: number; tab: "chapters
     params.delete("tab");
     return <div className="space-y-4">
       <Button variant="ghost" onClick={() => setDetail(null)}><ChevronLeft/>返回章节</Button>
-      <PageHeader title={detail.title}><ButtonLink variant="outline" href={`/teacher/activities?${params}`}>管理本章活动</ButtonLink></PageHeader>
+      <PageHeader title={detail.title}><ButtonLink variant="outline" href={`/teacher/activities?${params}`}>管理本章学习任务</ButtonLink></PageHeader>
       <ChapterMaterials courseId={courseId} chapter={detail}/>
     </div>;
   }

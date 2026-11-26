@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ActivityManagement } from "../src/features/activities/activities-page";
+import { LearningTasks } from "../src/features/activities/activities-page";
 
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 afterEach(() => vi.unstubAllGlobals());
@@ -29,7 +29,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
     return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<ActivityManagement courseId={7}/>);
+  render(<LearningTasks courseId={7}/>);
   await user.click(await screen.findByRole("button", {name:"第二章"}));
   expect(screen.getByText("本章暂无活动")).toBeVisible();
   expect(screen.queryByRole("button", { name: "选题章节测验" })).not.toBeInTheDocument();
@@ -88,7 +88,7 @@ it("selects shared and untagged questions once and saves their final positions w
     return json(url.includes("/catalog") ? course : url.includes("/question-candidates") ? questions : []);
   }));
   const user = userEvent.setup();
-  render(<ActivityManagement courseId={7}/>);
+  render(<LearningTasks courseId={7}/>);
   await user.click(await screen.findByRole("button", {name: "选题固定题单"}));
   await user.click(screen.getByRole("checkbox", {name: "B 变量题"}));
   await user.click(screen.getByRole("button", {name: /表达式/}));
@@ -116,7 +116,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
     return json(url.includes("/catalog") ? { chapters: [{id: 1, title: "第一章"}], npcs: [], knowledge_points: [], activities: removed ? [] : [activity] } : []);
   }));
   const user = userEvent.setup();
-  render(<ActivityManagement courseId={7}/>);
+  render(<LearningTasks courseId={7}/>);
   await user.click(await screen.findByRole("button", { name: "删除综合复习" }));
   expect(await within(screen.getByRole("dialog")).findByText("一起删除（1）")).toBeVisible();
   await user.click(screen.getByRole("button", {name: "取消"}));
@@ -148,7 +148,7 @@ it("creates a fixed practice and switches an existing goal practice back to a fi
     return json(url.includes("/catalog") ? course : []);
   }));
   const user = userEvent.setup();
-  render(<ActivityManagement courseId={7}/>);
+  render(<LearningTasks courseId={7}/>);
   await user.click(await screen.findByRole("button", { name: "编辑变量目标" }));
   expect(screen.getByRole("radio", { name: "按知识点出题" })).toBeChecked();
   await user.click(screen.getByRole("radio", { name: "固定题单" }));
@@ -181,7 +181,7 @@ it("counts the class teacher's practice pool when an administrator creates an ac
     return json([]);
   }));
   const user = userEvent.setup();
-  render(<ActivityManagement courseId={32}/>);
+  render(<LearningTasks courseId={32}/>);
   await user.click(await screen.findByRole("button", {name:"第一章"}));
   const create = await screen.findByRole("button", { name: "新增客观题练习" });
   await waitFor(() => expect(create).toBeEnabled());
@@ -189,4 +189,39 @@ it("counts the class teacher's practice pool when an administrator creates an ac
   await user.click(screen.getByRole("tab", { name: "知识点目标" }));
   await user.click(screen.getByRole("checkbox", { name: "变量" }));
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveAccessibleName(/可用 2 题/);
+});
+
+it("keeps required reading and advanced rules scoped to the selected chapter", async () => {
+  history.replaceState({}, "", "/teacher/activities?course=7&chapter=1");
+  const chapters = [{id:1,title:"第一章"}, {id:2,title:"第二章"}];
+  const makeTask = () => ({ material_id:9, title:"共用课件", kind:"pdf", required:false, rule:{}, order_index:1 });
+  const tasks = [makeTask(), makeTask()];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/catalog")) return json({chapters, activities:[], knowledge_points:[]});
+    const match = /\/chapters\/(1|2)\/material-tasks(\/9)?$/.exec(url);
+    if (!match) throw Error(url);
+    const index = Number(match[1]) - 1;
+    if (match[2] && init.method === "PUT") {
+      Object.assign(tasks[index], JSON.parse(String(init.body)));
+      return json(tasks[index]);
+    }
+    return json({items:[tasks[index]]});
+  }));
+  const user = userEvent.setup();
+  render(<LearningTasks courseId={7}/>);
+  const required = () => screen.findByRole("checkbox", { name:"共用课件必读" });
+  await user.click(await required());
+  expect(await screen.findByText("读完整份")).toBeVisible();
+  await user.click(screen.getByRole("button", { name:"共用课件高级设置" }));
+  await user.clear(screen.getByLabelText("有效阅读秒数"));
+  await user.type(screen.getByLabelText("有效阅读秒数"), "45");
+  await user.click(screen.getByRole("button", {name:"保存"}));
+  expect(await screen.findByText("读完整份，有效阅读 45 秒")).toBeVisible();
+  await user.click(screen.getByRole("button",{name:"第二章"}));
+  expect(await required()).not.toBeChecked();
+  await user.click(screen.getByRole("button",{name:"第一章"}));
+  expect(await required()).toBeChecked();
+  await user.click(await required());
+  await waitFor(() => expect(tasks[0].required).toBe(false));
+  expect(tasks[0].rule).toEqual({scope:"all",minimum_seconds:45});
 });
