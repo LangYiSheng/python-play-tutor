@@ -210,6 +210,10 @@ it("defaults course name to teacher/package name, respects custom input, and ent
   };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === "POST") {
+      if (init.body instanceof FormData) {
+        writes.push({url, body: {title: init.body.get("title")}});
+        return json({id: 501, title: String(init.body.get("title") ?? "")});
+      }
       const body = JSON.parse(String(init.body));
       writes.push({url, body});
       if (url.endsWith("/classrooms")) return json({id: 91, course_id: 43, name: body.name, join_code: "JOIN01"});
@@ -254,6 +258,29 @@ it("defaults course name to teacher/package name, respects custom input, and ent
   expect(screen.getByLabelText("班级名称")).toHaveValue("一班");
   await user.click(within(screen.getByRole("dialog")).getByRole("button", {name: "创建班级"}));
   await waitFor(() => expect(writes[2]).toEqual({url:"/api/teacher/courses/43/classrooms",body:{name:"一班"}}));
+
+  await user.click(screen.getByRole("button", {name: "稍后设置"}));
+  expect(await screen.findByRole("heading", {name: "邀请或导入学生"})).toBeVisible();
+  await user.click(screen.getByRole("button", {name: "下一步"}));
+  expect(await screen.findByRole("heading", {name: "创建章节并上传课件"})).toBeVisible();
+  expect(screen.getByRole("button", {name: "拖动课件至此或点击选择文件上传"})).toBeVisible();
+  await user.click(screen.getByRole("button", {name: "上一步"}));
+  await user.click(screen.getByRole("button", {name: "上一步"}));
+  expect(await screen.findByRole("heading", {name: "创建第一个班级"})).toBeVisible();
+  expect(screen.getByText(/已跳过/)).toBeVisible();
+  await user.click(screen.getByRole("button", {name: "全部步骤总览"}));
+  expect(screen.getByRole("list", {name: "开课步骤总览"})).toBeVisible();
+  await user.click(screen.getByRole("button", {name: /开放做好的章节/}));
+  expect(await screen.findByRole("heading", {name: "开放做好的章节"})).toBeVisible();
+  await user.click(screen.getByRole("button", {name: "完成引导"}));
+  expect(await screen.findByRole("heading", {name: "基础引导已浏览完毕"})).toBeVisible();
+  await user.click(screen.getByRole("button", {name: /第 3 步：创建章节并上传课件/}));
+  const fileInput = document.querySelector<HTMLInputElement>(".setup-dropzone input[type='file']")!;
+  await user.upload(fileInput, new File(["# 讲义"], "第一章讲义.md", {type: "text/markdown"}));
+  const uploadDialog = await screen.findByRole("dialog", {name: "上传资料"});
+  expect(within(uploadDialog).getByLabelText("资料名称")).toHaveValue("第一章讲义");
+  await user.click(within(uploadDialog).getByRole("button", {name: "保存资料"}));
+  await waitFor(() => expect(location.pathname).toBe("/teacher/courseware"));
 });
 
 it("searches transfer candidates and requires selecting a teacher from the current results", async () => {

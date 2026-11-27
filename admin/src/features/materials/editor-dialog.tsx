@@ -161,7 +161,7 @@ export function MaterialDialog({
           <fieldset className="field">
             <legend>关联章节</legend>
             <div className="check-list">
-              {course.data?.chapters.map((c) => (
+              {(course.data?.chapters ?? []).map((c) => (
                 <label key={c.id}>
                   <input
                     type="checkbox"
