@@ -25,7 +25,8 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { GuideSkeleton } from "@/components/skeletons";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { DropImportOverlay } from "@/features/courseware/drop-import-overlay";
@@ -536,12 +537,10 @@ export function CourseGuide({
 
       {!d ? (
         summary.loading ? (
-          <div className="surface">
-            <Loading />
-          </div>
+          <GuideSkeleton />
         ) : null
       ) : mode === "overview" ? (
-        <ol className="setup-overview-list" aria-label="开课步骤总览">
+        <ol className="page-enter setup-overview-list" aria-label="开课步骤总览">
           {steps.map((step, idx) => {
             const meta = statusMeta(step.state, skipped.includes(idx));
             const Icon = step.icon;

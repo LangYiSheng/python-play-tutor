@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { GraphSkeleton } from "@/components/skeletons";
 import { ContentDeleteDialog } from "@/components/content-delete-dialog";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
@@ -379,9 +380,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
               </Button>
             </div>
           ) : !overview?.data ? (
-            <div className="flex items-center justify-center p-8">
-              <Loading />
-            </div>
+            <GraphSkeleton />
           ) : !treeRoot ? (
             <div className="flex items-center justify-center p-8">
               <Empty
@@ -403,7 +402,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
           )}
 
           {showSidePanel && (
-            <aside ref={panelRef} className="lg-panel" aria-label={overlay === "review" ? "待审批" : overlay === "tasks" ? "知识图谱抽取任务" : "知识点详情"}>
+            <aside ref={panelRef} key={overlay ?? "inspector"} className="panel-slide-right lg-panel" aria-label={overlay === "review" ? "待审批" : overlay === "tasks" ? "知识图谱抽取任务" : "知识点详情"}>
               {overlay === "review" ? (
                 <>
                   <div className="flex items-center justify-between border-b pb-2">

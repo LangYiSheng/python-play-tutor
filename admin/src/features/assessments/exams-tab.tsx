@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Eye, Plus, Trash2 } from "lucide-react";
-import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { Empty, ErrorNotice } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -124,7 +125,7 @@ export function ExamsTab({
         </div>
 
         {loading ? (
-          <Loading />
+          <TableSkeleton framed={false} rows={3} />
         ) : exams.length === 0 ? (
           <Empty title="本课程尚未生成试卷" description="点击右上角「新建试卷」配置命题蓝图并生成试卷。" />
         ) : (

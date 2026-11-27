@@ -2,7 +2,8 @@ import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { ErrorNotice, Loading, PageHeader, TableSearch } from "@/components/common";
+import { ErrorNotice, PageHeader, TableSearch } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -32,7 +33,7 @@ export function GlobalOverview({ onOpen }: { onOpen: (id: number) => void }) {
       <SelectField aria-label="筛选任课教师" value={teacher} onValueChange={setTeacher}>
         <option value="all">全部任课教师</option>{Array.from(teachers, ([id, name]) => <option key={id} value={id}>{name}</option>)}
       </SelectField>
-    <span id="overview-columns-0" className="ml-auto" /></div><ErrorNotice message={overview.error} />{overview.loading && <div className="surface"><Loading /></div>}
+    <span id="overview-columns-0" className="ml-auto" /></div><ErrorNotice message={overview.error} />{overview.loading && <TableSkeleton />}
     {rows && (rows.length > 0 ? <ManagementTable toolsId="overview-columns-0" paginate key={query + teacher}><TableHeader><TableRow>
       <TableHead>班级 / 任课教师</TableHead><TableHead>学生数</TableHead><TableHead>学习任务（完成 / 总数）</TableHead>
       <TableHead>课程资料合成</TableHead><TableHead>代码评测</TableHead><TableHead className="text-right">操作</TableHead>

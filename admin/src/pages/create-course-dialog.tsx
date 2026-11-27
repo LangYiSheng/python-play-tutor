@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage, token } from "@/lib/api";
 import { type AvailablePackages, createCourseFromPackage, requestId } from "@/lib/course-packages";
 import { useResource } from "@/lib/use-resource";
@@ -141,9 +142,10 @@ export function CreateCourseDialog({
                 ))}
               </SelectField>
               {catalog.loading && (
-                <p className="hint" role="status">
-                  正在加载课程包…
-                </p>
+                <div role="status" aria-busy="true" className="flex items-center gap-2 pt-0.5">
+                  <span className="sr-only">正在加载课程包…</span>
+                  <Skeleton className="h-3.5 w-36" />
+                </div>
               )}
               {catalog.error && (
                 <>

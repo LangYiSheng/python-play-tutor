@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, ApiError, errorMessage, token } from "@/lib/api";
@@ -79,7 +80,7 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
       </DialogHeader>
       <form className="space-y-4" onSubmit={remove}>
         <ErrorNotice message={error || previewError}/>
-        {loading && <Loading/>}
+        {loading && <DialogSkeleton rows={2} />}
         {preview && <dl aria-label="课程删除影响" className="grid grid-cols-2 gap-3 rounded-lg bg-muted p-3 text-sm sm:grid-cols-3">
           {(Object.keys(countLabels) as (keyof typeof countLabels)[]).filter(key => preview.counts[key] !== undefined).map(key => <div key={key}>
             <dt className="text-muted-foreground">{countLabels[key]}</dt>

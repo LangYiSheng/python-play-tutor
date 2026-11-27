@@ -12,7 +12,8 @@ import {
   School,
   Users,
 } from "lucide-react";
-import { ErrorNotice, Loading, PageHeader } from "@/components/common";
+import { ErrorNotice, PageHeader } from "@/components/common";
+import { DashboardSkeleton } from "@/components/skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,7 +47,7 @@ export function InsightsPage({
 }) {
   const report = useResource<InsightsOverview>(`/teacher/courses/${courseId}/insights`);
   const d = report.data;
-  if (!d) return report.loading ? <Loading /> : <ErrorNotice message={report.error} />;
+  if (!d) return report.loading ? <DashboardSkeleton /> : <ErrorNotice message={report.error} />;
 
   const totalClassrooms = d.totals.classrooms ?? 0;
   const totalStudents = d.totals.students ?? 0;

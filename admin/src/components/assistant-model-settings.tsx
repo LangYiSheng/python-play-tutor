@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SelectField } from '@/components/select-field';
-import { ErrorNotice, Loading } from '@/components/common';
+import { ErrorNotice } from '@/components/common';
+import { SettingsSkeleton } from '@/components/skeletons';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
 import { toast } from '@/components/ui/toast';
@@ -76,7 +77,7 @@ export function AssistantModelSettings({ onSaved, onStatus, active }: SettingsAc
   }
   return <section className="settings-panel">
     <ErrorNotice message={error} />
-    {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="settings-stack">
+    {!draft ? (!error && <SettingsSkeleton />) : <fieldset disabled={busy} className="settings-stack">
       <SettingsGroup title="基础配置" headerAction={
         <Button type="button" variant="outline" size="sm" disabled={busy || dirty || !saved?.key_configured} onClick={() => void test()}>
           <PlugZap />测试已保存连接

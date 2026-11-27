@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SelectField } from '@/components/select-field';
 import { SuggestInput } from '@/components/suggest-input';
-import { ErrorNotice, Loading } from '@/components/common';
+import { ErrorNotice } from '@/components/common';
+import { SettingsSkeleton } from '@/components/skeletons';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
 import { SPEECH_INSTRUCTION_PRESETS } from '@/lib/voice-api';
@@ -168,7 +169,7 @@ export function ServiceSettings({ service, active, onStatus }: SettingsActionPla
   const group = (name: Group) => visibleFields.filter(field => field.group === name).map(renderField);
   return <section className="settings-panel">
     <ErrorNotice message={error} />
-    {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="settings-stack">
+    {!draft ? (!error && <SettingsSkeleton />) : <fieldset disabled={busy} className="settings-stack">
       <SettingsGroup title="基础配置" headerAction={speech && <>
         <Button type="button" variant="outline" size="sm" onClick={() => {
           if (window.confirm('将地址、音色和格式等替换为接口示例？API Key 保持不变，保存后生效。')) applyProtocol(String(draft.protocol), true);

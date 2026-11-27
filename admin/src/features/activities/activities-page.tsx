@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { BookOpen, CirclePause, ClipboardList, Clock3, Code2, FileCheck2, ListChecks, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react";
-import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
+import { Empty, ErrorNotice, PageHeader } from "@/components/common";
+import { WorkspaceSkeleton } from "@/components/skeletons";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Button } from "@/components/ui/button";
 import { scoped } from "@/lib/api";
@@ -46,7 +47,7 @@ export function LearningTasks({ courseId, classroomId }: { courseId: number; cla
     <PageHeader title="学习任务" />
     <ErrorNotice message={course.error} />
     <ErrorNotice message={releases.error} />
-    {course.loading ? <Loading /> : chapter && course.data ? <div className="activity-workspace">
+    {course.loading ? <WorkspaceSkeleton /> : chapter && course.data ? <div className="activity-workspace">
       <nav aria-label="选择章节" className="activity-chapters">
         <h2>课程章节</h2>
         <div>{chapters.map(item => {
@@ -63,7 +64,7 @@ export function LearningTasks({ courseId, classroomId }: { courseId: number; cla
           </button>;
         })}</div>
       </nav>
-      <div key={chapter.id} className="min-w-0 space-y-4">
+      <div key={chapter.id} className="page-enter min-w-0 space-y-4">
         <h2 className="activity-chapter-heading text-xl font-semibold" aria-label={`第 ${chapterNumber} 章 ${chapter.title}`}>
           <span className="activity-chapter-number" aria-hidden="true">{chapterNumber}</span>
           {chapter.title}

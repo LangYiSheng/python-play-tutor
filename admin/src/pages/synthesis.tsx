@@ -4,7 +4,8 @@ import {
   Headphones, History, NotebookPen, RefreshCw, Settings, XCircle,
 } from 'lucide-react';
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
-import { PageHeader, ErrorNotice, Loading, Pager, ListEmpty } from '@/components/common';
+import { PageHeader, ErrorNotice, Pager, ListEmpty } from '@/components/common';
+import { MetricsRowSkeleton, TableSkeleton } from '@/components/skeletons';
 import { ManagementTable } from "@/components/management-table";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -133,6 +134,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
       </Button>
     </PageHeader>
     <ErrorNotice message={error} />{commands.feedback}
+    {!data && !error && <div className="mb-4"><MetricsRowSkeleton embedded /></div>}
     {data && <div className="synthesis-metrics" role="group" aria-label="合成任务总览">
       <button type="button" className="synthesis-metric" data-tone={runningCount > 0 ? 'active' : 'neutral'}
         aria-pressed={view === 'running'} onClick={() => focusFilter('running', 'all')}>
@@ -188,7 +190,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
       </SelectField>}
       <span id="synthesis-columns-0" className="ml-auto" />
     </div>
-    {!data ? !error && <Loading /> : <div>
+    {!data ? !error && <TableSkeleton /> : <div>
       {data.items.length > 0 && <ManagementTable toolsId="synthesis-columns-0" pageSize={{value:size,total:data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow><TableHead>任务 / 资料</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
         <TableBody>{data.items.map(item => {
           const percent = taskPercent(item);

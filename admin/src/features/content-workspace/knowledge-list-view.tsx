@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Search, Sparkles, Trash2 } from "lucide-react";
-import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { Empty, ErrorNotice } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +75,7 @@ export function KnowledgeListView({
     }
   }
 
-  if (loading && !data) return <div className="p-6"><Loading /></div>;
+  if (loading && !data) return <div className="p-5"><TableSkeleton rows={5} /></div>;
   if (error) return <div className="p-6"><ErrorNotice message={error} /></div>;
 
   const chapters = data?.chapters ?? [];

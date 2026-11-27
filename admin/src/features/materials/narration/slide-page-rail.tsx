@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Layers, List } from "lucide-react";
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, Layers, List } from "lucide-react";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { cleanGraphLabel } from "@/features/content-workspace/studio-graph-layout";
 import type { KnowledgePointItem } from "@/lib/course-studio-api";
 import type { NarrationPage } from "./api";
@@ -326,11 +327,10 @@ export function SlidePageRail({
                         }))
                       }
                     >
-                      {isCollapsed ? (
-                        <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
-                      )}
+                      <ChevronDown
+                        size={12}
+                        className={`shrink-0 text-muted-foreground transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isCollapsed ? "-rotate-90" : ""}`}
+                      />
                       <span
                         className={`min-w-0 flex-1 truncate ${
                           group.kind === "ungrouped" ? "text-muted-foreground" : "font-medium text-foreground"
@@ -345,11 +345,13 @@ export function SlidePageRail({
                         <span className={`size-1.5 shrink-0 rounded-full ${gDot.color}`} aria-label={gDot.label} />
                       )}
                     </button>
-                    {!isCollapsed && (
-                      <div className="space-y-0.5 border-t border-border/40 p-1">
-                        {group.pages.map((item) => renderPageButton(item, true))}
-                      </div>
-                    )}
+                    <Collapsible open={!isCollapsed}>
+                      <CollapsibleContent>
+                        <div className="space-y-0.5 border-t border-border/40 p-1">
+                          {group.pages.map((item) => renderPageButton(item, true))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
                   </div>
                 </div>
               );

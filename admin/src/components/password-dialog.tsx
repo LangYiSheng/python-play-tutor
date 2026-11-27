@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +36,14 @@ export function PasswordDialog({
     [confirm, setConfirm] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setOld("");
+      setNext("");
+      setConfirm("");
+      setError("");
+    }
+  }, [open]);
   const passwordError = next && (passwordLengthError(next) ||
     (next === user.student_id ? "新密码不能与工号相同" : next === old ? "新密码不能与当前密码相同" : ""));
   const confirmError = confirm && next !== confirm ? "两次输入的新密码不一致" : "";

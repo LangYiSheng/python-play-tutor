@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SelectField } from "@/components/select-field";
@@ -58,7 +59,14 @@ function EditRole({role,assets,done}: {role:Role; assets:CharacterAsset[]; done:
 export function PlatformRoles() {
   const data=useResource<{roles:Role[];assets:CharacterAsset[]}>("/admin/teaching-roles");
   const [editing,setEditing]=useState<Role|null>(null);
-  return <section className="space-y-3"><ErrorNotice message={data.error}/>{data.loading && <Loading/>}
+  return <section className="space-y-3"><ErrorNotice message={data.error}/>{data.loading && <div role="status" aria-busy="true" className="grid gap-3 xl:grid-cols-2">
+      <span className="sr-only">正在加载…</span>
+      {Array.from({ length: 4 }, (_, i) => <div className="surface flex items-center gap-4 p-3" key={i}>
+        <Skeleton className="size-12 shrink-0 rounded-lg" />
+        <div className="flex-1 space-y-2"><Skeleton className="h-4 w-24" /><Skeleton className="h-3 w-36" /></div>
+        <Skeleton className="h-8 w-14 rounded-lg" />
+      </div>)}
+    </div>}
     <div className="grid gap-3 xl:grid-cols-2">{data.data?.roles.map(r=><div className="surface flex items-center gap-4 p-3" key={r.key}>
       <CharacterPreview compact asset={r.portrait}/><div className="flex-1"><strong>{r.name}</strong><p className="hint">{roles[r.key]}</p></div>
       <Button variant="outline" aria-label={`编辑${r.name}`} onClick={()=>setEditing(r)}>编辑</Button></div>)}</div>

@@ -7,5 +7,6 @@
 @import "./styles/shell.css";
 @import "./styles/controls.css";
 @import "./styles/login.css";
+@import "./styles/motion.css";
 @import "./features/questions/questions.css";
 @import "./features/judge/judge.css";

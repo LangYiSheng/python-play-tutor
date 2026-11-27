@@ -6,7 +6,8 @@ import {
   Code2,
   Lock,
 } from "lucide-react";
-import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { Empty, ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { PaginatedRows } from "@/components/paginated-rows";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
@@ -267,7 +268,7 @@ export function StudentRecordSheet({
             className="flex-1 space-y-3 overflow-y-auto px-5 py-4"
           >
             {result.loading ? (
-              <Loading />
+              <DialogSkeleton rows={4} />
             ) : tab === "assessments" ? (
               assessments.length ? (
                 <PaginatedRows rows={assessments}>

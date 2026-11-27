@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Code2, Plus, RotateCcw, Search, Sparkles } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -362,7 +363,7 @@ function DialogBody({
 
       <ErrorNotice message={error} />
       {loading ? (
-        <Loading />
+        <DialogSkeleton rows={3} />
       ) : chapters.length === 0 ? (
         <p className="text-sm text-muted-foreground">请先在「章节与课件」中创建章节并上传课件。</p>
       ) : (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Network, RotateCcw, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -243,7 +243,7 @@ export function NarrationPagePreview({
   const isCanvas = layout === "canvas";
   const hasStage = isCanvas && Boolean(page && data);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     navRef.current = { previous, next, setPageNo };
   }, [previous, next, setPageNo]);
 

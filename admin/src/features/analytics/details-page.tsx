@@ -15,10 +15,10 @@ import {
 import {
   ErrorNotice,
   ListEmpty,
-  Loading,
   PageHeader,
   TableSearch,
 } from "@/components/common";
+import { DashboardSkeleton } from "@/components/skeletons";
 import { ManagementTable } from "@/components/management-table";
 import { PaginatedRows } from "@/components/paginated-rows";
 import { SelectField } from "@/components/select-field";
@@ -142,7 +142,7 @@ export function TaskDetailsPage({ classroomId }: { classroomId: number }) {
     return list;
   }, [d]);
 
-  if (!d) return report.loading ? <Loading /> : <ErrorNotice message={report.error} />;
+  if (!d) return report.loading ? <DashboardSkeleton /> : <ErrorNotice message={report.error} />;
 
   const totalStudents = d.students.length;
   const needle = query.trim().toLowerCase();
@@ -405,7 +405,7 @@ export function TaskDetailsPage({ classroomId }: { classroomId: number }) {
             <ListEmpty title="未找到匹配的任务点" filtered={isFiltered} reset={resetFilters} />
           </div>
         ) : (
-          <div className="surface overflow-hidden">
+          <div className="page-enter surface overflow-hidden">
             <ManagementTable
               paginate
               columnTools={false}
@@ -522,7 +522,7 @@ export function TaskDetailsPage({ classroomId }: { classroomId: number }) {
           reset={resetFilters}
         />
       ) : (
-        <div className="surface overflow-x-auto">
+        <div className="page-enter surface overflow-x-auto">
           <ManagementTable
             paginate
             columnTools={false}

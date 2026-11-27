@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/table";
 import type { CourseInstance } from "@/lib/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ListEmpty, ErrorNotice, Loading, PageHeader, TableSearch } from "@/components/common";
+import { ListEmpty, ErrorNotice, PageHeader, TableSearch } from "@/components/common";
+import { HubCardsSkeleton, TableSkeleton } from "@/components/skeletons";
 import { Badge } from "@/components/ui/badge";
 import { SelectField } from "@/components/select-field";
 import { errorMessage, request, token } from "@/lib/api";
@@ -330,7 +331,7 @@ export function Packages({
             <span id="admin-packages-columns" className="ml-auto" />
           </div>
           <ErrorNotice message={available.error} />
-          {available.loading && <Loading />}
+          {available.loading && <TableSkeleton />}
           {available.data && (
             <div className="overflow-hidden rounded-lg border bg-background">
               <ManagementTable
@@ -473,8 +474,8 @@ export function Packages({
             </Button>
           </div>
           <ErrorNotice message={available.error} />
-          {available.loading && <p role="status" className="hint mt-5">正在加载课程包…</p>}
           <div className="hub-grid">
+            {available.loading && !visiblePackages.length && <HubCardsSkeleton count={3} inline />}
             {visiblePackages.map((item) => (
               <article className="surface hub-card" key={item.key}>
                 <div className="hub-card-head">

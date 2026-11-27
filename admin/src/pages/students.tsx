@@ -36,9 +36,9 @@ import {
 import {
   PageHeader,
   ErrorNotice,
-  Loading,
   Pager,
 } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { api, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
@@ -243,9 +243,7 @@ export function Students({ classroomId }: { classroomId: number }) {
       ) : null}
       <ErrorNotice message={list.error || (!modal ? error : "")} />
       {list.loading ? (
-        <div className="surface">
-          <Loading />
-        </div>
+        <TableSkeleton />
       ) : !list.data ? null : rows.length === 0 ? (
         <div className="surface">
           <ListEmpty

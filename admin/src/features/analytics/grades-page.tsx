@@ -8,10 +8,10 @@ import {
 import {
   ErrorNotice,
   ListEmpty,
-  Loading,
   PageHeader,
   TableSearch,
 } from "@/components/common";
+import { DashboardSkeleton } from "@/components/skeletons";
 import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
@@ -165,7 +165,7 @@ export function GradesPage({
     return map;
   }, [d]);
 
-  if (!d) return report.loading ? <Loading /> : <ErrorNotice message={report.error} />;
+  if (!d) return report.loading ? <DashboardSkeleton /> : <ErrorNotice message={report.error} />;
 
   const activeExam =
     selectedExamId === "all"

@@ -25,9 +25,9 @@ import {
 import {
   PageHeader,
   ErrorNotice,
-  Loading,
   TableSearch,
 } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { api, scoped, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
@@ -122,9 +122,7 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
         <span id="teaching-columns-0" className="ml-auto" />
       </div>
       {course.loading || releases.loading ? (
-        <div className="surface">
-          <Loading />
-        </div>
+        <TableSkeleton rows={4} />
       ) : !chapters.length ? (
         <div className="surface">
           <ListEmpty

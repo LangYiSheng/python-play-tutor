@@ -3,7 +3,8 @@ import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
 import { Copy, Ellipsis, ExternalLink, LoaderCircle, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ErrorNotice, Loading, PageHeader, TableSearch } from "@/components/common";
+import { ErrorNotice, PageHeader, TableSearch } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -119,7 +120,7 @@ export function ClassroomManagement({ courseId, isAdmin, onOpen, onOpenCourse, o
       </SelectField>
     <span id="classrooms-columns-0" className="ml-auto" /></div>
     <ErrorNotice message={list.error} />
-    {list.loading && <div className="surface"><Loading /></div>}
+    {list.loading && <TableSkeleton />}
     {rows && (rows.length > 0 ? <ManagementTable toolsId="classrooms-columns-0" paginate key={`${query}:${status}:${teacherFilter}`}><TableHeader><TableRow>
       <TableHead>班级名称</TableHead>
       {globalMode && <TableHead>所属课程 / 任课教师</TableHead>}

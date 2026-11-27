@@ -1,8 +1,9 @@
 import { Empty as EmptyRoot, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "./ui/empty";
 import { SelectField } from "@/components/select-field";
-import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Search } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Inbox, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PanelSkeleton } from "./skeletons";
 export function ErrorNotice({ message }: { message: string }) {
   return message ? (
     <div role="alert" className="notice-error">
@@ -11,13 +12,8 @@ export function ErrorNotice({ message }: { message: string }) {
     </div>
   ) : null;
 }
-export function Loading() {
-  return (
-    <div role="status" className="empty">
-      <LoaderCircle className="animate-spin" size={20} />
-      正在加载…
-    </div>
-  );
+export function Loading({ rows = 3, className }: { rows?: number; className?: string } = {}) {
+  return <PanelSkeleton rows={rows} className={className} />;
 }
 export function Empty({
   title,

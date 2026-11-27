@@ -1,9 +1,9 @@
 import {
   Empty,
   ErrorNotice,
-  Loading,
   Pager,
 } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import {
   DeleteSelection,
@@ -561,7 +561,7 @@ export function Questions({
           }
         />
         {list.loading ? (
-          <Loading />
+          <TableSkeleton framed={false} />
         ) : !visible.length ? (
           <Empty title="没有匹配的题目" />
         ) : (

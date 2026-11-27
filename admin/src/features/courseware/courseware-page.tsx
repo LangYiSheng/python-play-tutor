@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { BookOpen, Eye, Headphones, Link2, ListTodo, PanelLeftOpen, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
-import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { Empty, ErrorNotice } from "@/components/common";
+import { WorkspaceSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Badge } from "@/components/ui/badge";
@@ -404,7 +405,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
       <DeleteSelection actions={materialDelete} />
 
       {course.loading && matResource.loading ? (
-        <Loading />
+        <WorkspaceSkeleton />
       ) : chapters.length === 0 && materials.length === 0 ? (
         <div className="surface p-8 text-center">
           <Empty
@@ -472,7 +473,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
               onRetry={(m) => void retryMaterial(m)}
             />
           ) : activeChapter ? (
-            <section className="surface flex flex-1 min-w-0 min-h-0 flex-col gap-4 overflow-y-auto p-5" aria-label={activeChapter.title}>
+            <section key={activeChapter.id} className="page-enter surface flex flex-1 min-w-0 min-h-0 flex-col gap-4 overflow-y-auto p-5" aria-label={activeChapter.title}>
               <header className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                 <div className="flex items-center gap-2">
                   {!treeOpen && (

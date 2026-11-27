@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import './settings-layout.css';
@@ -20,21 +21,29 @@ export function SettingsGroup({ title, headerAction, collapsible = false, forceO
 }) {
   const [expanded, setExpanded] = useState(false);
   const bodyId = useId();
-  const open = !collapsible || expanded || forceOpen;
-  return <section className="settings-group" data-collapsed={!open}>
-    <header className="settings-group-header">
-      {collapsible
-        ? <button type="button" className="settings-group-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setExpanded(!open)}>
-          <span>{title}</span>
-          <ChevronDown aria-hidden="true" />
-        </button>
-        : <div className="settings-group-bar">
+  if (!collapsible) {
+    return <section className="settings-group" data-collapsed={false}>
+      <header className="settings-group-header">
+        <div className="settings-group-bar">
           <h3 className="settings-group-heading">{title}</h3>
           {headerAction && <div className="settings-group-actions">{headerAction}</div>}
-        </div>}
+        </div>
+      </header>
+      <div id={bodyId} className="settings-group-body">{children}</div>
+    </section>;
+  }
+  const open = expanded || forceOpen;
+  return <Collapsible render={<section className="settings-group" data-collapsible="true" data-collapsed={!open} />} open={open} onOpenChange={setExpanded}>
+    <header className="settings-group-header">
+      <CollapsibleTrigger type="button" className="settings-group-toggle">
+        <span>{title}</span>
+        <ChevronDown aria-hidden="true" />
+      </CollapsibleTrigger>
     </header>
-    <div id={bodyId} className="settings-group-body" hidden={!open}>{children}</div>
-  </section>;
+    <CollapsibleContent id={bodyId}>
+      <div className="settings-group-body">{children}</div>
+    </CollapsibleContent>
+  </Collapsible>;
 }
 
 export function SettingsField({ id, label, hint, error, extra, wide, children }: {

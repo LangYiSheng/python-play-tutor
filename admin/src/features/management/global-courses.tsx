@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { ArrowUpRight, Ellipsis, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { ErrorNotice, ListEmpty, Loading, PageHeader, TableSearch } from "@/components/common";
+import { ErrorNotice, ListEmpty, PageHeader, TableSearch } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { Button } from "@/components/ui/button";
@@ -153,7 +154,7 @@ export function GlobalCourses({
       </div>
 
       <ErrorNotice message={courses.error} />
-      {courses.loading && <Loading />}
+      {courses.loading && <TableSkeleton />}
 
       {courses.data && (
         <div className="overflow-hidden rounded-lg border bg-background">

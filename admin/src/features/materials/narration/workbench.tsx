@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, Download, Mic, Sparkles, Timer, Volume2 } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { WorkspaceSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -253,7 +254,14 @@ export function NarrationWorkbench({
     }
   }
 
-  if (!data || busy === "load") return <><ErrorNotice message={error} /><Loading /></>;
+  if (!data || busy === "load") {
+    return (
+      <>
+        <ErrorNotice message={error} />
+        {(!error || busy === "load") && <WorkspaceSkeleton />}
+      </>
+    );
+  }
 
   const fullHeight = mode !== "full";
   const groupedRail = hasKnowledgeGroups && railMode === "knowledge";

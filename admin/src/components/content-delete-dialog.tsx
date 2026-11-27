@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { errorMessage, request, token } from "@/lib/api";
 
 export type DeletionKind = "chapter" | "material" | "question" | "activity" | "knowledge_point";
@@ -57,7 +58,7 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
         <DialogDescription>请核对将删除的内容及关联。学生历史记录会保留。</DialogDescription>
       </DialogHeader>
       <ErrorNotice message={error} />
-      {loading ? <Loading /> : null}
+      {loading ? <DialogSkeleton rows={3} /> : null}
       {preview && !loading ? <div className="max-h-[55dvh] space-y-4 overflow-auto pr-2">
           {((preview.related_question_count ?? 0) > 0 || includeQuestions) && <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
             <Checkbox checked={includeQuestions} disabled={loading || busy} onCheckedChange={setIncludeQuestions} />

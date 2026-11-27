@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { StudioJobList } from "@/features/content-workspace/studio-job-list";
@@ -200,15 +201,19 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
         )}
       </PageHeader>
 
-      {jobsVisible && assessmentJobs.length > 0 && (
-        <div className="surface p-3.5">
-          <StudioJobList
-            jobs={assessmentJobs}
-            onCancel={studioJobs.cancel}
-            onClose={() => setJobsVisible(false)}
-          />
-        </div>
-      )}
+      <Collapsible className="mb-0!" open={jobsVisible && assessmentJobs.length > 0}>
+        <CollapsibleContent>
+          <div className="pb-4">
+            <div className="surface p-3.5">
+              <StudioJobList
+                jobs={assessmentJobs}
+                onCancel={studioJobs.cancel}
+                onClose={() => setJobsVisible(false)}
+              />
+            </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       <Tabs value={route.tab} onValueChange={switchTab} className="space-y-4">
         <TabsList variant="line">

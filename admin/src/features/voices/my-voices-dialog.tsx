@@ -14,7 +14,8 @@ import {
   Upload,
   Volume2,
 } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -595,7 +596,7 @@ export function MyVoicesDialog({
           <ErrorNotice message={error} />
 
           {loading ? (
-            <Loading />
+            <DialogSkeleton rows={3} />
           ) : view === "list" ? (
             <>
               {capabilities && (

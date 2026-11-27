@@ -42,12 +42,26 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
-import { ErrorNotice, Loading, Empty } from "@/components/common";
+import { ErrorNotice, Empty } from "@/components/common";
+import {
+  AppShellSkeleton,
+  DashboardSkeleton,
+  GraphSkeleton,
+  GuideSkeleton,
+  SettingsSkeleton,
+  TableSkeleton,
+  WorkspaceSkeleton,
+} from "@/components/skeletons";
 import { PasswordDialog } from "@/components/password-dialog";
 import { MyVoicesDialog } from "@/features/voices/my-voices-dialog";
 import { toast } from "@/components/ui/toast";
@@ -162,21 +176,45 @@ export default function App() {
     </DraftProvider>
   );
 }
+function pageFallback(target: Page) {
+  if (target === "content-graph") return <GraphSkeleton />;
+  if (target === "courseware" || target === "activities") return <WorkspaceSkeleton />;
+  if (target === "insights" || target === "details" || target === "grades") return <DashboardSkeleton />;
+  if (target === "system") return <SettingsSkeleton />;
+  if (target === "guide") return <GuideSkeleton />;
+  return <TableSkeleton />;
+}
 function SidebarGroup({ id, label, icon: Icon, active, sidebar, expandSidebar, children }: {
   id: string; label: string; icon: typeof Settings; active: boolean; sidebar: boolean;
   expandSidebar: () => void; children: ReactNode;
 }) {
   const [open, setOpen] = useState(active);
   const expanded = sidebar && open;
-  return <div className="nav-group">
-    <button type="button" className="nav-group-trigger" aria-label={label} title={sidebar ? undefined : label}
-      aria-expanded={expanded} aria-controls={id} data-current={active || undefined}
-      onClick={() => { if (!sidebar) expandSidebar(); setOpen(!expanded); }}>
-      <Icon size={18} aria-hidden/><span className="nav-text">{label}</span>
-      <ChevronDown size={15} aria-hidden className="group-chevron"/>
-    </button>
-    <div className="nav-children" id={id} hidden={!expanded}>{children}</div>
-  </div>;
+  return (
+    <Collapsible
+      className="nav-group"
+      open={expanded}
+      onOpenChange={(next) => {
+        if (!sidebar) expandSidebar();
+        setOpen(next);
+      }}
+    >
+      <CollapsibleTrigger
+        type="button"
+        className="nav-group-trigger"
+        aria-label={label}
+        title={sidebar ? undefined : label}
+        data-current={active || undefined}
+      >
+        <Icon size={18} aria-hidden />
+        <span className="nav-text">{label}</span>
+        <ChevronDown size={15} aria-hidden className="group-chevron" />
+      </CollapsibleTrigger>
+      <CollapsibleContent id={id}>
+        <div className="nav-children">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 function Workbench() {
   const [user, setUser] = useState<User | null>(null),
@@ -445,7 +483,7 @@ function Workbench() {
       setOpeningTown(false);
     }
   }
-  if (loading) return <Loading />;
+  if (loading) return <AppShellSkeleton />;
   if (!user)
     return (
       <>
@@ -528,7 +566,7 @@ function Workbench() {
       case "system":
         return <GlobalSettings />;
     }
-    if (!course) return courses.loading ? <Loading/> : <Empty title="课程不存在或无法访问" />;
+    if (!course) return courses.loading ? pageFallback(page) : <Empty title="课程不存在或无法访问" />;
     if (page === "guide") return <CourseGuide
       courseId={course.id}
       classroomId={classroomId}
@@ -558,7 +596,7 @@ function Workbench() {
     }}/>;
     if (page === "activities") return <LearningTasks courseId={course.id} classroomId={classroomId} />;
     if (classPage && classError) return <><ErrorNotice message={classError}/><Button variant="outline" onClick={() => setClassListRevision(v => v + 1)}>重新加载班级</Button></>;
-    if (classPage && classes === null) return <Loading/>;
+    if (classPage && classes === null) return pageFallback(page);
     if (classPage && !classroom) return <div className="surface">
       <Empty title="本课程尚未创建班级" />
       <div className="flex justify-center pb-8"><Button onClick={openNewClassDialog}>创建班级</Button></div>
@@ -627,7 +665,7 @@ function Workbench() {
   const myCourses = courses.data?.filter(row => row.teacher_id === user.id) ?? [];
   return (
     <>
-    {hub ? <main className="course-hub">
+    {hub ? <main className="course-hub hub-enter">
       <header className="hub-header">{brand}<div className="hub-actions">
         {accountMenu}
         {isAdmin && <ButtonLink href="/teacher/overview" variant="outline" onClick={e => { e.preventDefault(); navigate("overview"); }}><LayoutDashboard/>进入后台</ButtonLink>}
@@ -705,18 +743,18 @@ function Workbench() {
         <main className={course && page === "content-graph" ? "main-content graph-main"
           : course && page === "courseware" ? "main-content courseware-main" : "main-content"}>
           <ErrorNotice message={error} />
-          <Suspense key={`${user.id}:${classPage ? classroomId : courseId}:${page}`} fallback={<Loading />}>
-            <TablePreferences>{renderPage()}</TablePreferences>
+          <Suspense key={`${user.id}:${classPage ? classroomId : courseId}:${page}`} fallback={pageFallback(page)}>
+            <TablePreferences><div className="page-stage">{renderPage()}</div></TablePreferences>
           </Suspense>
         </main>
       </div>
     </div>}
-      {passwordOpen && <PasswordDialog
+      <PasswordDialog
         open={passwordOpen}
         onClose={() => setPasswordOpen(false)}
         onUser={setUser}
         user={user}
-      />}
+      />
       <MyVoicesDialog open={voicesOpen} onOpenChange={setVoicesOpen} />
       <Dialog
         open={newClass}

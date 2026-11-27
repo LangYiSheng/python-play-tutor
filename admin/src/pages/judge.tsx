@@ -5,9 +5,12 @@ import {
 } from "lucide-react";
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { DateRangePicker } from "@/components/date-range-picker";
-import { ListEmpty, PageHeader, ErrorNotice, Loading, Pager } from "@/components/common";
+import { ListEmpty, PageHeader, ErrorNotice, Pager } from "@/components/common";
+import { DialogSkeleton, TableSkeleton } from "@/components/skeletons";
 import { ManagementTable } from "@/components/management-table";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -201,7 +204,11 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
               {state.paused ? "派发已暂停" : "自动派发"}
             </span>
             {!state.worker_alive && <span className="judge-badge" data-tone="danger">队列心跳异常</span>}
-          </div> : service.error ? null : <Loading />}
+          </div> : service.error ? null : <div role="status" aria-busy="true" className="judge-status-badges">
+            <span className="sr-only">正在加载…</span>
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </div>}
         </div>
         {canManage ? <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void operate("probe")}><Activity />立即检测</Button>
@@ -246,6 +253,13 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
             <strong>{value}</strong>
           </button>
         ))}
+      </div> : !service.error ? <div className="judge-metrics" aria-hidden="true">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="judge-metric pointer-events-none space-y-2">
+            <Skeleton className="h-3.5 w-16" />
+            <Skeleton className="h-7 w-12" />
+          </div>
+        ))}
       </div> : null}
       {canManage && state?.global_counts ? <div className="judge-global-queue" data-alert={globalAlert}>
         <span>
@@ -280,23 +294,27 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
         <SelectField aria-label="评测状态" value={status || "all"} onValueChange={v => { setStatus(v === "all" ? "" : v); setPage(1); }}>
           <option value="all">全部状态</option>{Object.entries(statuses).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
         </SelectField>
-        <Button type="button" variant="outline" aria-expanded={moreFilters} aria-controls="judge-date-filters" onClick={() => setMoreFilters(open => !open)}><SlidersHorizontal/>更多筛选</Button>
+        <Button type="button" variant="outline" aria-expanded={moreFilters} aria-controls={moreFilters ? "judge-date-filters" : undefined} onClick={() => setMoreFilters(open => !open)}><SlidersHorizontal/>更多筛选</Button>
         <span id="judge-columns-0" className="ml-auto" />
       </form>
-      {moreFilters && <section id="judge-date-filters" className="judge-date-filter mb-4 rounded-lg border bg-muted/30 px-4" aria-label="评测日期筛选">
-        <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">提交日期</span>
-          {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
-          <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
-        </div>
-        <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
-          <div className="min-w-0"><DateRangePicker start={preset === "all" ? "" : draftDates.start} end={preset === "all" ? "" : draftDates.end}
-            change={(start,end) => { setPreset("custom"); setDraftDates({ start,end }); }} /></div>
-          <Button type="submit" size="sm" variant="outline">应用日期</Button>
-        </form>
-        <ErrorNotice message={dateError} />
-      </section>}
+      <Collapsible open={moreFilters} onOpenChange={setMoreFilters}>
+        <CollapsibleContent id="judge-date-filters">
+          <section className="judge-date-filter mb-4 rounded-lg border bg-muted/30 px-4" aria-label="评测日期筛选">
+            <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">提交日期</span>
+              {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
+              <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
+            </div>
+            <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
+              <div className="min-w-0"><DateRangePicker start={preset === "all" ? "" : draftDates.start} end={preset === "all" ? "" : draftDates.end}
+                change={(start,end) => { setPreset("custom"); setDraftDates({ start,end }); }} /></div>
+              <Button type="submit" size="sm" variant="outline">应用日期</Button>
+            </form>
+            <ErrorNotice message={dateError} />
+          </section>
+        </CollapsibleContent>
+      </Collapsible>
       <ErrorNotice message={sharedLoadError ? "" : submissions.error} />
-      {!submissions.data ? submissions.error ? null : <Loading /> : submissions.data.items.length ? <>
+      {!submissions.data ? submissions.error ? null : <TableSkeleton /> : submissions.data.items.length ? <>
         <ManagementTable toolsId="judge-columns-0" pageSize={{value:size,total:submissions.data.total,change:v => {setSize(v);setPage(1);}}} aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
           <TableBody>{submissions.data.items.map(row => <TableRow key={row.id}>
             <TableCell><span className="font-medium">{row.student_name}</span><p className="text-xs text-muted-foreground">{row.student_id ?? "无学号"}{classroomId === undefined && row.classroom_name && ` · ${row.classroom_name}`}</p></TableCell>
@@ -350,7 +368,7 @@ function SubmissionDialog({ classroomId, id, onClose }: { classroomId?: number; 
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="judge-detail sm:max-w-4xl">
     <DialogHeader><DialogTitle>提交详情</DialogTitle><DialogDescription>仅本班教师与管理员可见。用例来自提交时快照，题目名称为当前名称；隐藏用例与诊断不可转发给学生。</DialogDescription></DialogHeader>
     <ErrorNotice message={detail.error} />{detail.error ? <Button variant="outline" onClick={detail.reload}><RotateCcw />重试</Button> : null}
-    {detail.loading ? <Loading /> : data ? <div className="judge-detail-body">
+    {detail.loading ? <DialogSkeleton rows={4} /> : data ? <div className="judge-detail-body">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="font-semibold">{data.question_title}</h3>

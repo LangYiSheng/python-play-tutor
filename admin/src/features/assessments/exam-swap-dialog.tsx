@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
-import { Empty, ErrorNotice, Loading } from "@/components/common";
+import { Empty, ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,7 +97,7 @@ function SwapBody({
     <div className="space-y-3">
       <ErrorNotice message={error} />
       {loading ? (
-        <Loading />
+        <DialogSkeleton rows={3} />
       ) : candidates.length === 0 ? (
         <Empty title="当前题库中暂无同题型可替换候选" />
       ) : (

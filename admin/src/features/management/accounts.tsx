@@ -3,7 +3,8 @@ import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
 import { Ban, CircleCheck, Ellipsis, KeyRound, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
-import { ErrorNotice, Loading, PageHeader, Pager, TableSearch } from "@/components/common";
+import { ErrorNotice, PageHeader, Pager, TableSearch } from "@/components/common";
+import { TableSkeleton } from "@/components/skeletons";
 import { PasswordInput } from "@/components/password-input";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
@@ -64,7 +65,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
     <span id="accounts-columns-0" className="ml-auto" /></div>
     <ErrorNotice message={classes.error} />
     <ErrorNotice message={accounts.error} />
-    {accounts.loading && <div className="surface"><Loading /></div>}
+    {accounts.loading && <TableSkeleton />}
     {accounts.data && (accounts.data.items.length > 0 ? <>
       <ManagementTable toolsId="accounts-columns-0" pageSize={{value:size,total:accounts.data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow>
         <TableHead>姓名 / {numberLabel}</TableHead><TableHead>{teacher ? "负责班级" : "所在班级"}</TableHead>

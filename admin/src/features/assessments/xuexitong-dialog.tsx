@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Download, FileSpreadsheet, FileText, ShieldCheck } from "lucide-react";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { DialogSkeleton } from "@/components/skeletons";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ function XuexitongBody({ courseId, onClose }: { courseId: number; onClose: () =>
     <div className="space-y-4">
       <ErrorNotice message={error} />
       {loading ? (
-        <Loading />
+        <DialogSkeleton rows={2} />
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2">

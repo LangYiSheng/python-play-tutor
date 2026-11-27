@@ -4,7 +4,8 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorNotice, Loading } from "@/components/common";
+import { ErrorNotice } from "@/components/common";
+import { HubCardsSkeleton } from "@/components/skeletons";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, errorMessage, request } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
@@ -46,9 +47,10 @@ export function CoursePicker({courses, items, classes, onOpen, onCreated, teache
     } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   }
   return <><h1 className="sr-only">课程选择</h1>
-    <ErrorNotice message={courses.error}/>{courses.loading && <Loading/>}
+    <ErrorNotice message={courses.error}/>
     <div className="hub-grid">
       <button className="hub-create" onClick={() => setCreating(true)}><Plus size={24}/>创建新课程</button>
+      {courses.loading && !items.length && <HubCardsSkeleton count={2} inline />}
       {items.map(c => {
         const rooms = classes.filter(room => room.course_id === c.id).map(room => room.name).join("、");
         return <article key={c.id} className="surface hub-card">

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   ChevronDown,
-  ChevronRight,
   Eye,
   FileText,
   Film,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -178,7 +178,7 @@ export function ChapterTree({
 
   return (
     <aside
-      className="surface flex flex-col gap-2 p-2.5 lg:h-full lg:min-h-0 lg:w-56 shrink-0"
+      className="panel-slide-left surface flex flex-col gap-2 p-2.5 lg:h-full lg:min-h-0 lg:w-56 shrink-0"
       aria-label="章节与资料目录"
     >
       <div className="flex items-center justify-between gap-1 shrink-0">
@@ -235,11 +235,15 @@ export function ChapterTree({
                   >
                     <button
                       type="button"
+                      aria-expanded={isOpen}
                       aria-label={`${isOpen ? "折叠" : "展开"}${ch.title}`}
                       className="p-0.5 text-muted-foreground hover:text-foreground"
                       onClick={() => setCollapsed((prev) => ({ ...prev, [ch.id]: isOpen }))}
                     >
-                      {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <ChevronDown
+                        size={14}
+                        className={`transition-transform duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isOpen ? "" : "-rotate-90"}`}
+                      />
                     </button>
                     <button
                       type="button"
@@ -283,15 +287,17 @@ export function ChapterTree({
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
-              {isOpen && (
-                <ul className="space-y-0.5 border-t border-border/50 px-1.5 py-1">
-                  {visibleMats.length === 0 ? (
-                    <li className="px-2 py-1 text-xs text-muted-foreground">暂无关联资料</li>
-                  ) : (
-                    visibleMats.map((m) => renderMaterialRow(m, ch.id))
-                  )}
-                </ul>
-              )}
+              <Collapsible open={isOpen}>
+                <CollapsibleContent>
+                  <ul className="space-y-0.5 border-t border-border/50 px-1.5 py-1">
+                    {visibleMats.length === 0 ? (
+                      <li className="px-2 py-1 text-xs text-muted-foreground">暂无关联资料</li>
+                    ) : (
+                      visibleMats.map((m) => renderMaterialRow(m, ch.id))
+                    )}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           );
         })}
