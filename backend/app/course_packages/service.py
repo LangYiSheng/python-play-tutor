@@ -106,15 +106,26 @@ def visible_packages(db, user):
     from app.course_packages.catalog import mounted_catalog
 
     mounted, unavailable = mounted_catalog(exchange_root(), LIMITS)
-    owners = dict(db.execute(select(CourseExport.directory, CourseExport.exporter_id)
-                             .where(CourseExport.directory.in_([item["directory"] for item in mounted]))).all())
+    owner_rows = db.execute(
+        select(CourseExport.directory, CourseExport.exporter_id, User.name)
+        .outerjoin(User, User.id == CourseExport.exporter_id)
+        .where(CourseExport.directory.in_([item["directory"] for item in mounted]))
+    ).all()
+    owners = {directory: (exporter_id, exporter_name) for directory, exporter_id, exporter_name in owner_rows}
     visible = []
     for item in mounted:
-        shared = item["directory"] not in owners
-        mine = owners.get(item["directory"]) == user.id
+        owner = owners.get(item["directory"])
+        shared = owner is None
+        mine = owner is not None and owner[0] == user.id
         if shared or mine or user.role == "admin":
-            visible.append({**item, "mine": mine, "shared": shared, "protected": not item["can_delete"],
-                            "can_delete": item["can_delete"] and (mine or user.role == "admin")})
+            visible.append({
+                **item,
+                "mine": mine,
+                "shared": shared,
+                "exporter_name": owner[1] if owner else None,
+                "protected": not item["can_delete"],
+                "can_delete": item["can_delete"] and (mine or user.role == "admin"),
+            })
     return visible, unavailable
 
 

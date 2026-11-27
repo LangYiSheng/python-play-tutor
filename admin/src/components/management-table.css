@@ -8,7 +8,7 @@
 .management-frame tbody tr:is(:hover,:focus-within,[data-state="selected"]) td { background:var(--muted); }
 .management-frame .fixed-cell { z-index:1; }
 .management-frame .action-cell [data-slot="button"] { border-color:transparent; box-shadow:none; }
-.management-frame .action-cell > div { flex-wrap:wrap; }
+.management-frame .action-cell > div { flex-wrap:nowrap; }
 .management-rail { overflow-x:auto; min-height:12px; scrollbar-width:thin; }
 .main-content .surface:has(> .management-list), .main-content div.rounded-lg.border:has(> .management-list) { border:0; padding:0; overflow:visible; }
 .surface:has(> .management-list) > .toolbar { border:0; padding:0; gap:12px; margin-bottom:16px; }
@@ -22,4 +22,5 @@
 @container (max-width:540px) {
   .management-frame .identity-cell { max-width:125px; white-space:normal; overflow-wrap:anywhere; padding-inline:10px; }
   .management-frame .action-cell { max-width:135px; padding-inline:6px; }
+  .management-frame .action-cell > div { flex-wrap:wrap; }
 }

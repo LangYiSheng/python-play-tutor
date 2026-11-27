@@ -76,7 +76,7 @@ it("opens the administrator workspace before any class exists", async () => {
   await screen.findByRole("heading", { name: "课程选择" });
   expect(screen.queryByRole("link", { name: "教师管理" })).toBeNull();
   await userEvent.click(screen.getByRole("link", { name: "进入后台" }));
-  for (const name of ["全局概览", "教师管理", "学生管理", "资料合成管理", "评测管理", "全站设置"]) {
+  for (const name of ["全局概览", "课程管理", "班级管理", "课程包管理", "教师管理", "学生管理", "资料合成管理", "评测管理", "全站设置"]) {
     expect(screen.getByRole("link", { name })).toBeVisible();
   }
   expect(screen.queryByRole("link", { name: "课程包" })).not.toBeInTheDocument();

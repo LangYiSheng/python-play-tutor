@@ -141,6 +141,7 @@ it("copies the class join code and opens its student roster", async () => {
   render(<ClassroomManagement {...props} isAdmin={false} />);
   await user.click(await screen.findByRole("button", { name: "复制一班的加入码" }));
   expect(await navigator.clipboard.readText()).toBe("test-code");
+  expect(screen.getByRole("button", { name: "进入小镇" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "学生管理" }));
   expect(props.onOpen).toHaveBeenCalledWith(row.id);
   expect(screen.queryByRole("columnheader", { name: "任课教师" })).toBeNull();

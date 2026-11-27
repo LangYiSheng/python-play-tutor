@@ -1,7 +1,7 @@
 import { request } from "./api";
 
 export interface AvailablePackages {
-  items: { key: string; name: string; package_id: string; package_version: string; source: "mounted" | "uploaded"; directory: string; created_at: string; chapter_count: number; question_count: number; mine: boolean; shared: boolean; protected?: boolean; can_delete?: boolean }[];
+  items: { key: string; name: string; package_id: string; package_version: string; source: "mounted" | "uploaded"; directory: string; created_at: string; chapter_count: number; question_count: number; mine: boolean; shared: boolean; exporter_name?: string | null; protected?: boolean; can_delete?: boolean }[];
   unavailable: number;
 }
 

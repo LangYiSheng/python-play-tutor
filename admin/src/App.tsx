@@ -71,10 +71,13 @@ import { Packages } from "@/pages/packages";
 import { Teaching } from "@/pages/teaching";
 const Synthesis = lazy(() => import("@/pages/synthesis").then(module => ({ default: module.Synthesis })));
 const Judge = lazy(() => import("@/pages/judge").then(module => ({ default: module.Judge })));
-import { ClassroomManagement, Accounts, GlobalOverview, GlobalSettings } from "@/features/management/pages";
+import { ClassroomManagement, Accounts, GlobalCourses, GlobalOverview, GlobalSettings } from "@/features/management/pages";
 
 const globalNav = [
   { key: "overview", title: "全局概览", icon: ChartNoAxesCombined },
+  { key: "global-courses", title: "课程管理", icon: BookOpen },
+  { key: "global-classes", title: "班级管理", icon: School },
+  { key: "global-packages", title: "课程包管理", icon: Package },
   { key: "teachers", title: "教师管理", icon: Presentation },
   { key: "accounts", title: "学生管理", icon: Users },
   { key: "global-synthesis", title: "资料合成管理", icon: FileAudio },
@@ -189,15 +192,48 @@ function Workbench() {
     if (exporting !== null) return;
     const session = token();
     setExporting(course.id);
+    const started = Date.now();
+    const toastId = toast.add({
+      type: "loading",
+      timeout: 0,
+      title: `正在导出课程包 · ${course.name}`,
+      description: "正在打包章节、题库、讲稿与媒体文件…",
+    });
+    const timer = window.setInterval(() => {
+      if (session !== token()) return;
+      const elapsed = Math.max(1, Math.floor((Date.now() - started) / 1000));
+      toast.update(toastId, {
+        description: `已进行 ${elapsed} 秒 · 正在打包章节、题库、讲稿与媒体文件…`,
+      });
+    }, 1000);
     try {
-      await api.get(`/teacher/courses/${course.id}/export`);
+      const result = await api.get<{ directory?: string; path?: string }>(`/teacher/courses/${course.id}/export`);
       if (session === token()) {
         setPackageRevision(value => value + 1);
-        toast.add({ title: "课程包已导出", type: "success" });
+        toast.update(toastId, {
+          type: "success",
+          timeout: 6000,
+          title: "课程包已导出",
+          description: result?.path ? `已保存至 ${result.path}` : undefined,
+        });
+      } else {
+        toast.close(toastId);
       }
     } catch (err) {
-      if (session === token()) toast.add({ title: errorMessage(err), type: "error" });
-    } finally { setExporting(null); }
+      if (session === token()) {
+        toast.update(toastId, {
+          type: "error",
+          timeout: 6000,
+          title: "课程包导出失败",
+          description: errorMessage(err),
+        });
+      } else {
+        toast.close(toastId);
+      }
+    } finally {
+      window.clearInterval(timer);
+      setExporting(null);
+    }
   }
   const canLeave = useCanLeave();
   const courses = useResource<CourseInstance[]>(user && !user.must_change_password ? "/teacher/courses" : null);
@@ -432,6 +468,14 @@ function Workbench() {
         return <Accounts role={page === "teachers" ? "teacher" : "student"} onChanged={() => setClassListRevision(value => value + 1)} />;
       case "overview":
         return <GlobalOverview onOpen={openClass} />;
+      case "global-courses":
+        return <GlobalCourses courses={courses} classes={classes ?? []} exporting={exporting}
+          exportCourse={exportCourse} onOpen={selectCourse} />;
+      case "global-classes":
+        return <ClassroomManagement isAdmin={isAdmin} onOpen={openClass} onOpenCourse={selectCourse}
+          onChanged={() => setClassListRevision(value => value + 1)} />;
+      case "global-packages":
+        return <Packages adminMode revision={packageRevision} courses={courses.data ?? []} onCreated={courses.reload} />;
       case "global-synthesis":
         return <Synthesis />;
       case "global-judge":

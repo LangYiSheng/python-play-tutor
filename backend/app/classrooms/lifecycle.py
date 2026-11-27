@@ -6,7 +6,7 @@ from sqlalchemy import delete, func, select, union_all, update
 from app.course_instances import CONTENT_MODELS
 from app.integration_models import AssistantSession
 from app.models import (
-    Activity, ActivityProgress, AssessmentAttempt, Classroom, CourseInstance, LearningRecord,
+    ActivityProgress, AssessmentAttempt, Classroom, CourseInstance, LearningRecord,
     MaterialParticipation, Membership, PlayerPosition, PracticeSession, Submission, TownPreviewStudent, User,
 )
 from app.classrooms.access import classroom_payload, own_classroom
@@ -36,7 +36,12 @@ def managed_class(db, user, classroom_id, *, exclusive=False, include_deleted=Fa
 
 
 def management_list(db, user, deleted, course_id=None):
-    query = select(Classroom, User.name).select_from(Classroom).join(CourseInstance).join(User, User.id == CourseInstance.teacher_id)
+    query = (
+        select(Classroom, User.name, CourseInstance.name)
+        .select_from(Classroom)
+        .join(CourseInstance)
+        .join(User, User.id == CourseInstance.teacher_id)
+    )
     if course_id is not None:
         query = query.where(Classroom.course_id == course_id)
     query = query.where(Classroom.status == "deleted" if deleted else Classroom.status != "deleted")
@@ -48,8 +53,14 @@ def management_list(db, user, deleted, course_id=None):
     history = history_rows()
     has_records = select(history.c.classroom_id).where(history.c.classroom_id == Classroom.id).exists()
     return [
-        {**classroom_payload(item, user, name), "status": item.status, "student_count": count, "has_learning_records": has_history}
-        for item, name, count, has_history in db.execute(query.add_columns(counts, has_records).order_by(Classroom.id))
+        {
+            **classroom_payload(item, user, name),
+            "course_name": course_name,
+            "status": item.status,
+            "student_count": count,
+            "has_learning_records": has_history,
+        }
+        for item, name, course_name, count, has_history in db.execute(query.add_columns(counts, has_records).order_by(Classroom.id))
     ]
 
 

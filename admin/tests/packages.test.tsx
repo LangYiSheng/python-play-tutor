@@ -102,3 +102,18 @@ it("only offers deletion for exported packages, confirms and handles failure bef
   expect(screen.getByText('default')).toBeInTheDocument();
   expect(deletes).toEqual(['/api/teacher/course/packages/owned','/api/teacher/course/packages/owned']);
 });
+
+it("lists all packages including other teachers' exports in adminMode", async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    items: [
+      { key: 'other-export', mine: false, shared: false, exporter_name: '李老师', name: '李老师的导出课', directory: 'export-9-li', chapter_count: 3, question_count: 15, can_delete: true },
+      { key: 'preset', mine: false, shared: true, protected: true, name: '系统预置课', directory: 'supplied-1', chapter_count: 7, question_count: 48, can_delete: false },
+    ],
+    unavailable: 0,
+  }))));
+  render(<Packages adminMode courses={[{ id: 9, name: "李老师的课", teacher_name: "李老师" }]} onCreated={() => {}} />);
+  expect(await screen.findByText("李老师的导出课")).toBeVisible();
+  expect(screen.getByText("李老师 导出")).toBeVisible();
+  expect(screen.getByText("系统预置课")).toBeVisible();
+  expect(screen.getByText("预置受保护")).toBeVisible();
+});

@@ -69,11 +69,27 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
       <ManagementTable toolsId="accounts-columns-0" pageSize={{value:size,total:accounts.data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow>
         <TableHead>姓名 / {numberLabel}</TableHead><TableHead>{teacher ? "负责班级" : "所在班级"}</TableHead>
         <TableHead>账号状态</TableHead><TableHead className="text-right">操作</TableHead>
-      </TableRow></TableHeader><TableBody>{accounts.data.items.map(row => <TableRow key={row.id}>
-        <TableCell>{row.name} {row.role === "admin" && <small>管理员</small>}<div className="hint">{row.student_id || "未分配"}</div></TableCell>
-        <TableCell className="max-w-lg whitespace-normal">{row.classrooms.map(c => c.status === "archived" ? `${c.name}（已归档）` : c.name).join("、") || "未关联班级"}</TableCell>
-        <TableCell>{row.disabled ? <Badge variant="secondary">已停用</Badge> : row.must_change_password ? "待修改密码" : "正常"}</TableCell>
-        <TableCell className="w-px">{row.role !== "admin" && <div className="flex justify-end gap-2">
+      </TableRow></TableHeader><TableBody>{accounts.data.items.map(row => {
+        const classSummary = row.classrooms.map(c => c.status === "archived" ? `${c.name}（已归档）` : c.name).join("、");
+        return <TableRow key={row.id}>
+        <TableCell className="py-2">
+          <div className="flex items-baseline gap-2 leading-snug">
+            <span className="font-medium">{row.name}</span>
+            {row.role === "admin" && <Badge variant="secondary">管理员</Badge>}
+            <span className="font-mono text-xs text-muted-foreground">{row.student_id || "未分配"}</span>
+          </div>
+        </TableCell>
+        <TableCell className="max-w-md py-2 whitespace-normal">
+          {classSummary ? (
+            <span className="line-clamp-1 text-muted-foreground" title={classSummary}>
+              {classSummary}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">未关联班级</span>
+          )}
+        </TableCell>
+        <TableCell className="py-2">{row.disabled ? <Badge variant="secondary">已停用</Badge> : row.must_change_password ? <span className="text-muted-foreground">待修改密码</span> : "正常"}</TableCell>
+        <TableCell className="py-2 text-right whitespace-nowrap">{row.role !== "admin" && <div className="flex flex-nowrap items-center justify-end gap-1.5">
           <Button variant="outline" size="sm" onClick={() => setEditing({ account: row, action: "rename" })}><Pencil />修改姓名</Button>
           <Button variant="outline" size="sm" disabled={!row.student_id} onClick={() => setEditing({ account: row, action: "reset" })}><KeyRound />重置密码</Button>
           <DropdownMenu>
@@ -86,7 +102,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
             </DropdownMenuContent>
           </DropdownMenu>
         </div>}</TableCell>
-      </TableRow>)}</TableBody></ManagementTable>
+      </TableRow>;})}</TableBody></ManagementTable>
       {!accounts.data.items.length && <ListEmpty title={teacher ? "暂无教师账号" : "暂无学生账号"} filtered={Boolean(query.trim()) || selectedClass !== "all"} reset={() => { setQuery(""); setSelectedClass("all"); setPage(1); }} action={teacher && <Button onClick={() => setEditing({action:"create"})}>创建教师账号</Button>} />}
       <Pager total={accounts.data.total} page={page} size={size} onPage={setPage} onSize={v => { setPage(1); setSize(v); }} />
     </div>}

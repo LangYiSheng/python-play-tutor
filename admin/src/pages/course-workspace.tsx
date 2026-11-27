@@ -61,8 +61,7 @@ export function CoursePicker({courses, items, classes, onOpen, admin, exporting,
               <DropdownMenuItem variant="destructive" disabled={exporting === c.id} onClick={() => setDeleting(c)}><Trash2/>删除课程</DropdownMenuItem>
             </DropdownMenuContent></DropdownMenu></div>
         {rooms && <p className="hint line-clamp-2" title={rooms}>教学班 · {rooms}</p>}
-        <div className="hub-card-footer"><Button onClick={() => onOpen(c.id)}>进入课程</Button>
-          {exporting === c.id && <span role="status" className="hint">正在导出…</span>}</div>
+        <div className="hub-card-footer"><Button onClick={() => onOpen(c.id)}>进入课程</Button></div>
       </article>})}</div>
     {creating && <CreateCourseDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); courses.reload(); }}/>}
     {deleting && <CourseDeleteDialog course={deleting} onClose={() => setDeleting(null)} onDeleted={() => {
