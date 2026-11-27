@@ -24,7 +24,7 @@ function labelOf(node: ReactNode): string {
     ? labelOf(child.props.children) : String(child)).join("");
 }
 
-export function ManagementTable({ children, paginate = false, toolsId, pageSize, ...props }: React.ComponentProps<typeof Table> & { paginate?: boolean; toolsId?: string; pageSize?: { value: number; total: number; change: (size: number) => void } }) {
+export function ManagementTable({ children, paginate = false, toolsId, columnTools = true, pageSize, ...props }: React.ComponentProps<typeof Table> & { paginate?: boolean; toolsId?: string; columnTools?: boolean; pageSize?: { value: number; total: number; change: (size: number) => void } }) {
   const [host,setHost] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => { setHost(toolsId ? document.getElementById(toolsId) : null); }, [toolsId]);
   const sections = elements(children);
@@ -107,7 +107,7 @@ export function ManagementTable({ children, paginate = false, toolsId, pageSize,
             {[0,1,2].map(n => <option key={n} value={n}>{n} 列</option>)}</SelectField></label>)}
       </PopoverContent></Popover>;
   return <div className="management-list">
-    {host ? createPortal(menu,host) : <div className="management-tools">{menu}</div>}
+    {columnTools && (host ? createPortal(menu,host) : <div className="management-tools">{menu}</div>)}
     <div className="management-frame"><Table {...props} ref={table}><TableHeader>{head && elements(head.props.children).map(renderRow)}</TableHeader>
       <TableBody>{(paginate ? rows.slice((current-1)*size,current*size) : rows).map(renderRow)}</TableBody></Table>
       {overflow && <div ref={rail} className="management-rail" role="region" aria-label="横向滚动未冻结列" tabIndex={0} style={{marginLeft:leading,marginRight:trailing}}>

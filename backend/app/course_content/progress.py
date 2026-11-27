@@ -10,7 +10,7 @@ from app.auth import as_utc
 from app.classrooms.access import own_classroom
 from app.chapter_tasks.service import activity_task, chapter_state, open_chapters
 from app.models import (Activity, AssessmentAttempt, Chapter, Classroom, Material, MaterialParticipation, Membership,
-                        PracticeSession, Submission, TownPreviewStudent, User)
+                        PracticeSession, Question, Submission, TownPreviewStudent, User)
 
 
 def progress(classroom_id: int, db: Session, user: User):
@@ -86,9 +86,38 @@ def participation_rows(db, room, student):
     return sorted(records, key=lambda r: r["created_at"] or "", reverse=True)
 
 
-def record_payload(classroom_id, student_id, db):
+def record_payload(classroom_id: int, student_id: int, db: Session):
     room = db.get(Classroom, classroom_id)
     student = db.get(User, student_id)
+    subs = list(
+        db.scalars(
+            select(Submission)
+            .where(Submission.classroom_id == classroom_id, Submission.user_id == student_id)
+            .order_by(Submission.created_at)
+        )
+    )
+    qids = {s.question_id for s in subs}
+    aids = {s.activity_id for s in subs}
+    questions = (
+        {
+            q.id: q
+            for q in db.scalars(
+                select(Question).where(Question.id.in_(qids)).execution_options(include_deleted=True)
+            )
+        }
+        if qids
+        else {}
+    )
+    activities = (
+        {
+            a.id: a
+            for a in db.scalars(
+                select(Activity).where(Activity.id.in_(aids)).execution_options(include_deleted=True)
+            )
+        }
+        if aids
+        else {}
+    )
     return {
         "student": {"id": student.id, "name": student.name, "student_id": student.student_id},
         "chapters": [chapter_state(db, student, room, chapter) for chapter in open_chapters(db, room)],
@@ -97,7 +126,11 @@ def record_payload(classroom_id, student_id, db):
         "submissions": [
             {
                 "id": s.id,
+                "activity_id": s.activity_id,
+                "activity_title": activities[s.activity_id].title if s.activity_id in activities else None,
                 "question_id": s.question_id,
+                "question_title": questions[s.question_id].title if s.question_id in questions else s.question_id,
+                "question_kind": questions[s.question_id].kind if s.question_id in questions else None,
                 "mode": s.mode,
                 "status": s.status,
                 "answer": s.answer,
@@ -105,28 +138,34 @@ def record_payload(classroom_id, student_id, db):
                 "feedback": s.feedback,
                 "created_at": as_utc(s.created_at).isoformat(),
             }
-            for s in db.scalars(
-                select(Submission).where(Submission.classroom_id == classroom_id, Submission.user_id == student_id).order_by(Submission.created_at)
-            )
+            for s in subs
         ],
     }
 
 
-def student_assessments(db, classroom_id, student_id):
+def student_assessments(db: Session, classroom_id: int, student_id: int):
     from app.assessments import assessment_payload
 
     learner = db.get(User, student_id)
-    query = (select(AssessmentAttempt, Activity)
+    query = (select(AssessmentAttempt, Activity, Chapter.title)
              .join(Activity, Activity.id == AssessmentAttempt.activity_id)
+             .outerjoin(Chapter, Chapter.id == Activity.chapter_id)
              .where(AssessmentAttempt.classroom_id == classroom_id, AssessmentAttempt.user_id == student_id)
              .order_by(AssessmentAttempt.created_at)
              .execution_options(include_deleted=True))
     assessments = []
-    for attempt, activity in db.execute(query):
-        result = {"status": "draft", "score": None, "max_score": 100}
+    for attempt, activity, chapter_title in db.execute(query):
+        result = {"status": "draft", "score": None, "max_score": 100, "correct_count": 0, "total": len(attempt.question_ids)}
         if attempt.state in {"submitted", "legacy"}:
             # Locked papers use their persisted question/submission IDs, even after content changes.
             paper = assessment_payload(db, learner, classroom_id, activity)
-            result = {key: paper[key] for key in ("status", "score", "max_score")}
-        assessments.append({"id": attempt.id, "activity_id": activity.id, "activity_title": activity.title, **result})
+            result = {key: paper[key] for key in ("status", "score", "max_score", "correct_count", "total")}
+        assessments.append({
+            "id": attempt.id,
+            "activity_id": activity.id,
+            "activity_title": activity.title,
+            "chapter_title": chapter_title,
+            "submitted_at": as_utc(attempt.submitted_at).isoformat() if attempt.submitted_at else None,
+            **result,
+        })
     return assessments

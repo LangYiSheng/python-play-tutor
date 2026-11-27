@@ -1,22 +1,17 @@
-import { PaginatedRows } from "@/components/paginated-rows";
-import { SelectField } from "@/components/select-field";
-import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ListEmpty, TableSearch, ErrorNotice, Loading, PageHeader } from "@/components/common";
+import { ErrorNotice, Loading } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { api, errorMessage, request } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { useResource } from "@/lib/use-resource";
 import type { Classroom, CourseInstance } from "@/lib/types";
 import { CreateCourseDialog } from "./create-course-dialog";
 import { CourseDeleteDialog } from "./course-delete-dialog";
-import { RecordViewer } from "./teaching";
 
 type CourseList = ReturnType<typeof useResource<CourseInstance[]>>;
 export function CoursePicker({courses, items, classes, onOpen, admin, exporting, exportCourse}: {
@@ -104,81 +99,4 @@ export function CoursePicker({courses, items, classes, onOpen, admin, exporting,
       : <><Label htmlFor="course-name">课程名称</Label><Input id="course-name" maxLength={200} required value={value} onChange={e => setValue(e.target.value)}/></>}
       <Button disabled={busy || !canSave} type="submit">{mode === "transfer" ? "确认转交" : "保存"}</Button>
     </form></DialogContent></Dialog>}</>;
-}
-
-type Counts = {sessions: number; messages: number};
-interface Overview {
-  name: string; teacher: string; totals: Record<string, number>; usage: Record<string, number>;
-  assistant: {learning: Counts; practice: Counts};
-}
-export function Insights({courseId}: {courseId: number}) {
-  const report = useResource<Overview>(`/teacher/courses/${courseId}/insights`);
-  const d = report.data;
-  if (!d) return report.loading ? <Loading/> : <ErrorNotice message={report.error}/>;
-  const groups = [
-    ["教学规模", {"在教班级": d.totals.classrooms, "在籍学生": d.totals.students, "资料": d.totals.materials, "知识点": d.totals.points, "题目": d.totals.questions}],
-    ["活动参与人次", {"学习": d.usage.learning ?? 0, "练习": d.usage.practice ?? 0, "测验": d.usage.assessment ?? 0}],
-    ["智能体使用", {"总会话": d.assistant.learning.sessions + d.assistant.practice.sessions, "总消息": d.assistant.learning.messages + d.assistant.practice.messages,
-      "学习会话": d.assistant.learning.sessions, "学习消息": d.assistant.learning.messages, "练习会话": d.assistant.practice.sessions, "练习消息": d.assistant.practice.messages}]
-  ] as const;
-  return <><PageHeader title={d.name} description={"负责教师 · " + d.teacher}/>{groups.map(([heading, counts]) =>
-    <section key={heading} className="surface mb-4 p-5"><h2 className="mb-4 font-semibold">{heading}</h2>
-      <dl className="grid grid-cols-2 gap-4 md:grid-cols-3">{Object.entries(counts).map(([label, value]) =>
-        <div key={label}><dt className="hint">{label}</dt><dd className="text-2xl font-semibold">{value}</dd></div>)}</dl>
-      {heading === "活动参与人次" && <p className="hint mt-4">同一学生在本班参与同一活动计一次。</p>}</section>)}</>;
-}
-
-interface ResourceProgress {material_id: number; read_count: number; read_total: number; seconds: number; required_seconds: number; video: boolean}
-interface Result {current?: number; total?: number; unit?: string; resources?: ResourceProgress[]; completed: boolean; assessment_status?: string; score?: number | null; accepted?: number; assigned?: number; fraction?: number}
-interface Report {students: {id: number; student_id: string; name: string; enrolled: boolean}[];
-  activities: {kind: string; required: boolean; material_titles: Record<number, string>; id: string; title: string; chapter: string; opened: boolean; completed: number; results: Record<number,Result>}[]}
-function progress(result?: Result) {
-  if (!result) return "未开始";
-  if (result.assessment_status) return result.score != null ? grade(result) + " 分" : grade(result);
-  if (result.completed) return "已完成";
-  if (result.accepted !== undefined) return `已通过 ${result.accepted}${result.assigned ? " / " + result.assigned : ""} 题`;
-  if (result.current !== undefined && result.total !== undefined) return `${result.current} / ${result.total} ${result.unit ?? ""}`;
-  if (result.fraction !== undefined) return Math.round(result.fraction * 100) + "%";
-  return "进行中";
-}
-function grade(result?: Result) {
-  if (result?.score != null) return String(result.score);
-  if (result?.assessment_status === "attention") return "评测异常";
-  return result?.assessment_status === "grading" ? "待判定" : "未交";
-}
-export function ClassReport({classroomId, grades}: {classroomId: number; grades: boolean}) {
-  const report = useResource<Report>(`/teacher/classrooms/${classroomId}/activity-report?grades=${grades}`);
-  const [activity, setActivity] = useState(""), [learner, setLearner] = useState<number | null>(null);
-  const [query,setQuery] = useState(""), [scope,setScope] = useState("all");
-  const d = report.data, selected = d?.activities.find(a => a.id === activity);
-  if (!d) return report.loading ? <Loading/> : <ErrorNotice message={report.error}/>;
-  const needle = query.trim().toLowerCase();
-  const students = d.students.filter(s => (s.name + " " + s.student_id).toLowerCase().includes(needle)
-    && (scope === "all" || (scope === "active") === s.enrolled));
-  const activities = d.activities.filter(a => (a.chapter + " " + a.title).toLowerCase().includes(needle)
-    && (scope === "all" || (scope === "active") === a.opened));
-  return <><PageHeader title={grades ? "学生成绩" : "任务点明细"}/>
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <TableSearch label={grades ? "搜索学生姓名或学号" : "搜索章节或活动"} value={query} onValueChange={setQuery}/>
-      <SelectField aria-label={grades ? "在班状态" : "开放状态"} value={scope} onValueChange={setScope}>
-        <option value="all">全部状态</option><option value="active">{grades ? "在班" : "已开放"}</option>
-        <option value="inactive">{grades ? "已离班" : "尚未开放"}</option>
-      </SelectField>
-      <span id="report-columns" className="ml-auto"/>
-    </div>
-    {(!d.activities.length || !(grades ? students : activities).length) ? <ListEmpty title={!d.activities.length ? (grades ? "课程暂无测验" : "课程暂无活动") : "暂无学生成绩"} filtered={Boolean(needle) || scope !== "all"} reset={() => {setQuery(""); setScope("all");}} /> : grades ? <div className="surface overflow-x-auto"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>学生</TableHead>
-      {d.activities.map(a => <TableHead key={a.id}>{a.chapter} · {a.title}</TableHead>)}</TableRow></TableHeader><TableBody>
-      {students.map(s => <TableRow key={s.id}><TableCell><Button variant="link" onClick={() => setLearner(s.id)}>{s.name} · {s.student_id}{!s.enrolled && "（已离班）"}</Button></TableCell>
-        {d.activities.map(a => <TableCell key={a.id}>{grade(a.results[s.id])}</TableCell>)}</TableRow>)}</TableBody></ManagementTable></div>
-    : <div className="surface"><ManagementTable paginate toolsId="report-columns" key={query + scope}><TableHeader><TableRow><TableHead>章节</TableHead><TableHead>任务点</TableHead><TableHead>要求</TableHead><TableHead>开放状态</TableHead><TableHead>完成人数</TableHead></TableRow></TableHeader>
-      <TableBody>{activities.map(a => <TableRow key={a.id}><TableCell>{a.chapter}</TableCell><TableCell><Button variant="link" onClick={() => setActivity(a.id)}>{a.title}</Button></TableCell>
-        <TableCell>{a.required ? "必做" : "选做"}</TableCell><TableCell>{a.opened ? "已开放" : "尚未开放"}</TableCell><TableCell>{a.completed} / {d.students.length}</TableCell></TableRow>)}</TableBody></ManagementTable></div>}
-    {selected && <Dialog open onOpenChange={open => {if (!open) setActivity("");}}><DialogContent><DialogHeader><DialogTitle>{selected.title}</DialogTitle></DialogHeader>
-      <div className="max-h-[60vh] overflow-auto"><PaginatedRows rows={d.students}>{visible => <Table><TableHeader><TableRow><TableHead>学生</TableHead><TableHead>实际进度</TableHead></TableRow></TableHeader>
-      <TableBody>{visible.map(s => <TableRow key={s.id}><TableCell>{s.name} · {s.student_id}</TableCell><TableCell>{progress(selected.results[s.id])}
-        {selected.results[s.id]?.resources?.map(r => <div className="hint" key={r.material_id}>
-          {r.read_total > 0 && <p>已读 {r.read_count} / {r.read_total} 页</p>}
-          {(r.required_seconds > 0 || r.video) && <p>{r.video ? "有效观看" : "有效阅读"} {r.seconds} 秒{r.required_seconds > 0 && ` / 要求 ${r.required_seconds} 秒`}</p>}
-        </div>)}</TableCell></TableRow>)}</TableBody></Table>}</PaginatedRows></div>
-    </DialogContent></Dialog>}{learner !== null && <RecordViewer showGrades history={d.students.some(s => s.id === learner && !s.enrolled)} classroomId={classroomId} studentId={learner} onClose={() => setLearner(null)}/>}</>;
 }

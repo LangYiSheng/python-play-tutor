@@ -52,7 +52,10 @@ import { api, errorMessage, setToken, token } from "@/lib/api";
 import { DraftProvider, useCanLeave } from "@/lib/drafts";
 import { openTownPreview } from "@/lib/town-preview";
 import type { User, Classroom } from "@/lib/types";
-import { CoursePicker, Insights, ClassReport } from "@/pages/course-workspace";
+import { CoursePicker } from "@/pages/course-workspace";
+import { InsightsPage } from "@/features/analytics/insights-page";
+import { TaskDetailsPage } from "@/features/analytics/details-page";
+import { GradesPage } from "@/features/analytics/grades-page";
 import { useResource } from "@/lib/use-resource";
 import type { CourseInstance } from "@/lib/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -432,7 +435,12 @@ function Workbench() {
         return <GlobalSettings />;
     }
     if (!course) return courses.loading ? <Loading/> : <Empty title="课程不存在或无法访问" />;
-    if (page === "insights") return <Insights courseId={course.id}/>;
+    if (page === "insights") return <InsightsPage courseId={course.id} onOpenClassAnalytics={(roomId, target) => {
+      if (!canLeave()) return;
+      setRequestedClass(roomId);
+      history.pushState({}, "", pageUrl(target, course.id, roomId));
+      setPage(target);
+    }}/>;
     if (page === "activities") return <LearningTasks courseId={course.id} classroomId={classroomId} />;
     if (classPage && classError) return <><ErrorNotice message={classError}/><Button variant="outline" onClick={() => setClassListRevision(v => v + 1)}>重新加载班级</Button></>;
     if (classPage && classes === null) return <Loading/>;
@@ -441,7 +449,8 @@ function Workbench() {
       <div className="flex justify-center pb-8"><Button onClick={() => setNewClass(true)}>创建班级</Button></div>
     </div>;
     if (page === "students") return <><ButtonLink href={pageUrl("classes")} variant="ghost" className="mb-3" onClick={e => { e.preventDefault(); navigate("classes"); }}><ChevronLeft/>返回班级列表</ButtonLink><Students classroomId={classroom!.id}/></>;
-    if (page === "details" || page === "grades") return <ClassReport classroomId={classroom!.id} grades={page === "grades"}/>;
+    if (page === "details") return <TaskDetailsPage classroomId={classroom!.id} />;
+    if (page === "grades") return <GradesPage classroomId={classroom!.id} classroomName={classroom!.name} onOpenJudge={() => navigate("judge")} />;
     if (page === "teaching") return <Teaching classroomId={classroom!.id} courseId={course.id}/>;
     if (page === "judge") return <Judge classroomId={classroom!.id} canManage={false} />;
     if (page === "content-graph") {

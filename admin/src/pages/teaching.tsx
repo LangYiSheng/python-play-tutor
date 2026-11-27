@@ -1,4 +1,3 @@
-import { PaginatedRows } from "@/components/paginated-rows";
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
@@ -8,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +16,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Table,
   TableHeader,
   TableHead,
   TableBody,
@@ -29,7 +26,6 @@ import {
   PageHeader,
   ErrorNotice,
   Loading,
-  Empty,
   TableSearch,
 } from "@/components/common";
 import { api, scoped, errorMessage } from "@/lib/api";
@@ -39,28 +35,10 @@ import { toast } from "@/components/ui/toast";
 import type { Chapter, Course } from "@/lib/types";
 import { formatTimestamp, isoToLocalDateTime, localDateTimeToIso, TIME_ZONE } from "@/lib/time";
 import { chapterReleaseState, type ChapterRelease } from "@/lib/chapter-release";
-interface StudentRecord {
-  assessments?: { id: string; activity_id: string; activity_title?: string; score: number | null; max_score: number; status: string }[];
-  student: { name: string; student_id: string | null };
-  chapters: {id: number; title: string; completed: boolean; tasks: {id: string; title: string; kind: string; required: boolean; completed: boolean; locked: boolean; current: number; total: number; unit: string}[]}[];
-  participation: {
-    id: string;
-    title: string; chapter: string; kind: string; created_at: string | null;
-    read_pages?: number; read_seconds?: number; watched_seconds?: number; current?: number; total?: number;
-  }[];
-  submissions: {
-    id: string;
-    question_id: string;
-    mode: string;
-    status: string;
-    answer: unknown;
-    code: string | null;
-    feedback: unknown;
-    created_at: string;
-  }[];
-}
+
+export { StudentRecordSheet as RecordViewer } from "@/features/analytics/student-record-sheet";
+
 const date = formatTimestamp;
-const taskKinds: Record<string, string> = {reading: "资料阅读", objective: "客观题练习", programming: "编程题练习", assessment: "测验"};
 const releaseLabels = {
   unpublished: "未发布",
   paused: "已暂停",
@@ -241,142 +219,5 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-function readable(value: unknown): string {
-  if (value == null) return "—";
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? "正确" : "错误";
-  if (Array.isArray(value)) return value.map(readable).join("、");
-  return Object.entries(value as Record<string, unknown>)
-    .map(([k, v]) => `${k}：${readable(v)}`)
-    .join("\n");
-}
-export function RecordViewer({
-  classroomId,
-  studentId,
-  history = false,
-  showGrades = false,
-  onClose,
-}: {
-  classroomId: number;
-  studentId: number;
-  course?: Course | null;
-  history?: boolean;
-  showGrades?: boolean;
-  onClose: () => void;
-}) {
-  const result = useResource<StudentRecord>(
-      `/teacher/classrooms/${classroomId}/${history ? "history" : "students"}/${studentId}`,
-    ),
-    [tab, setTab] = useState(history || showGrades ? "assessments" : "submissions");
-  return (
-    <Dialog
-      open
-      onOpenChange={(v) => {
-        if (!v) onClose();
-      }}
-    >
-      <DialogContent className="sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>
-            {result.data?.student.name ?? "学生"}的学习记录
-          </DialogTitle>
-          <DialogDescription>
-            {result.data?.student.student_id ?? "未分配学号"} · 当前班级
-          </DialogDescription>
-        </DialogHeader>
-        <ErrorNotice message={result.error} />
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList variant="line" aria-label="学生记录类型">
-            <TabsTrigger value="assessments">测验成绩</TabsTrigger>
-            <TabsTrigger value="submissions">作答记录</TabsTrigger>
-            <TabsTrigger value="participation">活动参与</TabsTrigger>
-            <TabsTrigger value="chapters">章节任务</TabsTrigger>
-          </TabsList>
-          <TabsContent value={tab} className="max-h-[60vh] space-y-4 overflow-y-auto">
-            {result.loading ? (
-              <Loading />
-            ) : tab === "assessments" ? (
-              result.data?.assessments?.length ? <PaginatedRows rows={result.data.assessments}>{visible => <Table><TableHeader><TableRow>
-                <TableHead>测验</TableHead><TableHead>成绩</TableHead>
-              </TableRow></TableHeader><TableBody>{visible.map(item => <TableRow key={item.id}>
-                <TableCell>{item.activity_title || item.activity_id}</TableCell><TableCell>{item.score === null ? (item.status === "draft" ? "未交" : item.status === "attention" ? "评测异常" : "待判定") : `${item.score} / ${item.max_score}`}</TableCell>
-              </TableRow>)}</TableBody></Table>}</PaginatedRows> : <Empty title="暂无测验成绩" />
-            ) : tab === "submissions" ? (
-            result.data?.submissions.length ? (
-              result.data.submissions
-                .slice()
-                .reverse()
-                .map((s) => (
-                  <details className="border rounded-lg p-4" key={s.id}>
-                    <summary className="cursor-pointer flex flex-wrap gap-3">
-                      <Badge variant="outline">
-                        {s.mode === "submit" ? "正式提交" : "试运行"}
-                      </Badge>
-                      <span>{s.status}</span>
-                      <time className="ml-auto text-xs text-muted-foreground">
-                        {date(s.created_at)}
-                      </time>
-                    </summary>
-                    <div className="mt-4 space-y-3">
-                      <p className="text-sm">题目：{s.question_id}</p>
-                      <pre className="whitespace-pre-wrap text-sm bg-muted rounded p-3">
-                        {s.code || readable(s.answer)}
-                      </pre>
-                      <p className="whitespace-pre-wrap text-sm">
-                        {readable(s.feedback)}
-                      </p>
-                    </div>
-                  </details>
-                ))
-            ) : (
-              <Empty title="暂无作答记录" />
-            )
-          ) : tab === "participation" ? (
-            result.data?.participation.length ? (
-              result.data.participation.map((r) => (
-                  <article className="border rounded-lg p-4" key={r.id}>
-                    <div className="flex justify-between gap-4">
-                      <h3 className="font-medium">
-                        {r.title}
-                      </h3>
-                      <time className="text-xs text-muted-foreground">
-                        {r.created_at && date(r.created_at)}
-                      </time>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {r.chapter} · {taskKinds[r.kind]}
-                    </p>
-                    <p className="text-sm whitespace-pre-wrap mt-2">
-                      {r.watched_seconds !== undefined ? `有效观看 ${r.watched_seconds} 秒`
-                        : r.read_pages !== undefined ? `已读 ${r.read_pages} 页，有效阅读 ${r.read_seconds} 秒`
-                        : `题目进度 ${r.current} / ${r.total}`}
-                    </p>
-                  </article>
-                ))
-            ) : (
-              <Empty title="暂无参与记录" />
-            )
-          ) : result.data?.chapters?.length ? (
-            result.data.chapters.map(chapter => (
-              <section className="rounded-lg border p-4" key={chapter.id}>
-                <h3 className="font-medium">{chapter.title} {chapter.completed && <Badge>已完成</Badge>}</h3>
-                {chapter.tasks.length ? <ul className="mt-2 divide-y">{chapter.tasks.map(task => (
-                  <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 text-sm" key={task.id}>
-                    <span>{task.title}</span>
-                    <span className="text-muted-foreground">{taskKinds[task.kind]} · {task.required ? "必做" : "选做"}</span>
-                    <span className="ml-auto">{task.completed ? "已完成" : task.locked ? "待解锁" : "未完成"} · {task.current}/{task.total} {task.unit}</span>
-                  </li>
-                ))}</ul> : <p className="mt-2 text-sm text-muted-foreground">本章暂无任务</p>}
-              </section>
-            ))
-          ) : (
-            <Empty title="本班暂无已开放章节" />
-          )}
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
   );
 }
