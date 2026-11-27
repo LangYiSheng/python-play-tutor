@@ -109,6 +109,9 @@ services:
   converter:
     build:
       context: ./converter
+      args:
+        DEBIAN_MIRROR: ${REBORN_CONVERTER_DEBIAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
+        DEBIAN_SECURITY_MIRROR: ${REBORN_CONVERTER_DEBIAN_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
     image: pythontopia-reborn-converter:local
     environment:
       REBORN_CONVERTER_TOKEN: ${REBORN_CONVERTER_TOKEN:?set a private REBORN_CONVERTER_TOKEN of at least 24 characters}

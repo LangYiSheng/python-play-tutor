@@ -278,6 +278,8 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml up --build -d --wait
 ```
 
+转换镜像构建时默认从清华的 `https://mirrors.tuna.tsinghua.edu.cn/debian` 安装普通软件包，从 `https://mirrors.tuna.tsinghua.edu.cn/debian-security` 获取安全更新。可在私有环境文件中分别设置 `REBORN_CONVERTER_DEBIAN_MIRROR` 和 `REBORN_CONVERTER_DEBIAN_SECURITY_MIRROR`；只设置一项时，另一项继续使用默认值。修改后重新构建 `converter` 生效。直接使用 `docker build` 时，对应的构建参数为 `DEBIAN_MIRROR` 和 `DEBIAN_SECURITY_MIRROR`。
+
 API 与 converter 通过私有 conversion 网络通信，转换器使用受限的 LibreOffice 容器。缺少转换服务时，可提取正文的 PPTX 支持[按页阅读文字](content-authoring.md#媒体与安全)。开发环境在 Windows 上可显式设置 `REBORN_LOCAL_PPT_PREVIEW=1`，启用禁用宏的本机 PowerPoint 或 WPS 生成 PDF。配置了隔离转换服务时优先使用该服务。
 
 本机 API 可选择一次性 Docker 转换模式：先构建 `deploy/converter`，设置 `REBORN_CONVERTER_IMAGE=pythontopia-reborn-converter:local`，保持 `REBORN_CONVERTER_URL` 为空。此模式需要本机 Docker，并由代码启动禁网、非 root、只读输入、512MiB/1CPU/pids64限制的唯一容器。
