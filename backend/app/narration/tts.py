@@ -86,6 +86,25 @@ def endpoint(base_url: str, path: str) -> str:
     return root + path
 
 
+def supports_dashscope_instruction(model: str) -> bool:
+    """Qwen-Audio-TTS 3.x and CosyVoice v3.5 accept natural-language `instruction` on cloned voices."""
+    low = (model or "").strip().lower()
+    return low.startswith(("qwen-audio-3.", "cosyvoice-v3.5"))
+
+
+def _trim_weighted_instruction(text: str, max_weight: int = 100) -> str:
+    """CosyVoice counts CJK chars as weight 2 and ASCII as 1, capped at 100."""
+    out: list[str] = []
+    weight = 0
+    for ch in text:
+        w = 2 if ord(ch) >= 0x2E80 else 1
+        if weight + w > max_weight:
+            break
+        out.append(ch)
+        weight += w
+    return "".join(out).strip()
+
+
 def _request(config: SpeechSettings, text: str) -> tuple[str, dict[str, object]]:
     """Path + body for the configured protocol; unsupported knobs are dropped, not ignored silently."""
     if config["format"] and config["format"] not in {"wav", "pcm"} and config.get("protocol", environment_protocol()) == "deepseek":
@@ -108,6 +127,13 @@ def _request(config: SpeechSettings, text: str) -> tuple[str, dict[str, object]]
                                         "format": config["format"], "sample_rate": DASHSCOPE_SAMPLE_RATE}
         if config["speed"] != 1:
             speech["rate"] = config["speed"]
+        raw_instruction = str(config.get("instruction") or "").strip()
+        if raw_instruction and supports_dashscope_instruction(config["model"]):
+            speech["instruction"] = (
+                _trim_weighted_instruction(raw_instruction, 100)
+                if config["model"].strip().lower().startswith("cosyvoice-v3.5")
+                else raw_instruction[:200]
+            )
         return "/api/v1/services/audio/tts/SpeechSynthesizer", {"model": config["model"], "input": speech}
     return "/v1/audio/speech", {
         "model": config["model"],

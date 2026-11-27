@@ -270,3 +270,75 @@ def test_endpoint_accepts_a_full_dashscope_url():
     root = "https://workspace.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer"
     assert tts.endpoint(root, "/api/v1/services/audio/tts/SpeechSynthesizer") == root
     assert tts.endpoint("  https://workspace.cn-beijing.maas.aliyuncs.com  ", "/api/v1/services/audio/tts/SpeechSynthesizer") == root
+
+
+def test_dashscope_instruction_respects_model_support_and_cosyvoice_weight(monkeypatch):
+    posts: list[dict] = []
+    payload = wav_bytes(1.0)
+
+    class FakeResponse:
+        def __init__(self, json_body=None, content=b""):
+            self.status_code = 200
+            self.content = content
+            self._json = json_body
+
+        def json(self):
+            return self._json
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            posts.append(json)
+            return FakeResponse({"output": {"audio": {"data": "", "url": "https://oss.example/a.wav"}}})
+
+        def get(self, url):
+            return FakeResponse(content=payload)
+
+    monkeypatch.setattr(tts.httpx, "Client", FakeClient)
+    base = {
+        "protocol": "dashscope",
+        "base_url": "https://workspace.cn-beijing.maas.aliyuncs.com",
+        "api_key": "k",
+        "voice": "custom-v1",
+        "format": "wav",
+        "speed": 1.05,
+        "timeout": 30,
+    }
+
+    # qwen-audio-3.1-tts-flash supports instruction + rate
+    tts.synthesize(
+        "这一页讲列表推导式。",
+        settings_override={**base, "model": "qwen-audio-3.1-tts-flash", "instruction": "请用自然连贯的大学课堂语气朗读。"},
+    )
+    assert posts[-1]["input"]["instruction"] == "请用自然连贯的大学课堂语气朗读。"
+    assert posts[-1]["input"]["rate"] == 1.05
+
+    # cosyvoice-v3.5-plus trims instruction to 100 weighted chars (50 CJK chars)
+    long_cjk = "流畅" * 35  # 70 CJK chars => weight 140
+    tts.synthesize(
+        "这一页讲函数。",
+        settings_override={**base, "model": "cosyvoice-v3.5-plus", "instruction": long_cjk},
+    )
+    assert len(posts[-1]["input"]["instruction"]) == 50
+
+    # cosyvoice-v2 does not support instruction -> omitted cleanly
+    tts.synthesize(
+        "这一页讲循环。",
+        settings_override={**base, "model": "cosyvoice-v2", "instruction": "请自然朗读"},
+    )
+    assert "instruction" not in posts[-1]["input"]
+
+    # blank instruction -> omitted even on supported model
+    tts.synthesize(
+        "这一页讲异常。",
+        settings_override={**base, "model": "qwen-audio-3.1-tts-flash", "instruction": "   "},
+    )
+    assert "instruction" not in posts[-1]["input"]

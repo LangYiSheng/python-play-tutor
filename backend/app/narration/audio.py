@@ -5,11 +5,13 @@ key, so the streaming endpoints can answer with an honest Content-Type instead o
 claiming `audio/mpeg`.
 """
 
+import hashlib
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -50,9 +52,24 @@ def download_name(material_id: int, page_no: int, key: str) -> str:
     return f"narration-{material_id}-{page_no}{Path(key).suffix or '.mp3'}"
 
 
-def audio_key(material_id: int, page_no: int, text_hash: str, fmt: str | None = None) -> str:
+def audio_key(
+    material_id: int,
+    page_no: int,
+    text_hash: str,
+    fmt: str | None = None,
+    voice: str | None = None,
+    nonce: str | None = None,
+) -> str:
     """The hash in the key makes stale audio unreachable instead of silently reused."""
-    return f"narrations/{material_id}/{page_no}-{text_hash[:16]}.{_extension(fmt)}"
+    voice_suffix = f"-{hashlib.sha256(voice.encode('utf-8')).hexdigest()[:8]}" if voice else ""
+    nonce_suffix = f"-{nonce[:6]}" if nonce else ""
+    return f"narrations/{material_id}/{page_no}-{text_hash[:16]}{voice_suffix}{nonce_suffix}.{_extension(fmt)}"
+
+
+def voice_matches(item: PageNarration, target_voice: str, system_voice: str) -> bool:
+    """Return True when the stored audio was synthesized with `target_voice`."""
+    recorded = item.audio_voice or system_voice
+    return recorded == target_voice
 
 
 def current_audio(db: Session, material: Material, page_no: int) -> tuple[str, str] | None:
@@ -74,7 +91,13 @@ def needs_audio(db: Session, material: Material, page_no: int) -> bool:
 
 
 def prepare_page_tts(
-    db: Session, material: Material, page_no: int
+    db: Session,
+    material: Material,
+    page_no: int,
+    *,
+    engine_override: SpeechSettings | None = None,
+    regenerate_mismatch: bool = False,
+    force: bool = False,
 ) -> tuple[AudioRecord | None, tuple[str, str, SpeechSettings] | None]:
     """主线程校验单页可合成性；返回 (已复用结果, None) 或 (None, (text, digest, engine))。"""
     reason = tts.unavailable_reason(db)
@@ -89,15 +112,18 @@ def prepare_page_tts(
         raise ValueError("页面已更新，请重新审校讲解")
     if not item.text.strip():
         raise ValueError("讲解为空，无法生成音频")
+    base = tts.settings(db)
+    engine = engine_override or base
     digest = repository.text_hash(item.text)
-    if item.audio_key and item.audio_text_hash == digest:
-        return AudioRecord(
-            page_no=page_no,
-            reused=True,
-            key=item.audio_key,
-            seconds=item.audio_seconds or _duration_seconds(item.text),
-        ), None
-    return None, (item.text, digest, tts.settings(db))
+    if not force and item.audio_key and item.audio_text_hash == digest:
+        if not regenerate_mismatch or voice_matches(item, engine["voice"], base["voice"]):
+            return AudioRecord(
+                page_no=page_no,
+                reused=True,
+                key=item.audio_key,
+                seconds=item.audio_seconds or _duration_seconds(item.text),
+            ), None
+    return None, (item.text, digest, engine)
 
 
 def synthesize_audio_bytes(text: str, engine: SpeechSettings) -> tuple[bytes, str, int]:
@@ -116,6 +142,10 @@ def commit_synthesized_page(
     payload: bytes,
     stored_format: str,
     seconds: int,
+    *,
+    voice: str | None = None,
+    model: str | None = None,
+    force: bool = False,
 ) -> AudioRecord:
     """主线程将合成好的音频落盘并写入数据库。"""
     item = repository.row(db, material.id, page_no)
@@ -124,10 +154,22 @@ def commit_synthesized_page(
     repository.ensure_lease(db, material.id)
     db.refresh(material, with_for_update=True)
     db.refresh(item, with_for_update=True)
-    if (item.status != "accepted" or item.audio_text_hash == digest or
-            repository.text_hash(item.text) != digest or item.page_hash != repository.narration_hash(db, material, page_no)):
+    same_audio = not force and item.audio_text_hash == digest and (voice is None or item.audio_voice == voice)
+    if (
+        item.status != "accepted"
+        or same_audio
+        or repository.text_hash(item.text) != digest
+        or item.page_hash != repository.narration_hash(db, material, page_no)
+    ):
         raise ValueError("讲解或音频已更新，本次合成未覆盖新内容，请刷新")
-    key = audio_key(material.id, page_no, digest, stored_format)
+    key = audio_key(
+        material.id,
+        page_no,
+        digest,
+        stored_format,
+        voice=voice,
+        nonce=uuid4().hex if force else None,
+    )
     storage = get_storage()
     with tempfile.TemporaryDirectory(prefix="narr-tts-", dir=storage_root()) as tmp_name:
         local = Path(tmp_name) / f"page.{Path(key).suffix.lstrip('.')}"
@@ -142,20 +184,48 @@ def commit_synthesized_page(
     item.audio_key = key
     item.audio_text_hash = digest
     item.audio_seconds = seconds
+    item.audio_voice = voice
+    item.audio_model = model
     item.audio_created_at = now()
     db.flush()
     return AudioRecord(page_no=page_no, reused=False, key=key, seconds=seconds)
 
 
-def synthesize_page(db: Session, material: Material, page_no: int) -> AudioRecord:
+def synthesize_page(
+    db: Session,
+    material: Material,
+    page_no: int,
+    *,
+    engine_override: SpeechSettings | None = None,
+    regenerate_mismatch: bool = True,
+    force: bool = False,
+) -> AudioRecord:
     """Speak one approved page. Refuses unapproved wording instead of speaking a draft."""
-    reused, pending = prepare_page_tts(db, material, page_no)
+    reused, pending = prepare_page_tts(
+        db,
+        material,
+        page_no,
+        engine_override=engine_override,
+        regenerate_mismatch=regenerate_mismatch,
+        force=force,
+    )
     if reused is not None:
         return reused
     assert pending is not None
     text, digest, engine = pending
     payload, stored_format, seconds = synthesize_audio_bytes(text, engine)
-    return commit_synthesized_page(db, material, page_no, digest, payload, stored_format, seconds)
+    return commit_synthesized_page(
+        db,
+        material,
+        page_no,
+        digest,
+        payload,
+        stored_format,
+        seconds,
+        voice=engine["voice"],
+        model=engine["model"],
+        force=force,
+    )
 
 
 def _stored_audio(audio: bytes, fmt: str | None = None) -> tuple[bytes, str]:

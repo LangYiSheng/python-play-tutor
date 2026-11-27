@@ -29,7 +29,9 @@ def configuration(service: Service, db: Session | None = None, *, include_key=Tr
     except InvalidToken:
         raise HTTPException(503, "服务密钥无法解密，请恢复对应主密钥文件") from None
     merged = {**row.configuration, "api_key": key}
-    for field in ("base_url", "model", "vision_model", "voice"):
+    if service == "speech" and "instruction" not in merged:
+        merged["instruction"] = ""
+    for field in ("base_url", "model", "vision_model", "voice", "instruction"):
         if isinstance(merged.get(field), str):
             merged[field] = merged[field].strip()
     return merged

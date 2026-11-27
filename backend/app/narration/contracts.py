@@ -5,7 +5,7 @@ results, student answers). They are intentionally plain TypedDicts rather than p
 models: the wire contract lives in `router.py`, and these only describe in-process data.
 """
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class AuthoringSettings(TypedDict):
@@ -28,6 +28,7 @@ class SpeechSettings(TypedDict):
     format: str
     speed: float
     timeout: int
+    instruction: NotRequired[str]
 
 
 class ChatReply(TypedDict):

@@ -217,13 +217,24 @@ export function NarrationPageEditor({
             {audioState?.available === false
               ? "未配置语音合成服务"
               : audioState
-                ? `音色 ${audioState.voice} · ${audioState.model}`
+                ? `音色 ${audioState.voice_name || audioState.voice} · ${audioState.model}`
                 : ""}
           </span>
           {audioPage?.ready ? (
-            <Badge variant="secondary">
-              {audioPage.seconds ? `约 ${audioPage.seconds} 秒` : "已就绪"}
-            </Badge>
+            <>
+              <Badge variant="secondary">
+                {audioPage.seconds ? `约 ${audioPage.seconds} 秒` : "已就绪"}
+              </Badge>
+              {audioPage.voice_mismatch && (
+                <Badge
+                  variant="outline"
+                  className="border-amber-400 text-amber-700 dark:border-amber-700 dark:text-amber-300"
+                  title="当前音频由旧音色合成，点击右侧按钮可用新音色重合成"
+                >
+                  旧音色
+                </Badge>
+              )}
+            </>
           ) : (
             <Badge variant="secondary">未生成</Badge>
           )}
@@ -248,6 +259,7 @@ export function NarrationPageEditor({
                     courseId,
                     materialId,
                     page.page_no,
+                    Boolean(audioPage?.ready),
                   );
                   // 旧录音已经作废，播放器必须清掉，否则听到的是上一版。
                   ++audioGeneration.current;
@@ -260,9 +272,11 @@ export function NarrationPageEditor({
             <Volume2 />{" "}
             {busy === "audio"
               ? "合成中…"
-              : audioPage?.ready
-                ? "重新合成"
-                : "生成音频"}
+              : audioPage?.voice_mismatch
+                ? "用新音色重合成"
+                : audioPage?.ready
+                  ? "重新合成"
+                  : "生成音频"}
           </Button>
           <Button
             size="sm"

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -52,6 +52,8 @@ class PageNarration(Base):
     audio_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     audio_text_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     audio_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audio_voice: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    audio_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     audio_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -161,3 +163,44 @@ class NarrationRun(Base):
     cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     progress: Mapped[dict] = mapped_column(JSON, default=dict)
     message: Mapped[str] = mapped_column(Text, default="")
+
+
+VOICE_STATUSES = frozenset({"processing", "ready", "failed"})
+MATERIAL_VOICE_MODES = frozenset({"auto", "system", "custom"})
+
+
+class TeacherVoice(Base):
+    """Teacher-owned cloned or custom TTS voice, isolated per teacher account."""
+
+    __tablename__ = "teacher_voices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    provider: Mapped[str] = mapped_column(String(32), default="dashscope")
+    target_model: Mapped[str] = mapped_column(String(120), default="")
+    provider_voice_id: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(24), default="ready")
+    error: Mapped[str] = mapped_column(Text, default="")
+    sample_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sample_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class MaterialNarrationSetting(Base):
+    """Per-material voice override so a teacher can pick a cloned voice or system default."""
+
+    __tablename__ = "material_narration_settings"
+
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id", ondelete="CASCADE"), primary_key=True)
+    voice_mode: Mapped[str] = mapped_column(String(16), default="auto")
+    teacher_voice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("teacher_voices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    speech_instruction: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    speech_speed: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

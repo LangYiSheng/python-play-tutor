@@ -10,6 +10,7 @@ import { SuggestInput } from '@/components/suggest-input';
 import { ErrorNotice, Loading } from '@/components/common';
 import { api, errorMessage } from '@/lib/api';
 import { useDraft } from '@/lib/drafts';
+import { SPEECH_INSTRUCTION_PRESETS } from '@/lib/voice-api';
 import { toast } from '@/components/ui/toast';
 
 type SpeechCatalog = {
@@ -77,6 +78,9 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           return [name, min === undefined && typeof raw === 'string' ? raw.trim() : raw];
         }),
       );
+      if (service === 'speech' && draft.instruction !== undefined) {
+        cleaned.instruction = String(draft.instruction).trim();
+      }
       const trimmedKey = key.trim();
       const value = await api.put<Settings>(path, {
         ...cleaned,
@@ -146,6 +150,37 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
         {field.key === 'base_url' && service === 'speech' && <p className="hint">填写基础地址即可；完整语音接口地址也可识别。留空可停用合成。</p>}
       </div>)}</div>
       {service === 'speech' && catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
+      {dashscope && <div className="field space-y-2 rounded-md border bg-muted/20 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="speech-instruction">默认朗读风格指令（可选，支持 Qwen-Audio 3.x 与 CosyVoice v3.5）</Label>
+          <div className="flex flex-wrap gap-1">
+            {SPEECH_INSTRUCTION_PRESETS.map(preset => (
+              <Button
+                key={preset.id}
+                type="button"
+                size="xs"
+                variant={String(draft.instruction ?? '') === preset.text ? 'secondary' : 'outline'}
+                onClick={() => setDraft({ ...draft, instruction: preset.text })}
+              >
+                {preset.label}
+              </Button>
+            ))}
+            {Boolean(draft.instruction) && (
+              <Button type="button" size="xs" variant="ghost" onClick={() => setDraft({ ...draft, instruction: '' })}>
+                清空
+              </Button>
+            )}
+          </div>
+        </div>
+        <Input
+          id="speech-instruction"
+          maxLength={200}
+          placeholder="留空则跟随音色默认表现；点上方预设可一键填入自然授课或流畅明快指令"
+          value={String(draft.instruction ?? '')}
+          onChange={e => setDraft({ ...draft, instruction: e.target.value })}
+        />
+        <p className="hint">会对系统音色与复刻音色同时生效；单个课件里教师也可以单独覆盖朗读语气。</p>
+      </div>}
       <div className="field max-w-lg"><Label htmlFor={`${service}-key`}>API Key {saved?.key_configured ? '（已配置）' : '（未配置）'}</Label>
         <Input id={`${service}-key`} type="password" autoComplete="new-password" value={key} placeholder={saved?.key_configured ? '••••••••' : '填写服务密钥'} disabled={clearKey} onChange={e => setKey(e.target.value)} />
         <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>

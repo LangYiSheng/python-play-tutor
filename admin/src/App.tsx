@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   LogOut,
   KeyRound,
+  Mic,
   PanelLeftClose,
   PanelLeftOpen,
   Package,
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ErrorNotice, Loading, Empty } from "@/components/common";
 import { PasswordDialog } from "@/components/password-dialog";
+import { MyVoicesDialog } from "@/features/voices/my-voices-dialog";
 import { toast } from "@/components/ui/toast";
 import { api, errorMessage, setToken, token } from "@/lib/api";
 import { DraftProvider, useCanLeave } from "@/lib/drafts";
@@ -172,6 +174,7 @@ function Workbench() {
     [error, setError] = useState(""),
     [page, setPage] = useState<Page>(currentPage),
     [passwordOpen, setPasswordOpen] = useState(false),
+    [voicesOpen, setVoicesOpen] = useState(false),
     [newClass, setNewClass] = useState(false),
     [className, setClassName] = useState(""),
     [courseId, setCourseId] = useState(Number(new URLSearchParams(location.search).get("course"))),
@@ -259,6 +262,7 @@ function Workbench() {
       setClasses(null);
       setRequestedClass(null);
       setPasswordOpen(false);
+      setVoicesOpen(false);
       setNewClass(false);
       setClassName("");
       setPage(returnToCourses());
@@ -345,6 +349,7 @@ function Workbench() {
       setClasses(null);
       setRequestedClass(null);
       setPasswordOpen(false);
+      setVoicesOpen(false);
       setNewClass(false);
       setClassName("");
       setError("");
@@ -495,6 +500,10 @@ function Workbench() {
               <ChevronDown size={15} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align={hub ? "end" : "start"}>
+              <DropdownMenuItem onClick={() => setVoicesOpen(true)}>
+                <Mic />
+                我的声音
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
                 <KeyRound />
                 修改密码
@@ -597,6 +606,7 @@ function Workbench() {
         onUser={setUser}
         user={user}
       />}
+      <MyVoicesDialog open={voicesOpen} onOpenChange={setVoicesOpen} />
       <Dialog
         open={newClass}
         onOpenChange={(v) => {

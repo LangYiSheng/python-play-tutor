@@ -70,11 +70,13 @@ class SpeechInput(ConnectionInput):
     voice: str = Field(min_length=1, max_length=200)
     format: Literal["mp3", "wav", "pcm", "opus", "flac", "aac"] = "mp3"
     speed: float = Field(default=1, ge=0.25, le=4)
+    instruction: str = Field(default="", max_length=200)
 
     @model_validator(mode="after")
     def valid_speech(self):
         self.model = self.model.strip()
         self.voice = self.voice.strip()
+        self.instruction = self.instruction.strip()
         if not self.voice:
             raise ValueError("请填写音色名称或 ID")
         if self.protocol == "deepseek" and (self.format not in {"wav", "pcm"} or self.speed != 1):

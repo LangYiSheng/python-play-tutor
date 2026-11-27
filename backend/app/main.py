@@ -37,6 +37,7 @@ from .db import SessionLocal
 from .narration import jobs as narration_jobs
 from .narration import management as synthesis_management
 from .narration import repository as narration_repository
+from .narration import voice_router as narration_voices
 
 
 @asynccontextmanager
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     from app.course_content.reports import router as report_router
     app.include_router(report_router, prefix="/api")
     app.include_router(narration.router, prefix="/api")
+    app.include_router(narration_voices.router, prefix="/api")
     from .lectio.router import router as lectio_router
 
     app.include_router(lectio_router, prefix="/api")

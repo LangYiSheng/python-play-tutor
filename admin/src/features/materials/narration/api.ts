@@ -74,15 +74,31 @@ export interface NarrationList {
   pages: NarrationPage[];
 }
 
+export type MaterialVoiceMode = "auto" | "system" | "custom";
+
 export interface NarrationAudioStatus {
   available: boolean;
   voice: string;
+  voice_name?: string;
+  voice_source?: "custom" | "system";
+  voice_mode?: MaterialVoiceMode;
+  selected_voice_id?: number | null;
+  system_voice?: string;
+  speech_instruction?: string | null;
+  effective_instruction?: string;
+  speech_speed?: number | null;
+  effective_speed?: number;
+  instruction_supported?: boolean;
+  instruction_presets?: { id: string; label: string; text: string }[];
+  mismatched_count?: number;
   model: string;
   pages: {
     page_no: number;
     status: string;
     ready: boolean;
     seconds: number | null;
+    audio_voice?: string | null;
+    voice_mismatch?: boolean;
   }[];
 }
 
@@ -238,14 +254,35 @@ export const narrationApi = {
     materialId: number,
     firstPage: number,
     lastPage: number,
+    regenerateMismatch = false,
+    force = false,
   ) =>
     api.post<{ job: NarrationJobState }>(
       `${base(courseId, materialId)}/audio-batch`,
       {
         first_page: firstPage,
         last_page: lastPage,
+        ...(regenerateMismatch ? { regenerate_mismatch: true } : {}),
+        ...(force ? { force: true } : {}),
       },
     ),
+  setVoice: (
+    courseId: number,
+    materialId: number,
+    mode: MaterialVoiceMode,
+    teacherVoiceId?: number | null,
+    options?: { speechInstruction?: string | null; speechSpeed?: number | null },
+  ) =>
+    api.put<NarrationAudioStatus>(`${base(courseId, materialId)}/voice`, {
+      mode,
+      teacher_voice_id: mode === "custom" ? (teacherVoiceId ?? null) : null,
+      ...(options && "speechInstruction" in options
+        ? { speech_instruction: options.speechInstruction ?? null }
+        : {}),
+      ...(options && "speechSpeed" in options
+        ? { speech_speed: options.speechSpeed ?? null }
+        : {}),
+    }),
   save: (
     courseId: number,
     materialId: number,
@@ -298,13 +335,13 @@ export const narrationApi = {
     ),
   audioStatus: (courseId: number, materialId: number) =>
     api.get<NarrationAudioStatus>(`${base(courseId, materialId)}/audio`),
-  synthesizeAudio: (courseId: number, materialId: number, pageNo: number) =>
+  synthesizeAudio: (courseId: number, materialId: number, pageNo: number, force = false) =>
     api.post<{
       page_no: number;
       reused: boolean;
       key: string;
       seconds: number;
-    }>(`${base(courseId, materialId)}/${pageNo}/audio`, {}),
+    }>(`${base(courseId, materialId)}/${pageNo}/audio`, force ? { force: true } : {}),
   pageImage: (courseId: number, materialId: number, pageNo: number) =>
     `${base(courseId, materialId)}/${pageNo}/page-image`,
   pagePdf: (courseId: number, materialId: number, pageNo: number) =>

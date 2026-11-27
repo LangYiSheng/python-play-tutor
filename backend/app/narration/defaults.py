@@ -57,4 +57,5 @@ def speech_environment() -> SpeechSettings:
         format=(os.getenv("REBORN_TTS_FORMAT") or ("wav" if vendor == "deepseek" else "mp3")).strip().lower(),
         speed=float(os.getenv("REBORN_TTS_SPEED") or 1.0),
         timeout=int(os.getenv("REBORN_TTS_TIMEOUT_SECONDS") or 120),
+        instruction=(os.getenv("REBORN_TTS_INSTRUCTION") or "").strip()[:200],
     )

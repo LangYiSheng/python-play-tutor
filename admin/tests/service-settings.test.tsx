@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { GlobalSettings } from '../src/features/management/settings';
 import { ServiceSettings } from '../src/components/service-settings';
 import { api } from '../src/lib/api';
+import { SPEECH_INSTRUCTION_PRESETS } from '../src/lib/voice-api';
 
 vi.mock('../src/lib/drafts', () => ({ useDraft: vi.fn() }));
 vi.mock('../src/lib/api', () => ({ api: { get: vi.fn(), put: vi.fn(), post: vi.fn() }, errorMessage: (e: Error) => e.message }));
@@ -76,4 +77,52 @@ it.each([['https://example.invalid', 'https://example.invalid'], ['https://api.o
   expect(key).toHaveValue('unsaved-key');
   expect(api.put).not.toHaveBeenCalled();
   expect(api.post).not.toHaveBeenCalled();
+});
+
+it('lets dashscope speech settings apply an instruction preset and saves it', async () => {
+  vi.mocked(api.get).mockImplementation(async (path) => {
+    if (path.includes('/speech/catalog')) {
+      return { models: [{ id: 'qwen-audio-3.1-tts-flash', name: 'qwen-audio-3.1-tts-flash' }], voices: [], model_source: 'builtin', voice_source: 'builtin' };
+    }
+    return {
+      revision: 3,
+      protocol: 'dashscope',
+      base_url: 'https://ws123.cn-beijing.maas.aliyuncs.com',
+      model: 'qwen-audio-3.1-tts-flash',
+      voice: 'longanhuan_v3.1',
+      format: 'mp3',
+      speed: 1,
+      instruction: '',
+      timeout: 60,
+      key_configured: true,
+      source: 'database',
+    };
+  });
+  const fluentText = SPEECH_INSTRUCTION_PRESETS.find((p) => p.id === 'fluent')!.text;
+  vi.mocked(api.put).mockResolvedValue({
+    revision: 4,
+    protocol: 'dashscope',
+    base_url: 'https://ws123.cn-beijing.maas.aliyuncs.com',
+    model: 'qwen-audio-3.1-tts-flash',
+    voice: 'longanhuan_v3.1',
+    format: 'mp3',
+    speed: 1,
+    instruction: fluentText,
+    timeout: 60,
+    key_configured: true,
+    source: 'database',
+  });
+
+  render(<ServiceSettings service="speech" />);
+  const user = userEvent.setup();
+  const presetBtn = await screen.findByRole('button', { name: '流畅明快' });
+  await user.click(presetBtn);
+  const input = screen.getByLabelText(/默认朗读风格指令/);
+  expect(input).toHaveValue(fluentText);
+
+  await user.click(screen.getByRole('button', { name: '保存设置' }));
+  await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.put).mock.calls[0][1]).toMatchObject({
+    instruction: fluentText,
+  });
 });

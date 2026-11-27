@@ -3,7 +3,8 @@
 Own task leases, durable progress and per-page commits; page reads never call these.
 """
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+import os
 from typing import Any
 
 from fastapi import HTTPException
@@ -11,12 +12,12 @@ from sqlalchemy.orm import Session
 
 from ..models import Material, User
 from ..teacher_scope import require_scope, teacher_instance_id
-from . import audio, calibrate, config, defaults, digest, repository, service, tts
+from . import audio, calibrate, config, defaults, digest, repository, service, tts, voices
 from . import client as model_client
 from .access import require_narratable, teacher_material
 from .contracts import AudioRecord, GeneratedPage, SpeechSettings
 from .models import NarrationJob
-from .request_contracts import GenerateInput, PageGenerateInput, PipelineInput, RangeInput
+from .request_contracts import AudioBatchInput, GenerateInput, PageGenerateInput, PipelineInput, RangeInput
 
 
 PIPELINE = ("digest", "calibrate", "apply", "script", "knowledge")
@@ -27,7 +28,21 @@ STAGE_LABELS = {
     "script": "生成讲解稿",
     "knowledge": "抽取知识点",
 }
-AUDIO_WORKERS = defaults.worker_count("REBORN_TTS_WORKERS", 2)
+_DEFAULT_AUDIO_WORKERS = 4
+AUDIO_WORKERS = defaults.worker_count("REBORN_TTS_WORKERS", _DEFAULT_AUDIO_WORKERS)
+
+
+def _effective_audio_workers(protocol: str) -> int:
+    """Pick protocol-appropriate TTS concurrency while honoring env overrides and test monkeypatches."""
+    if (os.getenv("REBORN_TTS_WORKERS") or "").strip():
+        return defaults.worker_count("REBORN_TTS_WORKERS", AUDIO_WORKERS)
+    if AUDIO_WORKERS != _DEFAULT_AUDIO_WORKERS:
+        return max(1, AUDIO_WORKERS)
+    if protocol == "dashscope":
+        return 6
+    if protocol == "deepseek":
+        return 2
+    return _DEFAULT_AUDIO_WORKERS
 
 
 def generate_narration(
@@ -475,16 +490,32 @@ def run_pipeline(db: Session, material: Material, request: dict[str, Any]) -> No
     repository.release(db, material.id, message="梳理、校准、讲解稿与知识点已完成", extra={"done": 1, "total": 1})
 
 
-def synthesize_audio(page_no: int, course_id: int, material_id: int, db: Session, user: User) -> AudioRecord:
+def synthesize_audio(
+    page_no: int,
+    course_id: int,
+    material_id: int,
+    db: Session,
+    user: User,
+    *,
+    force: bool = False,
+) -> AudioRecord:
     """Speak one approved page. Draft wording is refused, not spoken."""
     instance_id = teacher_instance_id(db, user, course_id)
     material = require_scope(db.get(Material, material_id), instance_id)
     require_narratable(material)
     repository.sync_staleness(db, material)
     db.commit()
+    engine, _ = voices.resolve_material_speech(db, material, user_id=user.id)
     with repository.task(db, material, "audio", user, request={"operation": "audio_page", "page_no": page_no}):
         try:
-            result = audio.synthesize_page(db, material, page_no)
+            result = audio.synthesize_page(
+                db,
+                material,
+                page_no,
+                engine_override=engine,
+                regenerate_mismatch=True,
+                force=force,
+            )
         except tts.SpeechUnavailable as exc:
             repository.release(db, material.id, status="failed", message=str(exc))
             raise HTTPException(409, str(exc)) from exc
@@ -503,26 +534,41 @@ def synthesize_audio(page_no: int, course_id: int, material_id: int, db: Session
 
 
 def synthesize_audio_batch(course_id: int, material_id: int, db: Session, user: User,
-                           body: RangeInput | None = None) -> NarrationJob:
+                           body: AudioBatchInput | RangeInput | None = None) -> NarrationJob:
     """Queue audio for every accepted page in the range; the worker speaks them."""
     material = teacher_material(db, user, course_id, material_id)
     repository.sync_staleness(db, material)
     db.commit()
     if tts.unavailable_reason(db):
         raise HTTPException(409, tts.unavailable_reason(db) or "语音合成不可用")
+    _, voice_meta = voices.resolve_material_speech(db, material, user_id=user.id)
     return repository.enqueue(db, material, "audio", user, request={
-        "operation": "audio_batch", "body": body.model_dump() if body else {},
-        "only_pages": db.info.get("narration_retry_pages")})
+        "operation": "audio_batch",
+        "body": body.model_dump() if body else {},
+        "only_pages": db.info.get("narration_retry_pages"),
+        "requested_by": user.id,
+        "voice_mode": voice_meta["voice_mode"],
+        "teacher_voice_id": voice_meta["selected_voice_id"],
+    })
 
 
 def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) -> None:
-    """Worker side: one failure must not abort the rest."""
+    """Worker side: sliding-window concurrent TTS pool so slow pages never stall faster slots."""
     body = request.get("body") or {}
     only_pages = request.get("only_pages")
     reason = tts.unavailable_reason(db)
     if reason:
         repository.release(db, material.id, status="failed", message=reason)
         return
+    resolved_engine, _ = voices.resolve_material_speech(
+        db,
+        material,
+        user_id=request.get("requested_by"),
+        explicit_voice_id=request.get("teacher_voice_id"),
+        explicit_mode=request.get("voice_mode"),
+    )
+    regenerate_mismatch = bool(body.get("regenerate_mismatch"))
+    force_regen = bool(body.get("force"))
     first = body.get("first_page") or 1
     last = body.get("last_page") or 10**9
     made: list[int] = []
@@ -536,97 +582,94 @@ def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) ->
         and item.text.strip()
         and (only_pages is None or item.page_no in only_pages)
     ]
-    repository.beat(db, material.id, done=0, total=len(wanted))
+    total = len(wanted)
+    repository.beat(db, material.id, done=0, total=total)
     db.commit()
-    workers = max(1, AUDIO_WORKERS)
-    wanted_pages = [item.page_no for item in wanted]
-    for start in range(0, len(wanted_pages), workers):
-        chunk = wanted_pages[start:start + workers]
-        repository.check_cancel(db, material.id)
-        repository.beat(db, material.id, checkpoint={"pages": chunk})
+    workers = _effective_audio_workers(resolved_engine["protocol"])
+    pending_pages = [item.page_no for item in wanted]
+    cursor = 0
+
+    def _beat_progress(message: str, in_flight: list[int]) -> None:
+        repository.beat(
+            db,
+            material.id,
+            done=len(made) + len(reused) + len(failed),
+            total=total,
+            message=message,
+            checkpoint={"pages": sorted(in_flight)} if in_flight else {},
+        )
         db.commit()
 
-        to_synth: list[tuple[int, str, str, SpeechSettings]] = []
-        for page_no in chunk:
+    def _fill_slots(
+        pool: ThreadPoolExecutor,
+        in_flight: dict[Future[tuple[bytes, str, int]], tuple[int, str, SpeechSettings]],
+    ) -> None:
+        nonlocal cursor
+        while cursor < len(pending_pages) and len(in_flight) < workers:
+            repository.check_cancel(db, material.id)
+            page_no = pending_pages[cursor]
+            cursor += 1
             try:
-                reused_rec, pending = audio.prepare_page_tts(db, material, page_no)
+                reused_rec, pending = audio.prepare_page_tts(
+                    db,
+                    material,
+                    page_no,
+                    engine_override=resolved_engine,
+                    regenerate_mismatch=regenerate_mismatch,
+                    force=force_regen,
+                )
             except (tts.SpeechFailed, tts.SpeechUnavailable, ValueError, LookupError) as exc:
                 db.rollback()
                 failed.append({"page_no": page_no, "error": str(exc)[:160]})
-                repository.beat(
-                    db,
-                    material.id,
-                    done=len(made) + len(reused) + len(failed),
-                    total=len(wanted),
-                    message=f"音频第 {page_no} 页",
-                    checkpoint={},
-                )
-                db.commit()
+                _beat_progress(f"音频第 {page_no} 页", [meta[0] for meta in in_flight.values()])
                 continue
             if reused_rec is not None:
                 reused.append(page_no)
-                repository.beat(
-                    db,
-                    material.id,
-                    done=len(made) + len(reused) + len(failed),
-                    total=len(wanted),
-                    message=f"音频第 {page_no} 页",
-                    checkpoint={},
-                )
-                db.commit()
-            elif pending is not None:
-                text, text_digest, engine = pending
-                to_synth.append((page_no, text, text_digest, engine))
+                _beat_progress(f"音频第 {page_no} 页", [meta[0] for meta in in_flight.values()])
+                continue
+            assert pending is not None
+            text, text_digest, engine = pending
+            fut = pool.submit(audio.synthesize_audio_bytes, text, engine)
+            in_flight[fut] = (page_no, text_digest, engine)
+        if in_flight:
+            repository.beat(db, material.id, checkpoint={"pages": sorted(meta[0] for meta in in_flight.values())})
+            db.commit()
 
-        if not to_synth:
-            continue
+    pool = ThreadPoolExecutor(max_workers=max(1, min(workers, max(1, total))))
+    in_flight: dict[Future[tuple[bytes, str, int]], tuple[int, str, SpeechSettings]] = {}
+    try:
+        _fill_slots(pool, in_flight)
+        while in_flight:
+            done_futs, _ = wait(in_flight.keys(), return_when=FIRST_COMPLETED)
+            for fut in done_futs:
+                page_no, text_digest, engine_used = in_flight.pop(fut)
+                try:
+                    payload, fmt, secs = fut.result()
+                    audio.commit_synthesized_page(
+                        db,
+                        material,
+                        page_no,
+                        text_digest,
+                        payload,
+                        fmt,
+                        secs,
+                        voice=engine_used["voice"],
+                        model=engine_used["model"],
+                        force=force_regen,
+                    )
+                    made.append(page_no)
+                except (tts.SpeechFailed, tts.SpeechUnavailable, ValueError, LookupError) as exc:
+                    db.rollback()
+                    failed.append({"page_no": page_no, "error": str(exc)[:160]})
+                _beat_progress(f"音频第 {page_no} 页", [meta[0] for meta in in_flight.values()])
+            repository.check_cancel(db, material.id)
+            _fill_slots(pool, in_flight)
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
 
-        outcomes: list[tuple[bytes | None, str, int, BaseException | None]] = []
-        if len(to_synth) == 1:
-            _, text, _, engine = to_synth[0]
-            try:
-                audio_bytes, fmt, secs = audio.synthesize_audio_bytes(text, engine)
-                outcomes.append((audio_bytes, fmt, secs, None))
-            except BaseException as exc:  # noqa: BLE001
-                outcomes.append((None, "", 0, exc))
-        else:
-            with ThreadPoolExecutor(max_workers=len(to_synth)) as pool:
-                futs = [pool.submit(audio.synthesize_audio_bytes, text, engine) for _, text, _, engine in to_synth]
-                for fut in futs:
-                    try:
-                        audio_bytes, fmt, secs = fut.result()
-                        outcomes.append((audio_bytes, fmt, secs, None))
-                    except BaseException as exc:  # noqa: BLE001
-                        outcomes.append((None, "", 0, exc))
-
-        for (page_no, _, text_digest, _), (payload, fmt, secs, err) in zip(to_synth, outcomes):
-            try:
-                if err is not None:
-                    raise err
-                assert payload is not None
-                audio.commit_synthesized_page(db, material, page_no, text_digest, payload, fmt, secs)
-                made.append(page_no)
-                repository.beat(
-                    db,
-                    material.id,
-                    done=len(made) + len(reused) + len(failed),
-                    total=len(wanted),
-                    message=f"音频第 {page_no} 页",
-                    checkpoint={},
-                )
-                db.commit()
-            except (tts.SpeechFailed, tts.SpeechUnavailable, ValueError, LookupError) as exc:
-                db.rollback()
-                failed.append({"page_no": page_no, "error": str(exc)[:160]})
-                repository.beat(
-                    db,
-                    material.id,
-                    done=len(made) + len(reused) + len(failed),
-                    total=len(wanted),
-                    message=f"音频第 {page_no} 页",
-                    checkpoint={},
-                )
-                db.commit()
     repository.release(
         db,
         material.id,
@@ -634,7 +677,7 @@ def run_audio_batch(db: Session, material: Material, request: dict[str, Any]) ->
         message=f"音频完成 {len(made) + len(reused)} 页，失败 {len(failed)} 页",
         extra={
             "done": len(made) + len(reused) + len(failed),
-            "total": len(wanted),
+            "total": total,
             "failed": failed,
             "retry_pages": [item["page_no"] for item in failed],
         },

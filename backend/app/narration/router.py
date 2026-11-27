@@ -14,9 +14,19 @@ from ..auth import current_user, require_teacher
 from ..db import get_db
 from ..models import Material, User, now
 from ..teacher_scope import require_scope, teacher_instance_id
-from . import audio, calibrate, jobs, task_commands
+from . import audio, calibrate, jobs, task_commands, voices
 from .access import teacher_material, require_narratable, require_page
-from .request_contracts import NarrationInput, DigestInput, GenerateInput, RangeInput, PageGenerateInput, PipelineInput
+from .request_contracts import (
+    AudioBatchInput,
+    DigestInput,
+    GenerateInput,
+    MaterialVoiceInput,
+    NarrationInput,
+    PageAudioInput,
+    PageGenerateInput,
+    PipelineInput,
+    RangeInput,
+)
 from . import render, repository, service
 from . import tts
 from .contracts import AppliedCalibration, AudioRecord, GeneratedPage, Quota
@@ -154,6 +164,33 @@ def list_narrations(course_id: int, material_id: int, db: Annotated[Session, Dep
     }
 
 
+@router.put("/voice")
+def update_material_voice(course_id: int, material_id: int, body: MaterialVoiceInput,
+                          db: Annotated[Session, Depends(get_db)],
+                          user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
+    """Select which voice (auto / system / custom cloned voice) and reading style synthesize this material."""
+    material = teacher_material(db, user, course_id, material_id, exclusive=True)
+    fields = body.model_fields_set
+    try:
+        voices.set_material_voice(
+            db,
+            material,
+            user,
+            mode=body.mode,
+            teacher_voice_id=body.teacher_voice_id,
+            update_instruction="speech_instruction" in fields,
+            speech_instruction=body.speech_instruction,
+            update_speed="speech_speed" in fields,
+            speech_speed=body.speech_speed,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    db.commit()
+    return read_audio_status(course_id=course_id, material_id=material_id, db=db, user=user)
+
+
 @router.put("/{page_no}")
 def author_narration(page_no: int, course_id: int, material_id: int, body: NarrationInput,
                      db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
@@ -285,9 +322,17 @@ def delete_narration(page_no: int, course_id: int, material_id: int, db: Annotat
 
 @router.post("/{page_no}/audio")
 def synthesize_audio(page_no: int, course_id: int, material_id: int, db: Annotated[Session, Depends(get_db)],
-                     user: Annotated[User, Depends(require_teacher)]) -> AudioRecord:
+                     user: Annotated[User, Depends(require_teacher)],
+                     body: PageAudioInput | None = None) -> AudioRecord:
     """Speak one approved page. Draft wording is refused, not spoken."""
-    return task_commands.synthesize_audio(page_no=page_no, course_id=course_id, material_id=material_id, db=db, user=user)
+    return task_commands.synthesize_audio(
+        page_no=page_no,
+        course_id=course_id,
+        material_id=material_id,
+        db=db,
+        user=user,
+        force=bool(body.force) if body else False,
+    )
 
 
 @router.get("/{page_no}/page-image")
@@ -327,7 +372,7 @@ def read_page_pdf(page_no: int, course_id: int, material_id: int, db: Annotated[
 def synthesize_audio_batch(course_id: int, material_id: int,
                            db: Annotated[Session, Depends(get_db)],
                            user: Annotated[User, Depends(require_teacher)],
-                           body: RangeInput | None = None) -> dict[str, Any]:
+                           body: AudioBatchInput | None = None) -> dict[str, Any]:
     """Queue audio for every accepted page in the range; one failure keeps the rest."""
     job = task_commands.synthesize_audio_batch(course_id=course_id, material_id=material_id, db=db, user=user, body=body)
     return {"job": jobs.state(material_id, job)}
@@ -359,16 +404,41 @@ def read_audio_status(course_id: int, material_id: int, db: Annotated[Session, D
     require_narratable(material)
     repository.sync_staleness(db, material)
     db.commit()
-    engine = tts.settings(db)
+    engine, voice_meta = voices.resolve_material_speech(db, material, user_id=user.id)
     rows = repository.rows(db, material.id)
+    pages_payload: list[dict[str, Any]] = []
+    mismatched_count = 0
+    for item in rows:
+        ready = audio.current_audio(db, material, item.page_no) is not None
+        mismatch = ready and not audio.voice_matches(item, engine["voice"], voice_meta["system_voice"])
+        if mismatch and item.status == "accepted":
+            mismatched_count += 1
+        pages_payload.append({
+            "page_no": item.page_no,
+            "status": item.status,
+            "ready": ready,
+            "seconds": item.audio_seconds,
+            "audio_voice": item.audio_voice,
+            "voice_mismatch": mismatch,
+        })
     return {
         "available": tts.unavailable_reason(db) is None,
         "voice": engine["voice"],
+        "voice_name": voice_meta["voice_name"],
+        "voice_source": voice_meta["voice_source"],
+        "voice_mode": voice_meta["voice_mode"],
+        "selected_voice_id": voice_meta["selected_voice_id"],
+        "system_voice": voice_meta["system_voice"],
+        "speech_instruction": voice_meta["speech_instruction"],
+        "effective_instruction": voice_meta["effective_instruction"],
+        "speech_speed": voice_meta["speech_speed"],
+        "effective_speed": voice_meta["effective_speed"],
+        "instruction_supported": voice_meta["instruction_supported"],
+        "instruction_presets": voice_meta["instruction_presets"],
+        "mismatched_count": mismatched_count,
         # DeepSeek 没有模型概念，显示固定默认值会误导教师，直接回协议名。
-        "model": engine["model"] if tts.protocol(db) == "openai" else tts.protocol(db),
-        "pages": [{"page_no": item.page_no, "status": item.status,
-                   "ready": audio.current_audio(db, material, item.page_no) is not None,
-                   "seconds": item.audio_seconds} for item in rows],
+        "model": engine["model"] if engine["protocol"] in {"openai", "dashscope"} and engine["model"] else engine["protocol"],
+        "pages": pages_payload,
     }
 
 

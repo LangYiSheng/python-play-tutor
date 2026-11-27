@@ -1,6 +1,7 @@
 import {
   narrationApi,
   type CalibrationReport,
+  type MaterialVoiceMode,
   type NarrationAudioStatus,
   type NarrationJobState,
   type NarrationList,
@@ -11,6 +12,7 @@ import {
 } from "@/features/materials/narration/api";
 import { toast } from "@/components/ui/toast";
 import { errorMessage, token } from "@/lib/api";
+import { voiceApi, type TeacherVoice } from "@/lib/voice-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useNarrationReview(
@@ -36,6 +38,19 @@ export function useNarrationReview(
   const [usePacing, setUsePacing] = useState(false);
   const [sectionMinutes, setSectionMinutes] = useState(10);
   const [chapterMinutes, setChapterMinutes] = useState(90);
+  const [myVoices, setMyVoices] = useState<TeacherVoice[]>([]);
+  const [speechStyleDirty, setSpeechStyleDirty] = useState(false);
+
+  const reloadVoices = useCallback(async () => {
+    try {
+      const res = await voiceApi.list();
+      if (mountedRef.current && Array.isArray(res?.voices)) {
+        setMyVoices(res.voices);
+      }
+    } catch {
+      // Optional personal voice catalog: silently fall back to global voice when unavailable.
+    }
+  }, []);
 
   function scriptOptions(): ScriptStyleOptions | undefined {
     const custom = customStyle.trim();
@@ -67,7 +82,8 @@ export function useNarrationReview(
   }, [courseId, materialId, initialPage]);
   useEffect(() => {
     void load();
-  }, [load]);
+    void reloadVoices();
+  }, [load, reloadVoices]);
   useEffect(() => {
     if (!jumpTarget || !data) return;
     if (data.pages.some((item) => item.page_no === jumpTarget.pageNo)) {
@@ -255,7 +271,37 @@ export function useNarrationReview(
       `已接受 ${drafts} 页`,
     );
   }
-  async function synthesizeAllAudio() {
+  async function selectMaterialVoice(
+    mode: MaterialVoiceMode,
+    teacherVoiceId?: number | null,
+    options?: { speechInstruction?: string | null; speechSpeed?: number | null; note?: string },
+  ) {
+    setBusy("voice");
+    setError("");
+    try {
+      const sound = await narrationApi.setVoice(courseId, materialId, mode, teacherVoiceId, options);
+      setAudioState(sound);
+      const changedStyle = Boolean(options && ("speechInstruction" in options || "speechSpeed" in options));
+      const hasReady = sound.pages.some((p) => p.ready);
+      if (changedStyle && hasReady) setSpeechStyleDirty(true);
+      const label = sound.voice_name || sound.voice;
+      toast.add({
+        title: options?.note ?? `已切换本课件配音音色为「${label}」`,
+        description:
+          sound.mismatched_count && sound.mismatched_count > 0
+            ? `有 ${sound.mismatched_count} 页为旧音色，点「生成全文配音」可批量按新音色重配。`
+            : changedStyle && hasReady
+              ? "已生效于后续合成；点「生成全文配音」或单页「重新合成」可按新风格重配。"
+              : undefined,
+        type: "success",
+      });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function synthesizeAllAudio(options?: { regenerateMismatch?: boolean; force?: boolean; skipConfirm?: boolean }) {
     if (!data) return;
     const accepted = data.pages.filter(
       (item) => item.narration?.status === "accepted",
@@ -264,18 +310,25 @@ export function useNarrationReview(
       toast.add({ title: "还没有已接受的页", description: "请先接受讲解稿，再合成配音。", type: "info" });
       return;
     }
-    if (
-      !window.confirm(
-        `为 ${accepted} 页已接受的讲解生成全文配音？已生成的页会复用，不重复计费。`,
+    const regenerateMismatch = Boolean(options?.regenerateMismatch);
+    const force = Boolean(options?.force);
+    if (!options?.skipConfirm) {
+      if (
+        !window.confirm(
+          force || regenerateMismatch
+            ? `用当前音色与朗读风格重新合成 ${accepted} 页已接受的讲解？`
+            : `为 ${accepted} 页已接受的讲解生成全文配音？已生成的页会复用，不重复计费。`,
+        )
       )
-    )
-      return;
+        return;
+    }
     const total = data.coverage.pages;
     setBusy("audio-all");
     setError("");
     const captured = token();
     try {
-      await narrationApi.audioBatch(courseId, materialId, 1, total);
+      await narrationApi.audioBatch(courseId, materialId, 1, total, regenerateMismatch, force);
+      if (force) setSpeechStyleDirty(false);
       if (captured === token()) toast.add({ title: "已提交全文配音生成", type: "info" });
       const state = await waitForJob();
       if (captured === token()) {
@@ -425,5 +478,9 @@ export function useNarrationReview(
     chapterMinutes,
     setChapterMinutes,
     scriptOptions,
+    myVoices,
+    reloadVoices,
+    selectMaterialVoice,
+    speechStyleDirty,
   };
 }

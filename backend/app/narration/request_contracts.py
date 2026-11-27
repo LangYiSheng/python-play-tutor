@@ -43,6 +43,24 @@ class RangeInput(BaseModel):
     last_page: int | None = None
 
 
+class PageAudioInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    force: bool = False
+
+
+class AudioBatchInput(RangeInput):
+    regenerate_mismatch: bool = False
+    force: bool = False
+
+
+class MaterialVoiceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["auto", "system", "custom"]
+    teacher_voice_id: int | None = None
+    speech_instruction: str | None = Field(default=None, max_length=200)
+    speech_speed: float | None = Field(default=None, ge=0.5, le=2.0)
+
+
 class PageGenerateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target_seconds: int | None = None

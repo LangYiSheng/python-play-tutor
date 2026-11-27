@@ -1,10 +1,18 @@
 import { useMemo, useState } from "react";
-import { Check, Download, Sparkles, Timer, Volume2 } from "lucide-react";
+import { Check, Download, Mic, Sparkles, Timer, Volume2 } from "lucide-react";
 import { ErrorNotice, Loading } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
+import { MyVoicesDialog } from "@/features/voices/my-voices-dialog";
 import { errorMessage } from "@/lib/api";
+import { SPEECH_INSTRUCTION_PRESETS } from "@/lib/voice-api";
 import {
   lectioApi,
   type KnowledgePointItem,
@@ -81,6 +91,11 @@ export function NarrationWorkbench({
     setSectionMinutes,
     chapterMinutes,
     setChapterMinutes,
+    myVoices,
+    reloadVoices,
+    selectMaterialVoice,
+    speechStyleDirty,
+    load,
   } = review;
   const media = usePageMedia(courseId, materialId, pageNo, saved);
   const [tab, setTab] = useState("review");
@@ -88,6 +103,110 @@ export function NarrationWorkbench({
   const [exporting, setExporting] = useState(false);
   const [pacingInfo, setPacingInfo] = useState<PacingPreview | null>(null);
   const [pacingBusy, setPacingBusy] = useState(false);
+  const [voicesOpen, setVoicesOpen] = useState(false);
+  const [mismatchConfirmOpen, setMismatchConfirmOpen] = useState(false);
+  const [customInstructionOpen, setCustomInstructionOpen] = useState(false);
+  const [customInstructionDraft, setCustomInstructionDraft] = useState("");
+
+  const readyMyVoices = useMemo(() => myVoices.filter((v) => v.status === "ready"), [myVoices]);
+  const voiceSelectValue =
+    audioState?.voice_mode === "custom" && audioState.selected_voice_id
+      ? `custom:${audioState.selected_voice_id}`
+      : audioState?.voice_mode === "system"
+        ? "system"
+        : "auto";
+  const currentVoiceMode = audioState?.voice_mode ?? "auto";
+  const currentVoiceId = currentVoiceMode === "custom" ? (audioState?.selected_voice_id ?? null) : null;
+  const defaultPersonalVoice = readyMyVoices.find((v) => v.is_default);
+  const mismatchedCount = audioState?.mismatched_count ?? 0;
+  const readyAudioCount = audioState?.pages.filter((p) => p.ready).length ?? 0;
+  const instructionPresets = audioState?.instruction_presets ?? SPEECH_INSTRUCTION_PRESETS;
+  const instructionSelectValue = useMemo(() => {
+    const raw = audioState?.speech_instruction;
+    if (raw === undefined || raw === null) return "inherit";
+    if (raw === "") return "none";
+    const matched = instructionPresets.find((p) => p.text === raw);
+    return matched ? `preset:${matched.id}` : "custom";
+  }, [audioState?.speech_instruction, instructionPresets]);
+  const speedSelectValue =
+    audioState?.speech_speed !== undefined && audioState.speech_speed !== null
+      ? String(audioState.speech_speed)
+      : "inherit";
+
+  function handleVoiceSelection(value: string) {
+    if (value === "__manage__") {
+      setVoicesOpen(true);
+      return;
+    }
+    if (value === "auto" || value === "system") {
+      void selectMaterialVoice(value, null);
+      return;
+    }
+    if (value.startsWith("custom:")) {
+      const id = Number(value.slice("custom:".length));
+      if (Number.isFinite(id) && id > 0) {
+        void selectMaterialVoice("custom", id);
+      }
+    }
+  }
+
+  function handleInstructionSelection(value: string) {
+    if (value === "custom") {
+      setCustomInstructionDraft(audioState?.effective_instruction || "");
+      setCustomInstructionOpen(true);
+      return;
+    }
+    setCustomInstructionOpen(false);
+    if (value === "inherit") {
+      void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+        speechInstruction: null,
+        note: "朗读语气已恢复跟随全站默认",
+      });
+      return;
+    }
+    if (value === "none") {
+      void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+        speechInstruction: "",
+        note: "已关闭本课件朗读风格指令",
+      });
+      return;
+    }
+    if (value.startsWith("preset:")) {
+      const id = value.slice("preset:".length);
+      const preset = instructionPresets.find((p) => p.id === id);
+      if (preset) {
+        void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+          speechInstruction: preset.text,
+          note: `已切换朗读语气为「${preset.label}」`,
+        });
+      }
+    }
+  }
+
+  function handleSpeedSelection(value: string) {
+    if (value === "inherit") {
+      void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+        speechSpeed: null,
+        note: "语速已恢复跟随全站默认",
+      });
+      return;
+    }
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0.5 && num <= 2.0) {
+      void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+        speechSpeed: num,
+        note: `已将本课件合成语速设为 ${num}x`,
+      });
+    }
+  }
+
+  function handleSynthesizeAllClick() {
+    if (mismatchedCount > 0 || (speechStyleDirty && readyAudioCount > 0)) {
+      setMismatchConfirmOpen(true);
+      return;
+    }
+    void synthesizeAllAudio();
+  }
 
   const calibrationCount = (report?.fixes?.length ?? 0) + (report?.issues?.length ?? 0);
 
@@ -185,9 +304,14 @@ export function NarrationWorkbench({
             size="xs"
             variant="outline"
             disabled={busyNow || audioState?.available === false || data.coverage.accepted === 0}
-            onClick={() => void synthesizeAllAudio()}
+            onClick={handleSynthesizeAllClick}
           >
-            <Volume2 /> {busy === "audio-all" ? "生成中…" : "生成全文配音"}
+            <Volume2 />{" "}
+            {busy === "audio-all"
+              ? "生成中…"
+              : mismatchedCount > 0
+                ? `生成全文配音（${mismatchedCount} 页旧音色）`
+                : "生成全文配音"}
           </Button>
         )}
         {(mode !== "source" || data.coverage.draft > 0) && (
@@ -316,6 +440,112 @@ export function NarrationWorkbench({
             <Timer /> {pacingBusy ? "测算中…" : "测算节奏"}
           </Button>
           {pacingInfo && <span className="text-muted-foreground">{pacingInfo.summary}</span>}
+
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <Label htmlFor="narration-voice-picker" className="text-xs font-medium">
+              配音音色
+            </Label>
+            <SelectField
+              id="narration-voice-picker"
+              aria-label="配音音色"
+              disabled={busyNow}
+              value={voiceSelectValue}
+              onValueChange={handleVoiceSelection}
+              className="h-7 min-w-40 max-w-56 text-xs"
+            >
+              <option value="auto">
+                自动（默认：{defaultPersonalVoice ? defaultPersonalVoice.name : audioState?.system_voice || audioState?.voice || "系统音色"}）
+              </option>
+              {readyMyVoices.map((v) => (
+                <option key={v.id} value={`custom:${v.id}`}>
+                  我的声音：{v.name}{v.is_default ? "（默认）" : ""}
+                </option>
+              ))}
+              <option value="system">
+                系统默认（{audioState?.system_voice || audioState?.voice || "全站音色"}）
+              </option>
+              <option value="__manage__">＋ 复刻 / 管理我的声音…</option>
+            </SelectField>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={busyNow}
+              onClick={() => setVoicesOpen(true)}
+            >
+              <Mic /> 我的声音
+            </Button>
+            {audioState?.instruction_supported && (
+              <>
+                <Label htmlFor="narration-instruction-picker" className="text-xs font-medium">
+                  朗读语气
+                </Label>
+                <SelectField
+                  id="narration-instruction-picker"
+                  aria-label="朗读语气"
+                  disabled={busyNow}
+                  value={customInstructionOpen ? "custom" : instructionSelectValue}
+                  onValueChange={handleInstructionSelection}
+                  className="h-7 w-28 text-xs"
+                >
+                  <option value="inherit">跟随默认</option>
+                  {instructionPresets.map((preset) => (
+                    <option key={preset.id} value={`preset:${preset.id}`}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value="none">关闭指令</option>
+                  <option value="custom">自定义…</option>
+                </SelectField>
+              </>
+            )}
+            {audioState && audioState.model !== "deepseek" && (
+              <SelectField
+                aria-label="合成语速"
+                disabled={busyNow}
+                value={speedSelectValue}
+                onValueChange={handleSpeedSelection}
+                className="h-7 w-24 text-xs"
+              >
+                <option value="inherit">
+                  语速 {audioState.effective_speed ? `${audioState.effective_speed}x` : "默认"}
+                </option>
+                <option value="0.95">0.95x</option>
+                <option value="1">1.0x</option>
+                <option value="1.05">1.05x</option>
+                <option value="1.1">1.1x</option>
+                <option value="1.15">1.15x</option>
+                <option value="1.2">1.2x</option>
+              </SelectField>
+            )}
+          </div>
+          {customInstructionOpen && audioState?.instruction_supported && (
+            <div className="flex w-full flex-wrap items-center gap-1.5 pt-1 border-t">
+              <Input
+                aria-label="自定义朗读风格指令"
+                className="h-7 min-w-56 flex-1 text-xs"
+                maxLength={200}
+                value={customInstructionDraft}
+                placeholder="例如：请用自然连贯的普通话大学课堂授课语气朗读，句中不要多余停顿。"
+                onChange={(e) => setCustomInstructionDraft(e.target.value)}
+              />
+              <Button
+                size="xs"
+                disabled={busyNow}
+                onClick={() => {
+                  setCustomInstructionOpen(false);
+                  void selectMaterialVoice(currentVoiceMode, currentVoiceId, {
+                    speechInstruction: customInstructionDraft.trim(),
+                    note: customInstructionDraft.trim() ? "已保存自定义朗读风格指令" : "已关闭本课件朗读风格指令",
+                  });
+                }}
+              >
+                应用指令
+              </Button>
+              <Button size="xs" variant="ghost" onClick={() => setCustomInstructionOpen(false)}>
+                取消
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -379,6 +609,61 @@ export function NarrationWorkbench({
           }}
         />
       </TabsContent>
+
+      <MyVoicesDialog
+        open={voicesOpen}
+        onOpenChange={setVoicesOpen}
+        onChanged={() => {
+          void reloadVoices();
+          void load();
+        }}
+        onApplyVoice={async (voice) => {
+          await selectMaterialVoice("custom", voice.id);
+          void reloadVoices();
+        }}
+        applyLabel="应用到此课件"
+      />
+
+      <Dialog open={mismatchConfirmOpen} onOpenChange={setMismatchConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {mismatchedCount > 0 ? `检测到 ${mismatchedCount} 页旧音色音频` : "已调整朗读语气或语速"}
+            </DialogTitle>
+            <DialogDescription>
+              当前课件音色为「{audioState?.voice_name || audioState?.voice}」。你可以只补齐未生成的页面，或用当前音色与朗读风格重新合成全部已接受页面。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => setMismatchConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setMismatchConfirmOpen(false);
+                void synthesizeAllAudio({ regenerateMismatch: false, force: false, skipConfirm: true });
+              }}
+            >
+              仅补齐未生成页
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setMismatchConfirmOpen(false);
+                void synthesizeAllAudio({
+                  regenerateMismatch: true,
+                  force: speechStyleDirty,
+                  skipConfirm: true,
+                });
+              }}
+            >
+              用当前音色重合成全部页
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }
