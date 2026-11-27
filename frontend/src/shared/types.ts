@@ -85,6 +85,7 @@ export interface Question {
   interactive?: InteractiveSource;
   hints?: string[];
   starter_code?: string;
+  source?: Record<string, unknown>;
   id: string;
   title: string;
   kind: QuestionKind;
@@ -184,6 +185,8 @@ export interface SubmissionFeedback {
   passed_count?: number;
   total_count?: number;
   detail?: string;
+  explanation?: string;
+  correct_answer?: string;
   status?: SubmissionStatus;
   samples?: PublicSampleResult[];
 }

@@ -16,7 +16,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { lectioApi, type KnowledgeChapter } from "@/lib/lectio-api";
+import { courseStudioApi, type KnowledgeChapter } from "@/lib/course-studio-api";
 import { materialKindLabel } from "@/lib/material-kind";
 
 export function KnowledgeExtractDialog({
@@ -75,7 +75,7 @@ export function KnowledgeExtractDialog({
     setError("");
     try {
       const allChosen = selectedIds.length === usableMaterials.length;
-      await lectioApi.extractKnowledge(
+      await courseStudioApi.extractKnowledge(
         courseId,
         activeChapter.id,
         allChosen ? undefined : selectedIds,

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { lectioApi, type ExamRecord, type KnowledgeChapter } from "@/lib/lectio-api";
+import { courseStudioApi, type ExamRecord, type KnowledgeChapter } from "@/lib/course-studio-api";
 import { ExamEditor } from "./exam-editor";
 import { ExamWizard } from "./exam-wizard";
 
@@ -30,8 +30,8 @@ export function ExamsTab({
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      lectioApi.listExams(courseId, controller.signal),
-      lectioApi.listKnowledge(courseId, controller.signal),
+      courseStudioApi.listExams(courseId, controller.signal),
+      courseStudioApi.listKnowledge(courseId, controller.signal),
     ])
       .then(([examRes, knowRes]) => {
         if (controller.signal.aborted) return;
@@ -52,7 +52,7 @@ export function ExamsTab({
   async function downloadZip(row: ExamRecord) {
     setBusyId(row.id);
     try {
-      await lectioApi.exportExam(courseId, row.id, "zip", "A", row.title);
+      await courseStudioApi.exportExam(courseId, row.id, "zip", "A", row.title);
       toast.add({ title: "试卷资料包已导出", type: "success" });
     } catch (e) {
       toast.add({ title: errorMessage(e), type: "error" });
@@ -65,7 +65,7 @@ export function ExamsTab({
     if (!window.confirm(`确定删除试卷「${row.title}」？此操作不会影响题库已有试题。`)) return;
     setBusyId(row.id);
     try {
-      await lectioApi.deleteExam(courseId, row.id);
+      await courseStudioApi.deleteExam(courseId, row.id);
       setExams((prev) => prev.filter((x) => x.id !== row.id));
       toast.add({ title: "已删除试卷", type: "success" });
     } catch (e) {

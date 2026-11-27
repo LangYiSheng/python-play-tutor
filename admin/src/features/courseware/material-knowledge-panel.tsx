@@ -3,8 +3,8 @@ import { Empty } from "@/components/common";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { pageRanges } from "@/features/content-workspace/graph-layout";
-import { cleanGraphLabel } from "@/features/content-workspace/lectio-graph-layout";
-import type { KnowledgePointItem } from "@/lib/lectio-api";
+import { cleanGraphLabel } from "@/features/content-workspace/studio-graph-layout";
+import type { KnowledgePointItem } from "@/lib/course-studio-api";
 import type { Material } from "@/lib/types";
 
 export function MaterialKnowledgePanel({

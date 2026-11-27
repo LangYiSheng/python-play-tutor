@@ -14,7 +14,7 @@ it("renders wide section-grouped quota matrix with quick-fill and submits point 
   const submittedBodies: unknown[] = [];
   vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
     const url = new URL(path, location.origin);
-    if (url.pathname.endsWith("/lectio/knowledge")) {
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
       return json({
         chapters: [
           {
@@ -102,4 +102,47 @@ it("renders wide section-grouped quota matrix with quick-fill and submits point 
     ],
   });
   expect(onSubmitted).toHaveBeenCalledOnce();
+});
+
+it("defaults chapter mode to 10 questions, applies presets, and sends chosen difficulty", async () => {
+  const submittedBodies: unknown[] = [];
+  vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
+    const url = new URL(path, location.origin);
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
+      return json({
+        chapters: [
+          {
+            id: 1,
+            stable_id: "ch-1",
+            title: "函数与作用域",
+            order_index: 1,
+            materials: [{ id: 2, stable_id: "m-2", title: "函数课件", kind: "presentation", pages: 20 }],
+            points: [],
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/exercises/generate") && init?.method === "POST") {
+      submittedBodies.push(JSON.parse(String(init.body)));
+      return json({ id: "job-2", kind: "exercises_generate", status: "queued" });
+    }
+    return json({});
+  });
+
+  const user = userEvent.setup();
+  render(<AiGenerateDialog open courseId={7} onOpenChange={() => {}} onSubmitted={() => {}} />);
+
+  expect(await screen.findByLabelText("单选题")).toHaveValue(4);
+  await user.click(screen.getByRole("button", { name: "强化 16 题" }));
+  expect(screen.getByLabelText("单选题")).toHaveValue(6);
+
+  await user.click(screen.getByLabelText("难度定位"));
+  await user.click(await screen.findByRole("option", { name: /综合拔高/ }));
+
+  await user.click(screen.getByRole("button", { name: "开始生成草稿" }));
+  await waitFor(() => expect(submittedBodies).toHaveLength(1));
+  expect(submittedBodies[0]).toEqual({
+    difficulty: "challenging",
+    counts: { single: 6, multiple: 4, true_false: 3, fill_blank: 3 },
+  });
 });

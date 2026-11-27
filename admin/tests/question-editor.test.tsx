@@ -9,6 +9,8 @@ import { editorPayload, questionEditors } from '../src/features/questions/editor
 import { questionKindLabels } from '../../shared/questions';
 import { interactiveExamples } from '../../shared/interactiveExamples';
 import * as validation from '../src/features/questions/validate-interactive';
+import * as pyValidation from '../src/features/questions/validate-python';
+import { ImportCodingDialog } from '../src/features/questions/import-coding-dialog';
 
 const exampleSource = { html: '<p>示例</p>', css: '', js: 'practice.onCheck(() => practice.correct("正确", 1));' };
 
@@ -187,4 +189,145 @@ it('cancels an in-flight save validation when leaving the class before the API w
   expect(signal.aborted).toBe(true);
   await act(async () => { finish(); });
   expect(put).not.toHaveBeenCalled();
+});
+
+it('loads and saves question difficulty in source metadata', async () => {
+  const put = vi.spyOn(api, 'put').mockResolvedValue({});
+  const user = userEvent.setup();
+  render(<Host initial={{ ...question, source: { explanation: '原解析', difficulty: '中' } }} />);
+  await user.click(screen.getByText('打开'));
+  expect(screen.getByLabelText('难度')).toHaveTextContent('中');
+  await user.click(screen.getByLabelText('难度'));
+  await user.click(await screen.findByRole('option', { name: '难' }));
+  await user.click(screen.getByText('保存题目'));
+  expect(put).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ source: expect.objectContaining({ explanation: '原解析', difficulty: '难' }) }),
+  );
+});
+
+it('saves python coding_type, usage, reference_solution and runs browser case verification', async () => {
+  const put = vi.spyOn(api, 'put').mockResolvedValue({});
+  vi.spyOn(pyValidation, 'verifyPythonQuestion').mockResolvedValue({
+    ok: true,
+    errors: [],
+    warnings: [],
+    cases: [
+      { scope: 'sample', index: 1, status: 'accepted', stdout: '2\n', expected: '2\n', stderr: '' },
+      { scope: 'hidden', index: 1, status: 'accepted', stdout: '10\n', expected: '10\n', stderr: '' },
+    ],
+    starterPassed: 0,
+    starterTotal: 2,
+  });
+  vi.spyOn(pyValidation, 'generateOutputsFromReference').mockResolvedValue({
+    samples: [{ input: '1\n', expected_output: '2\n' }],
+    hidden: [{ input: '9\n', expected_output: '10\n' }],
+  });
+  const starter = 'x = int(input())\n# === 填空区 1 开始 ===\ny = 0\n# === 填空区 1 结束 ===\nprint(y)\n';
+  const ref = 'x = int(input())\n# === 填空区 1 开始 ===\ny = x + 1\n# === 填空区 1 结束 ===\nprint(y)\n';
+  const user = userEvent.setup();
+  render(
+    <Host
+      initial={{
+        ...question,
+        kind: 'python',
+        starter_code: starter,
+        answer: { reference_solution: ref },
+        samples: [{ input: '1\n', output: '' }],
+        hidden_cases: [{ input: '9\n', expected_output: '' }],
+        source: { coding_type: 'fill_code', difficulty: '中', usage: 'assessment' },
+      }}
+    />,
+  );
+  await user.click(screen.getByText('打开'));
+  expect(screen.getByLabelText('编程形式')).toHaveTextContent('程序填空');
+  expect(screen.getByLabelText('教学用途')).toHaveTextContent('测验专用');
+  await user.click(screen.getByRole('tab', { name: '初始代码与提示' }));
+  expect(screen.getByLabelText('参考答案代码（仅教师可见，用于一键验题）')).toHaveValue(ref);
+
+  await user.click(screen.getByRole('tab', { name: '测试用例' }));
+  await user.click(screen.getByRole('button', { name: /用参考代码填充输出/ }));
+  expect(pyValidation.generateOutputsFromReference).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button', { name: /一键验证全部用例/ }));
+  expect(await screen.findByText(/验题通过：参考代码通过 2 \/ 2 个用例/)).toBeVisible();
+
+  await user.click(screen.getByText('保存题目'));
+  expect(put).toHaveBeenCalledWith(
+    expect.stringContaining('/teacher/courses/1/questions/q'),
+    expect.objectContaining({
+      kind: 'python',
+      answer: { reference_solution: ref },
+      samples: [{ input: '1\n', output: '2\n' }],
+      hidden_cases: [{ input: '9\n', expected_output: '10\n' }],
+      source: expect.objectContaining({ coding_type: 'fill_code', difficulty: '中', usage: 'assessment' }),
+    }),
+  );
+});
+
+it('batch imports coding dataset JSON via ImportCodingDialog', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    created: 1,
+    skipped: 0,
+    created_ids: ['c1:question:py-1'],
+    skipped_ids: [],
+    errors: [],
+  });
+  const onImported = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <ImportCodingDialog
+      open
+      courseId={1}
+      chapters={[{ id: 6, title: 'Python 语言基础', order_index: 2, owner_id: 1 }]}
+      onOpenChange={() => {}}
+      onImported={onImported}
+    />,
+  );
+  const input = screen.getByLabelText('编程题 JSON 内容');
+  await user.click(input);
+  await user.paste(JSON.stringify({ problems: [{ id: 'py-1', title: '测试', prompt: '输出1' }] }));
+  await user.click(screen.getByRole('button', { name: /导入为待审草稿/ }));
+  expect(post).toHaveBeenCalledWith(
+    expect.stringContaining('/teacher/courses/1/questions/import-coding'),
+    expect.objectContaining({
+      items: [{ id: 'py-1', title: '测试', prompt: '输出1' }],
+      skip_existing: true,
+    }),
+  );
+  expect(await screen.findByText(/新增草稿 1 道/)).toBeVisible();
+  expect(onImported).toHaveBeenCalledTimes(1);
+});
+
+it('parses multi-line JSONL in ImportCodingDialog', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    created: 2,
+    skipped: 0,
+    created_ids: ['c1:question:j1', 'c1:question:j2'],
+    skipped_ids: [],
+    errors: [],
+  });
+  const user = userEvent.setup();
+  render(
+    <ImportCodingDialog
+      open
+      courseId={1}
+      chapters={[{ id: 6, title: 'Python 语言基础', order_index: 2, owner_id: 1 }]}
+      onOpenChange={() => {}}
+      onImported={() => {}}
+    />,
+  );
+  const input = screen.getByLabelText('编程题 JSON 内容');
+  await user.click(input);
+  await user.paste('{"id":"j1","title":"题1","prompt":"p1"}\n{"id":"j2","title":"题2","prompt":"p2"}\n');
+  await user.click(screen.getByRole('button', { name: /导入为待审草稿/ }));
+  expect(post).toHaveBeenCalledWith(
+    expect.stringContaining('/teacher/courses/1/questions/import-coding'),
+    expect.objectContaining({
+      items: [
+        { id: 'j1', title: '题1', prompt: 'p1' },
+        { id: 'j2', title: '题2', prompt: 'p2' },
+      ],
+    }),
+  );
+  expect(await screen.findByText(/新增草稿 2 道/)).toBeVisible();
 });

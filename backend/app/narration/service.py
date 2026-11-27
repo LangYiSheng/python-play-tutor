@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..lectio.engine import pacing
+from ..course_studio.engine import pacing
 from ..models import Material, now
 from . import client as model_client
 from . import config, defaults, prompts, repository

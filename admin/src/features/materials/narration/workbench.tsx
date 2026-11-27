@@ -27,11 +27,11 @@ import { MyVoicesDialog } from "@/features/voices/my-voices-dialog";
 import { errorMessage } from "@/lib/api";
 import { SPEECH_INSTRUCTION_PRESETS } from "@/lib/voice-api";
 import {
-  lectioApi,
+  courseStudioApi,
   type KnowledgePointItem,
   type PacingPreview,
   type ScriptStylePreset,
-} from "@/lib/lectio-api";
+} from "@/lib/course-studio-api";
 import { CalibrationPanel } from "./calibration-panel";
 import { JobProgressBar } from "./job-progress-bar";
 import { NarrationPageEditor } from "./page-editor";
@@ -232,7 +232,7 @@ export function NarrationWorkbench({
   async function handleExport(kind: "source" | "script", fmt: "docx" | "md") {
     setExporting(true);
     try {
-      await lectioApi.exportMaterial(courseId, materialId, kind, fmt, title);
+      await courseStudioApi.exportMaterial(courseId, materialId, kind, fmt, title);
       toast.add({ title: `已导出${kind === "source" ? "整理稿" : "口播讲稿"}`, type: "success" });
     } catch (e) {
       toast.add({ title: errorMessage(e), type: "error" });
@@ -244,7 +244,7 @@ export function NarrationWorkbench({
   async function checkPacing() {
     setPacingBusy(true);
     try {
-      const res = await lectioApi.previewPacing(courseId, materialId, sectionMinutes, chapterMinutes);
+      const res = await courseStudioApi.previewPacing(courseId, materialId, sectionMinutes, chapterMinutes);
       setPacingInfo(res);
     } catch (e) {
       toast.add({ title: errorMessage(e), type: "error" });

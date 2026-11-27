@@ -225,7 +225,7 @@ def test_package_import_cannot_hard_delete_parent_of_retired_content(client, db,
     assert db.scalar(select(Chapter).where(Chapter.id == chapter.id))
 
 
-def test_material_delete_retires_sole_source_lectio_points_and_trims_shared(client, db, teacher, classroom):
+def test_material_delete_retires_sole_source_studio_points_and_trims_shared(client, db, teacher, classroom):
     owner = teacher['id']
     chapter = Chapter(id=9101, title='删除测试章', order_index=101, owner_id=owner)
     mat_a = Material(id=9101, stable_id='mat-del-a', title='旧课件A', owner_id=owner, content={'pages': []})
@@ -235,7 +235,7 @@ def test_material_delete_retires_sole_source_lectio_points_and_trims_shared(clie
         chapter_id=9101,
         title='仅来自A的知识点',
         owner_id=owner,
-        content={'lectio': {'section': '1.1', 'brief': 'A独有', 'sources': [{'material_stable_id': 'mat-del-a', 'pages': [1, 2]}]}},
+        content={'course_studio': {'section': '1.1', 'brief': 'A独有', 'sources': [{'material_stable_id': 'mat-del-a', 'pages': [1, 2]}]}},
     )
     kp_shared = KnowledgePoint(
         id=9102,
@@ -243,7 +243,7 @@ def test_material_delete_retires_sole_source_lectio_points_and_trims_shared(clie
         title='A和B共有的知识点',
         owner_id=owner,
         content={
-            'lectio': {
+            'course_studio': {
                 'section': '1.2',
                 'brief': '共有',
                 'sources': [
@@ -269,7 +269,7 @@ def test_material_delete_retires_sole_source_lectio_points_and_trims_shared(clie
     assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9101)) is None
     kept_shared = db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9102))
     assert kept_shared is not None
-    assert kept_shared.content['lectio']['sources'] == [{'material_stable_id': 'mat-del-b', 'pages': [5]}]
+    assert kept_shared.content['course_studio']['sources'] == [{'material_stable_id': 'mat-del-b', 'pages': [5]}]
     assert db.scalar(select(KnowledgePoint).where(KnowledgePoint.id == 9103)) is not None
 
 

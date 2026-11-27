@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NarrationWorkbench } from "@/features/materials/narration/workbench";
-import type { KnowledgePointItem } from "@/lib/lectio-api";
+import type { KnowledgePointItem } from "@/lib/course-studio-api";
 import { materialKindLabel } from "@/lib/material-kind";
 import type { Chapter, Material } from "@/lib/types";
 import { MaterialKnowledgePanel } from "./material-knowledge-panel";

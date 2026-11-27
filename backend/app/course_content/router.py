@@ -15,9 +15,10 @@ from app.course_content.catalog import teacher_courses as _teacher_courses
 from app.course_content.catalog import point_detail, point_page, selected_point_labels
 from app.course_content.progress import progress as _progress
 from app.course_content.progress import student_record as _student_record
-from app.course_content.question_contracts import QuestionInput, QuestionUpdate
+from app.course_content.question_contracts import CodingBatchImportInput, QuestionInput, QuestionUpdate
 from app.course_content.questions import create_question as _create_question
 from app.course_content.questions import delete_question as _delete_question
+from app.course_content.questions import import_coding_questions as _import_coding_questions
 from app.course_content.questions import list_questions as _list_questions
 from app.course_content.questions import chapter_candidates, question_detail, question_page
 from app.course_content.questions import update_question as _update_question
@@ -108,14 +109,33 @@ def create_question(
     return _create_question(body=body, db=db, user=user, course_id=course_id)
 
 
+@router.post("/teacher/courses/{course_id}/questions/import-coding", status_code=201)
+def import_coding_questions(
+    body: CodingBatchImportInput,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(require_teacher)],
+    course_id: int,
+):
+    return _import_coding_questions(body=body, db=db, user=user, course_id=course_id)
+
+
 @router.get("/teacher/courses/{course_id}/questions")
 def list_questions(db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None,
                    page: int | None = Query(None, ge=1), size: int = Query(10, ge=1, le=100), search: str = "",
                    kind: str | None = None, status: str | None = None, source: str | None = None,
+                   difficulty: str | None = None, coding_type: str | None = None,
                    knowledge_point_id: int | None = None, chapter_id: int | None = None, reviewable: bool = False):
-    if page is not None or knowledge_point_id is not None or chapter_id is not None or reviewable:
+    if (
+        page is not None
+        or knowledge_point_id is not None
+        or chapter_id is not None
+        or reviewable
+        or difficulty is not None
+        or coding_type is not None
+    ):
         return question_page(db, user, course_id, page or 1, size, search, kind, status, source,
-                             knowledge_point_id, chapter_id, reviewable=reviewable)
+                             knowledge_point_id, chapter_id, reviewable=reviewable,
+                             difficulty=difficulty, coding_type=coding_type)
     return _list_questions(db=db, user=user, course_id=course_id)
 
 

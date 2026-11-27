@@ -1,7 +1,7 @@
 <template>
   <article class="practice-question-card programming-paper-summary" :data-question-id="question.id" :aria-labelledby="headingId">
     <header class="practice-question-heading">
-      <span class="question-kind">编程题</span>
+      <span class="question-kind">{{ codingKindBadge }}</span>
       <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
     </header>
     <p class="question-prompt">{{ question.prompt }}</p>
@@ -17,6 +17,7 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
+import { codingTypeLabels, parseFillTemplate, readCodingType, validateFillSubmission } from '../../../../shared/codingQuestions';
 import GameIcon from '../../shared/GameIcon.vue';
 import type { Question, Submission } from '../../shared/types';
 import type { AssistantFeedback } from '../../shared/assistantState';
@@ -25,6 +26,10 @@ import { pendingSubmissionStates, submissionStatusName } from './practicePresent
 const props = defineProps<{ question: Question; index: number; code: string; readOnly?: boolean; result?: Submission; feedback?: AssistantFeedback }>();
 defineEmits<{ open: [] }>();
 const headingId = computed(() => `practice-question-${props.question.id}`);
+const codingKindBadge = computed(() => {
+  const subtype = readCodingType(props.question.source);
+  return subtype ? `编程题 · ${codingTypeLabels[subtype]}` : '编程题';
+});
 const edited = computed(() => Boolean(props.code.trim()) && props.code.trim() !== (props.question.starter_code ?? '').trim());
 function counts(passed: number, total: number) {
   return passed === 0 ? `全部未通过（0 / ${total}）` : `通过 ${passed} / ${total}`;
@@ -39,6 +44,10 @@ const outcome = computed(() => {
     return `${label} · ${!pending && validCounts ? counts(passed!, total!) : submissionStatusName[result.status]}`;
   }
   if (props.readOnly) return '等待正式判题';
+  if (readCodingType(props.question.source) === 'fill_code' && props.question.starter_code?.trim() && !parseFillTemplate(props.question.starter_code).error) {
+    const fillErrs = validateFillSubmission(props.question.starter_code, props.code);
+    if (fillErrs.length) return `填空区框架已被修改，请进入单题恢复`;
+  }
   const run = props.feedback?.local_run;
   if (!run || run.question_id !== props.question.id) return '尚未运行公开样例';
   const stale = run.code !== props.code;

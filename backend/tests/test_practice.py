@@ -34,6 +34,24 @@ def test_concept_grades_are_real_persistent_and_idempotent(client, db, student, 
     assert "抽象与自动化" not in str(wrong.json()["feedback"])
 
 
+def test_objective_practice_reveals_explanation_only_when_accepted(client, db, student, classroom):
+    from app.models import Question
+
+    q = db.get(Question, "ch1-abstraction")
+    q.source = {**(q.source or {}), "explanation": "计算思维的两大核心本质是抽象与自动化。"}
+    db.commit()
+
+    wrong = submit(client, student, classroom, answer="wrong", idempotency_key="explain-wrong-0001")
+    assert wrong.status_code == 201
+    assert wrong.json()["status"] == "wrong_answer"
+    assert "explanation" not in wrong.json()["feedback"]
+
+    ok = submit(client, student, classroom, answer="抽象与自动化", idempotency_key="explain-ok-0002")
+    assert ok.status_code == 201
+    assert ok.json()["status"] == "accepted"
+    assert ok.json()["feedback"]["explanation"] == "计算思维的两大核心本质是抽象与自动化。"
+
+
 def test_cross_activity_and_other_user_submission_denied(client, student, teacher, classroom, branching_course):
     result = submit(client, student, classroom)
     assert submit(client, student, classroom, question_id="ch2-language", idempotency_key="wrong-activity-question").status_code == 404

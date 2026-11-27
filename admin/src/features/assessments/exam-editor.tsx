@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { lectioApi, type ExamCandidate, type ExamRecord } from "@/lib/lectio-api";
+import { courseStudioApi, type ExamCandidate, type ExamRecord } from "@/lib/course-studio-api";
 import { EXAM_TYPE_LABELS, ExamSwapDialog, formatExamAnswer } from "./exam-swap-dialog";
 
 export function ExamEditor({
@@ -56,7 +56,7 @@ export function ExamEditor({
     setBusy(true);
     setError("");
     try {
-      const updated = await lectioApi.patchExam(courseId, exam.id, body);
+      const updated = await courseStudioApi.patchExam(courseId, exam.id, body);
       onUpdated(updated);
       if (message) toast.add({ title: message, type: "success" });
       return updated;
@@ -120,7 +120,7 @@ export function ExamEditor({
     setBusy(true);
     setError("");
     try {
-      await lectioApi.exportExam(courseId, exam.id, kind, activeVar, exam.title, exam.abMode);
+      await courseStudioApi.exportExam(courseId, exam.id, kind, activeVar, exam.title, exam.abMode);
       toast.add({ title: "试卷文件已导出", type: "success" });
     } catch (e) {
       setError(errorMessage(e));
@@ -133,7 +133,7 @@ export function ExamEditor({
     if (!window.confirm(`确定永久删除试卷「${exam.title}」？此操作不会删除题库原题。`)) return;
     setBusy(true);
     try {
-      await lectioApi.deleteExam(courseId, exam.id);
+      await courseStudioApi.deleteExam(courseId, exam.id);
       toast.add({ title: "试卷已删除", type: "success" });
       onDeleted(exam.id);
     } catch (e) {

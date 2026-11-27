@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, field_validator, model_validator
 
+from app.coding_questions import validate_coding_metadata
 from app.question_types import QuestionKind, question_type
 from app.interactive_practice import InteractiveContent
 
@@ -42,11 +43,11 @@ class QuestionInput(BaseModel):
             raise ValueError("题目标识、标题与题干不能为空白")
         return value.strip()
 
-    @field_validator("source", "options")
+    @field_validator("source", "options", "answer")
     @classmethod
     def bounded_json(cls, value):
-        if len(json.dumps(value, ensure_ascii=False)) > 30000:
-            raise ValueError("题目选项或来源超过30000字符")
+        if value is not None and len(json.dumps(value, ensure_ascii=False)) > 30000:
+            raise ValueError("题目选项、答案或来源超过30000字符")
         return value
 
     @field_validator("hints")
@@ -73,7 +74,15 @@ class QuestionInput(BaseModel):
         if self.status == "ready" and not self.chapter_ids:
             raise ValueError("就绪题目必须关联章节")
         question_type(self.kind).validate_definition(self)
+        validate_coding_metadata(self.kind, self.status, self.starter_code, self.answer, self.source)
         return self
+
+
+class CodingBatchImportInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[dict] = Field(min_length=1, max_length=100)
+    default_chapter_id: int | None = Field(default=None, ge=1)
+    skip_existing: bool = True
 
 
 class QuestionUpdate(BaseModel):

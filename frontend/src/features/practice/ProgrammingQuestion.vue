@@ -3,7 +3,11 @@
     <section class="coding-pane coding-problem" aria-label="题目内容">
       <GamePanelHeader class="coding-pane-title" title="题目描述" icon="description" />
       <div class="coding-pane-body">
-        <div v-if="$slots.metadata"><span class="question-kind">编程题</span> <slot name="metadata" /></div>
+        <div v-if="$slots.metadata || codingType || difficultyLabel" class="coding-badges">
+          <span class="question-kind">{{ codingBadge }}</span>
+          <span v-if="difficultyLabel" class="coding-difficulty-badge" :data-difficulty="difficultyLabel">{{ difficultyLabel }}</span>
+          <slot name="metadata" />
+        </div>
         <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
         <p class="question-prompt">{{ question.prompt }}</p>
         <section v-for="(sample, i) in question.samples" :key="i" class="coding-example">
@@ -15,9 +19,20 @@
     <div class="coding-divider coding-divider-vertical"><div class="pane-resize-handle" role="separator" tabindex="0" aria-label="调整题目与代码宽度" aria-orientation="vertical" :aria-valuenow="problemWidth" :aria-valuemin="25" :aria-valuemax="70" @pointerdown="startResize($event, 'width')" @pointermove="resize" @pointerup="finishResize" @pointercancel="finishResize" @lostpointercapture="finishResize" @keydown="resizeKeys($event, 'width')" @dblclick="resetSize('width')"><span></span></div></div>
     <div class="coding-divider coding-divider-horizontal"><div class="pane-resize-handle" role="separator" tabindex="0" aria-label="调整代码与用例高度" aria-orientation="horizontal" :aria-valuenow="editorHeight" :aria-valuemin="25" :aria-valuemax="75" @pointerdown="startResize($event, 'height')" @pointermove="resize" @pointerup="finishResize" @pointercancel="finishResize" @lostpointercapture="finishResize" @keydown="resizeKeys($event, 'height')" @dblclick="resetSize('height')"><span></span></div></div>
     <section class="coding-pane coding-source" aria-label="代码编辑器">
-      <GamePanelHeader class="coding-pane-title" title="代码" icon="code" detail="Python · 标准输入输出" />
+      <GamePanelHeader class="coding-pane-title" title="代码" icon="code" :detail="editorDetail">
+        <template v-if="canResetCode" #actions>
+          <button type="button" class="coding-reset-btn" title="恢复为本题初始代码" @click="resetStarterCode">
+            <GameIcon name="refresh" /><span>恢复初始代码</span>
+          </button>
+        </template>
+      </GamePanelHeader>
+      <div v-if="!readOnly && fillErrors.length" class="coding-skeleton-alert" role="alert">
+        <span>{{ fillErrors[0] }}</span>
+        <button type="button" class="coding-reset-inline" @click="resetStarterCode">恢复初始代码</button>
+      </div>
+      <p v-else-if="!readOnly && isFillCode" class="coding-skeleton-hint">程序填空：请仅在高亮的填空区标记内编写代码，勿改动标记外框架。</p>
       <pre v-if="readOnly || pendingMode || busy" class="question-readonly-code">{{ code }}</pre>
-      <CodeEditor v-else :model-value="code" @update:model-value="$emit('update:code', $event)" />
+      <CodeEditor v-else :model-value="code" :highlight-fill-slots="isFillCode" @update:model-value="$emit('update:code', $event)" />
     </section>
     <section class="coding-pane coding-tests" aria-label="用例与结果">
       <GamePanelHeader class="coding-pane-title coding-tabs" tabs role="group" aria-label="用例视图">
@@ -45,6 +60,10 @@
               <h5>{{ outcome === 'wrong_answer' && result?.feedback.source !== 'browser_practice' ? '为什么运行正确，提交却错误？' : '可以检查这些地方' }}</h5>
               <ul><li v-for="hint in failureHints" :key="hint">{{ hint }}</li></ul>
               <p>以上是排查方向，不代表已确定的错误原因。</p>
+            </section>
+            <section v-if="resultSource === 'submission' && resultExplanation" class="submission-explanation" aria-label="答案解析">
+              <h4>答案解析</h4>
+              <p>{{ resultExplanation }}</p>
             </section>
             <pre v-if="runError && resultSource === 'local'" class="coding-error" role="alert">{{ runError }}</pre>
           </template>
@@ -82,6 +101,7 @@
 </template>
 <script setup lang="ts">
 import type { AnswerValue } from "../../../../shared/questions";
+import { codingTypeLabels, parseFillTemplate, readCodingType, validateFillSubmission } from "../../../../shared/codingQuestions";
 import { computed, defineAsyncComponent, nextTick, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import GameIcon from "../../shared/GameIcon.vue";
 import GamePanelHeader from "../../shared/GamePanelHeader.vue";
@@ -147,7 +167,31 @@ const resultDuration = computed(() => {
   return submissionTime.value?.id === props.result?.id ? submissionTime.value?.ms : undefined;
 });
 let submitClick: { started: number; previousId?: string } | undefined;
+const codingType = computed(() => readCodingType(props.question.source));
+const codingBadge = computed(() => codingType.value ? codingTypeLabels[codingType.value] : '编程题');
+const difficultyLabel = computed(() => {
+  const raw = props.question.source?.difficulty;
+  return typeof raw === 'string' && ['易', '中', '难'].includes(raw) ? raw : '';
+});
+const editorDetail = computed(() => codingType.value ? `Python · ${codingTypeLabels[codingType.value]}` : 'Python · 标准输入输出');
+const isFillCode = computed(() => codingType.value === 'fill_code' && Boolean(props.question.starter_code?.trim()) && !parseFillTemplate(props.question.starter_code ?? '').error);
+const fillErrors = computed(() => isFillCode.value ? validateFillSubmission(props.question.starter_code ?? '', props.code) : []);
+const canResetCode = computed(() => !props.readOnly && !props.pendingMode && !props.busy && !running.value && Boolean(props.question.starter_code?.trim()) && props.code !== props.question.starter_code);
+function resetStarterCode() {
+  emit('update:code', props.question.starter_code ?? '');
+  localResults.value = [];
+  latestRun.value = undefined;
+  runError.value = '';
+  runStopped.value = false;
+  if (!props.result) tab.value = 'cases';
+}
 function submitCode() {
+  if (fillErrors.value.length) {
+    resultSource.value = 'local';
+    tab.value = 'results';
+    runError.value = `请仅在填空区标记内作答：${fillErrors.value.join('；')}`;
+    return;
+  }
   submitClick = { started: performance.now(), previousId: props.result?.id };
   submissionTime.value = undefined;
   emit('submit', 'submit', getPythonRunner().run);
@@ -190,7 +234,9 @@ watch([latestRun, resultSource, activeCase], () => emit('assistantFeedback', {
   displayed: resultSource.value === 'local' ? 'local_run' : 'submission',
   selected_case: activeCase.value,
 }), { deep: true });
-watch(() => [props.result, props.busy], () => { resultSource.value = 'submission'; runError.value = ''; tab.value = 'results';
+watch(() => [props.result, props.busy], () => {
+  if (!props.result && !props.busy) return;
+  resultSource.value = 'submission'; runError.value = ''; tab.value = 'results';
   if (props.result && !pendingSubmissionStates.includes(props.result.status)) activeCase.value = Math.max(0, (props.result.feedback.samples ?? []).findIndex(sample => sample.status !== 'accepted'));
 });
 let controller: AbortController | undefined;
@@ -209,6 +255,12 @@ watch(() => props.question.id, () => {
 });
 async function runSamples() {
   if (running.value || props.busy || props.readOnly) return;
+  if (fillErrors.value.length) {
+    resultSource.value = 'local';
+    tab.value = 'results';
+    runError.value = `请仅在填空区标记内作答：${fillErrors.value.join('；')}`;
+    return;
+  }
   const started = performance.now();
   resultSource.value='local'; runStopped.value=false; activeCase.value=0; tab.value='results'; running.value=true; emit('runningChange', true); runError.value=''; localResults.value=[];
   const currentController = new AbortController(), version = ++runVersion;
@@ -242,4 +294,5 @@ const resultDetail = computed(() => {
   const detail = props.result?.feedback.detail?.trim() ?? "";
   return props.result && detail !== submissionStatusName[props.result.status] ? detail : "";
 });
+const resultExplanation = computed(() => props.result?.feedback.explanation?.trim() ?? "");
 </script>

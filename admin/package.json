@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../frontend/scripts/prepare-python-runtime.mjs",
     "dev": "vite --port 5179",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",

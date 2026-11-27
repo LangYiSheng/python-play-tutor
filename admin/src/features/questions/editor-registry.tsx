@@ -1,10 +1,16 @@
 import type { ComponentType, Dispatch, SetStateAction } from "react";
-import { Check, Plus, Trash2, X } from "lucide-react";
+import { Check, Code2, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { QuestionKind } from "../../../../shared/questions";
+import {
+  nextFillSlotSnippet,
+  parseFillTemplate,
+  validateFillSubmission,
+  type CodingType,
+} from "../../../../shared/codingQuestions";
 import type { InteractiveSource } from "../../../../shared/interactivePractice";
 import { InteractiveFields } from "./interactive-fields";
 import { parseInteractiveTarget } from "./interactive-target";
@@ -17,6 +23,8 @@ interface Values {
   options: string[];
   hints: string;
   starterCode: string;
+  referenceSolution?: string;
+  codingType?: CodingType | "";
   samples: Case[];
   cases: Case[];
   editing: Question | null;
@@ -27,6 +35,7 @@ interface Fields extends Values {
   setOptions: Dispatch<SetStateAction<string[]>>;
   setHints: (value: string) => void;
   setStarterCode: (value: string) => void;
+  setReferenceSolution?: (value: string) => void;
   setSamples: (value: Case[]) => void;
   setCases: (value: Case[]) => void;
   setInteractive: (value: InteractiveSource) => void;
@@ -57,7 +66,7 @@ function ChoiceFields(props: Fields & { multiple?: boolean }) {
   const { answer, options, setAnswer, setOptions, setDirty, multiple } = props;
   const selected = Array.isArray(answer) ? answer : answer ? [answer] : [];
   return (
-    <fieldset className="field">
+    <fieldset className="field !mb-0">
       <legend>选项与正确答案</legend>
       {multiple && (
         <p className="hint">至少勾选两个正确答案；学生须全部选对，少选或多选均不通过。</p>
@@ -173,7 +182,7 @@ function MultipleFields(props: Fields) {
 function BooleanFields({ answer, setAnswer, setDirty }: Fields) {
   const val = typeof answer === "string" ? answer : "";
   return (
-    <fieldset className="field">
+    <fieldset className="field !mb-0">
       <legend>正确答案</legend>
       <div className="flex gap-2" role="group" aria-label="正确答案">
         <Button
@@ -217,7 +226,7 @@ function BooleanFields({ answer, setAnswer, setDirty }: Fields) {
 
 function FillFields({ answer, setAnswer, setDirty }: Fields) {
   return (
-    <div className="field">
+    <div className="field !mb-0">
       <Label htmlFor="q-answer">可接受答案（每行一个）</Label>
       <Textarea
         id="q-answer"
@@ -237,28 +246,99 @@ function FillFields({ answer, setAnswer, setDirty }: Fields) {
 function PythonFields({
   starterCode,
   setStarterCode,
+  referenceSolution = "",
+  setReferenceSolution,
+  codingType = "",
   hints,
   setHints,
   setDirty,
 }: Fields) {
+  const isFill = codingType === "fill_code";
+  const starterParse = isFill && starterCode.trim() ? parseFillTemplate(starterCode) : null;
+  const fillMismatch =
+    isFill && starterCode.trim() && referenceSolution.trim()
+      ? validateFillSubmission(starterCode, referenceSolution)
+      : [];
+
+  function insertSlot() {
+    const snippet = nextFillSlotSnippet(starterCode);
+    const next = starterCode.trim() ? `${starterCode.replace(/\s*$/, "")}\n${snippet}\n` : `${snippet}\n`;
+    setStarterCode(next);
+    setDirty(true);
+  }
+
   return (
-    <>
-      <div className="field">
-        <Label htmlFor="q-starter">初始 Python 代码（标准输入输出）</Label>
+    <div className="flex flex-col gap-4">
+      <div className="field !mb-0">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="q-starter">
+            {isFill
+              ? "初始 Python 代码（含填空区标记）"
+              : codingType === "debug"
+                ? "初始 Python 代码（待修复的含错代码）"
+                : "初始 Python 代码（标准输入输出）"}
+          </Label>
+          {isFill && (
+            <Button type="button" variant="outline" size="xs" onClick={insertSlot}>
+              <Code2 /> 插入填空区标记
+            </Button>
+          )}
+        </div>
         <Textarea
           id="q-starter"
+          rows={7}
+          className="field-sizing-fixed h-40 max-h-64 resize-y overflow-y-auto font-mono text-xs"
           value={starterCode}
           maxLength={20000}
+          placeholder={
+            isFill
+              ? "使用 # === 填空区 1 开始 === 与 # === 填空区 1 结束 === 框出可编辑区"
+              : codingType === "debug"
+                ? "填入包含 1–3 处典型错误的初始代码"
+                : "可留空，或提供基础输入输出模板"
+          }
           onChange={(event) => {
             setStarterCode(event.target.value);
             setDirty(true);
           }}
         />
+        {starterParse && (
+          <p className={starterParse.error ? "text-xs text-destructive" : "hint"}>
+            {starterParse.error
+              ? starterParse.error
+              : `已识别 ${starterParse.template?.slotIds.length ?? 0} 个填空区，标记外代码将在提交时校验未被篡改。`}
+          </p>
+        )}
       </div>
-      <div className="field">
+      {setReferenceSolution && (
+        <div className="field !mb-0">
+          <Label htmlFor="q-reference-solution">参考答案代码（仅教师可见，用于一键验题）</Label>
+          <Textarea
+            id="q-reference-solution"
+            rows={7}
+            className="field-sizing-fixed h-40 max-h-64 resize-y overflow-y-auto font-mono text-xs"
+            value={referenceSolution}
+            maxLength={20000}
+            placeholder={
+              isFill
+                ? "保留与初始代码相同的填空区标记与锁定框架，在标记内填入参考答案"
+                : "填写可通过全部公开样例与私有用例的参考代码（不会向学生展示）"
+            }
+            onChange={(event) => {
+              setReferenceSolution(event.target.value);
+              setDirty(true);
+            }}
+          />
+          {fillMismatch.length > 0 && (
+            <p className="text-xs text-destructive">{fillMismatch.join("；")}</p>
+          )}
+        </div>
+      )}
+      <div className="field !mb-0">
         <Label htmlFor="q-hints">分步提示（每行一条，最多10条）</Label>
         <Textarea
           id="q-hints"
+          rows={3}
           value={hints}
           onChange={(event) => {
             setHints(event.target.value);
@@ -266,7 +346,7 @@ function PythonFields({
           }}
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -316,7 +396,14 @@ export const questionEditors: Record<QuestionKind, EditorDefinition> = {
     Fields: PythonFields,
     restore: text,
     serialize: (value) => ({
-      answer: value.editing?.kind === "python" ? value.editing.answer : null,
+      answer:
+        value.referenceSolution !== undefined
+          ? value.referenceSolution.trim()
+            ? { reference_solution: value.referenceSolution }
+            : null
+          : value.editing?.kind === "python"
+            ? value.editing.answer
+            : null,
       hints: value.hints.split("\n").filter((line) => line.trim()),
       starter_code: value.starterCode,
       hidden_cases: value.cases,

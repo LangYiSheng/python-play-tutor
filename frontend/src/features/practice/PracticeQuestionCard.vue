@@ -24,6 +24,13 @@
         <strong role="status">{{ result.mode === 'run' ? `公开样例 · ${submissionStatusName[result.status]}` : submissionStatusName[result.status] }}</strong>
       </header>
       <p v-if="resultDetail">{{ resultDetail }}</p>
+      <section v-if="resultCorrectAnswer || resultExplanation" class="submission-explanation" aria-label="答案解析">
+        <p v-if="resultCorrectAnswer" class="submission-correct-answer"><strong>参考答案：</strong>{{ resultCorrectAnswer }}</p>
+        <template v-if="resultExplanation">
+          <h4>答案解析</h4>
+          <p>{{ resultExplanation }}</p>
+        </template>
+      </section>
       <section v-for="(sample, sampleIndex) in result.feedback.samples ?? []" :key="sampleIndex" class="public-sample-feedback" aria-label="公开样例反馈">
         <h4>公开样例 {{ sampleIndex + 1 }} · {{ publicStatusName(sample.status) }}</h4>
         <h5>标准输出</h5><pre tabindex="0">{{ sample.stdout || "（无输出）" }}</pre>
@@ -60,6 +67,8 @@ const resultDetail = computed(() => {
   const detail = props.result?.feedback.detail?.trim() ?? "";
   return props.result && detail !== submissionStatusName[props.result.status] ? detail : "";
 });
+const resultExplanation = computed(() => props.result?.feedback.explanation?.trim() ?? "");
+const resultCorrectAnswer = computed(() => props.result?.feedback.correct_answer?.trim() ?? "");
 const kindName = questionKindLabels;
 function publicStatusName(status: SubmissionStatus) { return status === "accepted" ? "通过" : status === "wrong_answer" ? "答案未通过" : submissionStatusName[status]; }
 </script>

@@ -20,7 +20,7 @@ from .go_judge import GoJudgeAdapter
 from .models import Classroom, QuestionSecret, Submission, User, now
 from .browser_practice import BrowserCase, stage_browser_submission
 from .practice_sessions import lock_learner, record_attempt, require_attempt
-from .question_types import grade_answer, question_type
+from .question_types import answer_value, grade_answer, question_type
 from .interactive_practice import interactive_feedback, same_json, validate_receipt
 
 router = APIRouter(tags=["practice"])
@@ -38,14 +38,46 @@ class SubmissionInput(BaseModel):
     browser_cases: list[BrowserCase] | None = Field(default=None, min_length=1, max_length=20)
 
 
-def public_submission(row: Submission) -> dict:
+def question_explanation(question) -> str:
+    """Return student-facing explanation stored in question.source, if any."""
+    source = getattr(question, "source", None)
+    if not isinstance(source, dict):
+        return ""
+    return str(source.get("explanation") or "").strip()
+
+
+def format_objective_answer(question, secret) -> str:
+    """Format an objective question's reference answer for locked post-hand-in review."""
+    if not question or not secret:
+        return ""
+    if question.kind == "interactive" or question_type(question.kind).execution == "python":
+        return ""
+    raw = answer_value(secret.answer)
+    if question.kind == "boolean":
+        if raw is True:
+            return "正确"
+        if raw is False:
+            return "错误"
+        return ""
+    if question.kind == "multiple_choice" and isinstance(raw, list):
+        return "；".join(str(item).strip() for item in raw if str(item).strip())
+    if question.kind == "fill":
+        if isinstance(raw, list):
+            items = [str(item).strip() for item in raw if str(item).strip()]
+            return items[0] if items else ""
+        return str(raw or "").strip()
+    return str(raw or "").strip()
+
+
+def public_submission(row: Submission, *, extra_feedback: dict | None = None) -> dict:
+    feedback = {**(row.feedback or {}), **extra_feedback} if extra_feedback else row.feedback
     return {
         "id": row.id,
         "activity_id": row.activity_id,
         "question_id": row.question_id,
         "mode": row.mode,
         "status": row.status,
-        "feedback": row.feedback,
+        "feedback": feedback,
         "created_at": as_utc(row.created_at).isoformat(),
     }
 
@@ -81,7 +113,16 @@ def stage_submission(db, user, classroom_id, activity, question, answer, code, k
         row.status, row.feedback = "prepared", {"detail": "已保存，等待判题"}
     else:
         row.status = "accepted" if grade_answer(answer, secret.answer, question.kind) else "wrong_answer"
-        row.feedback = {"detail": "回答正确" if row.status == "accepted" else "请结合课件重新思考", "status": row.status}
+        feedback = {"detail": "回答正确" if row.status == "accepted" else "请结合课件重新思考", "status": row.status}
+        if row.status == "accepted" or activity.kind == "assessment":
+            explanation = question_explanation(question)
+            if explanation:
+                feedback["explanation"] = explanation
+            if activity.kind == "assessment" and row.status != "accepted":
+                correct_text = format_objective_answer(question, secret)
+                if correct_text:
+                    feedback["correct_answer"] = correct_text
+        row.feedback = feedback
     db.add(row)
     db.flush()
     if question_type(question.kind).execution == "python":

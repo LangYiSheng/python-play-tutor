@@ -114,7 +114,11 @@ export interface Question {
   owner_id: number | null;
 }
 
-export type QuestionCandidate = Pick<Question, "id" | "title" | "kind" | "status" | "owner_id" | "knowledge_point_ids"> & { has_samples: boolean };
+export type QuestionCandidate = Pick<Question, "id" | "title" | "kind" | "status" | "owner_id" | "knowledge_point_ids"> & {
+  has_samples: boolean;
+  coding_type?: string | null;
+  usage?: string | null;
+};
 
 export interface ActivityResource {
   material_id: number;

@@ -72,6 +72,7 @@
 </template>
 <script setup lang="ts">
 import { questionType, restoreDraft, submissionAnswer, type AnswerValue, type QuestionDraft } from "../../../../shared/questions";
+import { parseFillTemplate, readCodingType, validateFillSubmission } from "../../../../shared/codingQuestions";
 import type { InteractiveResult } from '../../../../shared/interactivePractice';
 import { randomUUID } from "../../shared/uuid";
 import type { AssistantFeedback, AssistantState } from '../../shared/assistantState';
@@ -400,6 +401,20 @@ async function advanceTask() {
 }
 async function submitPaper() {
   if (!activity.value || !isAssessment.value || paper.value?.locked || requestBusy.value || !allAnswered.value) return;
+  for (const [idx, question] of questions.value.entries()) {
+    if (
+      question.kind === 'python'
+      && readCodingType(question.source) === 'fill_code'
+      && question.starter_code?.trim()
+      && !parseFillTemplate(question.starter_code).error
+    ) {
+      const fillErrs = validateFillSubmission(question.starter_code, drafts.value[question.id]?.code ?? '');
+      if (fillErrs.length) {
+        error.value = `第 ${idx + 1} 题「${question.title}」未按填空区要求作答：${fillErrs.join('；')}`;
+        return;
+      }
+    }
+  }
   const ticket = generation; requestBusy.value = true; error.value = '';
   try {
     await flushDrafts();

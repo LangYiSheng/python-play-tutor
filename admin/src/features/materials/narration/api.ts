@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
-import type { ScriptStyleOptions } from "@/lib/lectio-api";
+import type { ScriptStyleOptions } from "@/lib/course-studio-api";
 
-export type { ScriptStyleOptions, ScriptStylePreset } from "@/lib/lectio-api";
+export type { ScriptStyleOptions, ScriptStylePreset } from "@/lib/course-studio-api";
 
 function cleanScriptOptions(options?: ScriptStyleOptions): Record<string, unknown> {
   if (!options) return {};

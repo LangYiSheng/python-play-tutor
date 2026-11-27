@@ -17,7 +17,7 @@ import { NarrationPlayer } from "@/features/materials/narration/player";
 import type { MaterialPreview } from "@/features/materials/types";
 import { useMaterialEditor } from "@/features/materials/use-editor";
 import { api, errorMessage, scoped } from "@/lib/api";
-import { lectioApi, useLectioJobs, type KnowledgeOverview, type LectioJob } from "@/lib/lectio-api";
+import { courseStudioApi, useCourseStudioJobs, type KnowledgeOverview, type CourseStudioJob } from "@/lib/course-studio-api";
 import { materialKindLabel } from "@/lib/material-kind";
 import type { Chapter, Course, Material } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
@@ -78,15 +78,15 @@ export function CoursewarePage({ courseId }: { courseId: number }) {
 function CoursewareInner({ courseId }: { courseId: number }) {
   const course = useResource<Course>(scoped("/teacher/catalog?view=chapters", courseId));
   const matResource = useResource<MaterialsPayload>(scoped("/teacher/materials", courseId));
-  const knowledge = useResource<KnowledgeOverview>(`/teacher/courses/${courseId}/lectio/knowledge`);
+  const knowledge = useResource<KnowledgeOverview>(`/teacher/courses/${courseId}/course-studio/knowledge`);
   const [taskRev, setTaskRev] = useState(0);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [extractBusy, setExtractBusy] = useState(false);
   const taskList = useGraphData<TaskSnapshot[]>(scoped("/teacher/course-graph/tasks", courseId), taskRev, 4000);
   const refreshTasks = useCallback(() => setTaskRev((n) => n + 1), []);
   const taskCommands = useTaskCommands(courseId, refreshTasks);
-  const handleLectioJobDone = useCallback(
-    (job: LectioJob) => {
+  const handleCourseStudioJobDone = useCallback(
+    (job: CourseStudioJob) => {
       if (job.kind === "knowledge_extract") {
         knowledge.reload();
         const created = typeof job.result?.created === "number" ? job.result.created : null;
@@ -102,7 +102,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
     },
     [knowledge.reload],
   );
-  const handleLectioJobFailed = useCallback((job: LectioJob) => {
+  const handleCourseStudioJobFailed = useCallback((job: CourseStudioJob) => {
     if (job.kind === "knowledge_extract") {
       toast.add({
         title: "课件知识点抽取失败",
@@ -111,7 +111,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
       });
     }
   }, []);
-  const lectioJobs = useLectioJobs(courseId, handleLectioJobDone, handleLectioJobFailed);
+  const studioJobs = useCourseStudioJobs(courseId, handleCourseStudioJobDone, handleCourseStudioJobFailed);
   const [query, setQuery] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState<number | null>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState<number | null>(null);
@@ -250,7 +250,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
   }, [activeMaterial, knowledgeChapters]);
   const extractingKnowledge =
     extractBusy ||
-    lectioJobs.jobs.some(
+    studioJobs.jobs.some(
       (j) => j.kind === "knowledge_extract" && (j.status === "queued" || j.status === "running"),
     );
 
@@ -262,9 +262,9 @@ function CoursewareInner({ courseId }: { courseId: number }) {
     }
     setExtractBusy(true);
     try {
-      await lectioApi.extractKnowledge(courseId, chapterId, [mat.id]);
+      await courseStudioApi.extractKnowledge(courseId, chapterId, [mat.id]);
       toast.add({ title: `已提交「${mat.title}」知识点抽取，完成后自动刷新`, type: "success" });
-      lectioJobs.refresh();
+      studioJobs.refresh();
     } catch (e) {
       toast.add({ title: errorMessage(e), type: "error" });
     } finally {

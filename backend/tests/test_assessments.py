@@ -79,6 +79,26 @@ def test_one_hand_in_is_atomic_immutable_and_wrong_answers_still_finish_the_pape
     assert again.status_code == 201 and again.json()["question_ids"] == paper["question_ids"]
 
 
+def test_locked_assessment_reveals_explanation_and_correct_answer_on_wrong_items(client, db, student, classroom):
+    activity = db.get(Activity, "ch1-assessment")
+    qs = assessment_questions(db, activity)
+    for idx, q in enumerate(qs, start=1):
+        q.source = {**(q.source or {}), "explanation": f"第 {idx} 题详细解析说明。"}
+    db.commit()
+
+    res = hand_in(client, db, student, classroom, correct=False, key="paper-explain-0001")
+    assert res.status_code == 201, res.text
+    paper = res.json()
+    assert paper["locked"] is True
+    assert len(paper["results"]) == len(qs)
+    for item in paper["results"]:
+        assert item["feedback"].get("explanation", "").endswith("详细解析说明。")
+    wrong_items = [item for item in paper["results"] if item["status"] != "accepted"]
+    assert wrong_items
+    for item in wrong_items:
+        assert item["feedback"].get("correct_answer")
+
+
 def test_hand_in_requires_every_current_question_and_rolls_back_if_any_grade_is_unavailable(client, db, student, classroom):
     entries = answers(db)
     for invalid in (entries[:1], [*entries, entries[0]], [{"question_id": "not-this-paper", "answer": True}],

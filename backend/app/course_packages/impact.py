@@ -79,7 +79,7 @@ def preview_impact(db, instance, bundle):
     blockers, learning_impact = [], []
     if instance:
         from app.db import RetirableContent
-        from app.lectio.jobs import has_active_course_jobs
+        from app.course_studio.jobs import has_active_course_jobs
 
         if has_active_course_jobs(db, instance.id):
             blockers.append("课程备课任务仍在处理，请完成后重新预览")
@@ -149,7 +149,12 @@ def preview_impact(db, instance, bundle):
                 count = [r.classroom_id for r in submissions if r.question_id == key] + [r.classroom_id for r in attempts if key in r.question_ids]
                 protect("question", stable, count, "已有正式题目证据，改变题型需要新的题目ID")
             new_question = incoming["question"][stable]
-            available = practice_question_available(new_question["kind"], new_question["status"], bool(new_question["samples"]))
+            available = practice_question_available(
+                new_question["kind"],
+                new_question["status"],
+                bool(new_question["samples"]),
+                (new_question.get("source") or {}).get("usage"),
+            )
             available_points = {maps["knowledge_point"].get(point) for point in new_question["knowledge_point_ids"]}
             assigned = [session.classroom_id for session in practices if any(item["question_id"] == key and (
                     item["kind"] != new_question["kind"] or not available or item["knowledge_point_id"] not in available_points

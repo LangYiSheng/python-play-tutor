@@ -8,17 +8,53 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import type { editor, IDisposable } from "monaco-editor";
+import { parseFillTemplate } from "../../../../shared/codingQuestions";
 import { useUiPreferences } from "../../shared/uiPreferences";
 const preferences = useUiPreferences();
-const props = defineProps<{ modelValue: string }>();
+const props = withDefaults(defineProps<{ modelValue: string; highlightFillSlots?: boolean }>(), { highlightFillSlots: false });
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const root = ref<HTMLElement>(), loadError = ref("");
 const position = ref({ lineNumber: 1, column: 1 });
 let view: editor.IStandaloneCodeEditor | undefined;
 let model: editor.ITextModel | undefined;
+let decorations: editor.IEditorDecorationsCollection | undefined;
 let subscription: IDisposable | undefined;
 let cursorSubscription: IDisposable | undefined;
 let disposed = false;
+let syncingExternal = false;
+
+function updateFillDecorations() {
+  if (!view || !model) return;
+  if (!props.highlightFillSlots) {
+    decorations?.clear();
+    return;
+  }
+  const { template } = parseFillTemplate(model.getValue());
+  if (!template) {
+    decorations?.clear();
+    return;
+  }
+  const items: editor.IModelDeltaDecoration[] = [];
+  for (const range of template.ranges) {
+    items.push({
+      range: { startLineNumber: range.startMarkerLine, startColumn: 1, endLineNumber: range.startMarkerLine, endColumn: 1 },
+      options: { isWholeLine: true, className: "fill-slot-marker-line" },
+    });
+    items.push({
+      range: { startLineNumber: range.endMarkerLine, startColumn: 1, endLineNumber: range.endMarkerLine, endColumn: 1 },
+      options: { isWholeLine: true, className: "fill-slot-marker-line" },
+    });
+    if (range.endMarkerLine - range.startMarkerLine > 1) {
+      items.push({
+        range: { startLineNumber: range.startMarkerLine + 1, startColumn: 1, endLineNumber: range.endMarkerLine - 1, endColumn: 1 },
+        options: { isWholeLine: true, className: "fill-slot-body-line" },
+      });
+    }
+  }
+  if (!decorations) decorations = view.createDecorationsCollection(items);
+  else decorations.set(items);
+}
+
 onMounted(async () => {
   try {
     const { monaco } = await import("./monaco");
@@ -38,7 +74,11 @@ onMounted(async () => {
       scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
       unicodeHighlight: { ambiguousCharacters: false, nonBasicASCII: false },
     });
-    subscription = view.onDidChangeModelContent(() => emit("update:modelValue", model!.getValue()));
+    updateFillDecorations();
+    subscription = view.onDidChangeModelContent(() => {
+      if (!syncingExternal) emit("update:modelValue", model!.getValue());
+      updateFillDecorations();
+    });
     cursorSubscription = view.onDidChangeCursorPosition(event => { position.value = event.position; });
     void document.fonts?.ready.then(() => { if (!disposed) monaco.editor.remeasureFonts(); });
   } catch {
@@ -46,14 +86,25 @@ onMounted(async () => {
   }
 });
 watch(() => props.modelValue, (value) => {
-  if (view && model && value !== model.getValue())
-    view.executeEdits("draft", [{ range: model.getFullModelRange(), text: value }]);
+  if (view && model && value !== model.getValue()) {
+    syncingExternal = true;
+    try {
+      view.executeEdits("draft", [{ range: model.getFullModelRange(), text: value }]);
+    } finally {
+      syncingExternal = false;
+    }
+    updateFillDecorations();
+  }
+});
+watch(() => props.highlightFillSlots, () => {
+  updateFillDecorations();
 });
 watch(() => preferences.textScale, (scale) => {
   view?.updateOptions({ fontSize: 14 * scale, lineHeight: 22 * scale });
 });
 onBeforeUnmount(() => {
   disposed = true;
+  decorations?.clear();
   subscription?.dispose(); cursorSubscription?.dispose(); view?.dispose(); model?.dispose();
 });
 </script>

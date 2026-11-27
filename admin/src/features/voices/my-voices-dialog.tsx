@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import {
   Check,
   Link2,
@@ -60,6 +60,12 @@ const PROTOCOL_NAMES: Record<string, string> = {
   manual: "手动绑定",
 };
 
+const ALLOWED_AUDIO_EXTS = /\.(wav|mp3|m4a|ogg|flac|webm)$/i;
+
+function isSupportedAudioFile(file: File): boolean {
+  return ALLOWED_AUDIO_EXTS.test(file.name) || file.type.startsWith("audio/");
+}
+
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -114,6 +120,7 @@ export function MyVoicesDialog({
   const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [sampleUrl, setSampleUrl] = useState("");
   const [sampleSeconds, setSampleSeconds] = useState<number | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordElapsed, setRecordElapsed] = useState(0);
   const [micLevel, setMicLevel] = useState(0);
@@ -132,6 +139,7 @@ export function MyVoicesDialog({
   const meterFrameRef = useRef<number | null>(null);
   const meterCtxRef = useRef<AudioContext | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepthRef = useRef(0);
 
   const stopRecordingResources = useCallback(() => {
     if (recordTimerRef.current !== null) {
@@ -164,6 +172,8 @@ export function MyVoicesDialog({
   const clearSample = useCallback(() => {
     setSampleFile(null);
     setSampleSeconds(null);
+    setDragActive(false);
+    dragDepthRef.current = 0;
     setSampleUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return "";
@@ -310,10 +320,12 @@ export function MyVoicesDialog({
     }
   }
 
-  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0];
-    if (!picked) return;
+  async function acceptAudioFile(picked: File) {
     setError("");
+    if (!isSupportedAudioFile(picked)) {
+      setError("仅支持 .wav / .mp3 / .m4a / .ogg / .flac / .webm 音频文件。");
+      return;
+    }
     if (picked.size > 10 * 1024 * 1024) {
       setError("音频文件不能超过 10 MB，请裁剪为 10–30 秒清晰人声。");
       return;
@@ -332,6 +344,44 @@ export function MyVoicesDialog({
     }
     if (duration !== null) {
       setSampleSeconds(duration);
+    }
+  }
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0];
+    if (!picked) return;
+    await acceptAudioFile(picked);
+  }
+
+  function handleUploadDragEnter(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current += 1;
+    setDragActive(true);
+  }
+
+  function handleUploadDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    if (!dragActive) setDragActive(true);
+  }
+
+  function handleUploadDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragActive(false);
+  }
+
+  function handleUploadDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    const dropped = e.dataTransfer?.files?.[0];
+    if (dropped) {
+      void acceptAudioFile(dropped);
     }
   }
 
@@ -942,16 +992,44 @@ export function MyVoicesDialog({
                   </TabsContent>
 
                   <TabsContent value="upload" className="space-y-2 pt-2">
-                    <div className="rounded-md border border-dashed p-4 space-y-2">
+                    <div
+                      data-testid="voice-upload-dropzone"
+                      onDragEnter={handleUploadDragEnter}
+                      onDragOver={handleUploadDragOver}
+                      onDragLeave={handleUploadDragLeave}
+                      onDrop={handleUploadDrop}
+                      className={`rounded-md border border-dashed p-4 space-y-3 transition-colors ${
+                        dragActive ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/50"
+                      }`}
+                    >
                       <input
                         ref={fileInputRef}
                         id="enroll-voice-file"
                         type="file"
                         accept=".wav,.mp3,.m4a,.ogg,.flac,.webm,audio/*"
-                        className="block w-full text-xs file:mr-3 file:rounded file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-accent"
+                        className="sr-only"
                         onChange={(e) => void handleFileChange(e)}
                       />
-                      <p className="hint">支持 .wav / .mp3 / .m4a / .ogg / .flac（建议 10–20 秒，单文件 ≤ 10 MB）。</p>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => fileInputRef.current?.click()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            fileInputRef.current?.click();
+                          }
+                        }}
+                        className="flex cursor-pointer flex-col items-center justify-center gap-1.5 py-2 text-center"
+                      >
+                        <Upload size={18} className={dragActive ? "text-primary" : "text-muted-foreground"} />
+                        <p className="text-xs font-medium">
+                          {dragActive ? "松开鼠标即可导入音频文件" : "将音频文件拖拽到此处，或点击选择文件"}
+                        </p>
+                        <p className="hint">
+                          支持 .wav / .mp3 / .m4a / .ogg / .flac（建议 10–20 秒，单文件 ≤ 10 MB）。
+                        </p>
+                      </div>
                       {sampleUrl && sampleFile && (
                         <div className="space-y-1.5 pt-2 border-t">
                           <div className="flex items-center justify-between text-xs text-muted-foreground">

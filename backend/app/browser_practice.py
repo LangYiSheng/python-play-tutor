@@ -3,6 +3,7 @@
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from .coding_questions import check_fill_submission_for_question
 from .models import Submission
 
 
@@ -17,6 +18,9 @@ class BrowserCase(BaseModel):
 def stage_browser_submission(db, user, classroom_id, activity, question, code, key, cases):
     if not code or not code.strip():
         raise HTTPException(422, "请填写代码")
+    fill_error = check_fill_submission_for_question(question, code)
+    if fill_error:
+        raise HTTPException(422, f"请仅在填空区标记内作答：{fill_error}")
     if not question.samples or len(question.samples) > 20:
         raise HTTPException(422, "此题尚未配置有效的公开样例，请联系教师")
     if cases is None or len(cases) != len(question.samples):

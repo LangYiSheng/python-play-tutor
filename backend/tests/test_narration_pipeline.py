@@ -89,7 +89,7 @@ def test_pipeline_runs_every_stage_and_writes_digest_script_and_knowledge(client
     titles = {kp.title for kp in kps}
     assert {"变量定义", "变量赋值"}.issubset(titles)
     by_title = {kp.title: kp for kp in kps}
-    src = by_title["变量定义"].content["lectio"]["sources"][0]
+    src = by_title["变量定义"].content["course_studio"]["sources"][0]
     assert src == {"material_stable_id": material.stable_id, "pages": [1]}
 
 

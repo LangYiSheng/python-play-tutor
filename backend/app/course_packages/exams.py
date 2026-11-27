@@ -1,4 +1,4 @@
-"""Snapshot, export, validate, preview, and restore Lectio exams in format 4 course packages."""
+"""Snapshot, export, validate, preview, and restore Course Studio exams in format 4 course packages."""
 
 from __future__ import annotations
 
@@ -11,28 +11,28 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.course_packages.manifest import PackageError
-from app.lectio.models import LectioExam
+from app.course_studio.models import CourseStudioExam
 
 EXAMS_FILE = "content/exams.jsonl"
 EXPORT_FIELDS = ("id", "title", "mode", "blueprint", "variants", "stats")
 MAX_EXAMS = 500
 
 
-def current_rows(db: Session, instance: Any) -> list[LectioExam]:
-    """Return ordered LectioExam rows for one course instance."""
+def current_rows(db: Session, instance: Any) -> list[CourseStudioExam]:
+    """Return ordered CourseStudioExam rows for one course instance."""
     if instance is None:
         return []
     return list(
         db.scalars(
-            select(LectioExam)
-            .where(LectioExam.course_instance_id == instance.id)
-            .order_by(LectioExam.stable_id, LectioExam.id)
+            select(CourseStudioExam)
+            .where(CourseStudioExam.course_instance_id == instance.id)
+            .order_by(CourseStudioExam.stable_id, CourseStudioExam.id)
         )
     )
 
 
-def serialize_exam(row: LectioExam) -> dict[str, Any]:
-    """Serialize one LectioExam row into its portable package payload."""
+def serialize_exam(row: CourseStudioExam) -> dict[str, Any]:
+    """Serialize one CourseStudioExam row into its portable package payload."""
     return {
         "id": row.stable_id,
         "title": row.title,
@@ -105,9 +105,9 @@ def preview_exams(db: Session, instance: Any, bundle: dict[str, Any]) -> dict[st
 
 
 def import_exams(db: Session, instance: Any, bundle: dict[str, Any], *, replace: bool) -> None:
-    """Restore or upsert portable LectioExam rows inside the caller transaction."""
+    """Restore or upsert portable CourseStudioExam rows inside the caller transaction."""
     if replace:
-        db.execute(delete(LectioExam).where(LectioExam.course_instance_id == instance.id))
+        db.execute(delete(CourseStudioExam).where(CourseStudioExam.course_instance_id == instance.id))
     exams_present = bool(bundle.get("exams_present"))
     rows = bundle.get("exams", [])
     if not exams_present and not rows:
@@ -119,7 +119,7 @@ def import_exams(db: Session, instance: Any, bundle: dict[str, Any], *, replace:
     for source in rows:
         row = existing.get(source["id"])
         if row is None:
-            row = LectioExam(course_instance_id=instance.id, stable_id=source["id"], created_by=None)
+            row = CourseStudioExam(course_instance_id=instance.id, stable_id=source["id"], created_by=None)
             db.add(row)
         row.title = source["title"]
         row.mode = source["mode"]
@@ -130,5 +130,5 @@ def import_exams(db: Session, instance: Any, bundle: dict[str, Any], *, replace:
     if exams_present and not replace:
         stale_ids = [row.id for stable, row in existing.items() if stable not in incoming_ids]
         if stale_ids:
-            db.execute(delete(LectioExam).where(LectioExam.id.in_(stale_ids)))
+            db.execute(delete(CourseStudioExam).where(CourseStudioExam.id.in_(stale_ids)))
     db.flush()

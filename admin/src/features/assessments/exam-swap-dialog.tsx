@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/api";
-import { lectioApi, type ExamCandidate, type ExamSectionType } from "@/lib/lectio-api";
+import { courseStudioApi, type ExamCandidate, type ExamSectionType } from "@/lib/course-studio-api";
 
 export const EXAM_TYPE_LABELS: Record<ExamSectionType, string> = {
   single: "单选题",
@@ -62,7 +62,7 @@ function SwapBody({
 
   useEffect(() => {
     const controller = new AbortController();
-    lectioApi
+    courseStudioApi
       .listExamCandidates(courseId, examId, variant, uid)
       .then((res) => {
         if (!controller.signal.aborted) {

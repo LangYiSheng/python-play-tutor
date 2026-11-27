@@ -15,8 +15,8 @@ from .assistant_settings import configuration as assistant_configuration
 from .auth import require_teacher
 from .db import get_db
 from .integration_models import AssistantCall
-from .lectio.jobs import has_active_course_jobs
-from .lectio.models import LectioExam
+from .course_studio.jobs import has_active_course_jobs
+from .course_studio.models import CourseStudioExam
 from .models import (
     Activity, ActivityMaterial, ActivityQuestion, AssessmentAttempt, Chapter, Classroom, CourseInstance, KnowledgePoint, Material,
     MaterialChapter, MaterialParticipation, Membership, Question, QuestionChapter, QuestionKnowledgePoint, Submission,
@@ -105,7 +105,7 @@ def _deletion_impact(db, course_id, classroom_ids):
     counts = {"classrooms": len(classroom_ids)}
     for key, model in {
         "chapters": Chapter, "materials": Material, "knowledge_points": KnowledgePoint, "questions": Question,
-        "activities": Activity, "exam_drafts": LectioExam,
+        "activities": Activity, "exam_drafts": CourseStudioExam,
     }.items():
         counts[key] = db.scalar(select(func.count()).select_from(_course_rows(model, course_id).subquery()).execution_options(include_deleted=True))
     for key, model in {

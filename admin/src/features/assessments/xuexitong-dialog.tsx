@@ -15,7 +15,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import { lectioApi, type ExerciseValidateResult, type KnowledgeChapter } from "@/lib/lectio-api";
+import { courseStudioApi, type ExerciseValidateResult, type KnowledgeChapter } from "@/lib/course-studio-api";
 
 function XuexitongBody({ courseId, onClose }: { courseId: number; onClose: () => void }) {
   const [chapters, setChapters] = useState<KnowledgeChapter[]>([]);
@@ -28,7 +28,7 @@ function XuexitongBody({ courseId, onClose }: { courseId: number; onClose: () =>
 
   useEffect(() => {
     const controller = new AbortController();
-    lectioApi
+    courseStudioApi
       .listKnowledge(courseId, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted) {
@@ -55,7 +55,7 @@ function XuexitongBody({ courseId, onClose }: { courseId: number; onClose: () =>
     setBusy(true);
     setError("");
     try {
-      const res = await lectioApi.validateExercises(courseId, {
+      const res = await courseStudioApi.validateExercises(courseId, {
         chapterId: scopeOpts.chapterId,
         status: scopeOpts.status,
       });
@@ -71,7 +71,7 @@ function XuexitongBody({ courseId, onClose }: { courseId: number; onClose: () =>
     setBusy(true);
     setError("");
     try {
-      await lectioApi.exportExercises(courseId, fmt, scopeOpts);
+      await courseStudioApi.exportExercises(courseId, fmt, scopeOpts);
       toast.add({ title: "题库导出已开始", type: "success" });
     } catch (e) {
       setError(errorMessage(e));

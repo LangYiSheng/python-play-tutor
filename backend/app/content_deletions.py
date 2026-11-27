@@ -52,8 +52,8 @@ def title(row):
     return row.title
 
 
-def lectio_sources(point):
-    metadata = (point.content or {}).get("lectio")
+def studio_sources(point):
+    metadata = (point.content or {}).get("course_studio")
     sources = metadata.get("sources") if isinstance(metadata, dict) else None
     return sources if isinstance(sources, list) else []
 
@@ -101,7 +101,7 @@ def plan_deletion(db, user, instance, targets):
     for key, row in rows["knowledge_point"].items():
         if key in retiring["knowledge_point"] or not retired_material_ids:
             continue
-        sources = lectio_sources(row)
+        sources = studio_sources(row)
         remaining = [source for source in sources if material_source_id(source) not in retired_material_ids]
         if len(remaining) == len(sources):
             continue
@@ -337,10 +337,10 @@ def confirm_deletion(course_id: int, preview_id: str, body: ConfirmInput, user: 
     for key, row in rows["knowledge_point"].items():
         if key in retiring["knowledge_point"] or not retired_material_ids:
             continue
-        sources = lectio_sources(row)
+        sources = studio_sources(row)
         remaining = [source for source in sources if material_source_id(source) not in retired_material_ids]
         if len(remaining) != len(sources):
-            row.content = {**row.content, "lectio": {**row.content["lectio"], "sources": remaining}}
+            row.content = {**row.content, "course_studio": {**row.content["course_studio"], "sources": remaining}}
     for release in db.scalars(select(ChapterRelease).where(ChapterRelease.classroom_id.in_(course_class_ids(course_id)))):
         if release.chapter_id in chapter_ids:
             release.status = "paused"

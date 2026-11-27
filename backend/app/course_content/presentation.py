@@ -24,7 +24,7 @@ def public_question(question: Question, *, include_interactive: bool = True):
         "hints": question.hints,
         "starter_code": question.starter_code,
         **({"interactive": question.interactive} if include_interactive and question.kind == "interactive" else {}),
-        "source": {k: v for k, v in (question.source or {}).items() if k != "explanation"},
+        "source": {k: v for k, v in (question.source or {}).items() if k not in {"explanation", "created_at"}},
     }
 
 

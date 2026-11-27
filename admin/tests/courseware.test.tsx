@@ -87,7 +87,7 @@ it("shows chapter-material tree, auto-collapses on PPT open, and edits digest te
     if (url.pathname.endsWith("/narrations/job")) {
       return json({ running: false, queued: false, status: "done", done: 1, total: 1, message: "", failed: [] });
     }
-    if (url.pathname.endsWith("/lectio/knowledge")) {
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
       return json({
         chapters: [
           {
@@ -129,7 +129,7 @@ it("shows chapter-material tree, auto-collapses on PPT open, and edits digest te
         },
       ]);
     }
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
     return json({});
   });
 
@@ -341,7 +341,7 @@ it("groups PPT slide rail by section and knowledge points with toggle to flat pa
     if (url.pathname.endsWith("/narrations/quota")) return json({ available: true, used_today: 0, daily_limit: 50 });
     if (url.pathname.endsWith("/narrations/audio")) return json({ available: true, voice: "Meilin", model: "tts-1", pages: [] });
     if (url.pathname.endsWith("/narrations/job")) return json({ running: false, queued: false, status: "done", done: 4, total: 4, message: "", failed: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) {
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
       return json({
         chapters: [
           {
@@ -377,7 +377,7 @@ it("groups PPT slide rail by section and knowledge points with toggle to flat pa
       });
     }
     if (url.pathname.endsWith("/course-graph/tasks")) return json([]);
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
     return json({});
   });
 
@@ -451,9 +451,9 @@ it("keeps open PPT workspace mounted without flashing during background conversi
     if (url.pathname.endsWith("/narrations/quota")) return json({ available: true, used_today: 0, daily_limit: 50 });
     if (url.pathname.endsWith("/narrations/audio")) return json({ available: true, voice: "Meilin", model: "tts-1", pages: [] });
     if (url.pathname.endsWith("/narrations/job")) return json({ running: false, queued: false, status: "done", done: 0, total: 0, message: "", failed: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [] });
     if (url.pathname.endsWith("/course-graph/tasks")) return json([]);
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
     return json({});
   });
 
@@ -500,7 +500,7 @@ it("refreshes knowledge points when opening a deck whose pipeline completed in b
     if (url.pathname.endsWith("/narrations/quota")) return json({ available: true, used_today: 0, daily_limit: 50 });
     if (url.pathname.endsWith("/narrations/audio")) return json({ available: true, voice: "Meilin", model: "tts-1", pages: [] });
     if (url.pathname.endsWith("/narrations/job")) return json({ running: false, queued: false, kind: "pipeline", status: "done", done: 1, total: 1, message: "", failed: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) {
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
       knowledgeFetches += 1;
       if (knowledgeFetches === 1) {
         return json({ chapters: [{ id: 17, stable_id: "ch-17", title: "基础语法", order_index: 1, materials: [], points: [] }] });
@@ -530,7 +530,7 @@ it("refreshes knowledge points when opening a deck whose pipeline completed in b
       });
     }
     if (url.pathname.endsWith("/course-graph/tasks")) return json([]);
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
     return json({});
   });
 

@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
-import { LectioJobList } from "@/features/content-workspace/lectio-job-list";
+import { StudioJobList } from "@/features/content-workspace/studio-job-list";
 import { Questions } from "@/features/questions/questions-page";
 import { statuses } from "@/features/questions/types";
 import { useCanLeave } from "@/lib/drafts";
-import { useLectioJobs, type LectioJob } from "@/lib/lectio-api";
+import { useCourseStudioJobs, type CourseStudioJob } from "@/lib/course-studio-api";
 import { AiGenerateDialog } from "./ai-generate-dialog";
 import { ExamsTab } from "./exams-tab";
 import { XuexitongDialog } from "./xuexitong-dialog";
@@ -46,39 +46,83 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [examRevision, setExamRevision] = useState(0);
   const [jobsVisible, setJobsVisible] = useState(false);
+  const [recentQuestionIds, setRecentQuestionIds] = useState<string[]>([]);
   const reloadBankRef = useRef<(() => void) | null>(null);
   const canLeave = useCanLeave();
 
-  const handleJobDone = useCallback((job: LectioJob) => {
-    if (job.kind === "exercises_generate" || job.kind === "exam_fill_gaps") {
+  const captureJobQuestionIds = useCallback((job: CourseStudioJob) => {
+    const rawIds = job.result?.question_ids;
+    if (Array.isArray(rawIds)) {
+      const ids = rawIds.filter((id): id is string => typeof id === "string" && id.length > 0);
+      if (ids.length > 0) setRecentQuestionIds(ids);
+    }
+  }, []);
+
+  const handleJobDone = useCallback((job: CourseStudioJob) => {
+    if (
+      job.kind === "exercises_generate"
+      || job.kind === "coding_exercises_generate"
+      || job.kind === "exam_fill_gaps"
+    ) {
+      captureJobQuestionIds(job);
       reloadBankRef.current?.();
       setExamRevision((n) => n + 1);
       setJobsVisible(false);
       const created = typeof job.result?.created === "number" ? job.result.created : null;
+      const isCoding = job.kind === "coding_exercises_generate";
       const summary =
         created === null
-          ? "AI 出题任务已完成，已刷新题库草稿"
+          ? isCoding
+            ? "AI 编程出题任务已完成，已刷新题库草稿"
+            : "AI 出题任务已完成，已刷新题库草稿"
           : created > 0
-            ? `AI 出题已完成，新增 ${created} 道待审题目，已刷新题库`
-            : "AI 出题已完成（无新增不重复题目）";
+            ? isCoding
+              ? `AI 编程出题已完成，新增 ${created} 道已验草稿，已刷新题库`
+              : `AI 出题已完成，新增 ${created} 道待审题目，已刷新题库`
+            : isCoding
+              ? "AI 编程出题已完成（未新增题目，可在任务面板查看原因）"
+              : "AI 出题已完成（无新增不重复题目）";
       toast.add({ title: summary, type: "success" });
     }
-  }, []);
+  }, [captureJobQuestionIds]);
 
-  const handleJobEnded = useCallback((job: LectioJob) => {
-    if (job.kind === "exercises_generate" || job.kind === "exam_fill_gaps") {
+  const handleJobEnded = useCallback((job: CourseStudioJob) => {
+    if (
+      job.kind === "exercises_generate"
+      || job.kind === "coding_exercises_generate"
+      || job.kind === "exam_fill_gaps"
+    ) {
       const created = typeof job.result?.created === "number" ? job.result.created : 0;
       if (created > 0) {
+        captureJobQuestionIds(job);
         reloadBankRef.current?.();
         setExamRevision((n) => n + 1);
       }
     }
-  }, []);
+  }, [captureJobQuestionIds]);
 
-  const lectioJobs = useLectioJobs(courseId, handleJobDone, handleJobEnded);
-  const assessmentJobs = lectioJobs.jobs.filter(
-    (j) => j.kind === "exercises_generate" || j.kind === "exam_fill_gaps",
+  const studioJobs = useCourseStudioJobs(courseId, handleJobDone, handleJobEnded);
+  const assessmentJobs = studioJobs.jobs.filter(
+    (j) =>
+      j.kind === "exercises_generate"
+      || j.kind === "coding_exercises_generate"
+      || j.kind === "exam_fill_gaps",
   );
+  const recentIdSet = useMemo(() => {
+    const ids = new Set<string>(recentQuestionIds);
+    const latestFinished = assessmentJobs.find(
+      (j) => Array.isArray(j.result?.question_ids) && (j.result?.question_ids as unknown[]).length > 0,
+    );
+    if (latestFinished && latestFinished.finished_at) {
+      const finMs = Date.parse(latestFinished.finished_at);
+      if (!Number.isNaN(finMs) && Date.now() - finMs <= 2 * 60 * 60 * 1000) {
+        for (const item of latestFinished.result?.question_ids as unknown[]) {
+          if (typeof item === "string" && item) ids.add(item);
+        }
+      }
+    }
+    return ids;
+  }, [assessmentJobs, recentQuestionIds]);
   const activeCount = assessmentJobs.filter(
     (j) => j.status === "queued" || j.status === "running",
   ).length;
@@ -158,9 +202,9 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
 
       {jobsVisible && assessmentJobs.length > 0 && (
         <div className="surface p-3.5">
-          <LectioJobList
+          <StudioJobList
             jobs={assessmentJobs}
-            onCancel={lectioJobs.cancel}
+            onCancel={studioJobs.cancel}
             onClose={() => setJobsVisible(false)}
           />
         </div>
@@ -181,6 +225,7 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
             status={route.status}
             onStatusChange={changeStatus}
             reloadRef={reloadBankRef}
+            recentIds={recentIdSet}
             toolbarExtra={
               <>
                 <Button type="button" variant="outline" onClick={() => setAiOpen(true)}>
@@ -200,7 +245,7 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
             courseId={courseId}
             revision={examRevision}
             onJobSubmitted={() => {
-              lectioJobs.refresh();
+              studioJobs.refresh();
               setJobsVisible(true);
             }}
           />
@@ -212,7 +257,7 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
         courseId={courseId}
         onOpenChange={setAiOpen}
         onSubmitted={() => {
-          lectioJobs.refresh();
+          studioJobs.refresh();
           setJobsVisible(true);
         }}
       />

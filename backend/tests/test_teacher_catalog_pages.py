@@ -46,7 +46,18 @@ def test_large_class_catalogues_page_before_loading_details(client, db, teacher,
         assert len(small["items"]) == 10 and len(large["items"]) == 100
         row = small["items"][0]
         assert row["id"] == "bulk-0011" and row["chapter_ids"] == [chapter.id]
-        assert set(row) == {"id", "title", "kind", "source_type", "status", "chapter_ids"}
+        assert set(row) == {
+            "id",
+            "title",
+            "kind",
+            "source_type",
+            "status",
+            "chapter_ids",
+            "difficulty",
+            "coding_type",
+            "usage",
+            "created_at",
+        }
         assert get(f"questions/{row['id']}")["prompt"] == "100% Python"
         last = get("knowledge-points", page=9999, size=10, chapter_id=chapter.id, search="目录样例")
         assert last["total"] == 9999 and last["page"] == 1000 and len(last["items"]) == 9

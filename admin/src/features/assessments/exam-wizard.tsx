@@ -12,12 +12,12 @@ import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
 import {
-  lectioApi,
+  courseStudioApi,
   type ExamGapsResult,
   type ExamRecord,
   type ExamSectionConfig,
   type KnowledgeChapter,
-} from "@/lib/lectio-api";
+} from "@/lib/course-studio-api";
 
 const DEFAULT_SECTIONS: ExamSectionConfig[] = [
   { type: "single", count: 10, scoreEach: 2 },
@@ -107,7 +107,7 @@ export function ExamWizard({
     setBusy("gaps");
     setError("");
     try {
-      const res = await lectioApi.checkExamGaps(courseId, buildGapPayload());
+      const res = await courseStudioApi.checkExamGaps(courseId, buildGapPayload());
       setGaps(res);
       if (advance) setStep(2);
     } catch (e) {
@@ -121,7 +121,7 @@ export function ExamWizard({
     setBusy("fill");
     setError("");
     try {
-      await lectioApi.fillExamGaps(courseId, { ...buildGapPayload(), multiplier });
+      await courseStudioApi.fillExamGaps(courseId, { ...buildGapPayload(), multiplier });
       toast.add({ title: "已提交 AI 试卷缺口补题任务", type: "success" });
       onFillGapJob();
     } catch (e) {
@@ -137,7 +137,7 @@ export function ExamWizard({
     try {
       const chapterWeights: Record<number, number> = {};
       for (const cid of selectedIds) chapterWeights[cid] = weights[cid] ?? 1;
-      const created = await lectioApi.createExam(courseId, {
+      const created = await courseStudioApi.createExam(courseId, {
         ...buildGapPayload(),
         title: title.trim(),
         subtitle: subtitle.trim(),

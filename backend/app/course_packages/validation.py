@@ -60,7 +60,12 @@ def validate_practice(row, converted, maps):
     if content.get("published", True):
         pool = {point: {} for point in points}
         for question in converted["question"].values():
-            available = practice_question_available(question["kind"], question["status"], bool(question["samples"]))
+            available = practice_question_available(
+                question["kind"],
+                question["status"],
+                bool(question["samples"]),
+                (question.get("source") or {}).get("usage"),
+            )
             matches_kind = (content["practice_kind"] == "programming") == (question["kind"] == "python")
             if available and matches_kind and row["chapter_id"] in question["chapter_ids"]:
                 for point in points.intersection(question["knowledge_point_ids"]):
@@ -200,6 +205,8 @@ def validate_bundle(bundle, root):
                 question = indexed["question"][question_id]
                 if row["kind"] == "practice" and (content["practice_kind"] == "programming") != (question["kind"] == "python"):
                     raise PackageError("题型与练习类别不一致")
+                if row["kind"] == "practice" and (question.get("source") or {}).get("usage") == "assessment":
+                    raise PackageError("测验专用题目不能用于练习活动")
                 if question["kind"] == "interactive" and row["kind"] != "practice":
                     raise PackageError("交互练习题只能用于练习活动")
                 if row["chapter_id"] not in question["chapter_ids"] or question["status"] != "ready":

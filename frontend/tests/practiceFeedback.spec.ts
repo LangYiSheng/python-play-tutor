@@ -23,6 +23,28 @@ describe("public judge sample feedback", () => {
     expect(wrapper.find(".submission-result > p").exists()).toBe(false);
     wrapper.unmount();
   });
+  it("renders reference answer and explanation cleanly below submission feedback", async () => {
+    const question = { id: "q2", title: "切片", kind: "single_choice" as const, prompt: "结果是？", options: ["1", "2"], samples: [] };
+    const result: Submission = {
+      id: "sub-exp",
+      activity_id: "ch1-assessment",
+      question_id: "q2",
+      mode: "submit",
+      status: "wrong_answer",
+      feedback: {
+        detail: "请结合课件重新思考",
+        correct_answer: "2",
+        explanation: "切片左闭右开，a[1:3] 包含索引 1 和 2 共两个元素。",
+      },
+      created_at: "2026-11-27T00:00:00Z",
+    };
+    const wrapper = mount(PracticeQuestionCard, { props: { question, index: 0, answer: "1", code: "", result } });
+    const section = wrapper.get(".submission-explanation");
+    expect(section.text()).toContain("参考答案：2");
+    expect(section.text()).toContain("答案解析");
+    expect(section.text()).toContain("切片左闭右开");
+    wrapper.unmount();
+  });
   it("shows safe public diagnostics in formal summaries without case output or private fields", async () => {
     vi.spyOn(pythonRunner,'createPythonRunner').mockReturnValue({run:vi.fn(),ready:async()=>[],dispose:vi.fn()});
     const pinia = createPinia();

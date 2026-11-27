@@ -9,12 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .coding_questions import check_fill_submission_for_question
 from .question_types import question_type
 from .assessment_grades import ACCEPTED, GRADED, grade_status
 from .auth import current_user
 from .db import get_db
-from .models import AssessmentAttempt, Classroom, Submission, User, now
-from .practice import public_submission, stage_submission
+from .models import AssessmentAttempt, Classroom, Question, QuestionSecret, Submission, User, now
+from .practice import format_objective_answer, public_submission, question_explanation, stage_submission
 
 router = APIRouter(tags=["assessments"])
 
@@ -70,7 +71,25 @@ def assessment_payload(db, user, classroom_id, activity):
     else:
         statuses = [row.status for row in rows.values() if row]
         status = grade_status(statuses, len(ids))
-        results = [public_submission(rows[key]) for key in ids if rows.get(key)]
+        results = []
+        for key in ids:
+            row = rows.get(key)
+            if not row:
+                continue
+            extra: dict[str, str] = {}
+            fb = row.feedback or {}
+            if "explanation" not in fb or (row.status != "accepted" and "correct_answer" not in fb):
+                q = db.get(Question, key)
+                if q is not None:
+                    if "explanation" not in fb:
+                        exp = question_explanation(q)
+                        if exp:
+                            extra["explanation"] = exp
+                    if row.status != "accepted" and "correct_answer" not in fb:
+                        correct_text = format_objective_answer(q, db.get(QuestionSecret, key))
+                        if correct_text:
+                            extra["correct_answer"] = correct_text
+            results.append(public_submission(row, extra_feedback=extra or None))
     correct = sum(row is not None and row.status in ACCEPTED for row in rows.values()) if locked else 0
     return {"id": attempt.id if attempt else None, "status": status, "revision": attempt.revision if attempt else 0,
         "locked": locked, "legacy": legacy, "question_ids": ids,
@@ -126,6 +145,9 @@ def _normalize(entries, questions, *, complete=False):
             valid = question_type(question.kind).complete(question, item.answer, item.code)
             if not valid:
                 raise HTTPException(422, "请先完成所有题目再提交试卷")
+            fill_error = check_fill_submission_for_question(question, item.code)
+            if fill_error:
+                raise HTTPException(422, f"题目「{question.title}」未按填空区要求作答：{fill_error}")
         answers[item.question_id] = {"answer": item.answer, "code": item.code}
     if complete and (not mapping or set(answers) != set(mapping)):
         raise HTTPException(422, "请先完成所有题目再提交试卷")

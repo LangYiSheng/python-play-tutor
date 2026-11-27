@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { KnowledgeGraph } from "../src/features/content-workspace/knowledge-graph";
-import { cleanGraphLabel } from "../src/features/content-workspace/lectio-graph-layout";
+import { cleanGraphLabel } from "../src/features/content-workspace/studio-graph-layout";
 
 const overview = {
   chapters: [
@@ -50,7 +50,7 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
     }
     if (url.pathname.endsWith("/course-graph/tasks")) return json([]);
     if (url.pathname.endsWith("/content-review/summary")) return json({ material_count: 0, question_count: 0 });
-    if (url.pathname.endsWith("/lectio/jobs")) {
+    if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
         jobs: [
           {
@@ -86,9 +86,9 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
         ],
       });
     }
-    if (url.pathname.endsWith("/lectio/knowledge")) return json(overview);
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json(overview);
     if (url.pathname.endsWith("/questions")) return json({ items: [], total: 0, page: 1 });
-    if (url.pathname.endsWith("/lectio/chapters/17/knowledge/extract") && init?.method === "POST") {
+    if (url.pathname.endsWith("/course-studio/chapters/17/knowledge/extract") && init?.method === "POST") {
       extracted.push(url.pathname);
       return json(
         {
@@ -135,7 +135,7 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
   // Top toolbar has prominent AI 生成知识图谱 entry
   await user.click(screen.getByRole("button", { name: "AI 生成知识图谱" }));
   await user.click(await screen.findByRole("button", { name: "开始生成知识图谱" }));
-  await waitFor(() => expect(extracted).toEqual(["/api/teacher/courses/12/lectio/chapters/17/knowledge/extract"]));
+  await waitFor(() => expect(extracted).toEqual(["/api/teacher/courses/12/course-studio/chapters/17/knowledge/extract"]));
 
   // Task drawer on KnowledgeGraph only shows knowledge_extract jobs (never exercises or TTS)
   expect(await screen.findByText("AI 知识点抽取")).toBeVisible();

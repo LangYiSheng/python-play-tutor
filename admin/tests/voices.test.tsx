@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MyVoicesDialog } from "../src/features/voices/my-voices-dialog";
 import { NarrationReview } from "../src/features/materials/narration/review";
@@ -356,4 +356,39 @@ it("updates material speech instruction and forces batch resynthesis when style 
       ),
     ).toBe(true),
   );
+});
+
+it("accepts drag-and-drop audio upload and rejects non-audio files", async () => {
+  vi.stubGlobal("URL", class extends URL {
+    static createObjectURL() { return "blob:voice-drop"; }
+    static revokeObjectURL() {}
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url.endsWith("/teacher/voices")) {
+        return json({ capabilities: sampleCapabilities, voices: [] });
+      }
+      return json({});
+    }),
+  );
+
+  const user = userEvent.setup();
+  render(<MyVoicesDialog open onOpenChange={() => {}} />);
+
+  await user.click(await screen.findByRole("button", { name: /开始复刻我的声音/ }));
+  const dropzone = await screen.findByTestId("voice-upload-dropzone");
+
+  // Non-audio drop is rejected with a clear message
+  const badFile = new File(["hello"], "notes.txt", { type: "text/plain" });
+  fireEvent.dragOver(dropzone, { dataTransfer: { files: [badFile] } });
+  fireEvent.drop(dropzone, { dataTransfer: { files: [badFile] } });
+  expect(await screen.findByText(/仅支持 \.wav/)).toBeTruthy();
+
+  // Valid audio drop populates the sample preview
+  const goodFile = new File([new Uint8Array(2048)], "teacher.m4a", { type: "audio/mp4" });
+  fireEvent.dragEnter(dropzone, { dataTransfer: { files: [goodFile] } });
+  expect(screen.getByText("松开鼠标即可导入音频文件")).toBeTruthy();
+  fireEvent.drop(dropzone, { dataTransfer: { files: [goodFile] } });
+  expect(await screen.findByText(/已选择：teacher\.m4a/)).toBeTruthy();
 });

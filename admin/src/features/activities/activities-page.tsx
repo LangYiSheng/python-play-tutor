@@ -82,7 +82,7 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
   const questions = useResource<QuestionCandidate[]>(editor.open ? scoped(`/teacher/chapters/${chapter.id}/question-candidates`, courseId) : null);
   const deletion = useTableDelete<Activity>(a => scoped(`/teacher/activities/${encodeURIComponent(a.id)}`, courseId), reload, {courseId, kind: () => "activity"});
   const candidates = (questions.data ?? []).filter(q => q.status === "ready" && (editor.kind === "assessment"
-    ? q.kind !== "interactive" : (q.kind === "python") === (editor.practiceKind === "programming") && (q.kind !== "python" || q.has_samples)));
+    ? q.kind !== "interactive" : q.usage !== "assessment" && (q.kind === "python") === (editor.practiceKind === "programming") && (q.kind !== "python" || q.has_samples)));
   const items = course.activities.filter(a => a.chapter_id === chapter.id && (a.kind === "practice" || a.kind === "assessment"))
     .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.title.localeCompare(b.title, "zh-CN"));
   return <section className="surface min-w-0 self-start">

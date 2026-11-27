@@ -222,6 +222,8 @@ def assign_activity_questions(db, activity, question_ids, instance_id):
             coding = activity.content.get("practice_kind", "objective") == "programming"
             if (question.kind == "python") != coding or (coding and not question.samples):
                 raise HTTPException(422, "练习题型与类别不符，编程练习须配置公开样例")
+            if (question.source or {}).get("usage") == "assessment":
+                raise HTTPException(422, "测验专用题目不能选入练习活动")
         if question.kind == "interactive" and activity.kind != "practice":
             raise HTTPException(422, "交互练习题只能用于练习活动")
         if question.owner_id not in {None, activity.owner_id}:

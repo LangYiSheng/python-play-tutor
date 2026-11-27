@@ -218,11 +218,11 @@ def point_detail(point_id: int, course_id: int, db: Db, user: Teacher):
     evidence = defaultdict(list)
     for mid, page_no in source_pages(db, instance, user, page_refs(point.content.get("page_refs"))).values():
         evidence[mid].append(page_no)
-    lectio_meta = (point.content or {}).get("lectio")
-    if isinstance(lectio_meta, dict) and isinstance(lectio_meta.get("sources"), list):
+    studio_meta = (point.content or {}).get("course_studio")
+    if isinstance(studio_meta, dict) and isinstance(studio_meta.get("sources"), list):
         stable_ids = [
             src.get("material_stable_id")
-            for src in lectio_meta["sources"]
+            for src in studio_meta["sources"]
             if isinstance(src, dict) and isinstance(src.get("material_stable_id"), str) and src.get("material_stable_id")
         ]
         if stable_ids:
@@ -234,7 +234,7 @@ def point_detail(point_id: int, course_id: int, db: Db, user: Teacher):
                     .options(load_only(Material.id, Material.stable_id))
                 )
             }
-            for src in lectio_meta["sources"]:
+            for src in studio_meta["sources"]:
                 if not isinstance(src, dict):
                     continue
                 mid = mat_by_stable.get(src.get("material_stable_id"))

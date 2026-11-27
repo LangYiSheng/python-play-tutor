@@ -21,7 +21,7 @@ import type { Course, Material, Question } from "@/lib/types";
 import { Cases } from "./cases-editor";
 import { questionEditors } from "./editor-registry";
 import "./questions.css";
-import { kinds, statuses } from "./types";
+import { codingTypeLabels, codingUsageLabels, kinds, statuses, type CodingType, type CodingUsage } from "./types";
 import type { useQuestionEditor } from "./use-editor";
 
 export interface QuestionReviewQueue {
@@ -72,6 +72,12 @@ export function QuestionDialog({
     setPrompt,
     explanation,
     setExplanation,
+    difficulty,
+    setDifficulty,
+    codingType,
+    setCodingType,
+    usage,
+    setUsage,
     kind,
     setKind,
     status,
@@ -162,7 +168,7 @@ export function QuestionDialog({
   }, [approveAndAdvance, editing, navBusy, navigateQueue, open, queue, saveWithStatus, status]);
 
   const linksSection = (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <KnowledgePointPicker
         chapters={course.data?.chapters ?? []}
         courseId={courseId}
@@ -263,12 +269,32 @@ export function QuestionDialog({
     </div>
   );
 
+  const difficultySelect = (
+    <div className="field !mb-0">
+      <Label htmlFor="q-difficulty">难度</Label>
+      <SelectField
+        id="q-difficulty"
+        value={difficulty || "__none__"}
+        onValueChange={(value) => {
+          setDifficulty(value === "__none__" ? "" : value);
+          setDirty(true);
+        }}
+      >
+        <option value="__none__">未标注</option>
+        <option value="易">易</option>
+        <option value="中">中</option>
+        <option value="难">难</option>
+      </SelectField>
+    </div>
+  );
+
   const explanationField = (
     <div className="field !mb-0">
       <Label htmlFor="q-explanation">答案解析（可选）</Label>
       <Textarea
         id="q-explanation"
         rows={3}
+        className="max-h-40 overflow-y-auto"
         value={explanation}
         maxLength={2000}
         placeholder="填写解题思路或易错点，导出试卷解析与复核时会一并展示"
@@ -341,11 +367,12 @@ export function QuestionDialog({
             <ErrorNotice message={error} />
             {isComplex ? (
               <EditorTabs
+                key={editor.id}
                 pages={[
                   {
                     label: "题目信息",
                     content: (
-                      <div className="space-y-4">
+                      <div className="flex flex-col gap-4">
                         <div className="field !mb-0">
                           <Label htmlFor="q-title">题目名称</Label>
                           <Input
@@ -356,15 +383,56 @@ export function QuestionDialog({
                             maxLength={200}
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-3">
                           {kindSelect}
+                          {difficultySelect}
                           {statusSelect}
                         </div>
+                        {kind === "python" && (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="field !mb-0">
+                              <Label htmlFor="q-coding-type">编程形式</Label>
+                              <SelectField
+                                id="q-coding-type"
+                                value={codingType || "__none__"}
+                                onValueChange={(value) => {
+                                  setCodingType(value === "__none__" ? "" : (value as CodingType));
+                                  setDirty(true);
+                                }}
+                              >
+                                <option value="__none__">未细分（通用编程题）</option>
+                                {Object.entries(codingTypeLabels).map(([k, v]) => (
+                                  <option key={k} value={k}>
+                                    {v}
+                                  </option>
+                                ))}
+                              </SelectField>
+                            </div>
+                            <div className="field !mb-0">
+                              <Label htmlFor="q-coding-usage">教学用途</Label>
+                              <SelectField
+                                id="q-coding-usage"
+                                value={usage}
+                                onValueChange={(value) => {
+                                  setUsage(value as CodingUsage);
+                                  setDirty(true);
+                                }}
+                              >
+                                {Object.entries(codingUsageLabels).map(([k, v]) => (
+                                  <option key={k} value={k}>
+                                    {v}
+                                  </option>
+                                ))}
+                              </SelectField>
+                            </div>
+                          </div>
+                        )}
                         <div className="field !mb-0">
                           <Label htmlFor="q-prompt">题干</Label>
                           <Textarea
                             id="q-prompt"
                             rows={5}
+                            className="max-h-72 overflow-y-auto"
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             required
@@ -387,6 +455,9 @@ export function QuestionDialog({
                             <Cases
                               samples={editor.samples}
                               hidden={editor.cases}
+                              codingType={editor.codingType}
+                              starterCode={editor.starterCode}
+                              referenceSolution={editor.referenceSolution}
                               onSamples={(value) => {
                                 editor.setSamples(value);
                                 setDirty(true);
@@ -405,12 +476,13 @@ export function QuestionDialog({
               />
             ) : (
               <div className="grid gap-5 pt-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(310px,1fr)]">
-                <div className="space-y-4 min-w-0">
+                <div className="flex min-w-0 flex-col gap-4">
                   <div className="field !mb-0">
                     <Label htmlFor="q-prompt">题干</Label>
                     <Textarea
                       id="q-prompt"
                       rows={4}
+                      className="max-h-60 overflow-y-auto"
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       required
@@ -420,9 +492,10 @@ export function QuestionDialog({
                   <TypeFields {...editor} />
                   {explanationField}
                 </div>
-                <aside className="question-links-aside space-y-4 rounded-lg border bg-muted/20 p-3.5 min-w-0">
-                  <div className="grid grid-cols-2 gap-3">
+                <aside className="question-links-aside flex min-w-0 flex-col gap-4 rounded-lg border bg-muted/20 p-3.5">
+                  <div className="grid grid-cols-3 gap-2.5">
                     {kindSelect}
+                    {difficultySelect}
                     {statusSelect}
                   </div>
                   <div className="field !mb-0">

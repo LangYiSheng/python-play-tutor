@@ -27,7 +27,7 @@ import { api, errorMessage, scoped } from "@/lib/api";
 import type { Course, Material, Point, Question } from "@/lib/types";
 import { useCatalogPage } from "@/lib/use-catalog-page";
 import { useResource } from "@/lib/use-resource";
-import { Check, CheckCheck, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Check, CheckCheck, Pencil, Plus, Search, Sparkles, Trash2, Upload } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -38,18 +38,69 @@ import {
   type ReactNode,
 } from "react";
 import { QuestionDialog, type QuestionReviewQueue } from "./editor-dialog";
+import { ImportCodingDialog } from "./import-coding-dialog";
 import "./questions.css";
-import { kinds, statuses } from "./types";
+import { codingTypeLabels, kinds, statuses, type CodingType } from "./types";
 import { useQuestionEditor } from "./use-editor";
 
 type QuestionRow = Pick<
   Question,
   "id" | "title" | "kind" | "status" | "source_type" | "chapter_ids"
->;
+> & {
+  difficulty?: string | null;
+  coding_type?: string | null;
+  usage?: string | null;
+  created_at?: string | null;
+};
+
+const RECENT_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+function parseCreatedAtMs(value?: string | null): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function isFreshQuestion(row: QuestionRow, recentIds?: ReadonlySet<string>): boolean {
+  if (recentIds?.has(row.id)) return true;
+  const ms = parseCreatedAtMs(row.created_at);
+  if (ms === null) return false;
+  return Date.now() - ms <= RECENT_WINDOW_MS;
+}
+
+function formatCreatedAtLabel(value?: string | null): string {
+  const ms = parseCreatedAtMs(value);
+  if (ms === null) return "";
+  const diffMs = Math.max(0, Date.now() - ms);
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const d = new Date(ms);
+  const nowDate = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  if (
+    d.getFullYear() === nowDate.getFullYear()
+    && d.getMonth() === nowDate.getMonth()
+    && d.getDate() === nowDate.getDate()
+  ) {
+    return `今天 ${hh}:${mm}`;
+  }
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${month}-${day} ${hh}:${mm}`;
+}
 
 function statusBadgeClass(status: Question["status"]) {
   if (status === "ready") return "border-emerald-300 bg-emerald-50 text-emerald-800";
   if (status === "draft") return "border-amber-300 bg-amber-50 text-amber-800";
+  return "border-border bg-muted text-muted-foreground";
+}
+
+function difficultyBadgeClass(difficulty: string) {
+  if (difficulty === "易") return "border-sky-300 bg-sky-50 text-sky-800";
+  if (difficulty === "中") return "border-amber-300 bg-amber-50 text-amber-800";
+  if (difficulty === "难") return "border-rose-300 bg-rose-50 text-rose-800";
   return "border-border bg-muted text-muted-foreground";
 }
 
@@ -69,6 +120,7 @@ export function Questions({
   onStatusChange,
   toolbarExtra,
   reloadRef,
+  recentIds,
 }: {
   courseId: number;
   pointId?: string;
@@ -77,26 +129,42 @@ export function Questions({
   onStatusChange: (value: string) => void;
   toolbarExtra?: ReactNode;
   reloadRef?: MutableRefObject<(() => void) | null>;
+  recentIds?: ReadonlySet<string>;
 }) {
   const [query, setQuery] = useState(""),
     [chapterFilter, setChapterFilter] = useState("all"),
     [sourceFilter, setSourceFilter] = useState("all"),
-    [kindFilter, setKindFilter] = useState("all");
+    [difficultyFilter, setDifficultyFilter] = useState("all"),
+    [kindFilter, setKindFilter] = useState("all"),
+    [codingTypeFilter, setCodingTypeFilter] = useState("all"),
+    [importCodingOpen, setImportCodingOpen] = useState(false),
+    [localRecentIds, setLocalRecentIds] = useState<string[]>([]);
   const list = useCatalogPage<QuestionRow>("/teacher/questions", courseId, query, {
     status: status === "reviewable" ? "draft" : status,
     reviewable: status === "reviewable" ? "true" : "all",
     source: sourceFilter,
+    difficulty: difficultyFilter,
     kind: kindFilter,
+    coding_type: kindFilter === "python" ? codingTypeFilter : "all",
     chapter_id: chapterFilter,
     knowledge_point_id: pointId ?? "all",
   });
+  const combinedRecentIds = useMemo(() => {
+    const merged = new Set<string>(localRecentIds);
+    recentIds?.forEach((id) => merged.add(id));
+    return merged;
+  }, [localRecentIds, recentIds]);
+  const { firstPage: goFirstPage, reload: reloadList } = list;
   useEffect(() => {
     if (!reloadRef) return;
-    reloadRef.current = list.reload;
+    reloadRef.current = () => {
+      goFirstPage();
+      reloadList();
+    };
     return () => {
       reloadRef.current = null;
     };
-  }, [reloadRef, list.reload]);
+  }, [reloadRef, goFirstPage, reloadList]);
 
   const point = useResource<Pick<Point, "id" | "title">[]>(
     pointId
@@ -267,6 +335,25 @@ export function Questions({
         }
       : undefined;
 
+  const hasActiveFilters =
+    chapterFilter !== "all" ||
+    kindFilter !== "all" ||
+    codingTypeFilter !== "all" ||
+    status !== "all" ||
+    difficultyFilter !== "all" ||
+    sourceFilter !== "all";
+
+  function resetFilters() {
+    setChapterFilter("all");
+    setKindFilter("all");
+    setCodingTypeFilter("all");
+    setDifficultyFilter("all");
+    setSourceFilter("all");
+    if (status !== "all") onStatusChange("all");
+    list.firstPage();
+    deletion.clear();
+  }
+
   return (
     <>
       <ErrorNotice
@@ -312,6 +399,27 @@ export function Questions({
               }}
             />
           </div>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {draftRows.length > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                title="按 R 打开首道待审题，支持快捷键连续审核"
+                onClick={startFastReview}
+              >
+                <CheckCheck /> 快速审题（{draftRows.length}）
+              </Button>
+            )}
+            {toolbarExtra}
+            <Button type="button" variant="outline" onClick={() => setImportCodingOpen(true)}>
+              <Upload /> 导入编程题
+            </Button>
+            <Button onClick={() => void edit(null)}>
+              <Plus /> 新增题目
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/20 px-5 py-2.5">
           <SelectField
             aria-label="所属章节"
             value={chapterFilter}
@@ -333,6 +441,7 @@ export function Questions({
             value={kindFilter}
             onValueChange={(value) => {
               setKindFilter(value);
+              if (value !== "python") setCodingTypeFilter("all");
               list.firstPage();
               deletion.clear();
             }}
@@ -344,6 +453,25 @@ export function Questions({
               </option>
             ))}
           </SelectField>
+          {kindFilter === "python" && (
+            <SelectField
+              aria-label="编程形式"
+              value={codingTypeFilter}
+              onValueChange={(value) => {
+                setCodingTypeFilter(value);
+                list.firstPage();
+                deletion.clear();
+              }}
+            >
+              <option value="all">全部编程形式</option>
+              {Object.entries(codingTypeLabels).map(([key, value]) => (
+                <option key={key} value={key}>
+                  {value}
+                </option>
+              ))}
+              <option value="unset">未细分</option>
+            </SelectField>
+          )}
           <SelectField
             aria-label="题目状态"
             value={status}
@@ -362,6 +490,21 @@ export function Questions({
             ))}
           </SelectField>
           <SelectField
+            aria-label="题目难度"
+            value={difficultyFilter}
+            onValueChange={(value) => {
+              setDifficultyFilter(value);
+              list.firstPage();
+              deletion.clear();
+            }}
+          >
+            <option value="all">全部难度</option>
+            <option value="易">易</option>
+            <option value="中">中</option>
+            <option value="难">难</option>
+            <option value="unset">未标注</option>
+          </SelectField>
+          <SelectField
             aria-label="题目来源"
             value={sourceFilter}
             onValueChange={(value) => {
@@ -374,22 +517,17 @@ export function Questions({
             <option value="imported">导入</option>
             <option value="ai_generated">AI 生成</option>
           </SelectField>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {draftRows.length > 0 && (
-              <Button
-                type="button"
-                variant="secondary"
-                title="按 R 打开首道待审题，支持快捷键连续审核"
-                onClick={startFastReview}
-              >
-                <CheckCheck /> 快速审题（{draftRows.length}）
-              </Button>
-            )}
-            {toolbarExtra}
-            <Button onClick={() => void edit(null)}>
-              <Plus /> 新增题目
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={resetFilters}
+            >
+              重置筛选
             </Button>
-          </div>
+          )}
         </div>
         {draftRows.length > 0 && deletion.selected.length === 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-amber-50/50 px-5 py-2 text-xs text-amber-900">
@@ -435,43 +573,100 @@ export function Questions({
                 </TableHead>
                 <TableHead className="w-24">状态</TableHead>
                 <TableHead>题目</TableHead>
-                <TableHead className="w-24">类型</TableHead>
+                <TableHead className="w-36">类型</TableHead>
+                <TableHead className="w-20">难度</TableHead>
                 <TableHead className="w-20">来源</TableHead>
                 <TableHead className="w-40 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.map((q) => (
-                <TableRow
-                  key={q.id}
-                  data-state={deletion.isSelected(q) ? "selected" : undefined}
-                >
+              {visible.map((q) => {
+                const fresh = isFreshQuestion(q, combinedRecentIds);
+                const createdLabel = formatCreatedAtLabel(q.created_at);
+                const chapterText =
+                  q.chapter_ids
+                    .map(
+                      (id) =>
+                        chapters.data?.chapters.find((c) => c.id === id)?.title ?? "章节",
+                    )
+                    .join("、") || "未归类";
+                return (
+                  <TableRow
+                    key={q.id}
+                    data-state={deletion.isSelected(q) ? "selected" : undefined}
+                    className={
+                      fresh && !deletion.isSelected(q)
+                        ? q.source_type === "ai_generated"
+                          ? "bg-violet-50/35"
+                          : "bg-sky-50/30"
+                        : undefined
+                    }
+                  >
+                    <TableCell>
+                      <SelectTableRow actions={deletion} row={q} />
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={statusBadgeClass(q.status)}>
+                        {statuses[q.status]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="min-w-0 truncate text-left font-medium hover:underline"
+                          onClick={() => void edit(q)}
+                        >
+                          {q.title}
+                        </button>
+                        {fresh && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              q.source_type === "ai_generated"
+                                ? "h-5 shrink-0 border-violet-300 bg-violet-50 px-1.5 text-[11px] font-medium text-violet-700"
+                                : "h-5 shrink-0 border-sky-300 bg-sky-50 px-1.5 text-[11px] font-medium text-sky-700"
+                            }
+                          >
+                            {q.source_type === "ai_generated" && <Sparkles className="size-3" />}
+                            {q.source_type === "ai_generated" ? "新生成" : "最新"}
+                          </Badge>
+                        )}
+                      </div>
+                      <p
+                        className="mt-0.5 truncate text-xs text-muted-foreground"
+                        title={q.created_at ? new Date(q.created_at).toLocaleString() : undefined}
+                      >
+                        {chapterText}
+                        {createdLabel
+                          ? ` · ${q.source_type === "ai_generated" ? "生成于" : "创建于"} ${createdLabel}`
+                          : ""}
+                      </p>
+                    </TableCell>
                   <TableCell>
-                    <SelectTableRow actions={deletion} row={q} />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span>{kinds[q.kind]}</span>
+                      {q.kind === "python" && q.coding_type && q.coding_type in codingTypeLabels && (
+                        <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
+                          {codingTypeLabels[q.coding_type as CodingType]}
+                        </Badge>
+                      )}
+                      {q.kind === "python" && q.usage === "assessment" && (
+                        <Badge variant="outline" className="h-5 border-violet-300 bg-violet-50 px-1.5 text-[11px] text-violet-800">
+                          测验专用
+                        </Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={statusBadgeClass(q.status)}>
-                      {statuses[q.status]}
-                    </Badge>
+                    {q.difficulty ? (
+                      <Badge variant="outline" className={difficultyBadgeClass(q.difficulty)}>
+                        {q.difficulty}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
-                  <TableCell className="max-w-0">
-                    <button
-                      type="button"
-                      className="block max-w-full truncate text-left font-medium hover:underline"
-                      onClick={() => void edit(q)}
-                    >
-                      {q.title}
-                    </button>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {q.chapter_ids
-                        .map(
-                          (id) =>
-                            chapters.data?.chapters.find((c) => c.id === id)?.title ?? "章节",
-                        )
-                        .join("、") || "未归类"}
-                    </p>
-                  </TableCell>
-                  <TableCell>{kinds[q.kind]}</TableCell>
                   <TableCell>
                     {q.source_type === "ai_generated" ? "AI 生成" : "导入"}
                   </TableCell>
@@ -508,8 +703,9 @@ export function Questions({
                       </Button>
                     </div>
                   </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -521,6 +717,17 @@ export function Questions({
         course={chapters}
         materials={materials}
         queue={queue}
+      />
+      <ImportCodingDialog
+        open={importCodingOpen}
+        courseId={courseId}
+        chapters={chapters.data?.chapters ?? []}
+        onOpenChange={setImportCodingOpen}
+        onImported={(ids) => {
+          if (ids?.length) setLocalRecentIds(ids);
+          list.firstPage();
+          list.reload();
+        }}
       />
     </>
   );

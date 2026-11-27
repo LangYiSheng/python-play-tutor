@@ -51,15 +51,16 @@ class PracticeRules(BaseModel):
         return self
 
 
-def practice_question_available(kind, status, has_public_samples):
-    """Formal browser Python submissions require a nonempty public sample set."""
-    return status == "ready" and (kind != "python" or has_public_samples)
+def practice_question_available(kind, status, has_public_samples, usage=None):
+    """Formal browser Python submissions require a nonempty public sample set and cannot be assessment-only."""
+    return status == "ready" and usage != "assessment" and (kind != "python" or has_public_samples)
 
 
 def candidate_pool(db, activity, *, rules=None):
     """Return only approved, visible questions linked to both chapter and goal."""
     rules = rules if rules is not None else activity.content["practice_rules"]
     pool = {goal["knowledge_point_id"]: {} for goal in rules["goals"]}
+    usage_col = Question.source["usage"].as_string()
     rows = db.execute(
         select(QuestionKnowledgePoint.knowledge_point_id, Question.id, Question.kind, Question.samples[0].as_string().is_not(None))
         .select_from(Question)
@@ -70,6 +71,7 @@ def candidate_pool(db, activity, *, rules=None):
             Question.owner_id.is_(None) | (Question.owner_id == activity.owner_id),
             Question.status == "ready",
             (Question.kind == "python") if activity.content.get("practice_kind") == "programming" else (Question.kind != "python"),
+            usage_col.is_(None) | (usage_col != "assessment"),
             Question.deleted_at.is_(None),
             QuestionChapter.chapter_id == activity.chapter_id,
             QuestionKnowledgePoint.knowledge_point_id.in_(pool),

@@ -22,19 +22,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
 import { errorMessage, scoped } from "@/lib/api";
-import { lectioApi, useLectioJobs, type KnowledgeOverview, type KnowledgePointItem, type LectioJob } from "@/lib/lectio-api";
+import { courseStudioApi, useCourseStudioJobs, type KnowledgeOverview, type KnowledgePointItem, type CourseStudioJob } from "@/lib/course-studio-api";
 import { ContentActionDialog, type ContentAction } from "./action-dialog";
 import type { GraphData } from "./graph-layout";
 import { KnowledgeExtractDialog } from "./knowledge-extract-dialog";
 import { KnowledgeListView } from "./knowledge-list-view";
-import { LectioGraphCanvas } from "./lectio-graph-canvas";
-import { LectioGraphInspector } from "./lectio-graph-inspector";
-import { buildKnowledgeTree, cleanGraphLabel, type GNode } from "./lectio-graph-layout";
-import { LectioJobList } from "./lectio-job-list";
+import { StudioGraphCanvas } from "./studio-graph-canvas";
+import { StudioGraphInspector } from "./studio-graph-inspector";
+import { buildKnowledgeTree, cleanGraphLabel, type GNode } from "./studio-graph-layout";
+import { StudioJobList } from "./studio-job-list";
 import type { TaskSnapshot } from "./task-presentation";
 import { useGraphData } from "./use-graph-data";
 import "./inspector-content.css";
-import "./lectio-graph.css";
+import "./studio-graph.css";
 
 const ContentReviewPanel = lazy(() =>
   import("@/pages/content-review").then((m) => ({ default: m.ContentReviewPanel })),
@@ -45,7 +45,7 @@ type GraphProps = { courseId: number; initialReview?: ReviewBookmark };
 type ViewMode = "tree" | "radial" | "list";
 type SideOverlay = "review" | "tasks" | null;
 
-const VIEW_STORAGE_KEY = "lectio.graphView";
+const VIEW_STORAGE_KEY = "courseStudio.graphView";
 
 function readInitialView(): ViewMode {
   if (new URLSearchParams(location.search).get("view") === "list") return "list";
@@ -81,7 +81,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
   const endpoint = (suffix: string) => scoped("/teacher/course-graph" + suffix, courseId);
   const catalog = useGraphData<GraphData>(endpoint(""), revision);
   const overview = useGraphData<KnowledgeOverview>(
-    `/teacher/courses/${courseId}/lectio/knowledge`,
+    `/teacher/courses/${courseId}/course-studio/knowledge`,
     revision,
   );
   const pending = useGraphData<{ material_count: number; question_count: number }>(
@@ -110,7 +110,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
     }
   }, [pipelineTasks?.data, refresh]);
   const handleJobDone = useCallback(
-    (job: LectioJob) => {
+    (job: CourseStudioJob) => {
       refresh();
       if (job.kind === "knowledge_extract") {
         const created = typeof job.result?.created === "number" ? job.result.created : null;
@@ -124,7 +124,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
     },
     [refresh],
   );
-  const lectioJobs = useLectioJobs(courseId, handleJobDone);
+  const studioJobs = useCourseStudioJobs(courseId, handleJobDone);
 
   useEffect(() => {
     const updateCount = () => setReviewRevision((n) => n + 1);
@@ -173,8 +173,8 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
   }, [treeRoot, selectedId]);
 
   const graphJobs = useMemo(
-    () => lectioJobs.jobs.filter((j) => j.kind === "knowledge_extract"),
-    [lectioJobs.jobs],
+    () => studioJobs.jobs.filter((j) => j.kind === "knowledge_extract"),
+    [studioJobs.jobs],
   );
   const activeGraphJobs = useMemo(
     () => graphJobs.filter((j) => j.status === "queued" || j.status === "running").length,
@@ -202,9 +202,9 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
   async function extractForChapter(chapterId: number) {
     setExtractingChapterId(chapterId);
     try {
-      await lectioApi.extractKnowledge(courseId, chapterId);
+      await courseStudioApi.extractKnowledge(courseId, chapterId);
       toast.add({ title: "已提交 AI 知识点抽取任务", type: "success" });
-      lectioJobs.refresh();
+      studioJobs.refresh();
       setOverlay("tasks");
     } catch (e) {
       toast.add({ title: errorMessage(e), type: "error" });
@@ -218,7 +218,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
     try {
       const scopeChapterId = scope !== "all" ? Number(scope) : undefined;
       const scopeChapter = scopeChapterId ? chapters.find((c) => c.id === scopeChapterId) : undefined;
-      await lectioApi.exportKnowledge(
+      await courseStudioApi.exportKnowledge(
         courseId,
         fmt,
         scopeChapterId,
@@ -366,7 +366,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
               onAddPoint={(cid) => setAction({ kind: "point", mode: "create", chapterId: cid })}
               onEditPoint={(pid) => setAction({ kind: "point", mode: "edit", id: pid })}
               onExtractChapter={() => {
-                lectioJobs.refresh();
+                studioJobs.refresh();
                 setOverlay("tasks");
               }}
               onRefresh={refresh}
@@ -390,7 +390,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
               />
             </div>
           ) : (
-            <LectioGraphCanvas
+            <StudioGraphCanvas
               root={treeRoot}
               mode={viewMode}
               selectedId={selectedId}
@@ -433,19 +433,19 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
                       <X />
                     </Button>
                   </div>
-                  {lectioJobs.error ? (
-                    <ErrorNotice message={lectioJobs.error} />
+                  {studioJobs.error ? (
+                    <ErrorNotice message={studioJobs.error} />
                   ) : graphJobs.length === 0 ? (
                     <Empty
                       title="暂无知识图谱抽取任务"
                       description="点击上方「AI 生成知识图谱」或右侧章节「AI 抽取」后，这里会展示抽取进度。语音合成与课件梳理任务请在「章节与课件」查看。"
                     />
                   ) : (
-                    <LectioJobList jobs={graphJobs} onCancel={lectioJobs.cancel} />
+                    <StudioJobList jobs={graphJobs} onCancel={studioJobs.cancel} />
                   )}
                 </>
               ) : (
-                <LectioGraphInspector
+                <StudioGraphInspector
                   courseId={courseId}
                   courseTitle={courseTitle}
                   overview={overview?.data ?? null}
@@ -486,7 +486,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
         initialChapterId={scope !== "all" ? Number(scope) : undefined}
         onOpenChange={setExtractOpen}
         onSubmitted={() => {
-          lectioJobs.refresh();
+          studioJobs.refresh();
           setOverlay("tasks");
         }}
       />

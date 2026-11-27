@@ -217,3 +217,40 @@ it("shows only the centered prompt in results before execution and keeps cases a
   expect(wrapper.get(".case-tabs").text()).toContain("Case 1");
   wrapper.unmount();
 });
+
+it("displays coding subtype badge, blocks tampered fill_code skeleton, and resets to starter_code", async () => {
+  vi.mocked(runPython).mockReset().mockResolvedValue({ stdout: "4\n", stderr: "" });
+  const starter = "x = int(input())\n# === 填空区 1 开始 ===\ny = 0\n# === 填空区 1 结束 ===\nprint(y)\n";
+  const wrapper = mount(PracticeQuestionCard, {
+    props: {
+      question: {
+        id: "fill-q",
+        title: "双倍填空",
+        kind: "python",
+        prompt: "补全代码",
+        options: [],
+        starter_code: starter,
+        source: { coding_type: "fill_code", difficulty: "难" },
+        samples: [{ input: "2\n", output: "4\n" }],
+      },
+      index: 0,
+      answer: "",
+      code: "print(int(input()) * 2)\n",
+    },
+    global: { stubs: { CodeEditor: true } },
+  });
+  expect(wrapper.text()).toContain("程序填空");
+  expect(wrapper.get(".coding-difficulty-badge").text()).toBe("难");
+  expect(wrapper.get(".coding-skeleton-alert").text()).toContain("填空区");
+
+  await wrapper.findAll("button").find(b => b.text() === "运行公开样例")!.trigger("click");
+  await flushPromises();
+  expect(runPython).not.toHaveBeenCalled();
+
+  await wrapper.findAll("button").find(b => b.text() === "提交代码")!.trigger("click");
+  expect(wrapper.emitted("submit")).toBeUndefined();
+
+  await wrapper.get(".coding-reset-inline").trigger("click");
+  expect(wrapper.emitted("update:code")?.at(-1)).toEqual([starter]);
+  wrapper.unmount();
+});

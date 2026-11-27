@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, pool
 from app.config import DATABASE_URL
 from app.db import Base
 from app import models, integration_models, course_exchange_models, deletion_models, platform_roles  # noqa: F401 -- register migration metadata
-from app.lectio import models as lectio_models  # noqa: F401 -- register lectio tables
+from app.course_studio import models as course_studio_models  # noqa: F401 -- register course_studio tables
 from app.narration import models as narration_models  # noqa: F401 -- register narration table
 
 target_metadata = Base.metadata

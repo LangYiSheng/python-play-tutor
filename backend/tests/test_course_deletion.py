@@ -3,7 +3,7 @@ from conftest import make_student_account
 from sqlalchemy import select, text
 
 from app.integration_models import AssistantCall, AssistantSession, SubmissionDiagnostic
-from app.lectio.models import LectioExam, LectioJob
+from app.course_studio.models import CourseStudioExam, CourseStudioJob
 from app.models import (
     Activity, AssessmentAttempt, Chapter, Classroom, CourseInstance, ExperienceCheckpoint,
     Material, MaterialChapter, MaterialParticipation, Membership, PlayerPosition, Question,
@@ -61,7 +61,7 @@ def test_owner_can_delete_course_content_after_current_preview(client, db, teach
     })
     assert activity.status_code == 201, activity.text
     activity_id = activity.json()["id"]
-    exam = LectioExam(course_instance_id=course_id, stable_id="draft-exam", title="组卷草稿")
+    exam = CourseStudioExam(course_instance_id=course_id, stable_id="draft-exam", title="组卷草稿")
     db.add(exam)
     db.commit()
     exam_id = exam.id
@@ -81,16 +81,16 @@ def test_owner_can_delete_course_content_after_current_preview(client, db, teach
     ))
     assert not db.execute(text("PRAGMA foreign_key_check")).all()
     db.expire_all()
-    assert db.scalar(select(LectioExam.id).where(LectioExam.id == exam_id)) is None
+    assert db.scalar(select(CourseStudioExam.id).where(CourseStudioExam.id == exam_id)) is None
 
 
-def test_course_delete_rechecks_active_lectio_job(client, db, teacher):
+def test_course_delete_rechecks_active_studio_job(client, db, teacher):
     headers = teacher["headers"]
     course_id = create_course(client, headers)["id"]
     path = f"/api/teacher/courses/{course_id}"
     preview = client.get(path + "/deletion-preview", headers=headers).json()
     assert preview["can_delete"]
-    db.add(LectioJob(course_instance_id=course_id, kind="exercise_generate", scope_key="course", status="queued"))
+    db.add(CourseStudioJob(course_instance_id=course_id, kind="exercise_generate", scope_key="course", status="queued"))
     db.commit()
     blocked = client.get(path + "/deletion-preview", headers=headers).json()
     assert not blocked["can_delete"] and "备课任务" in blocked["blocked_reason"]

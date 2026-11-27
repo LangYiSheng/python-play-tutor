@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Layers, List } from "lucide-react";
-import { cleanGraphLabel } from "@/features/content-workspace/lectio-graph-layout";
-import type { KnowledgePointItem } from "@/lib/lectio-api";
+import { cleanGraphLabel } from "@/features/content-workspace/studio-graph-layout";
+import type { KnowledgePointItem } from "@/lib/course-studio-api";
 import type { NarrationPage } from "./api";
 import { StatusBadge } from "./status-badge";
 

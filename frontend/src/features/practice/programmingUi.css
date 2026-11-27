@@ -572,3 +572,105 @@
   white-space: nowrap;
 }
 .game-workspace .coding-summary-edit > .game-icon { flex-shrink: 0; }
+
+.game-workspace .coding-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.game-workspace .coding-difficulty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 600;
+  border: 1px solid var(--game-line);
+  background: #ede6d7;
+  color: var(--game-ink, #513b28);
+}
+
+.game-workspace .coding-difficulty-badge[data-difficulty="易"] {
+  border-color: #9dc5b8;
+  background: #e6f2ee;
+  color: #1f5c4a;
+}
+
+.game-workspace .coding-difficulty-badge[data-difficulty="中"] {
+  border-color: #d6b67c;
+  background: #f8eed9;
+  color: #7d5314;
+}
+
+.game-workspace .coding-difficulty-badge[data-difficulty="难"] {
+  border-color: #d79d95;
+  background: #f9e7e4;
+  color: #8f2d24;
+}
+
+.game-workspace .coding-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--game-line);
+  border-radius: 6px;
+  background: var(--game-paper);
+  color: var(--game-forest);
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.game-workspace .coding-reset-btn .game-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.game-workspace .coding-skeleton-hint {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid #cddbd1;
+  background: #edf5ef;
+  color: #284b43;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.game-workspace .coding-skeleton-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #ddb0aa;
+  background: #faecea;
+  color: #8f2d24;
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+.game-workspace .coding-reset-inline {
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 3px 8px;
+  border: 1px solid #c9867d;
+  border-radius: 6px;
+  background: #fffaf5;
+  color: #8f2d24;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.game-workspace .monaco-editor .fill-slot-marker-line {
+  background: #e6efe8;
+}
+
+.game-workspace .monaco-editor .fill-slot-body-line {
+  background: #f1f7f2;
+  border-left: 3px solid #2d7549;
+}

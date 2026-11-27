@@ -20,9 +20,9 @@ it("pages only the selected knowledge point and switches cleanly to exams tab an
     calls.push(url);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/knowledge-point-labels")) return json([point]);
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
-    if (url.pathname.endsWith("/lectio/exams")) return json({ exams: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/exams")) return json({ exams: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [chapter] });
     const page = Number(url.searchParams.get("page") || 1);
     return json({
       page,
@@ -57,7 +57,7 @@ it("pages only the selected knowledge point and switches cleanly to exams tab an
   ).toBe(true);
   expect(
     calls
-      .filter((u) => !u.pathname.includes("/lectio/"))
+      .filter((u) => !u.pathname.includes("/course-studio/"))
       .every((url) => url.pathname.startsWith("/api/teacher/courses/12/") && !url.searchParams.has("classroom_id")),
   ).toBe(true);
 
@@ -76,7 +76,7 @@ it("handles reviewable draft filter and clears back to tab=bank", async () => {
   vi.stubGlobal("fetch", async (path: string) => {
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [] });
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
     requests.push(url.searchParams);
     const page = Number(url.searchParams.get("page") || 1);
     return json({
@@ -122,10 +122,10 @@ it("submits AI objective exercise generation and creates an exam via wizard", as
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/questions")) return json({ page: 1, total: 0, items: [] });
-    if (url.pathname.endsWith("/lectio/jobs")) return json({ jobs: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [chapter] });
-    if (url.pathname.endsWith("/lectio/exams")) return json({ exams: [] });
-    if (url.pathname.endsWith("/lectio/chapters/17/exercises/generate")) {
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/exams")) return json({ exams: [] });
+    if (url.pathname.endsWith("/course-studio/chapters/17/exercises/generate")) {
       submitted.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
       return json(
         {
@@ -146,14 +146,14 @@ it("submits AI objective exercise generation and creates an exam via wizard", as
         202,
       );
     }
-    if (url.pathname.endsWith("/lectio/exams/gaps")) {
+    if (url.pathname.endsWith("/course-studio/exams/gaps")) {
       return json({
         ok: true,
         totalShortage: 0,
         byType: [{ type: "single", label: "单选题", count: 10, needed: 10, available: 15, shortage: 0 }],
       });
     }
-    if (url.pathname.endsWith("/lectio/exams/generate")) {
+    if (url.pathname.endsWith("/course-studio/exams/generate")) {
       return json(
         {
           id: "exam-1",
@@ -207,8 +207,8 @@ it("submits AI objective exercise generation and creates an exam via wizard", as
   await user.click(await screen.findByRole("button", { name: "AI 智能出题" }));
   await user.click(await screen.findByRole("button", { name: "开始生成草稿" }));
   await waitFor(() => expect(submitted).toHaveLength(1));
-  expect(submitted[0].path).toBe("/api/teacher/courses/12/lectio/chapters/17/exercises/generate");
-  expect(submitted[0].body.counts).toEqual({ single: 2, multiple: 1, true_false: 2, fill_blank: 1 });
+  expect(submitted[0].path).toBe("/api/teacher/courses/12/course-studio/chapters/17/exercises/generate");
+  expect(submitted[0].body.counts).toEqual({ single: 4, multiple: 2, true_false: 2, fill_blank: 2 });
 
   await user.click(screen.getByRole("tab", { name: "课程组卷" }));
   await user.click(await screen.findByRole("button", { name: "新建试卷" }));
@@ -223,7 +223,7 @@ it("supports one-click approve, batch approve, and dismissible completed AI job 
   vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
-    if (url.pathname.endsWith("/lectio/jobs")) {
+    if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
         jobs: [
           {
@@ -244,8 +244,8 @@ it("supports one-click approve, batch approve, and dismissible completed AI job 
         ],
       });
     }
-    if (url.pathname.endsWith("/lectio/exams")) return json({ exams: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/exams")) return json({ exams: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [chapter] });
     if (url.pathname.includes("/questions/") && init?.method === "PUT") {
       updates.push({ path: url.pathname, body: JSON.parse(String(init.body)) });
       return json({ ok: true });
@@ -291,7 +291,7 @@ it("allows collapsing and reopening AI job panel while generation is running", a
   vi.stubGlobal("fetch", async (path: string) => {
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
-    if (url.pathname.endsWith("/lectio/jobs")) {
+    if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
         jobs: [
           {
@@ -312,8 +312,8 @@ it("allows collapsing and reopening AI job panel while generation is running", a
         ],
       });
     }
-    if (url.pathname.endsWith("/lectio/exams")) return json({ exams: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/exams")) return json({ exams: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/questions")) return json({ page: 1, total: 0, items: [] });
     return json({});
   });
@@ -344,7 +344,7 @@ it("shows partial created counts on interrupted and legacy exercise jobs", async
   vi.stubGlobal("fetch", async (path: string) => {
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
-    if (url.pathname.endsWith("/lectio/jobs")) {
+    if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
         jobs: [
           {
@@ -395,8 +395,8 @@ it("shows partial created counts on interrupted and legacy exercise jobs", async
         ],
       });
     }
-    if (url.pathname.endsWith("/lectio/exams")) return json({ exams: [] });
-    if (url.pathname.endsWith("/lectio/knowledge")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/exams")) return json({ exams: [] });
+    if (url.pathname.endsWith("/course-studio/knowledge")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/questions")) return json({ page: 1, total: 0, items: [] });
     return json({});
   });
@@ -409,4 +409,162 @@ it("shows partial created counts on interrupted and legacy exercise jobs", async
   expect(await screen.findByText("中断前已生成并入库 12 道待审题目（跳过重复或无效 1 道）")).toBeVisible();
   expect(screen.getByText(/中断前已执行 10\/12 批/)).toBeVisible();
   expect(screen.getByText("中断前未写入题目")).toBeVisible();
+});
+
+it("shows coding_type filter only when kind is python and resets it when switching back", async () => {
+  const requests: URLSearchParams[] = [];
+  vi.stubGlobal("fetch", async (path: string) => {
+    const url = new URL(path, location.origin);
+    if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/course-studio/jobs")) return json({ jobs: [] });
+    if (url.pathname.endsWith("/questions")) {
+      requests.push(url.searchParams);
+      return json({ page: 1, total: 0, items: [] });
+    }
+    return json({});
+  });
+
+  history.replaceState({}, "", "/teacher/assessments?course=12&tab=bank");
+  const user = userEvent.setup();
+  render(<AssessmentsPage courseId={12} />);
+
+  await waitFor(() => expect(requests.length).toBeGreaterThanOrEqual(1));
+  expect(screen.queryByRole("combobox", { name: "编程形式" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("combobox", { name: "题目类型" }));
+  await user.click(await screen.findByRole("option", { name: "编程题" }));
+  const codingTypeSelect = await screen.findByRole("combobox", { name: "编程形式" });
+  expect(codingTypeSelect).toBeVisible();
+
+  await user.click(codingTypeSelect);
+  await user.click(await screen.findByRole("option", { name: "程序填空" }));
+  await waitFor(() => expect(requests.at(-1)?.get("coding_type")).toBe("fill_code"));
+
+  await user.click(screen.getByRole("combobox", { name: "题目类型" }));
+  await user.click(await screen.findByRole("option", { name: "全部题型" }));
+  expect(screen.queryByRole("combobox", { name: "编程形式" })).not.toBeInTheDocument();
+  await waitFor(() => expect(requests.at(-1)?.has("coding_type")).toBe(false));
+});
+
+it("submits AI coding exercise generation and displays coding job summary with failures", async () => {
+  const submitted: { path: string; body: Record<string, unknown> }[] = [];
+  vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
+    const url = new URL(path, location.origin);
+    if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
+    if (url.pathname.endsWith("/questions")) {
+      return json({
+        page: 1,
+        total: 1,
+        items: [
+          {
+            id: "q-fresh-py",
+            title: "新生成的编程题",
+            kind: "python",
+            coding_type: "fill_code",
+            source_type: "ai_generated",
+            status: "draft",
+            chapter_ids: [17],
+            created_at: new Date().toISOString(),
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/course-studio/knowledge")) {
+      return json({
+        chapters: [
+          {
+            ...chapter,
+            materials: [{ id: 5, stable_id: "m-5", title: "第2章课件", kind: "presentation", pages: 12 }],
+            points: [{ id: 81, stable_id: "kp-81", chapter_id: 17, title: "表达式", section: "2.1", brief: "", question_count: 0, sources: [] }],
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/course-studio/jobs")) {
+      return json({
+        jobs: [
+          {
+            id: "job-coding-done",
+            course_instance_id: 12,
+            kind: "coding_exercises_generate",
+            scope_key: "chapter:17:coding_exercises",
+            status: "done",
+            progress: { done: 3, total: 3, message: "已完成：新增 2 道已验编程题草稿（1 道未通过自动验题）" },
+            result: {
+              chapter_id: 17,
+              created: 2,
+              skipped: 0,
+              failed: 1,
+              failures: ["第 3 题（程序设计 · 难）：独立盲解输出不一致"],
+            },
+            error: "",
+            cancel_requested: false,
+            started_at: "2026-11-27T00:00:00Z",
+            finished_at: "2026-11-27T00:01:00Z",
+            created_at: "2026-11-27T00:00:00Z",
+            updated_at: "2026-11-27T00:01:00Z",
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith("/course-studio/chapters/17/coding-exercises/generate")) {
+      submitted.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
+      return json(
+        {
+          id: "job-coding-1",
+          course_instance_id: 12,
+          kind: "coding_exercises_generate",
+          scope_key: "chapter:17:coding_exercises",
+          status: "queued",
+          progress: { done: 0, total: 3, message: "已加入 AI 编程出题队列" },
+          result: null,
+          error: "",
+          cancel_requested: false,
+          started_at: null,
+          finished_at: null,
+          created_at: "2026-11-27T00:00:00Z",
+          updated_at: "2026-11-27T00:00:00Z",
+        },
+        202,
+      );
+    }
+    return json({});
+  });
+
+  history.replaceState({}, "", "/teacher/assessments?course=12&tab=bank");
+  const user = userEvent.setup();
+  render(<AssessmentsPage courseId={12} />);
+
+  // Freshly generated question displays the "新生成" badge and relative creation time
+  expect(await screen.findByText("新生成的编程题")).toBeVisible();
+  expect(screen.getByText("新生成")).toBeVisible();
+  expect(screen.getByText(/生成于 刚刚/)).toBeVisible();
+
+  // Completed coding job shows in AI task panel with coding label & failure note
+  await user.click(await screen.findByRole("button", { name: /AI 出题任务（1）/ }));
+  expect(await screen.findByText("AI 编程出题")).toBeVisible();
+  expect(screen.getByText("已完成：新增 2 道已验编程题草稿（1 道未通过自动验题）")).toBeVisible();
+  expect(screen.getByText(/独立盲解输出不一致/)).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "AI 智能出题" }));
+  await user.click(await screen.findByRole("button", { name: /Python 编程题（自动验题）/ }));
+
+  await user.click(screen.getByRole("combobox", { name: "目标难度" }));
+  await user.click(await screen.findByRole("option", { name: /难（高思维密度与综合逻辑）/ }));
+  await user.click(screen.getByRole("combobox", { name: "教学用途" }));
+  await user.click(await screen.findByRole("option", { name: "测验专用" }));
+  await user.type(screen.getByLabelText("语法范围补充约束（可选）"), "仅限顺序结构");
+  await user.click(screen.getByRole("button", { name: "表达式" }));
+
+  await user.click(screen.getByRole("button", { name: /生成并自动验题/ }));
+  await waitFor(() => expect(submitted).toHaveLength(1));
+  expect(submitted[0].path).toBe("/api/teacher/courses/12/course-studio/chapters/17/coding-exercises/generate");
+  expect(submitted[0].body).toEqual({
+    counts: { fill_code: 1, debug: 1, design: 1 },
+    difficulty: "难",
+    usage: "assessment",
+    knowledge_point_ids: [81],
+    allowed_syntax_note: "仅限顺序结构",
+    enable_blind_solve: true,
+  });
 });

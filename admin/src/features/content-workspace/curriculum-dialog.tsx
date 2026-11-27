@@ -21,9 +21,9 @@ export function CurriculumDialog({ courseId, tab, chapters, editing, chapterId, 
     if (!editing || !("content" in editing)) return "";
     const raw = editing.content.summary_markdown;
     if (typeof raw === "string" && raw.trim()) return raw;
-    const lectio = editing.content.lectio;
-    if (lectio && typeof lectio === "object" && "brief" in lectio && typeof lectio.brief === "string") {
-      return lectio.brief;
+    const studioMeta = editing.content.course_studio;
+    if (studioMeta && typeof studioMeta === "object" && "brief" in studioMeta && typeof studioMeta.brief === "string") {
+      return studioMeta.brief;
     }
     return "";
   })();
@@ -40,14 +40,14 @@ export function CurriculumDialog({ courseId, tab, chapters, editing, chapterId, 
     setError("");
     try {
       const existingContent = editing && "content" in editing ? editing.content : {};
-      const existingLectio =
-        existingContent.lectio && typeof existingContent.lectio === "object"
-          ? (existingContent.lectio as Record<string, unknown>)
+      const existingStudioMeta =
+        existingContent.course_studio && typeof existingContent.course_studio === "object"
+          ? (existingContent.course_studio as Record<string, unknown>)
           : null;
       const nextContent: Record<string, unknown> = {
         ...existingContent,
         summary_markdown: summary,
-        ...(existingLectio ? { lectio: { ...existingLectio, brief: summary.trim().slice(0, 120) } } : {}),
+        ...(existingStudioMeta ? { course_studio: { ...existingStudioMeta, brief: summary.trim().slice(0, 120) } } : {}),
       };
       const body =
         tab === "chapters"

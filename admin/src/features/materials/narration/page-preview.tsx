@@ -7,8 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { narrationApi } from "@/features/materials/narration/api";
 import { useDraft } from "@/lib/drafts";
-import { cleanGraphLabel } from "@/features/content-workspace/lectio-graph-layout";
-import type { KnowledgePointItem } from "@/lib/lectio-api";
+import { cleanGraphLabel } from "@/features/content-workspace/studio-graph-layout";
+import type { KnowledgePointItem } from "@/lib/course-studio-api";
 import type { usePageMedia } from "./use-page-media";
 import type { useNarrationReview } from "./use-review";
 

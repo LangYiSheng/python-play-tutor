@@ -374,7 +374,7 @@ def _apply_latest(db: Session, material: Material, extra: dict[str, Any] | None)
 
 
 class _AuthoringKnowledgeLLM:
-    """Adapter letting Lectio knowledge extraction reuse narration.client retries and test stubs."""
+    """Adapter letting Course Studio knowledge extraction reuse narration.client retries and test stubs."""
 
     def __init__(self, settings: dict[str, Any], *, check_cancel: Any = None) -> None:
         self._settings = settings
@@ -405,8 +405,8 @@ class _AuthoringKnowledgeLLM:
 
 
 def _extract_knowledge(db: Session, material: Material, extra: dict[str, Any] | None) -> bool:
-    from ..lectio import knowledge_service
-    from ..lectio.engine.llm import LLMFailed, LLMUnavailable
+    from ..course_studio import knowledge_service
+    from ..course_studio.engine.llm import LLMFailed, LLMUnavailable
 
     repository.ensure_lease(db, material.id)
     repository.beat(

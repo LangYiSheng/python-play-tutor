@@ -3,8 +3,9 @@ import { useDraft } from "@/lib/drafts";
 import { newId } from "@/lib/id";
 import type { Question } from "@/lib/types";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Case } from "./types";
+import { Case, type CodingType, type CodingUsage } from "./types";
 import { editorPayload, questionEditors, type EditorAnswer } from "./editor-registry";
+import { readCodingType, readCodingUsage, readReferenceSolution } from "../../../../shared/codingQuestions";
 import { interactiveExamples } from "../../../../shared/interactiveExamples";
 import { isInteractiveValue } from "../../../../shared/interactiveValues";
 import { validateInteractiveSource } from "./validate-interactive";
@@ -24,8 +25,12 @@ export function useQuestionEditor(courseId: number, onSaved: () => void) {
     [titleTouched, setTitleTouched] = useState(false),
     [prompt, setPrompt] = useState(""),
     [explanation, setExplanation] = useState(""),
+    [difficulty, setDifficulty] = useState(""),
+    [codingType, setCodingType] = useState<CodingType | "">(""),
+    [usage, setUsage] = useState<CodingUsage>("both"),
     [hints, setHints] = useState(""),
     [starterCode, setStarterCode] = useState(""),
+    [referenceSolution, setReferenceSolution] = useState(""),
     [kind, setKind] = useState<Question["kind"]>("single_choice"),
     [status, setStatus] = useState<Question["status"]>("draft"),
     [options, setOptions] = useState<string[]>(["", ""]),
@@ -59,8 +64,16 @@ export function useQuestionEditor(courseId: number, onSaved: () => void) {
     setExplanation(
       typeof q?.source?.explanation === "string" ? q.source.explanation : "",
     );
+    setDifficulty(
+      typeof q?.source?.difficulty === "string" && ["易", "中", "难"].includes(q.source.difficulty)
+        ? q.source.difficulty
+        : "",
+    );
+    setCodingType(q?.kind === "python" ? readCodingType(q.source) : "");
+    setUsage(readCodingUsage(q?.source));
     setHints(q?.hints?.join("\n") ?? "");
     setStarterCode(q?.starter_code ?? "");
+    setReferenceSolution(q?.kind === "python" ? readReferenceSolution(q.answer) : "");
     setKind(q?.kind ?? "single_choice");
     setStatus(q?.status ?? "draft");
     setOptions(q?.options?.length ? q.options : ["", ""]);
@@ -134,12 +147,22 @@ export function useQuestionEditor(courseId: number, onSaved: () => void) {
       const trimmedExplanation = explanation.trim();
       if (trimmedExplanation) source.explanation = trimmedExplanation;
       else delete source.explanation;
+      if (["易", "中", "难"].includes(difficulty)) source.difficulty = difficulty;
+      else delete source.difficulty;
+      if (kind === "python" && codingType) source.coding_type = codingType;
+      else delete source.coding_type;
+      if (kind === "python") {
+        if (usage !== "both") source.usage = usage;
+        else delete source.usage;
+      }
 
       const fields = editorPayload(kind, {
         answer: kind === "interactive" ? interactiveAnswer : answer,
         options,
         hints,
         starterCode,
+        referenceSolution,
+        codingType,
         samples,
         cases,
         editing,
@@ -225,10 +248,18 @@ export function useQuestionEditor(courseId: number, onSaved: () => void) {
     },
     explanation,
     setExplanation,
+    difficulty,
+    setDifficulty,
+    codingType,
+    setCodingType,
+    usage,
+    setUsage,
     hints,
     setHints,
     starterCode,
     setStarterCode,
+    referenceSolution,
+    setReferenceSolution,
     kind,
     setKind: (value: Question["kind"]) => {
       if (value === kind) return;

@@ -65,7 +65,7 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - `GET /groups/{chapter_id}/preview` 返回该章在当前类型筛选下可通过的草稿数、题目数、讲稿页数、须单独审阅的数量和确认令牌。 `POST /groups/{chapter_id}/accept` 接收 `kind`、`expected_count`、`token`，一次事务覆盖已预览的所有页。成员或版本变化返回 409，需重新预览。交互练习题须在编辑器中试答后单独通过。
 
 - GET /teacher/courses/{course_id}/catalog -> {chapters,knowledge_points,activities,npcs}, restricted to the authorized course. Passing view=chapters returns chapter metadata alone.
-- GET /teacher/courses/{course_id}/questions with page returns {items,total,page}. Items contain id, title, kind, status, source_type and chapter_ids. Search matches title or prompt. The kind, status and source filters apply before pagination. `reviewable=true` restricts results to drafts the current teacher can review in this course. GET /teacher/courses/{course_id}/questions/{id} returns one authorized teacher detail. GET /teacher/courses/{course_id}/chapters/{chapter_id}/question-candidates returns chapter-scoped selection metadata and public sample availability.
+- GET /teacher/courses/{course_id}/questions with page returns {items,total,page}, ordered newest-first by `source.created_at` (then id). Items contain id, title, kind, status, source_type, chapter_ids, difficulty, coding_type, usage and created_at. Search matches title or prompt. The kind, coding_type, difficulty, status and source filters apply before pagination. `reviewable=true` restricts results to drafts the current teacher can review in this course. GET /teacher/courses/{course_id}/questions/{id} returns one authorized teacher detail. GET /teacher/courses/{course_id}/chapters/{chapter_id}/question-candidates returns chapter-scoped selection metadata, coding_type/usage and public sample availability. `POST /teacher/courses/{course_id}/questions/import-coding` batch-imports 1–100 Python coding questions (`fill_code`/`debug`/`design`, orthogonal difficulty & `usage`) as reviewable `draft` records with private `reference_solution` & `hidden_cases` stored only in `QuestionSecret`.
 - GET /teacher/courses/{course_id}/knowledge-points accepts page, size, search and chapter_id and returns {items,total,page}. Both paginated lists default to 10 rows and accept up to 100. GET /teacher/courses/{course_id}/knowledge-point-labels returns id, title and chapter_id for up to 65 selected IDs passed as repeated ids query parameters.
 - `POST /teacher/courses/{course_id}/chapters` 使用 `title,order_index?` 创建章节，同路径下 `PUT /{id}` 更新章节。知识点由 `/knowledge-points` 管理。删除章节使用级联预览。
 - `POST /teacher/courses/{course_id}/activities` 接收 `id,chapter_id,title,kind,practice_kind?,required?,order_index?,published?,knowledge_point_ids?,question_ids?,practice_rules?`，同路径下 `PUT /{id}` 修改。`kind=practice` 时选择 `objective` 或 `programming` 并设置必做或选做。`kind=assessment` 的测验均为必做。固定题单和按知识点抽题按活动类型校验。
@@ -123,13 +123,13 @@ Pausing a chapter suspends learner access. Reopening it restores access to the c
 
 讲解、审校、音频与提问均不改变成绩、解锁、任务进度或阅读完成；翻页、播放与浏览不产生模型调用。课程包携带讲稿状态及有效配音，详见内容规范的交换契约。
 
-### Lectio 课程创作与智能组卷
+### 课程工作室（知识图谱、智能出题与组卷）
 
-以下路径位于 `/api/teacher/courses/{course_id}/lectio`，课程负责人及管理员可在未开班时使用（学生 403，未配置作者期模型触发 AI 任务返回 409）。
+以下路径位于 `/api/teacher/courses/{course_id}/course-studio`，课程负责人及管理员可在未开班时使用（学生 403，未配置作者期模型触发 AI 任务返回 409）。
 
 - 讲稿节奏与导出：`GET /materials/{material_id}/pacing?section_minutes=10&chapter_minutes=90` 测算页级与小节口播字数/时长；`GET /materials/{material_id}/export?kind=source|script&fmt=docx|md` 导出整理稿或口播讲稿。
 - 知识点抽取与图谱导出：`GET /knowledge` 返回按章分组的课件与知识点结构（含课件来源页码）；`POST /chapters/{chapter_id}/knowledge/extract` 提交后台抽取任务（202 `JobSnapshot`）；`GET /knowledge/export?fmt=xmind|xlsx|docx&chapter_id?` 导出思维导图、Excel 清单或 Word 大纲。
-- AI 智能出题与学习通导出：`POST /chapters/{chapter_id}/exercises/generate`（202 `JobSnapshot`）基于章节资料生成严格四类客观题（`single`/`multiple`/`true_false`/`fill_blank` 单空）草稿写入题目表（`status="draft", source_type="ai_generated"`），非客观题/简答题返回 422；教师审校改为 `ready` 后可用于小镇练习与组卷。`GET /exercises/validate` 与 `GET /exercises/export?fmt=xuexitong_xlsx|xuexitong_txt|xlsx` 执行学习通模板校验并导出客观题（自动跳过非客观题）。
+- AI 智能出题与学习通导出：`POST /chapters/{chapter_id}/exercises/generate`（202 `JobSnapshot`）基于章节资料生成严格四类客观题（`single`/`multiple`/`true_false`/`fill_blank` 单空）草稿写入题目表（`status="draft", source_type="ai_generated"`），非客观题/简答题返回 422；`POST /chapters/{chapter_id}/coding-exercises/generate`（202 `JobSnapshot`，`kind="coding_exercises_generate"`）基于章节资料生成 Python 编程题（`fill_code`/`debug`/`design`，单次 1–12 题，支持正交难度、用途、聚焦知识点、语法边界约束与独立盲解复验），经沙箱权威输出回填与初始代码反送分检验后以草稿入库（生产环境未配置 `go-judge` 返回 409）。教师审校改为 `ready` 后可用于小镇练习与组卷（`usage="assessment"` 仅用于测验、不进入练习抽题池）。`GET /exercises/validate` 与 `GET /exercises/export?fmt=xuexitong_xlsx|xuexitong_txt|xlsx` 执行学习通模板校验并导出客观题（自动跳过非客观题）。
 - 智能组卷：`GET /exams` 列出课程备课试卷；`POST /exams/gaps` 核查蓝图四类客观题及 A/B 卷重复率上限下的缺口；`POST /exams/fill-gaps`（202 `JobSnapshot`）按章节补齐客观题草稿；`POST /exams/generate`（201）抽题生成并持久化试卷快照；`GET/PATCH/DELETE /exams/{exam_id}` 与 `GET /exams/{exam_id}/candidates` 支持元信息编辑、调分、上下移、换题与移出；`GET /exams/{exam_id}/export?kind=student_docx|teacher_docx|blueprint_xlsx|xuexitong_xlsx|xuexitong_txt|zip&variant=A|B` 导出学生卷、解析卷、双向细目表、学习通导入或整包 ZIP。组卷草稿独立于学生在小镇作答的章节测验。
 - 任务轮询与取消：`GET /jobs?limit=20`、`POST /jobs/{job_id}/cancel`。
 

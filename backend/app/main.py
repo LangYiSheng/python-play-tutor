@@ -32,7 +32,7 @@ from app.materials import router as storage
 from app.chapter_tasks import router as chapter_tasks
 from app.teaching.world import router as world
 
-from . import assistant_settings, content_deletions, judge_management, lectio, narration, service_settings
+from . import assistant_settings, content_deletions, judge_management, course_studio, narration, service_settings
 from .config import CORS_ORIGINS, dev_tools_enabled
 from .db import SessionLocal
 from .narration import jobs as narration_jobs
@@ -49,14 +49,14 @@ async def lifespan(app):
     assistant.recover_interrupted_calls()
     # 重启不可能还留着活着的讲解任务（单 API 进程），直接标中断，省掉 5 分钟空等。
     narration_repository.interrupt_running()
-    lectio.interrupt_running()
+    course_studio.interrupt_running()
     tasks = [
         asyncio.create_task(practice.judge_worker()),
         asyncio.create_task(materials_jobs.material_worker()),
         asyncio.create_task(cleanup_worker()),
         # 整册生成/校准/音频在后台线程里跑，老师关掉页面也不中止。
         asyncio.create_task(narration_jobs.worker()),
-        asyncio.create_task(lectio.worker()),
+        asyncio.create_task(course_studio.worker()),
     ]
     yield
     for task in tasks:
@@ -116,9 +116,9 @@ def create_app() -> FastAPI:
     app.include_router(report_router, prefix="/api")
     app.include_router(narration.router, prefix="/api")
     app.include_router(narration_voices.router, prefix="/api")
-    from .lectio.router import router as lectio_router
+    from .course_studio.router import router as course_studio_router
 
-    app.include_router(lectio_router, prefix="/api")
+    app.include_router(course_studio_router, prefix="/api")
     app.include_router(synthesis_management.router, prefix="/api")
     app.include_router(synthesis_management.global_router, prefix="/api")
     app.include_router(course_exchange.shared_router, prefix="/api")

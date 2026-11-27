@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { errorMessage, scoped } from "@/lib/api";
-import { lectioApi, type KnowledgeOverview, type KnowledgePointItem } from "@/lib/lectio-api";
+import { courseStudioApi, type KnowledgeOverview, type KnowledgePointItem } from "@/lib/course-studio-api";
 import { pageRanges } from "./graph-layout";
-import { cleanGraphLabel } from "./lectio-graph-layout";
+import { cleanGraphLabel } from "./studio-graph-layout";
 
 export function KnowledgeListView({
   courseId,
@@ -38,7 +38,7 @@ export function KnowledgeListView({
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    lectioApi
+    courseStudioApi
       .listKnowledge(courseId, controller.signal)
       .then((res) => {
         if (!controller.signal.aborted) {
@@ -64,7 +64,7 @@ export function KnowledgeListView({
   async function extractFor(chapterId: number) {
     setExtractingId(chapterId);
     try {
-      await lectioApi.extractKnowledge(courseId, chapterId);
+      await courseStudioApi.extractKnowledge(courseId, chapterId);
       toast.add({ title: "已加入知识点抽取队列", type: "success" });
       onExtractChapter(chapterId);
     } catch (e) {
