@@ -648,26 +648,6 @@ function makeBuilding(name, label, route, tileX, tileY, bw, bh, sprite = null) {
   };
 }
 
-/** NPC 出生点对象（点对象，width=height=0） */
-function makeNpc(name, key, label, tileX, tileY, sprite = 'player_sara') {
-  return {
-    id: nextObjectId(),
-    name,
-    type: 'npc',
-    x: tileX * TILE,
-    y: tileY * TILE,
-    width: 0,
-    height: 0,
-    visible: true,
-    rotation: 0,
-    properties: [
-      { name: 'key', type: 'string', value: key },
-      { name: 'label', type: 'string', value: label },
-      { name: 'sprite', type: 'string', value: sprite },
-    ],
-  };
-}
-
 /** 玩家 spawn 对象 */
 function makeSpawn(tileX, tileY) {
   return {
@@ -735,7 +715,7 @@ function makeLowObstacle(name, label, tileX, tileY, bw = 1, bh = 1, kind = 'low'
 //      先连通再清理会把刚接上的细桥当毛刺删掉；用圆盘笔刷铺门前坪会被 cleanGrid
 //      当孤点削掉 —— 两个坑都实测踩过，所以门前坪是实心矩形、且排在清理之后。
 //   4. 树不围成绿墙：顶边一条 1~2 排深的连续树线收边界，内部按衰减散布
-//   5. 收尾跑校验：建筑间距、道路单连通、NPC 必定落在路面上；不满足直接抛错
+//   5. 收尾跑校验：建筑间距、道路单连通；不满足直接抛错
 
 /** 静态美术排布表。交互名称/用途/门前点/portal权威数据见shared/world/world.json。
  * 建筑：[key, 房屋图号, 中心 tileX, 底边 tileY, 历史中文名, 历史交互键]。
@@ -760,17 +740,6 @@ const TOWN_YARDS = [[27, 13, 30, 15], [11, 24, 13, 26], [7, 33, 12, 36]];
 
 /** 矿洞：土丘 3×3 左上角；洞口在底边中心，主街向西直插到洞口面前 */
 const MINE = { x: 9, y: 8, label: '矿洞景观', route: 'scenery' };
-
-/** NPC：[对象名, 数据 key, 名牌, 角色图号, 归属建筑（null = 矿洞）] */
-const TOWN_NPCS = [
-  ['npc_mayor_py', 'mayor_py', '镇长 Py', 2, 'mayor_hall'],
-  ['npc_librarian_doc', 'librarian_doc', '馆长 Doc', 6, 'library'],
-  ['npc_workshop_master', 'workshop_master', '工坊师傅', 12, 'workshop'],
-  ['npc_coach_q', 'coach_q', '教务 Q', 16, 'training'],
-  ['npc_foreman_bug', 'foreman_bug', '矿头 Bug', 22, null],
-  ['npc_sage_review', 'sage_review', '复盘师 Sage', 26, 'review_hall'],
-  ['npc_class_president', 'class_president', '班长', 30, null],
-];
 
 /** 玩家出生：南入口主街上 */
 const TOWN_SPAWN = { tileX: 22, tileY: 36 };
@@ -1199,7 +1168,7 @@ function generateTownHub() {
     if (Number(num) > total) throw new Error(`精灵键 ${sprite} 越界：${kind} 只有 ${total} 张`);
   });
 
-  // ---------- 7. spawn 与 NPC（一律吸附到路面，落不到就抛错）----------
+  // ---------- 7. spawn（吸附到路面，落不到就抛错）----------
   const nearestRoad = (x, y) => {
     for (let r = 0; r < 6; r += 1) {
       for (let dy = -r; dy <= r; dy += 1) {
@@ -1214,14 +1183,6 @@ function generateTownHub() {
   const spawnTile = nearestRoad(TOWN_SPAWN.tileX, TOWN_SPAWN.tileY);
   if (!spawnTile) throw new Error('玩家出生点附近找不到路面');
   objects.push(makeSpawn(spawnTile[0], spawnTile[1]));
-  TOWN_NPCS.forEach(([objName, npcKey, label, chara, buildingKey]) => {
-    const found = buildingKey ? TOWN_BUILDINGS.find((b) => b[0] === buildingKey) : null;
-    if (buildingKey && !found) throw new Error(`NPC ${objName} 的归属建筑 ${buildingKey} 不存在`);
-    const raw = found ? [found[2], found[3] + 1] : [MINE.x + 1, MINE.y + 3];
-    const at = nearestRoad(raw[0], raw[1]);
-    if (!at) throw new Error(`NPC ${objName} 落不到路面上（起点 ${raw}）`);
-    objects.push(makeNpc(objName, npcKey, label, at[0], at[1], `srw_chara_${chara}`));
-  });
   // 广场中心树：这套素材没有户外长椅 / 喷泉 / 水井，广场靠一棵大树收中心
   addProp('plaza_tree', 'srw_tree_09', 25, 20, true);
   objects.push(makeLandmark('plaza_tree', '中央广场古樟', 25, 20, 1, 1, 'landmark'));
