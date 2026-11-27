@@ -21,7 +21,7 @@
 
 ## Compose 首次启动、更新与停止
 
-学生端 `npm run dev` / `npm run build` 的前置脚本从锁定的 `pyodide@0.27.7` 复制核心运行文件及许可到忽略的 `frontend/public/python-runtime/0.27.7/`，构建后随 Web 分发。浏览器无需访问外部 CDN；Nginx/Vite 仅为该公开静态路径提供跨源读取。不要给 `/api` 放开此设置。运行器实测使用独立 Vite 测试地址设置 `PYTHON_RUNNER_DEV_URL`，再执行 `frontend/e2e/pythonRunner.spec.ts`；本地静态文件准备并不代表所有第三方 Python 包已安装。
+学生端 `npm run dev` / `npm run build` 的前置脚本从锁定的 `pyodide@0.27.7` 复制核心运行文件、预压缩 `.gz` 产物及许可到忽略的 `frontend/public/python-runtime/0.27.7/`，构建后随 Web 分发并由 Nginx `gzip_static` 提供压缩传输。浏览器同源页面单次拉取并复用本地缓存，无需访问外部 CDN；沙箱 iframe 内禁网运行。运行器实测使用独立 Vite 测试地址设置 `PYTHON_RUNNER_DEV_URL`，再执行 `frontend/e2e/pythonRunner.spec.ts`；本地静态文件准备并不代表所有第三方 Python 包已安装。
 
 ### Python 补全数据
 

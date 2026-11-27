@@ -2,15 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
 export default defineConfig({
-  plugins: [vue(), {
-    name: 'python-runtime-cors',
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        if (req.url?.startsWith('/python-runtime/')) res.setHeader('Access-Control-Allow-Origin', '*');
-        next();
-      });
-    },
-  }],
+  plugins: [vue()],
   server: {
     port: 5178,
     strictPort: true,

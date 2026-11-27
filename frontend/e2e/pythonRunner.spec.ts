@@ -34,8 +34,13 @@ test('prewarmed samples are fast, fresh, network-isolated and released with the 
   test.setTimeout(90000);
   await page.goto(process.env.PYTHON_RUNNER_DEV_URL!);
   let leakedRequests = 0;
+  let wasmFetches = 0;
+  const runtimeRequests: string[] = [];
   page.on('request', request => {
-    if (request.url().includes('/api/runner-security-probe') || request.url().includes('example.com/runner-probe')) leakedRequests++;
+    const url = request.url();
+    if (url.includes('/api/runner-security-probe') || url.includes('example.com/runner-probe')) leakedRequests++;
+    if (url.includes('/python-runtime/')) runtimeRequests.push(url);
+    if (url.endsWith('/pyodide.asm.wasm')) wasmFetches++;
   });
   const result = await page.evaluate(async () => {
     const path = '/src/features/practice/pythonRunner.ts';
@@ -63,4 +68,6 @@ test('prewarmed samples are fast, fresh, network-isolated and released with the 
   expect(result.warmMs).toBeLessThan(1000);
   expect(result.frames).toBe(0);
   expect(leakedRequests).toBe(0);
+  expect(wasmFetches).toBe(1);
+  expect(runtimeRequests).toHaveLength(5);
 });
