@@ -106,7 +106,7 @@ it("selects shared and untagged questions once and saves their final positions w
     expect.objectContaining({title: "固定题单", question_ids: ["both", "expression", "untagged"]})));
 });
 
-it("previews cascading impact, requires two confirmations, and refreshes after deletion", async () => {
+it("previews cascading impact, requires an explicit confirmation, and refreshes after deletion", async () => {
   let removed = false;
   const calls: unknown[] = [];
   const activity = { id: "review", chapter_id: 1, title: "综合复习", kind: "practice", practice_kind: "objective", question_ids: [] };
@@ -122,12 +122,7 @@ it("previews cascading impact, requires two confirmations, and refreshes after d
   await user.click(screen.getByRole("button", {name: "取消"}));
   expect(calls).toHaveLength(0);
   await user.click(screen.getByRole("button", {name: "删除综合复习"}));
-  await waitFor(() => expect(screen.getByRole("button", {name: "继续确认"})).toBeEnabled());
-  await user.click(screen.getByRole("button", {name: "继续确认"}));
-  expect(screen.getByRole("button", {name: "确认级联删除"})).toBeDisabled();
-  await user.type(screen.getByRole("textbox"), "综合复习");
-  expect(screen.getByRole("button", {name: "确认级联删除"})).toBeDisabled();
-  await user.click(screen.getByRole("checkbox", {name: "我已核对删除范围，确认保留学生历史记录"}));
+  await waitFor(() => expect(screen.getByRole("button", {name: "确认级联删除"})).toBeEnabled());
   await user.click(screen.getByRole("button", {name: "确认级联删除"}));
   expect(await screen.findByText("本章暂无活动")).toBeVisible();
   expect(calls).toEqual([{confirmation: "综合复习", confirmed: true}]);

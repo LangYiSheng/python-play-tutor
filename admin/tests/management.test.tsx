@@ -1,5 +1,5 @@
 import { render } from "./render-with-toasts";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClassroomManagement } from "@/features/management/classrooms";
@@ -30,8 +30,7 @@ it("keeps classes with learning records available for archiving while limiting f
   expect(dialog).toHaveTextContent("2 名学生");
   expect(dialog).toHaveTextContent("学生账号和历史学习记录保留");
   const confirm = within(dialog).getByRole("button", { name: "确认正式删除" });
-  expect(confirm).toBeDisabled();
-  fireEvent.change(within(dialog).getByLabelText("确认班级全名"), { target: { value: "一班" } });
+  expect(within(dialog).queryByRole("textbox")).toBeNull();
   await user.click(confirm);
   await waitFor(() => expect(props.onChanged).toHaveBeenCalledOnce());
   expect(fetch.mock.calls.filter(([path, init]) => init.method === "DELETE" && path === "/api/teacher/classrooms/7")).toHaveLength(1);

@@ -33,7 +33,7 @@ it('blocks confirmation and shows the dependency location', async () => {
   render(<ContentDeleteDialog courseId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={() => {}} />);
   expect(await screen.findByText('建筑开放条件仍引用此章节')).toBeVisible();
   expect(screen.getByText('位置：configuration.buildings.library')).toBeVisible();
-  expect(screen.getByRole('button', {name:'继续确认'})).toBeDisabled();
+  expect(screen.getByRole('button', {name:'确认级联删除'})).toBeDisabled();
 });
 
 it('requires a fresh preview after a conflict and clears previous confirmation', async () => {
@@ -44,17 +44,13 @@ it('requires a fresh preview after a conflict and clears previous confirmation',
   }));
   const user = userEvent.setup();
   render(<ContentDeleteDialog courseId={7} targets={[{kind:'chapter',id:'1'}]} onClose={() => {}} onDone={done} />);
-  await waitFor(() => expect(screen.getByRole('button',{name:'继续确认'})).toBeEnabled());
-  await user.click(screen.getByRole('button',{name:'继续确认'}));
-  await user.type(screen.getByRole('textbox'),'章节一');
-  await user.click(screen.getByRole('checkbox'));
+  await waitFor(() => expect(screen.getByRole('button',{name:'确认级联删除'})).toBeEnabled());
   await user.click(screen.getByRole('button',{name:'确认级联删除'}));
   expect(await screen.findByRole('alert')).toHaveTextContent('学生记录或删除影响已变化');
   expect(screen.getByRole('button',{name:'确认级联删除'})).toBeDisabled();
   expect(done).not.toHaveBeenCalled();
   await user.click(screen.getByRole('button',{name:'重新预览'}));
   await waitFor(() => expect(previews).toHaveBeenCalledTimes(2));
-  await user.click(screen.getByRole('button',{name:'继续确认'}));
-  expect(screen.getByRole('textbox')).toHaveValue('');
-  expect(screen.getByRole('checkbox')).not.toBeChecked();
+  await waitFor(() => expect(screen.getByRole('button',{name:'确认级联删除'})).toBeEnabled());
+  expect(done).not.toHaveBeenCalled();
 });

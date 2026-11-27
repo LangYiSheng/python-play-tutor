@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { BookOpen, ClipboardList, Code2, FileCheck2, ListChecks, Pencil, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import { BookOpen, CirclePause, ClipboardList, Clock3, Code2, FileCheck2, ListChecks, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Empty, ErrorNotice, Loading, PageHeader } from "@/components/common";
 import { DeleteSelection, useTableDelete } from "@/components/table-delete";
 import { Button } from "@/components/ui/button";
 import { scoped } from "@/lib/api";
+import { chapterReleaseState, type ChapterRelease } from "@/lib/chapter-release";
 import type { Activity, Chapter, Course, QuestionCandidate } from "@/lib/types";
 import { useResource } from "@/lib/use-resource";
 import { ChapterMaterials } from "./chapter-materials";
@@ -17,11 +18,21 @@ const categories = [
   { key: "assessment", label: "测验", icon: FileCheck2 },
 ] as const;
 
-export function LearningTasks({ courseId }: { courseId: number }) {
+const releaseIcons = {
+  published: { icon: LockOpen, label: "已开放" },
+  unpublished: { icon: Lock, label: "未开放" },
+  scheduled: { icon: Clock3, label: "等待开放" },
+  paused: { icon: CirclePause, label: "已暂停" },
+};
+
+export function LearningTasks({ courseId, classroomId }: { courseId: number; classroomId?: number | null }) {
+  const id = useId();
   const course = useResource<Course>(scoped("/teacher/catalog", courseId));
+  const releases = useResource<ChapterRelease[]>(classroomId ? `/teacher/classrooms/${classroomId}/releases` : null);
   const [selected, setSelected] = useState(() => Number(new URLSearchParams(location.search).get("chapter")));
   const chapters = course.data?.chapters ?? [];
   const chapter = chapters.find(item => item.id === selected) ?? chapters[0];
+  const releaseByChapter = releases.data && new Map(releases.data.map(release => [release.chapter_id, release]));
 
   function selectChapter(id: number) {
     setSelected(id);
@@ -33,11 +44,23 @@ export function LearningTasks({ courseId }: { courseId: number }) {
   return <div className="space-y-4">
     <PageHeader title="学习任务" />
     <ErrorNotice message={course.error} />
+    <ErrorNotice message={releases.error} />
     {course.loading ? <Loading /> : chapter && course.data ? <div className="activity-workspace">
       <nav aria-label="选择章节" className="activity-chapters">
         <h2>课程章节</h2>
-        <div>{chapters.map(item => <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
-          onClick={() => selectChapter(item.id)}><BookOpen size={16}/><span>{item.title}</span></button>)}</div>
+        <div>{chapters.map(item => {
+          const state = releaseByChapter && chapterReleaseState(releaseByChapter.get(item.id));
+          const status = state ? releaseIcons[state] : null;
+          const statusId = `${id}-release-${item.id}`;
+          return <button type="button" key={item.id} aria-current={item.id === chapter.id ? "page" : undefined}
+            aria-describedby={status ? statusId : undefined} onClick={() => selectChapter(item.id)}>
+            <BookOpen size={16} aria-hidden="true"/><span>{item.title}</span>
+            {status && <span className="activity-chapter-status" data-state={state} title={status.label}>
+              <status.icon size={15} aria-hidden="true" />
+              <span id={statusId} hidden>{status.label}</span>
+            </span>}
+          </button>;
+        })}</div>
       </nav>
       <div key={chapter.id} className="min-w-0 space-y-4">
         <h2 className="text-xl font-semibold">{chapter.title}</h2>
@@ -60,8 +83,8 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
     .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.title.localeCompare(b.title, "zh-CN"));
   return <section className="surface min-w-0 self-start">
     <header className="activity-panel-heading">
-      <h3 className="font-semibold">练习与测验</h3>
-      <div className="mt-4 flex flex-wrap gap-2">{categories.map(({key, label}) =>
+      <h3 className="text-lg font-semibold">练习与测验</h3>
+      <div className="flex flex-wrap gap-2">{categories.map(({key, label}) =>
         <Button key={key} variant="outline" onClick={() => editor.edit(null, false, key)}><Plus/>新增{label}</Button>)}</div>
     </header>
     <ErrorNotice message={!editor.open ? editor.error : ""}/>

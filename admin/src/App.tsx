@@ -101,7 +101,6 @@ const hubNav = [{ key: "courses", title: "课程选择", icon: School }, { key: 
 const pages = [...hubNav, ...globalNav, ...courseNav] as const;
 type Page = (typeof pages)[number]["key"];
 const courseScreens = {
-  activities: LearningTasks,
   synthesis: Synthesis,
   courseware: Courseware,
   assessments: Assessments,
@@ -203,15 +202,16 @@ function Workbench() {
   const classroom = inCourse.find(row => row.id === requestedClass) ?? inCourse.find(row => row.id === remembered) ?? inCourse[0];
   const classroomId = classroom?.id ?? null;
   const classPage = ["students", "teaching", "judge", "details", "grades"].includes(page);
+  const usesClassPicker = classPage || page === "activities";
   useEffect(() => {
-    if (!classroomId || !storageKey || !classPage) return;
+    if (!classroomId || !storageKey || !usesClassPicker) return;
     sessionStorage.setItem(storageKey, String(classroomId));
     const url = new URL(location.href);
     if (url.searchParams.get("class") !== String(classroomId)) {
       url.searchParams.set("class", String(classroomId));
       history.replaceState(history.state, "", url);
     }
-  }, [classroomId, classPage, storageKey, requestedClass, page]);
+  }, [classroomId, usesClassPicker, storageKey, requestedClass, page]);
   function pageUrl(next: Page, cid = courseId, room: number | null = classroomId) {
     if (!courseNav.some(item => item.key === next)) return `/teacher/${next}`;
     return `/teacher/${next}?course=${cid}${room ? "&class=" + room : ""}`;
@@ -304,7 +304,10 @@ function Workbench() {
   function changeClass(id: number) {
     if (id === classroomId || !canLeave()) return;
     setRequestedClass(id);
-    history.pushState({}, "", pageUrl(page, courseId, id));
+    const url = new URL(pageUrl(page, courseId, id), location.origin);
+    const chapter = page === "activities" && new URLSearchParams(location.search).get("chapter");
+    if (chapter) url.searchParams.set("chapter", chapter);
+    history.pushState({}, "", url);
     setError("");
   }
   async function createClass() {
@@ -430,6 +433,7 @@ function Workbench() {
     }
     if (!course) return courses.loading ? <Loading/> : <Empty title="课程不存在或无法访问" />;
     if (page === "insights") return <Insights courseId={course.id}/>;
+    if (page === "activities") return <LearningTasks courseId={course.id} classroomId={classroomId} />;
     if (classPage && classError) return <><ErrorNotice message={classError}/><Button variant="outline" onClick={() => setClassListRevision(v => v + 1)}>重新加载班级</Button></>;
     if (classPage && classes === null) return <Loading/>;
     if (classPage && !classroom) return <div className="surface">
@@ -542,7 +546,7 @@ function Workbench() {
           <span className="text-border">/</span>
           {course && !globalPage && <span>{course.name} / </span>}
           <span>{pages.find((n) => n.key === page)?.title}</span>
-          {classPage && classroom && <div className="class-picker">
+          {usesClassPicker && classroom && <div className="class-picker">
             <span className="class-picker-label">当前班级</span>
             {inCourse.length === 1 ? <span aria-label="当前班级">{classroom.name}</span> : <SelectField aria-label="当前班级"
               id="active-class"

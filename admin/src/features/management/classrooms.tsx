@@ -81,7 +81,7 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
   const [value, setValue] = useState(action === "rename" ? row.name : "");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   useDraft(busy || (action === "rename" && value !== row.name));
-  const valid = action === "delete" ? value === row.name : action !== "rename" || Boolean(value.trim());
+  const valid = action !== "rename" || Boolean(value.trim());
   async function save(event: FormEvent) {
     event.preventDefault();
     if (busy || !valid) return;
@@ -99,11 +99,11 @@ function ClassActionDialog({ row, action, onClose, onSaved }: {
       <DialogDescription>{{
         rename: "新名称将显示在教师和学生的班级列表中。",
         archive: "归档后退出日常教学，保留班级成员和历史学习记录。",
-        delete: `将解除本班与 ${row.student_count} 名学生的绑定。学生账号和历史学习记录保留。请输入班级全名确认。`,
+        delete: `将解除本班与 ${row.student_count} 名学生的绑定。学生账号和历史学习记录保留。`,
       }[action]}</DialogDescription>
     </DialogHeader><form className="space-y-4" onSubmit={save}>
       <ErrorNotice message={error} />
-      {(action === "rename" || action === "delete") && <div className="field"><Label htmlFor="class-action-name">{action === "rename" ? "新班级名" : "确认班级全名"}</Label><Input id="class-action-name" maxLength={100} value={value} required onChange={e => setValue(e.target.value)} /></div>}
+      {action === "rename" && <div className="field"><Label htmlFor="class-action-name">新班级名</Label><Input id="class-action-name" maxLength={100} value={value} required onChange={e => setValue(e.target.value)} /></div>}
       <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
         <Button type="submit" variant={action === "delete" ? "destructive" : "default"} disabled={!valid || busy}>{busy ? "处理中…" : `确认${actions[action]}`}</Button>
       </DialogFooter>

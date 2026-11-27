@@ -107,7 +107,6 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     await page.getByRole("button", { name: `管理 ${className}`, exact: true }).click();
     await page.getByRole("menuitem", { name: "正式删除" }).click();
     await expect(page.getByRole("dialog")).toContainText("1 名学生");
-    await page.getByLabel("确认班级全名").fill(className);
     await page.getByRole("dialog").getByRole("button", { name: "确认正式删除" }).click();
     await expect(page.getByRole("row").filter({ hasText: className })).toHaveCount(0);
     await page.getByRole("link", { name: "学生管理" }).click();
@@ -145,8 +144,7 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     await page.getByRole("menuitem", { name: "删除账号" }).click();
     const deletion = page.getByRole("dialog");
     const confirm = deletion.getByRole("button", { name: "确认删除账号" });
-    await expect(confirm).toBeDisabled();
-    await deletion.getByLabel(/输入工号.*确认删除/).fill(id);
+    await expect(deletion.getByRole("textbox")).toHaveCount(0);
     await confirm.click();
     await expect(page.getByRole("row").filter({ hasText: id })).toHaveCount(0);
     expect((await request.post("/api/auth/login", { data: { student_id: studentId, password: studentPassword } })).ok()).toBeTruthy();

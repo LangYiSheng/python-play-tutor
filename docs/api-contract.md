@@ -147,7 +147,7 @@ Pausing a chapter suspends learner access. Reopening it restores access to the c
 
 学生通过 `GET /chapter-tasks?classroom_id=…` 获取全部已开放章节。每章的 `tasks` 包含资料、客观题、编程题和测验的必做标记、`completed`、`locked`、`lock_reason` 及进度单位。正文阅读通过 `POST /chapters/{chapter_id}/materials/{material_id}/participation?classroom_id=…` 上报 `session_id,sequence,visible,page_id?`，视频另传 `position,playing,playback_rate`。服务端按学生、班级、章节和资料累计不同页面、有效前台时间或有效观看片段。
 
-教师通过 `GET /teacher/courses/{course_id}/chapters/{chapter_id}/material-tasks` 获取 `items`，同路径下 `PUT /{material_id}` 接收 `required,rule,order_index?`。必读资料默认整份。分页资料支持 `scope=all|range|count` 和 `minimum_seconds`，视频支持观看时长和指定片段。学生完成必读资料后解锁两类练习，完成必做练习后解锁测验。追加必读资料会重新校验未完成活动，已有完成记录、已交试卷和成绩保留。
+教师通过 `GET /teacher/courses/{course_id}/chapters/{chapter_id}/material-tasks` 获取 `items`，同路径下 `PUT /{material_id}` 接收 `required,rule,order_index?`。同路径下的 `PUT /order` 接收原顺序 `previous` 与新顺序 `ordered`（本章全部资料 ID），在一个事务中保存排序。列表冲突返回 409。必读资料默认整份。分页资料支持 `scope=all|range|count` 和 `minimum_seconds`，视频支持观看时长和指定片段。学生完成必读资料后解锁两类练习，完成必做练习后解锁测验。追加必读资料会重新校验未完成活动，已有完成记录、已交试卷和成绩保留。
 
 管理员通过 `GET /admin/teaching-roles` 查看全站角色与可用素材。`POST /admin/teaching-roles/{key}` 接收带 `expected_revision` 的 multipart 元数据和可选图片，保存名称、人设、立绘及像素形象。`GET /teaching-roles/{key}/image/{kind}` 为已登录用户提供角色自定义图片。
 

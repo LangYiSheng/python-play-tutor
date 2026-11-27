@@ -3,8 +3,6 @@ import { Trash2 } from "lucide-react";
 import { ErrorNotice, Loading } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, ApiError, errorMessage, token } from "@/lib/api";
 import { useDraft } from "@/lib/drafts";
 import type { CourseInstance } from "@/lib/types";
@@ -37,18 +35,16 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
 }) {
   const path = `/teacher/courses/${course.id}`;
   const {data: preview, loading, error: previewError, reload} = useResource<CourseDeletionPreview>(`${path}/deletion-preview`);
-  const [confirmation, setConfirmation] = useState("");
   const [outdatedPreview, setOutdatedPreview] = useState<CourseDeletionPreview | null>(null);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   useDraft(busy);
   const outdated = Boolean(preview && preview === outdatedPreview);
-  const canDelete = Boolean(preview?.can_delete && !loading && !stale && !outdated && !previewError && confirmation === preview.name);
+  const canDelete = Boolean(preview?.can_delete && !loading && !stale && !outdated && !previewError);
 
   function refresh() {
     setOutdatedPreview(preview);
-    setConfirmation("");
     setError("");
     setStale(false);
     reload();
@@ -90,18 +86,13 @@ export function CourseDeleteDialog({course, onClose, onDeleted}: {
             <dd className="font-semibold tabular-nums">{preview.counts[key]}</dd>
           </div>)}
         </dl>}
-        {preview && (preview.can_delete ? <>
+        {preview && (preview.can_delete ?
           <p className="text-sm text-destructive">
             {preview.counts.classrooms
               ? "本课程及其所有关联教学班、教学内容、班级名册、阅读进度、作答、成绩、答疑记录和小镇存档将永久删除。"
               : "删除后，本课程及其教学内容将永久移除。"}
           </p>
-          <div className="field">
-            <Label htmlFor="course-delete-name">输入课程全名确认</Label>
-            <Input id="course-delete-name" autoComplete="off" maxLength={200} value={confirmation}
-              onChange={event => setConfirmation(event.target.value)} disabled={busy || stale || outdated || Boolean(previewError)} required/>
-          </div>
-        </> : <p className="text-sm text-destructive">{preview.blocked_reason ?? "此课程暂不可删除。"}</p>)}
+         : <p className="text-sm text-destructive">{preview.blocked_reason ?? "此课程暂不可删除。"}</p>)}
         <DialogFooter>
           <Button variant="outline" type="button" onClick={onClose} disabled={busy}>取消</Button>
           {(previewError || stale) && <Button variant="outline" type="button" onClick={refresh}>重新预览</Button>}

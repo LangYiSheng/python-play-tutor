@@ -50,6 +50,32 @@ class MaterialRequirement(BaseModel):
     order_index: int | None = Field(default=None, ge=0, le=100000)
 
 
+class MaterialOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    previous: list[int]
+    ordered: list[int]
+
+
+@router.put(AUTHOR_PATH + "/order")
+def reorder_materials(course_id: int, chapter_id: int, body: MaterialOrder, db: Db, user: Teacher):
+    course = own_course(db, user, course_id, exclusive=True)
+    chapter = require_scope(db.get(Chapter, chapter_id), course.id)
+    if chapter.owner_id not in (None, course.teacher_id):
+        raise HTTPException(403, "只能设置本课程教师的章节")
+    links = {link.material_id: link for link, _ in db.execute(chapter_materials(chapter, course.teacher_id))}
+    current = list(links)
+    if len(body.ordered) != len(current) or set(body.ordered) != set(current):
+        raise HTTPException(409, "章节资料已变更，请按最新列表重新排序")
+    if current == body.ordered:
+        return {"ok": True}
+    if current != body.previous:
+        raise HTTPException(409, "资料顺序已变更，请按最新列表重新排序")
+    for position, material_id in enumerate(body.ordered):
+        links[material_id].order_index = position
+    commit_content(db, course.id)
+    return {"ok": True}
+
+
 @router.put(AUTHOR_PATH + "/{material_id}")
 def save_material_task(course_id: int, chapter_id: int, material_id: int, body: MaterialRequirement, db: Db, user: Teacher):
     course = own_course(db, user, course_id, exclusive=True)

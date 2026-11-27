@@ -1,5 +1,5 @@
 import { it, expect, vi, afterEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../src/App";
 import { setToken } from "../src/lib/api";
@@ -256,7 +256,7 @@ it("searches transfer candidates and requires selecting a teacher from the curre
   await waitFor(() => expect(transfer).toHaveBeenCalledWith({teacher_id: 8}));
 });
 
-it("previews cascade deletion of a taught course and requires the full name", async () => {
+it("previews cascade deletion of a taught course and deletes only after confirmation", async () => {
   setToken("admin-session");
   const courses = [
     { id: 31, name: "已开课", revision: 3, teacher_id: 8 },
@@ -294,14 +294,12 @@ it("previews cascade deletion of a taught course and requires the full name", as
 
   await user.click(await screen.findByRole("button", {name:"已开课的更多操作"}));
   await user.click(await screen.findByRole("menuitem", {name:"删除课程"}));
-  const input = await screen.findByRole("textbox", {name:"输入课程全名确认"});
+  await screen.findByText("受影响学生");
+  expect(within(screen.getByRole("dialog")).queryByRole("textbox")).toBeNull();
   expect(screen.getByText("受影响学生").parentElement).toHaveTextContent("12");
   expect(screen.getByText("阅读记录").parentElement).toHaveTextContent("5");
   expect(screen.getByText(/所有关联教学班、教学内容、班级名册/)).toHaveTextContent("将永久删除");
   const confirmation = screen.getByRole("button", {name:"确认删除课程"});
-  await user.type(input, "已开");
-  expect(confirmation).toBeDisabled();
-  await user.type(input, "课");
   await user.click(confirmation);
   await waitFor(() => expect(remove).toHaveBeenCalledExactlyOnceWith("/api/teacher/courses/31?expected_revision=3&confirmation=preview%2F%2B%3D"));
   await waitFor(() => expect(screen.queryByRole("heading", {name:"已开课"})).not.toBeInTheDocument());
@@ -332,4 +330,34 @@ it("remembers a roster selection per course and normalizes invalid class links",
   await act(async()=>{ history.pushState({},"","/teacher/grades?course=50"); window.dispatchEvent(new PopStateEvent("popstate")); });
   expect(await screen.findByText("本课程尚未创建班级")).toBeVisible();
   expect(screen.getByRole("button",{name:"创建班级"})).toBeEnabled();
+});
+
+it("shows release states for the selected classroom in learning tasks", async () => {
+  setToken("teacher-session");
+  history.replaceState({}, "", "/teacher/activities?course=30&class=31&chapter=12");
+  const chapters = ["入门", "变量", "循环", "函数"].map((title, index) => ({ id: 11 + index, order_index: index + 1, title }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/auth/me")) return json({ id: 17, name: "老师", role: "teacher" });
+    if (url.endsWith("/teacher/courses")) return json([{ id: 30, name: "课程" }]);
+    if (url.endsWith("/classrooms")) return json([{ id: 31, course_id: 30, name: "甲班" }, { id: 32, course_id: 30, name: "乙班" }]);
+    if (url.endsWith("/catalog")) return json({ chapters, knowledge_points: [], activities: [] });
+    if (url.endsWith("/31/releases")) return json([
+      { chapter_id: 11, status: "published", opens_at: null },
+      { chapter_id: 12, status: "published", opens_at: "2099-01-01T00:00:00Z" },
+      { chapter_id: 13, status: "paused", opens_at: null },
+    ]);
+    return json([]);
+  }));
+  const user = userEvent.setup();
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "变量" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "入门" })).toHaveAccessibleDescription("已开放");
+  expect(screen.getByRole("button", { name: "变量" })).toHaveAccessibleDescription("等待开放");
+  expect(screen.getByRole("button", { name: "循环" })).toHaveAccessibleDescription("已暂停");
+  expect(screen.getByRole("button", { name: "函数" })).toHaveAccessibleDescription("未开放");
+  await user.click(screen.getByRole("combobox", { name: "当前班级" }));
+  await user.click(await screen.findByRole("option", { name: "乙班" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "入门" })).toHaveAccessibleDescription("未开放"));
+  expect(location.search).toBe("?course=30&class=32&chapter=12");
+  expect(screen.getByRole("button", { name: "变量" })).toHaveAttribute("aria-current", "page");
 });

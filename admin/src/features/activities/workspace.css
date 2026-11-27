@@ -6,8 +6,10 @@
 .activity-chapters svg { flex:none; }
 .activity-chapters button:hover { background:var(--muted); }
 .activity-chapters button[aria-current] { background:var(--accent); color:var(--accent-foreground); font-weight:600; }
-.activity-panel-heading { padding:1.25rem; border-bottom:1px solid var(--border); }
-.activity-rows { margin:0; padding:0 1.25rem; }
+.activity-chapter-status { display:inline-flex; flex:none; margin-inline-start:auto; color:var(--muted-foreground); }
+.activity-chapter-status[data-state="published"] { color:#237750; }
+.activity-panel-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.75rem; padding-bottom:.75rem; border-bottom:1px solid var(--border); }
+.activity-rows { margin:0; padding:0; }
 .activity-rows li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:.85rem; padding:1rem 0; }
 .activity-rows li + li { border-top:1px solid var(--border); }
 .activity-icon { display:grid; place-items:center; background:var(--muted); border-radius:.55rem; width:2.4rem; height:2.4rem; }

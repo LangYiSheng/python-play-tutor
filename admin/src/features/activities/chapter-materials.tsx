@@ -1,9 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { BookOpen, Clock, Files, GripVertical, Layers, SlidersHorizontal } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { materialKindLabel } from "@/lib/material-kind";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SelectField } from "@/components/select-field";
 import { ErrorNotice, Loading } from "@/components/common";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, errorMessage, scoped } from "@/lib/api";
@@ -15,13 +19,19 @@ interface Segment {start_seconds: number; end_seconds: number; label: string}
 interface Rule {scope?: "all" | "range" | "count"; start_page?: number; end_page?: number; count?: number; minimum_seconds?: number; segments?: Segment[]}
 interface Task {material_id: number; title: string; kind: string; required: boolean; rule: Rule; order_index: number}
 
+const readingModes = [
+  {value: "all", title: "读完整份", description: "逐页阅读，所有页面都计入要求。", icon: BookOpen},
+  {value: "range", title: "指定连续页", description: "读完从起始页到结束页的每一页。", icon: Files},
+  {value: "count", title: "任意不同页", description: "学生自选页面，重复阅读同一页只算一页。", icon: Layers},
+  {value: "time", title: "仅要求阅读时长", description: "累计前台阅读时间，页数不限。", icon: Clock},
+] as const;
+
 function MaterialOptions({item, onSave, onClose}: {item: Task; onSave: (item: Task) => Promise<void>; onClose: () => void}) {
   const video = item.kind === "video";
   const [scope, setScope] = useState<"all" | "range" | "count" | "time">(item.rule.scope ?? (item.rule.minimum_seconds ? "time" : "all"));
   const [start,setStart] = useState(item.rule.start_page ?? 1), [end,setEnd] = useState(item.rule.end_page ?? 1);
   const [count,setCount] = useState(item.rule.count ?? 1), [seconds,setSeconds] = useState(item.rule.minimum_seconds ?? 0);
   const [segments,setSegments] = useState(item.rule.segments ?? []);
-  const [order,setOrder] = useState(item.order_index);
   const [error,setError] = useState(""), [busy,setBusy] = useState(false), [dirty,setDirty] = useState(false);
   useDraft(dirty);
   async function submit(e: FormEvent) {
@@ -33,22 +43,32 @@ function MaterialOptions({item, onSave, onClose}: {item: Task; onSave: (item: Ta
     if (seconds) rule.minimum_seconds = seconds;
     if (video && segments.length) rule.segments = segments;
     setBusy(true);
-    try { await onSave({...item, rule, order_index: order}); onClose(); }
+    try { await onSave({...item, rule}); onClose(); }
     catch (err) { setError(errorMessage(err)); }
     finally { setBusy(false); }
   }
-  return <Dialog open onOpenChange={v=>{if(!v && !busy) onClose();}}><DialogContent><DialogHeader><DialogTitle>{item.title} · 高级设置</DialogTitle></DialogHeader>
+  return <Dialog open onOpenChange={v=>{if(!v && !busy) onClose();}}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{item.title} · 高级设置</DialogTitle></DialogHeader>
     <form onSubmit={submit} onChange={()=>setDirty(true)} className="space-y-4" inert={busy}><ErrorNotice message={error}/>
-      <label className="field">显示顺序<Input type="number" value={order} min={0} max={100000} required onChange={e=>setOrder(Number(e.target.value))}/></label>
-      {!video && <label className="field">阅读要求<SelectField value={scope} onValueChange={v=>{setScope(v as typeof scope);setDirty(true);}}>
-        <option value="all">读完整份</option><option value="range">指定连续页</option><option value="count">任意不同页</option><option value="time">仅要求阅读时长</option>
-      </SelectField></label>}
+      {!video && <fieldset>
+        <legend className="mb-2 font-semibold">阅读要求</legend>
+        <div className="grid gap-2 sm:grid-cols-2">{readingModes.map(({value, title, description, icon: Icon}) =>
+          <label key={value} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-checked:border-primary has-checked:bg-accent/50 focus-within:ring-2">
+            <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true"/>
+            <span className="flex-1"><strong className="block font-medium">{title}</strong><span className="hint">{description}</span></span>
+            <input type="radio" name="reading-scope" aria-label={title} checked={scope === value} onChange={() => setScope(value)}/>
+          </label>)}</div>
+      </fieldset>}
       {scope === "range" && !video && <div className="grid grid-cols-2 gap-3">
         <label>起始页<Input type="number" min={1} required value={start} onChange={e=>setStart(Number(e.target.value))}/></label>
         <label>结束页<Input type="number" min={start} required value={end} onChange={e=>setEnd(Number(e.target.value))}/></label></div>}
       {scope === "count" && !video && <label className="field">至少阅读页数<Input type="number" min={1} required value={count} onChange={e=>setCount(Number(e.target.value))}/></label>}
       <label className="field">{video ? "有效观看秒数" : "有效阅读秒数"}<Input type="number" min={scope === "time" && !video ? 1 : 0} max={86400} required value={seconds} onChange={e=>setSeconds(Number(e.target.value))}/></label>
-      {video && <fieldset className="space-y-2"><legend>必看片段</legend>
+      <p className="hint">{video
+        ? "累计实际观看时间。时长为 0 且未指定片段时，学生须完整观看视频。"
+        : scope === "time" ? "至少设置 1 秒。切换到后台的时间不计入阅读时长。"
+        : "填 0 表示只考查页数。设置时长后，学生须同时达到页数和前台阅读时长。"}
+      </p>
+      {video && <fieldset className="space-y-2"><legend className="font-semibold">必看片段</legend><p className="hint">按视频时间填写起止秒数。学生须看完每个片段，并达到上方设置的观看时长。</p>
         {segments.map((seg,i)=><div className="flex gap-2" key={i}>
           {(["label","start_seconds","end_seconds"] as const).map((field,j)=><label key={field}>{["名称","开始秒","结束秒"][j]}<Input type={j ? "number" : "text"} required min={j===2 ? seg.start_seconds+1 : 0} value={seg[field]}
             onChange={e=>setSegments(segments.map((s,n)=>n===i?{...s,[field]:j ? Number(e.target.value) : e.target.value}:s))}/></label>)}
@@ -79,8 +99,8 @@ export function ChapterMaterials({courseId, chapter}: { courseId: number; chapte
   const path = scoped(`/teacher/chapters/${chapter.id}/material-tasks`,courseId);
   const tasks = useResource<{items:Task[]}>(path);
   const [advanced,setAdvanced] = useState<Task|null>(null), [error,setError] = useState(""), [busy,setBusy] = useState(false);
-  async function put(item: Pick<Task,"material_id"|"required"|"rule"|"order_index">) {
-    await api.put(path+"/"+item.material_id,{required:item.required,rule:item.rule,order_index:item.order_index});
+  async function put(item: Pick<Task,"material_id"|"required"|"rule">) {
+    await api.put(path+"/"+item.material_id,{required:item.required,rule:item.rule});
     tasks.reload();
   }
   async function change(item: Parameters<typeof put>[0]) {
@@ -89,22 +109,68 @@ export function ChapterMaterials({courseId, chapter}: { courseId: number; chapte
     finally {setBusy(false);}
   }
   const rows = tasks.data?.items ?? [];
-  return <section className="surface p-4"><div className="mb-3 flex flex-wrap items-center gap-2">
-    <h2 className="mr-auto font-semibold">学习资料</h2>
-    </div>
+  const [pending, setPending] = useState<{original: Task[]; ordered: Task[]} | null>(null);
+  const visible = pending?.original === rows ? pending.ordered : rows;
+  const sensors = useSensors(
+    useSensor(PointerSensor, {activationConstraint: {distance: 5}}),
+    useSensor(KeyboardSensor, {coordinateGetter: sortableKeyboardCoordinates}),
+  );
+  async function reorder({active, over}: DragEndEvent) {
+    if (!over || active.id === over.id || busy) return;
+    const from = visible.findIndex(row => row.material_id === active.id);
+    const to = visible.findIndex(row => row.material_id === over.id);
+    if (from < 0 || to < 0) return;
+    const ordered = arrayMove(visible, from, to);
+    setPending({original: rows, ordered});
+    setError("");
+    setBusy(true);
+    try {
+      await api.put(path + "/order", {
+        previous: visible.map(row => row.material_id),
+        ordered: ordered.map(row => row.material_id),
+      });
+    } catch (err) {
+      setPending(null);
+      setError(errorMessage(err));
+    } finally {
+      tasks.reload();
+      setBusy(false);
+    }
+  }
+  return <section className="surface min-w-0">
+    <header className="activity-panel-heading"><h3 className="text-lg font-semibold">学习资料</h3></header>
     <ErrorNotice message={error || tasks.error}/>
-    {tasks.loading ? <Loading/> : !rows.length && <p className="hint">本章暂无学习资料。</p>}
-    {rows.map(row=><div key={row.material_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t py-3">
-      <div className="min-w-0 flex-1 break-words"><p>{row.title}</p>
-        {row.required && <p className="hint">{readingRequirement(row)}</p>}
-      </div>
-      <div className="flex items-center gap-2">
-        <label className="inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm hover:bg-muted">
-          <Checkbox aria-label={row.title+"必读"} checked={row.required} disabled={busy} onCheckedChange={required=>void change({...row,required})}/>必读
-        </label>
-        <Button size="sm" variant="ghost" aria-label={row.title+"高级设置"} onClick={()=>setAdvanced(row)}><SlidersHorizontal/>高级设置</Button>
-      </div>
-    </div>)}
+    {tasks.loading ? <Loading/> : !rows.length && <p className="hint py-3">本章暂无学习资料。</p>}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={reorder}
+      accessibility={{screenReaderInstructions: {draggable: "按空格键拾取资料，上下方向键移动，再按空格键放下，或按 Esc 取消。"}}}>
+      <SortableContext items={visible.map(row => row.material_id)} strategy={verticalListSortingStrategy}>
+        <ul className="divide-y">{visible.map(row => <MaterialRow key={row.material_id} row={row} busy={busy}
+          sortable={visible.length > 1} onEdit={() => setAdvanced(row)} onRequired={required => void change({...row, required})}/>)}</ul>
+      </SortableContext>
+    </DndContext>
     {advanced && <MaterialOptions item={advanced} onSave={put} onClose={()=>setAdvanced(null)}/>}
   </section>;
+}
+
+function MaterialRow({row, busy, sortable, onEdit, onRequired}: {
+  row: Task; busy: boolean; sortable: boolean; onEdit: () => void; onRequired: (required: boolean) => void;
+}) {
+  const {setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging} =
+    useSortable({id: row.material_id, disabled: busy || !sortable});
+  return <li ref={setNodeRef} style={{transform: CSS.Transform.toString(transform), transition}}
+    className={`relative flex flex-wrap items-center gap-2 py-3 ${isDragging ? "z-10 rounded-md bg-accent shadow-sm" : ""}`}>
+    {sortable && <Button ref={setActivatorNodeRef} {...attributes} {...listeners} size="icon-sm" variant="ghost"
+      className="touch-none cursor-grab text-muted-foreground active:cursor-grabbing" disabled={busy} aria-label={`拖动排序：${row.title}`}><GripVertical/></Button>}
+    <div className="min-w-0 flex-1 break-words">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="min-w-0">{row.title}</p>
+        <Badge variant="secondary">{materialKindLabel(row.kind) || "资料"}</Badge>
+      </div>
+      {row.required && <p className="hint">{readingRequirement(row)}</p>}
+    </div>
+    <label className="inline-flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm hover:bg-muted">
+      <Checkbox aria-label={row.title+"必读"} checked={row.required} disabled={busy} onCheckedChange={onRequired}/>必读
+    </label>
+    <Button size="sm" variant="ghost" disabled={busy} aria-label={row.title+"高级设置"} onClick={onEdit}><SlidersHorizontal/>高级设置</Button>
+  </li>;
 }

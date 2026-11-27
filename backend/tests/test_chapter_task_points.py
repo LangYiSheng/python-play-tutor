@@ -148,3 +148,33 @@ def test_chapter_changes_gate_saved_pages_and_existing_attempts(client, db, teac
     assert client.get(f"/api/chapter-tasks?classroom_id={sibling.id}", headers=student_h).status_code == 403
     assert client.post(f"/api/chapters/{second.id}/materials/{pdf.id}/participation?classroom_id={sibling.id}",
                        headers=student_h, json=beat).status_code == 403
+
+
+def test_material_order_is_atomic_and_local_to_chapter(client, db, teacher):
+    course = CourseInstance(teacher_id=teacher["id"], name="排序测试", package_id="sort", package_version="1")
+    db.add(course)
+    db.flush()
+    chapters = [Chapter(title=str(i), order_index=i, course_instance_id=course.id) for i in (1, 2)]
+    materials = [Material(title=str(i), kind="pdf", course_instance_id=course.id,
+                          content={"pages": [{"id": i, "page_no": 1}]}) for i in (1, 2, 3)]
+    db.add_all(chapters + materials)
+    db.commit()
+    headers = teacher["headers"]
+    paths = [f"/api/teacher/courses/{course.id}/chapters/{ch.id}/material-tasks" for ch in chapters]
+    ids = [m.id for m in materials]
+    for path in paths:
+        for mid in ids:
+            assert client.put(f"{path}/{mid}", headers=headers, json={"required": True, "rule": {"scope": "all"}}).is_success
+
+    def reorder(previous, ordered):
+        return client.put(paths[0] + "/order", headers=headers, json={"previous": previous, "ordered": ordered})
+
+    reverse = ids[::-1]
+    assert reorder(ids, reverse).is_success
+    assert reorder(ids, reverse).is_success
+    assert reorder(ids, ids).status_code == 409
+    assert reorder(reverse, [ids[0]] * 3).status_code == 409
+    for path, expected in zip(paths, [reverse, ids]):
+        rows = client.get(path, headers=headers).json()["items"]
+        assert [r["material_id"] for r in rows] == expected
+        assert all(r["required"] and r["rule"] == {"scope": "all"} for r in rows)

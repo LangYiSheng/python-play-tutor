@@ -23,6 +23,8 @@ it("applies the same inclusive dates to statistics and submissions and allows al
   const user = userEvent.setup();
   render(<Judge classroomId={1} canManage />);
   await screen.findByText("没有匹配的提交");
+  expect(screen.queryByRole("region", {name: "评测日期筛选"})).toBeNull();
+  await user.click(screen.getByRole("button", {name: "更多筛选"}));
   expect(screen.getByRole("button", { name: "近七天" })).toHaveAttribute("aria-pressed", "true");
   expect(urls.every(url => url.includes("since=") && url.includes("until="))).toBe(true);
   await user.click(screen.getByRole("button", { name: /至/ }));

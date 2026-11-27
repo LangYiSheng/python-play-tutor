@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ErrorNotice, Loading } from "@/components/common";
@@ -22,9 +20,7 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [includeQuestions, setIncludeQuestions] = useState(false);
-  const [step, setStep] = useState<"preview" | "confirm">("preview");
   const [revision, setRevision] = useState(0), [error, setError] = useState("");
-  const [confirmation, setConfirmation] = useState(""), [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false), [stale, setStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const action = useRef<AbortController | null>(null);
@@ -32,7 +28,7 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
   useEffect(() => { setIncludeQuestions(false); }, [courseId, encoded]);
   useEffect(() => {
     const controller = new AbortController(), captured = token();
-    setLoading(true); setError(""); setStep("preview"); setConfirmation(""); setAcknowledged(false); setStale(false);
+    setLoading(true); setError(""); setStale(false);
     void request<Preview>(`/teacher/courses/${courseId}/content-deletions/preview`, {
       method: "POST", signal: controller.signal, body: JSON.stringify({ targets: JSON.parse(encoded), ...(includeQuestions && {include_related_questions: true}) }),
     }).then(value => { if (!controller.signal.aborted && token() === captured) {setPreview(value); setLoading(false);} })
@@ -41,14 +37,14 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
   }, [courseId, encoded, revision, includeQuestions]);
   useEffect(() => () => action.current?.abort(), []);
   async function confirm() {
-    if (!preview || busy || stale || loading || !acknowledged || confirmation !== preview.confirmation) return;
+    if (!preview || busy || stale || loading || error || preview.blockers.length) return;
     const controller = new AbortController(), captured = token();
     action.current = controller;
     setBusy(true); setError("");
     try {
       await request(`/teacher/courses/${courseId}/content-deletions/${encodeURIComponent(preview.id)}/confirm`, {
         method: "POST", signal: controller.signal,
-        body: JSON.stringify({ confirmation, confirmed: true }),
+        body: JSON.stringify({ confirmation: preview.confirmation, confirmed: true }),
       });
       if (!controller.signal.aborted && captured === token()) onDone();
     } catch (e) {
@@ -57,13 +53,12 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
   }
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}>
     <DialogContent className="sm:max-w-2xl" showCloseButton={!busy}>
-      <DialogHeader><DialogTitle>{step === "preview" ? "删除影响范围" : "最终确认删除"}</DialogTitle>
-        <DialogDescription>{step === "preview" ? "请核对一起删除和解除关联的项目，再继续确认。" : "执行后内容会退出当前教学，学生历史记录仍保留。"}</DialogDescription>
+      <DialogHeader><DialogTitle>删除影响范围</DialogTitle>
+        <DialogDescription>请核对将删除的内容及关联。学生历史记录会保留。</DialogDescription>
       </DialogHeader>
       <ErrorNotice message={error} />
       {loading ? <Loading /> : null}
-      {preview ? <>
-        {step === "preview" ? <div className="max-h-[55dvh] space-y-4 overflow-auto pr-2">
+      {preview && !loading ? <div className="max-h-[55dvh] space-y-4 overflow-auto pr-2">
           {((preview.related_question_count ?? 0) > 0 || includeQuestions) && <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
             <Checkbox checked={includeQuestions} disabled={loading || busy} onCheckedChange={setIncludeQuestions} />
             <span>同时删除仅由本次所选内容关联的 {preview.related_question_count ?? 0} 道题目</span>
@@ -79,19 +74,11 @@ export function ContentDeleteDialog({ courseId, targets, onClose, onDone }: {
             {preview.blockers.map((b, i) => <p className="mt-2 text-sm" key={i}>{b.message}{b.path ? <span className="mt-1 block break-all text-xs text-muted-foreground">位置：{b.path}</span> : null}</p>)}
             <p className="mt-2 text-xs text-muted-foreground">关闭弹窗，到对应章节或内容页修正后重新预览。</p>
           </div> : null}
-        </div> : <div className="space-y-4">
-          <p className="text-sm">将删除 {preview.remove.length} 项内容、解除 {preview.detach.length} 处关联。学生提交、试卷、成绩和进度保留。</p>
-          <div><Label htmlFor="content-delete-confirmation">输入“{preview.confirmation}”确认</Label>
-            <Input id="content-delete-confirmation" className="mt-2" autoComplete="off" value={confirmation} disabled={busy} onChange={e => setConfirmation(e.target.value)} /></div>
-          <label className="flex items-start gap-2 text-sm"><Checkbox checked={acknowledged} disabled={busy} onCheckedChange={setAcknowledged} />我已核对删除范围，确认保留学生历史记录</label>
-        </div>}
-      </> : null}
+        </div> : null}
       <DialogFooter>
         <Button variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-        {step === "confirm" ? <Button variant="outline" disabled={busy} onClick={() => setStep("preview")}>返回查看范围</Button> : null}
         {error || stale ? <Button variant="outline" disabled={busy} onClick={() => setRevision(v => v + 1)}>重新预览</Button> : null}
-        {step === "preview" ? <Button disabled={!preview || !!preview.blockers.length || !!error || stale || loading} onClick={() => setStep("confirm")}>继续确认</Button>
-          : <Button variant="destructive" disabled={busy || stale || !acknowledged || confirmation !== preview?.confirmation} onClick={() => void confirm()}>{busy ? "正在删除…" : "确认级联删除"}</Button>}
+        <Button variant="destructive" disabled={!preview || !!preview.blockers.length || !!error || busy || stale || loading} onClick={() => void confirm()}>{busy ? "正在删除…" : "确认级联删除"}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

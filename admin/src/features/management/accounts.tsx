@@ -106,18 +106,16 @@ function AccountDialog({ edit, onClose, onSaved }: {
   const student = account?.role === "student";
   const numberLabel = student ? "学号" : "工号";
   const [name, setName] = useState(renaming ? account?.name ?? "" : "");
-  const [id, setId] = useState(""), [password, setPassword] = useState(""), [confirmation, setConfirmation] = useState("");
+  const [id, setId] = useState(""), [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const loginId = creating ? id : account?.student_id || "";
-  const confirmationText = loginId || account?.name || "";
   const settingPassword = creating || action === "reset";
   const needsPassword = (action === "reset" && !student) || (settingPassword && loginId.length < MIN_PASSWORD_LENGTH);
   const passwordError = password ? passwordLengthError(password) : "";
   const valid = (!creating || /^[0-9]{1,32}$/.test(id)) &&
     (!(creating || renaming) || Boolean(name.trim())) &&
-    (!settingPassword || (!passwordError && (!needsPassword || Boolean(password)))) &&
-    (!deleting || confirmation === confirmationText);
-  useDraft(busy || Boolean(id || password || confirmation || (renaming ? name !== account?.name : name)));
+    (!settingPassword || (!passwordError && (!needsPassword || Boolean(password))));
+  useDraft(busy || Boolean(id || password || (renaming ? name !== account?.name : name)));
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -161,10 +159,7 @@ function AccountDialog({ edit, onClose, onSaved }: {
       {settingPassword && <PasswordInput id="account-password" label={creating ? "初始密码" : "临时密码"} value={password} onChange={setPassword}
         required={needsPassword} error={passwordError} hint={action === "reset" && !student ? undefined :
           loginId && needsPassword ? `${numberLabel}不足 ${MIN_PASSWORD_LENGTH} 位，请设置密码。` : `留空时使用${numberLabel}。`} />}
-      {deleting && <div className="field">
-        <Label htmlFor="account-delete">输入{loginId ? numberLabel : "姓名"} {confirmationText} 确认删除</Label>
-        <Input id="account-delete" value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" required />
-      </div>}
+      {deleting && loginId && <p className="text-sm">{numberLabel} · {loginId}</p>}
       <DialogFooter>
         <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
         <Button type="submit" variant={deleting ? "destructive" : "default"} disabled={!valid || busy}>

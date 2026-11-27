@@ -3,7 +3,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Eye, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck } from "lucide-react";
+import { Activity, Eye, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,7 @@ export function Judge(props: JudgeProps) {
 }
 
 function JudgePage({ classroomId, canManage }: JudgeProps) {
+  const [moreFilters, setMoreFilters] = useState(false);
   const [draftDates, setDraftDates] = useState<JudgeDates>(() => recentJudgeDates(7));
   const [dateQuery, setDateQuery] = useState(() => judgeDateQuery(recentJudgeDates(7)));
   const [preset, setPreset] = useState<number | "all" | "custom">(7), [dateError, setDateError] = useState("");
@@ -155,25 +156,27 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
     </section>
     <section className="judge-submissions" aria-label={classroomId === undefined ? "全站提交记录" : "本班提交记录"}>
       <h2 className="font-semibold">提交记录</h2>
-    <section className="judge-date-filter" aria-label="评测日期筛选">
-      <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">提交日期</span>
-        {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
-        <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
-      </div>
-      <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
-        <DateRangePicker start={preset === "all" ? "" : draftDates.start} end={preset === "all" ? "" : draftDates.end}
-          change={(start,end) => { setPreset("custom"); setDraftDates({ start,end }); }} />
-        <Button type="submit" size="sm" variant="outline">应用日期</Button>
-      </form>
-      <ErrorNotice message={dateError} />
-    </section>
-      <form className="mb-4 flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
+      <form className="my-3 flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); setPage(1); setQuery(search.trim()); }}>
         <Input className="max-w-sm" aria-label="搜索提交" placeholder="学生姓名、学号、题目或提交编号" value={search} maxLength={100} onChange={e => setSearch(e.target.value)} />
         <Button variant="ghost" type="submit"><Search />搜索</Button>
         <SelectField aria-label="评测状态" value={status || "all"} onValueChange={v => { setStatus(v === "all" ? "" : v); setPage(1); }}>
           <option value="all">全部状态</option>{Object.entries(statuses).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
         </SelectField>
-      <span id="judge-columns-0" className="ml-auto" /></form>
+        <Button type="button" variant="outline" aria-expanded={moreFilters} aria-controls="judge-date-filters" onClick={() => setMoreFilters(open => !open)}><SlidersHorizontal/>更多筛选</Button>
+        <span id="judge-columns-0" className="ml-auto" />
+      </form>
+      {moreFilters && <section id="judge-date-filters" className="judge-date-filter mb-4 rounded-lg border bg-muted/30 px-4" aria-label="评测日期筛选">
+        <div className="flex flex-wrap items-center gap-2"><span className="mr-1 text-sm font-medium">提交日期</span>
+          {[1, 7, 30].map(days => <Button key={days} size="sm" variant={preset === days ? "default" : "outline"} aria-pressed={preset === days} onClick={() => applyDates(recentJudgeDates(days), days)}>近{days === 1 ? "一天" : days === 7 ? "七天" : "三十天"}</Button>)}
+          <Button size="sm" variant={preset === "all" ? "default" : "outline"} aria-pressed={preset === "all"} onClick={() => applyDates(null, "all")}>全部时间</Button>
+        </div>
+        <form className="flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); applyDates(draftDates, "custom"); }}>
+          <div className="min-w-0"><DateRangePicker start={preset === "all" ? "" : draftDates.start} end={preset === "all" ? "" : draftDates.end}
+            change={(start,end) => { setPreset("custom"); setDraftDates({ start,end }); }} /></div>
+          <Button type="submit" size="sm" variant="outline">应用日期</Button>
+        </form>
+        <ErrorNotice message={dateError} />
+      </section>}
       <ErrorNotice message={sharedLoadError ? "" : submissions.error} />
       {!submissions.data ? submissions.error ? null : <Loading /> : submissions.data.items.length ? <>
         <ManagementTable toolsId="judge-columns-0" pageSize={{value:size,total:submissions.data.total,change:v => {setSize(v);setPage(1);}}} aria-label="Python 提交记录"><TableHeader><TableRow>{["学生", "题目 / 活动", "评测结果", "提交时间", "操作"].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>

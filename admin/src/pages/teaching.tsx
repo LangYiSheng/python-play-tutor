@@ -38,11 +38,7 @@ import { useDraft } from "@/lib/drafts";
 import { toast } from "@/components/ui/toast";
 import type { Chapter, Course } from "@/lib/types";
 import { formatTimestamp, isoToLocalDateTime, localDateTimeToIso, TIME_ZONE } from "@/lib/time";
-interface Release {
-  chapter_id: number;
-  status: "published" | "paused";
-  opens_at: string | null;
-}
+import { chapterReleaseState, type ChapterRelease } from "@/lib/chapter-release";
 interface StudentRecord {
   assessments?: { id: string; activity_id: string; activity_title?: string; score: number | null; max_score: number; status: string }[];
   student: { name: string; student_id: string | null };
@@ -73,11 +69,11 @@ const releaseLabels = {
 };
 export function Teaching({ classroomId, courseId }: { classroomId: number; courseId: number }) {
   const course = useResource<Course>(scoped("/teacher/catalog", courseId)),
-    releases = useResource<Release[]>(
+    releases = useResource<ChapterRelease[]>(
       `/teacher/classrooms/${classroomId}/releases`,
     );
   const [editing, setEditing] = useState<Chapter | null>(null),
-    [status, setStatus] = useState<Release["status"]>("published"),
+    [status, setStatus] = useState<ChapterRelease["status"]>("published"),
     [opensAt, setOpensAt] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -121,8 +117,7 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
   const releaseByChapter = new Map(releases.data?.map((r) => [r.chapter_id, r]));
   const chapters = (course.data?.chapters ?? []).map((chapter) => {
     const release = releaseByChapter.get(chapter.id);
-    const state = !release ? "unpublished" : release.status === "paused" ? "paused"
-      : release.opens_at && new Date(release.opens_at) > new Date() ? "scheduled" : "published";
+    const state = chapterReleaseState(release);
     return { chapter, release, state } as const;
   }).filter(({ chapter, state }) =>
     chapter.title.toLowerCase().includes(releaseQuery.trim().toLowerCase()) &&
@@ -217,7 +212,7 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
               <SelectField
                 id="release-status"
                 value={status}
-                onValueChange={(value) => { setStatus(value as Release["status"]); setDirty(true); }}
+                onValueChange={(value) => { setStatus(value as ChapterRelease["status"]); setDirty(true); }}
               >
                 <option value="published">发布</option>
                 <option value="paused">暂停</option>

@@ -137,9 +137,6 @@ test("知识点、题目草稿与私有答案、多活动有序复用、资料�
   const deleteDialog = page.getByRole("dialog", { name: "删除影响范围", exact: true });
   await expect(deleteDialog).toContainText("解除关联（2）");
   await expect(deleteDialog).toContainText("学生提交、试卷、成绩、阅读及任务历史全部保留");
-  await deleteDialog.getByRole("button", { name: "继续确认", exact: true }).click();
-  await page.getByLabel("输入“删除所选2项”确认", { exact: true }).fill("删除所选2项");
-  await page.getByRole("checkbox", { name: "我已核对删除范围，确认保留学生历史记录" }).check();
   await page.getByRole("button", { name: "确认级联删除", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const remaining = await json<{ id: string }[]>(await request.get(scoped("/teacher/questions"), { headers }));
