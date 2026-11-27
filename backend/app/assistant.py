@@ -169,7 +169,9 @@ def message(session_id: str, body: MessageInput, request: Request, user: Annotat
     session, activity = authorized_session(db, user, session_id)
     context = build_context(db, user, session, activity, body)
     saved_runtime = dict(session.runtime or {})
-    prompt = saved_runtime.get("system_prompt") or system_prompt(context)
+    if not saved_runtime.get("system_prompt"):
+        saved_runtime.update(system_prompt=system_prompt(context), template_version=TEMPLATE_VERSION)
+    prompt = saved_runtime["system_prompt"]
     context.update(system_prompt=prompt, model_config=config)
     history = complete_history(restore_messages(saved_runtime["messages"])) if "messages" in saved_runtime else [
         HumanMessage(content=x["content"]) if x["role"] == "user" else AIMessage(content=x["content"])
@@ -182,7 +184,7 @@ def message(session_id: str, body: MessageInput, request: Request, user: Annotat
     session.revision += 1
     revision, request_id, user_id = session.revision, call.id, user.id
     session.messages = [*session.messages, {"role": "user", "content": body.message}]
-    session.runtime = {**saved_runtime, "system_prompt": prompt, "template_version": TEMPLATE_VERSION,
+    session.runtime = {**saved_runtime,
                        "messages": serialise(messages), "snapshot": context["snapshot"]}
     call.trace = {"state": context["state"], "snapshot": context["snapshot"], "input": serialise([current_message])}
     db.commit()
