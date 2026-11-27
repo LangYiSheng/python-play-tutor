@@ -18,7 +18,7 @@ from .models import (AuthSession, Classroom, CourseInstance, Material, Membershi
 from .narration.management import run_state
 from .narration.models import NarrationRun
 from .password_policy import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH
-from .student_accounts import AccountNameInput, StudentInput, reset_account_password
+from .student_accounts import AccountNameInput, StudentInput, new_student_account, reset_account_password
 
 router = APIRouter(prefix="/admin", tags=["site-management"], dependencies=[Depends(require_admin)])
 Database = Annotated[Session, Depends(get_db)]
@@ -83,6 +83,20 @@ def create_teacher(body: TeacherInput, db: Database):
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "该工号已被使用") from exc
+    return {"id": user.id, "name": user.name, "student_id": user.student_id}
+
+
+@router.post("/students", status_code=201)
+def create_student(body: StudentInput, db: Database):
+    if len(body.student_id) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(422, f"新生学号至少须有{MIN_PASSWORD_LENGTH}位，用于设置初始密码")
+    user = new_student_account(body.student_id, body.name)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "该学号已被使用") from exc
     return {"id": user.id, "name": user.name, "student_id": user.student_id}
 
 

@@ -32,6 +32,7 @@ export function LearningTasks({ courseId, classroomId }: { courseId: number; cla
   const [selected, setSelected] = useState(() => Number(new URLSearchParams(location.search).get("chapter")));
   const chapters = course.data?.chapters ?? [];
   const chapter = chapters.find(item => item.id === selected) ?? chapters[0];
+  const chapterNumber = chapter ? chapter.order_index ?? chapters.indexOf(chapter) + 1 : null;
   const releaseByChapter = releases.data && new Map(releases.data.map(release => [release.chapter_id, release]));
 
   function selectChapter(id: number) {
@@ -63,7 +64,10 @@ export function LearningTasks({ courseId, classroomId }: { courseId: number; cla
         })}</div>
       </nav>
       <div key={chapter.id} className="min-w-0 space-y-4">
-        <h2 className="text-xl font-semibold">{chapter.title}</h2>
+        <h2 className="activity-chapter-heading text-xl font-semibold" aria-label={`第 ${chapterNumber} 章 ${chapter.title}`}>
+          <span className="activity-chapter-number" aria-hidden="true">{chapterNumber}</span>
+          {chapter.title}
+        </h2>
         <ChapterMaterials courseId={courseId} chapter={chapter}/>
         <ChapterActivities courseId={courseId} chapter={chapter} course={course.data} reload={course.reload}/>
       </div>

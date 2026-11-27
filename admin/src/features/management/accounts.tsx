@@ -2,7 +2,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { useState, type FormEvent } from "react";
-import { Ban, CircleCheck, Ellipsis, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { Ban, CircleCheck, Ellipsis, KeyRound, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
 import { ErrorNotice, Loading, PageHeader, Pager, TableSearch } from "@/components/common";
 import { PasswordInput } from "@/components/password-input";
 import { SelectField } from "@/components/select-field";
@@ -19,6 +19,7 @@ import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
 import type { User } from "@/lib/types";
 import { MIN_PASSWORD_LENGTH, passwordLengthError } from "../../../../shared/password-policy";
+import { AddStudentDialog } from "./add-student-dialog";
 
 export interface Account extends Omit<User, "student_id"> {
   student_id: string | null;
@@ -41,6 +42,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1), [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = useState<AccountEdit | null>(null);
+  const [addingStudent, setAddingStudent] = useState(false);
   const [selectedClass, setSelectedClass] = useState("all");
   const classes = useResource<{ id: number; name: string; teacher_name: string; status: string }[]>(
     teacher ? null : "/teacher/classrooms/management",
@@ -50,7 +52,8 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
   const accounts = useResource<AccountList>(`/admin/accounts?${params}`);
   return <>
     <PageHeader title={teacher ? "教师管理" : "学生管理"}>
-      {teacher && <Button onClick={() => setEditing({ action: "create" })}><Plus />创建教师</Button>}
+      {teacher ? <Button onClick={() => setEditing({ action: "create" })}><Plus />创建教师</Button>
+        : <Button onClick={() => setAddingStudent(true)}><UserPlus />添加学生</Button>}
     </PageHeader>
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <TableSearch label={`搜索姓名或${numberLabel}`} value={query} onValueChange={value => { setQuery(value); setPage(1); }} />
@@ -87,6 +90,7 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
       {!accounts.data.items.length && <ListEmpty title={teacher ? "暂无教师账号" : "暂无学生账号"} filtered={Boolean(query.trim()) || selectedClass !== "all"} reset={() => { setQuery(""); setSelectedClass("all"); setPage(1); }} action={teacher && <Button onClick={() => setEditing({action:"create"})}>创建教师账号</Button>} />}
       <Pager total={accounts.data.total} page={page} size={size} onPage={setPage} onSize={v => { setPage(1); setSize(v); }} />
     </div>}
+    {addingStudent && <AddStudentDialog onClose={() => setAddingStudent(false)} onAdded={accounts.reload} />}
     {editing && <AccountDialog edit={editing} onClose={() => setEditing(null)} onSaved={message => {
       toast.add({ title: message, type: "success" });
       if (editing.action === "delete" && page > 1 && accounts.data?.items.length === 1) setPage(page - 1);

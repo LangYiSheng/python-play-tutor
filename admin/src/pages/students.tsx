@@ -9,6 +9,7 @@ import {
   Search,
   KeyRound,
   UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,10 +41,12 @@ import {
 import { api, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
+import { AddStudentDialog } from "@/features/management/add-student-dialog";
 import type { Student, StudentPreview } from "@/lib/types";
 export function Students({ classroomId }: { classroomId: number }) {
   const base = `/teacher/classrooms/${classroomId}/students`;
   const list = useResource<Student[]>(base);
+  const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
     [sort, setSort] = useState("student_id"),
@@ -155,11 +158,13 @@ export function Students({ classroomId }: { classroomId: number }) {
       <PageHeader
         title="学生管理"
       >
-        <Button onClick={() => open("import")}>
+        <Button variant="outline" onClick={() => open("import")}>
           <Upload />
           导入学生
         </Button>
+        <Button onClick={() => setAdding(true)}><UserPlus />添加学生</Button>
       </PageHeader>
+      {adding && <AddStudentDialog classroomId={classroomId} onClose={() => setAdding(false)} onAdded={list.reload} />}
       <div className="surface">
         <div className="toolbar">
           <div className="search">

@@ -54,6 +54,32 @@ def test_teacher_default_password_and_shared_identifier_uniqueness(client, admin
     assert login.status_code == 200 and login.json()["user"]["must_change_password"]
 
 
+def test_admin_creates_unassigned_student_that_teacher_can_add(client, admin_account, teacher, classroom):
+    path = "/api/admin/students"
+    headers = admin_account["headers"]
+    body = {"name": "  新学生  ", "student_id": "00000092"}
+    assert client.post(path, headers=teacher["headers"], json=body).status_code == 403
+    assert client.post(path, headers=headers, json={**body, "student_id": "123"}).status_code == 422
+    created = client.post(path, headers=headers, json=body)
+    assert created.status_code == 201
+    account = created.json()
+    assert account == {"id": account["id"], "name": "新学生", "student_id": "00000092"}
+    assert client.post(path, headers=headers, json={**body, "name": "别的姓名"}).status_code == 409
+
+    listed = client.get("/api/admin/accounts?role=student&q=00000092", headers=headers).json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["classrooms"] == []
+    login = client.post("/api/auth/login", json={"student_id": "00000092", "password": "00000092"})
+    assert login.status_code == 200 and login.json()["user"]["must_change_password"]
+
+    roster = f"/api/teacher/classrooms/{classroom['id']}/students"
+    bound = client.post(roster, headers=teacher["headers"], json={"students": [body]})
+    assert bound.status_code == 201
+    assert bound.json() == {"created": 0, "bound": 1, "existing": 0}
+    rows = client.get(roster, headers=teacher["headers"]).json()
+    assert any(row["id"] == account["id"] and row["name"] == "新学生" for row in rows)
+
+
 @pytest.mark.parametrize("role", ["teacher", "student"])
 def test_managed_account_rename_disable_and_enable(client, db, admin_account, teacher, student, classroom, role):
     actor = teacher if role == "teacher" else student

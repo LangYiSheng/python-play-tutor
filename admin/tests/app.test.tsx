@@ -332,7 +332,7 @@ it("remembers a roster selection per course and normalizes invalid class links",
   expect(screen.getByRole("button",{name:"创建班级"})).toBeEnabled();
 });
 
-it("shows release states for the selected classroom in learning tasks", async () => {
+it("shows chapter numbers and release states for the selected classroom in learning tasks", async () => {
   setToken("teacher-session");
   history.replaceState({}, "", "/teacher/activities?course=30&class=31&chapter=12");
   const chapters = ["入门", "变量", "循环", "函数"].map((title, index) => ({ id: 11 + index, order_index: index + 1, title }));
@@ -350,7 +350,7 @@ it("shows release states for the selected classroom in learning tasks", async ()
   }));
   const user = userEvent.setup();
   render(<App />);
-  expect(await screen.findByRole("heading", { name: "变量" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: /第 2 章.*变量/ })).toBeVisible();
   expect(screen.getByRole("button", { name: "入门" })).toHaveAccessibleDescription("已开放");
   expect(screen.getByRole("button", { name: "变量" })).toHaveAccessibleDescription("等待开放");
   expect(screen.getByRole("button", { name: "循环" })).toHaveAccessibleDescription("已暂停");
