@@ -1,13 +1,20 @@
-import { getWorldMap, mapCameraBounds } from "../config/worldConfig";
+import { rainyDay, lightingAt } from "./atmosphere";
 import type { WorldSceneSurface, WorldState } from "./types";
 
+const RAIN_STREAKS = 48;
+
+/**
+ * Per-frame environment work is deliberately cheap: camera drift and position
+ * saving stay as before, lighting is recomputed once per second, lamp opacity at
+ * 10Hz, and rain only draws while the current day is rainy.
+ */
 export function updateEnvironment(
   scene: WorldSceneSurface,
   state: WorldState,
   time: number,
 ) {
   const offset = scene.cameras.main.followOffset;
-  if (mapCameraBounds(getWorldMap(scene.mapKey)) === null) {
+  if (scene.indoor) {
     offset.set(0, 10);
   } else if (state.drifting) {
     if (!state.driftStart) state.driftStart = time;
@@ -25,17 +32,66 @@ export function updateEnvironment(
     scene.saveTimer = time;
     scene.save();
   }
-
-  scene.weather.clear();
-  if (scene.mapKey === "town_hub" && new Date().getDate() % 3 === 0) {
-    scene.weather.lineStyle(1, 0xa4ced3, 0.16);
-    for (let i = 0; i < 36; i++) {
-      const x = (i * 47 + time * 0.016) % (scene.width * 16),
-        y = (i * 83 + time * 0.08) % (scene.height * 16);
-      scene.weather.lineBetween(x, y, x - 2, y + 7);
-    }
+  if (time - scene.lightingClock >= 1000) {
+    scene.lightingClock = time;
+    const now = new Date();
+    const raining = rainyDay(now);
+    scene.raining = raining;
+    scene.atmosphere = lightingAt(now, { indoor: scene.indoor, rain: raining });
+    scene.shade.setFillStyle(
+      scene.atmosphere.shadeColor,
+      scene.atmosphere.shadeAlpha,
+    );
   }
-  const hour = new Date().getHours(),
-    night = hour >= 19 || hour < 6;
-  scene.shade.setAlpha(night ? 0.25 : 0);
+  if (time - scene.lightStep >= 100) {
+    scene.lightStep = time;
+    updateLights(scene, state, time);
+  }
+  updateWeather(scene, time);
+}
+
+function updateLights(
+  scene: WorldSceneSurface,
+  state: WorldState,
+  time: number,
+) {
+  if (!scene.lampLights.length) return;
+  const glow = scene.atmosphere.glowAlpha;
+  for (const light of scene.lampLights) {
+    const flicker = state.reducedMotion
+      ? 1
+      : 1 -
+        light.flicker +
+        light.flicker * (0.5 + 0.5 * Math.sin(time * 0.004 + light.phase));
+    light.image.setAlpha(light.baseAlpha * glow * flicker);
+  }
+}
+
+function updateWeather(scene: WorldSceneSurface, time: number) {
+  if (scene.indoor || !scene.raining) {
+    if (scene.weatherDrawn) {
+      scene.weather.clear();
+      scene.weatherDrawn = false;
+    }
+    return;
+  }
+  const view = scene.cameras.main.worldView;
+  const width = view.width;
+  const height = view.height;
+  if (width < 2 || height < 2) return;
+  scene.weatherDrawn = true;
+  scene.weather.clear();
+  const night = scene.atmosphere.fireflyAlpha > 0.3;
+  scene.weather.lineStyle(
+    1,
+    night ? 0x9bbfce : 0xb8dbe2,
+    night ? 0.13 : 0.16,
+  );
+  const wind = (time * 0.012) % width;
+  const fall = time * 0.42;
+  for (let index = 0; index < RAIN_STREAKS; index++) {
+    const x = view.x + ((index * 97 + wind) % width);
+    const y = view.y + ((index * 61 + fall) % height);
+    scene.weather.lineBetween(x, y, x - 2, y + 8);
+  }
 }

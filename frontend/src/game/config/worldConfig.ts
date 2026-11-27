@@ -146,9 +146,16 @@ export function worldTargetHint(target: WorldTarget, flags: readonly string[], r
   return target.id === "library_shelf" ? "问路" : "查看";
 }
 export function nearbyWorldTarget(position: Tile & { map_key: string }, targets: readonly WorldTarget[], flags: readonly string[], preferredId?: string, runtime?: WorldRuntime | null): WorldTarget | undefined {
-  return targets.filter(target => target.map_key === position.map_key && (!preferredId || target.id === preferredId)
-    && worldTargetHint(target, flags, runtime) && Math.abs(target.x - position.x) + Math.abs(target.y - position.y) <= target.radius)
-    .sort((a, b) => (Math.abs(a.x - position.x) + Math.abs(a.y - position.y)) - (Math.abs(b.x - position.x) + Math.abs(b.y - position.y)))[0];
+  let best: WorldTarget | undefined;
+  let bestDistance = Infinity;
+  for (const target of targets) {
+    if (target.map_key !== position.map_key || (preferredId && target.id !== preferredId) || !worldTargetHint(target, flags, runtime)) continue;
+    const distance = Math.abs(target.x - position.x) + Math.abs(target.y - position.y);
+    if (distance > target.radius || distance >= bestDistance) continue;
+    best = target;
+    bestDistance = distance;
+  }
+  return best;
 }
 export function reachableTargetApproach(start: Tile, targets: readonly WorldTarget[], width: number, height: number,
   blocked: (x: number, y: number) => boolean, preferredPoint?: Tile) {

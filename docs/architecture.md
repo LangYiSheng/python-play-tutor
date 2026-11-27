@@ -149,7 +149,7 @@ ExperienceCheckpoint 按用户和班级保存地图位置与界面状态。恢�
 | `frontend/src/features/practice/` | 练习工作区、题卡、编程三卡片、Monaco、公开样例运行、输出差异与整卷草稿队列集中在练习模块。练习提交以浏览器公开样例回传记录完成，测验由 API/隔离判题服务提供评分证据；普通试运行不产生进度。 |
 | `frontend/scripts/generate-python-completions.py`、`frontend/public/python-completions/` | 维护期从 Python 标准库生成 manifest 和按模块 JSON（成员、签名、首行说明），编辑器输入 `模块.` 时懒加载；不手写成员表，不执行学生代码，不引入语言服务器。 |
 | `frontend/src/features/assistant/`、`support/` | 助教消息/Markdown 与学习目标/目录/分栏各有归属；共用的当前题目和阅读状态契约继续留在 shared，避免学习与练习互相依赖页面。 |
-| `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境、输入、场景生命周期；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。 |
+| `frontend/src/game/world/` | assets、render、interactions、environment、keyboard、scene 分别拥有资源、地图人物绘制、互动与门户、环境与光照、输入、场景生命周期；`atmosphere` 只做纯光照与天气计算，`effects` 拥有阴影、光晕、目标光环、路线、浮尘等视觉反馈；`game/adapters/world.ts` 保留唯一 Phaser.Game 与 Vue 回调边界。Phaser 层不导入 Vue 页面或会话 store。`flags` / `building_access` 变化只刷新门户标记与就近提示，不重建整张地图。 |
 
 ### 学生端媒体缓存
 

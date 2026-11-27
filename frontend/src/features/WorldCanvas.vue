@@ -4,6 +4,9 @@
       正在进入小镇 {{ Math.round(progress * 100) }}%
     </div>
   </div>
+  <Transition name="world-location">
+    <p v-if="locationLabel" class="world-location" aria-hidden="true">{{ locationLabel }}</p>
+  </Transition>
   <div v-show="!paused" class="touch-controls" aria-label="小镇触摸控制">
     <button
       aria-label="向上"
@@ -62,6 +65,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import type { Player, World } from "../shared/types";
 import { useSession } from "../shared/session";
 import { api, ApiError, notify } from "../shared/api";
+import { getWorldMap } from "../game/config/worldConfig";
 import type { WorldHandle } from "../game/world/types";
 const props = defineProps<{ paused: boolean; welcomeDrift?: boolean }>(),
   emit = defineEmits<{
@@ -86,6 +90,16 @@ const displayHint = computed(() =>
 
     : hint.value,
 );
+const locationLabel = ref("");
+let locationTimer: ReturnType<typeof setTimeout> | undefined;
+watch(() => session.world?.player.map_key, (key, previous) => {
+  if (!key || !previous || key === previous) return;
+  locationLabel.value = getWorldMap(key).label;
+  if (locationTimer) clearTimeout(locationTimer);
+  locationTimer = setTimeout(() => {
+    locationLabel.value = "";
+  }, 2200);
+});
 let game: WorldHandle | undefined,
   lastPosition = "";
 function direction(key: string, down: boolean) {
@@ -218,12 +232,14 @@ onMounted(async () => {
       error: notify,
     },
     session.world,
+    preferences.reducedMotion,
   );
   game.setPaused(props.paused);
   game.setVolume(preferences.musicVolume);
   game.mute(!session.audioEnabled);
   game.setWelcomeDrift?.(Boolean(props.welcomeDrift) && !preferences.reducedMotion);
 });
+watch(() => preferences.reducedMotion, value => game?.setReducedMotion?.(value));
 watch(
   () => session.audioEnabled,
   (v) => game?.mute(!v),
@@ -263,6 +279,7 @@ watch(
   },
 );
 onBeforeUnmount(() => {
+  if (locationTimer) clearTimeout(locationTimer);
   if (currentContext()) session.clearMapPosition();
   pointerMedia?.removeEventListener("change", updatePointer);
   disposed = true;

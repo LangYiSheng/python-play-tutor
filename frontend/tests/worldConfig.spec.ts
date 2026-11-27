@@ -86,5 +86,12 @@ describe("configured world places and portals", () => {
     expect(worldTargetHint(npc, [])).toBe("交谈");
     expect(worldTargetHint(resolveWorldTarget("library_exit", [])!, [])).toBe("返回");
   });
+  it("keeps the first configured target when distances tie after the single-pass nearest rewrite", () => {
+    const first: WorldTarget = { id: "first", map_key: "library", x: 9, y: 5, label: "A", kind: "npc", radius: 3 };
+    const second: WorldTarget = { id: "second", map_key: "library", x: 9, y: 4, label: "B", kind: "npc", radius: 3 };
+    const position = { map_key: "library", x: 9, y: 4.5 };
+    expect(nearbyWorldTarget(position, [first, second], [])?.id).toBe("first");
+    expect(nearbyWorldTarget(position, [second, first], [])?.id).toBe("second");
+  });
 
 });

@@ -13,6 +13,7 @@ export function createWorld(
   flags: string[],
   callbacks: WorldCallbacks,
   runtime?: WorldRuntime,
+  reducedMotion = false,
 ): WorldHandle {
   if (instance) throw new Error("一个游戏会话只能创建一个世界实例");
   const state: WorldState = {
@@ -20,6 +21,7 @@ export function createWorld(
     driftStart: 0,
     destroyed: false,
     paused: false,
+    reducedMotion,
     npcs,
     flags,
     runtime,
@@ -60,6 +62,9 @@ export function createWorld(
       state.drifting = value;
       state.driftStart = 0;
     },
+    setReducedMotion(value) {
+      state.reducedMotion = value;
+    },
     setPaused(value) {
       state.paused = value;
       state.pressed.clear();
@@ -87,13 +92,15 @@ export function createWorld(
     setFlags(value) {
       if (JSON.stringify(value) !== JSON.stringify(state.flags)) {
         state.flags = value;
-        if (scene?.player) scene.build();
+        // Flags and building access only affect portal markers and the nearby
+        // hint in the current renderer; rebuilding all 300+ props is wasteful.
+        if (scene?.player) scene.refreshPortalMarkers();
       }
     },
     setRuntime(value) {
       if (JSON.stringify(value) !== JSON.stringify(state.runtime)) {
         state.runtime = value;
-        if (scene?.player) scene.build();
+        if (scene?.player) scene.refreshPortalMarkers();
       }
     },
     setPlayer(value) {

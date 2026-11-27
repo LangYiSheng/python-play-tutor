@@ -386,3 +386,18 @@ describe("session load generation", () => {
     expect(session.classes).toEqual([classroom(1)]);
   });
 });
+
+describe("world place titles", () => {
+  it("shows the configured map label after a map change without rebuilding the canvas", async () => {
+    const { wrapper } = await canvas();
+    expect(wrapper.find(".world-location").exists()).toBe(false);
+    useSession().world = {
+      ...world(),
+      player: { map_key: "library", tile_x: 9, tile_y: 11, direction: "up" },
+    };
+    await flushPromises();
+    await nextTick();
+    expect(wrapper.find(".world-location").text()).toBe("小镇图书馆");
+    expect(createWorld).toHaveBeenCalledTimes(1);
+  });
+});

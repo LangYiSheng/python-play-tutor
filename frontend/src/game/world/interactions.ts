@@ -102,6 +102,7 @@ export class WorldInteractions {
       !isTextFocus(document.activeElement)
         ? scene.nearbyTarget()
         : undefined;
+    scene.focusTarget = target ?? null;
     const hint = target
       ? `E · ${worldTargetHint(target, state.flags, state.runtime)}`
       : "";
@@ -166,14 +167,19 @@ export class WorldInteractions {
         scene.transitioning = true;
         state.pressed.clear();
         callbacks.hint("正在通过入口…");
+        scene.beginMapTransition();
         try {
           const player = await callbacks.transition(
             obj.portal.id,
             scene.position(),
           );
-          if (player && !state.destroyed) scene.changeMap(player);
-          else scene.travelTarget = null;
+          if (player && !state.destroyed) scene.changeMap(player, true);
+          else {
+            scene.travelTarget = null;
+            scene.abortMapTransition();
+          }
         } catch (error) {
+          scene.abortMapTransition();
           callbacks.error(
             error instanceof Error
               ? error.message

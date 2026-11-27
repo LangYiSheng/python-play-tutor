@@ -12,6 +12,8 @@ export function preloadWorld(
 ) {
   if (worldConfig.portal_marker)
     scene.load.image("portal-marker", worldConfig.portal_marker.asset);
+  if (!scene.textures.exists("glow-soft"))
+    scene.load.image("glow-soft", "/assets/pixel/effects/light/glow_soft.png");
   scene.load.spritesheet(
     "chara_0",
     "/assets/pixel/sprites/super-retro-world/characters/chara_0.png",

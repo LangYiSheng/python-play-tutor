@@ -9,7 +9,9 @@ import {
   worldConfig,
 } from "../config/worldConfig";
 import { drawTileLayers, mapTextureUrls } from "../config/worldRender";
+import { lightingAt, rainyDay } from "./atmosphere";
 import { textureKey } from "./assets";
+import { createEffectObjects, createLampGlow } from "./effects";
 import type { WorldCallbacks, WorldSceneSurface, WorldState } from "./types";
 export function buildWorld(
   scene: WorldSceneSurface,
@@ -21,10 +23,23 @@ export function buildWorld(
   scene.children.removeAll(true);
   scene.activeNpcs = [];
   scene.objects = [];
+  scene.lampLights = [];
+  scene.motes = [];
+  scene.portalMarkers = [];
   scene.lastHint = "";
+  scene.hintAt = 0;
+  scene.trailKey = "";
+  scene.focusTarget = null;
+  scene.clickRipple = undefined;
+  scene.lastGlanceKey = "";
+  scene.weatherDrawn = false;
+  scene.raining = false;
+  scene.lightingClock = Number.NEGATIVE_INFINITY;
+  scene.lightStep = 0;
   callbacks.hint("");
   const config = getWorldMap(scene.mapKey);
   const indoor = mapCameraBounds(config) === null;
+  scene.indoor = indoor;
   scene.width = config.width;
   scene.height = config.height;
   scene.objects = mapTargets(scene.mapKey, state.runtime).flatMap(
@@ -79,6 +94,8 @@ export function buildWorld(
       .image(prop.x, prop.y, key, frameKey)
       .setOrigin(0.5, 1)
       .setDepth(prop.depth);
+    const light = createLampGlow(scene, prop);
+    if (light) scene.lampLights.push(light);
     const building = config.buildings.find(
       (item) => item.object_name === prop.name,
     );
@@ -155,6 +172,7 @@ export function buildWorld(
         "pointerdown",
         fromWorldCanvas(scene.game.canvas, () => scene.approach(target.id)),
       );
+      scene.portalMarkers.push({ image: arrow, portal: target.portal! });
     }
   }
   const available = state.npcs.filter((n) => n.map_key === scene.mapKey);
@@ -163,9 +181,14 @@ export function buildWorld(
       y = npc.tile_y;
     const texture = textureKey(npc.sprite.url);
     if (!scene.textures.exists(texture)) return;
-    const frame =
-      Math.max(0, ["down", "left", "right", "up"].indexOf(npc.direction)) * 3 +
-      1;
+    const baseRow = Math.max(
+      0,
+      ["down", "left", "right", "up"].indexOf(npc.direction),
+    );
+    const frame = baseRow * 3 + 1;
+    const shadow = scene.add
+      .ellipse(x * 16 + 8, y * 16 + 11, 10, 3.5, 0x0a1712, 0.2)
+      .setDepth(y + 2);
     const sprite = scene.add
       .sprite(x * 16 + 8, y * 16 + 12, texture, frame)
       .setOrigin(0.5, 1)
@@ -186,7 +209,16 @@ export function buildWorld(
       "pointerdown",
       fromWorldCanvas(scene.game.canvas, () => scene.approach(npc.key)),
     );
-    scene.activeNpcs.push({ npc, sprite, label, homeX: x, homeY: y });
+    scene.activeNpcs.push({
+      npc,
+      sprite,
+      label,
+      homeX: x,
+      homeY: y,
+      baseRow,
+      lastRow: baseRow,
+      shadow,
+    });
   });
   scene.player = scene.add
     .sprite(scene.tileX * 16 + 8, scene.tileY * 16 + 12, "chara_0", 1)
@@ -207,14 +239,21 @@ export function buildWorld(
           repeat: -1,
         });
     }
+  const now = new Date();
+  const raining = rainyDay(now);
+  scene.raining = raining;
+  scene.atmosphere = lightingAt(now, {
+    indoor,
+    rain: raining,
+  });
   scene.shade = scene.add
     .rectangle(
       bounds.x * 16,
       bounds.y * 16,
       bounds.width * 16,
       bounds.height * 16,
-      0x14204f,
-      0.0,
+      scene.atmosphere.shadeColor,
+      scene.atmosphere.shadeAlpha,
     )
     .setOrigin(0)
     .setDepth(100)
@@ -231,4 +270,5 @@ export function buildWorld(
     10,
   );
   scene.resize();
+  createEffectObjects(scene, indoor);
 }

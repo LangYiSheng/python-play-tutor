@@ -180,3 +180,54 @@
   outline: none;
   box-shadow: none;
 }
+
+/* Brief place name shown after a map transition. */
+.world-location {
+  position: absolute;
+  top: max(var(--safe-top), 6vh);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  color: #f3d28b;
+  font-family: var(--font-heading);
+  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 3px #08170f,
+    0 0 14px #08170fcc;
+}
+
+.world-location::after {
+  content: "";
+  display: block;
+  width: 2.4rem;
+  height: 1px;
+  margin: 0.45rem auto 0;
+  background: linear-gradient(90deg, transparent, #e6be76, transparent);
+}
+
+.world-location-enter-active,
+.world-location-leave-active {
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease;
+}
+
+.world-location-enter-from,
+.world-location-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -6px);
+}
+
+@media (max-width: 700px) {
+  .world-location {
+    top: max(var(--safe-top), 3.5rem);
+    font-size: 1rem;
+  }
+}

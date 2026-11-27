@@ -5,15 +5,43 @@ import { startedOnWorldCanvas } from "../pointerBoundary";
 import {
   getWorldMap,
   mapCameraBounds,
+  portalAvailable,
   withinWalkBounds,
   type WorldTarget,
 } from "../config/worldConfig";
 import type { RenderMap } from "../config/worldRender";
+import type { VillageLighting } from "./atmosphere";
 import { preloadWorld, queueCharacterSprites } from "./assets";
-import { buildWorld } from "./render";
+import {
+  puffDust,
+  showClickRipple,
+  updateEffects,
+} from "./effects";
 import { updateEnvironment } from "./environment";
+import { buildWorld } from "./render";
 import { WorldInteractions } from "./interactions";
-import type { WorldCallbacks, WorldSceneSurface, WorldState } from "./types";
+import type {
+  PortalMarker,
+  WorldCallbacks,
+  WorldLight,
+  WorldMote,
+  WorldSceneSurface,
+  WorldState,
+} from "./types";
+
+const DIRECTION_ROWS: Record<string, number> = {
+  DOWN: 0,
+  LEFT: 1,
+  RIGHT: 2,
+  UP: 3,
+};
+const EMPTY_LIGHTING: VillageLighting = {
+  shadeColor: 0x17233d,
+  shadeAlpha: 0,
+  glowAlpha: 0,
+  dustAlpha: 0,
+  fireflyAlpha: 0,
+};
 
 export function createTownScene(
   initial: Player,
@@ -37,12 +65,16 @@ export function createTownScene(
     collision: number[] = [];
     width = getWorldMap(initial.map_key).width;
     height = getWorldMap(initial.map_key).height;
+    indoor = false;
     activeNpcs: {
       npc: Npc;
       sprite: Phaser.GameObjects.Sprite;
       label: Phaser.GameObjects.Text;
       homeX: number;
       homeY: number;
+      baseRow: number;
+      lastRow: number;
+      shadow?: Phaser.GameObjects.Ellipse;
     }[] = [];
     shade!: Phaser.GameObjects.Rectangle;
     saveTimer = 0;
@@ -54,6 +86,22 @@ export function createTownScene(
     renderMaps = new Map<string, RenderMap>();
     queuedTextures = new Set<string>();
     lastHint = "";
+    atmosphere: VillageLighting = { ...EMPTY_LIGHTING };
+    lightingClock = Number.NEGATIVE_INFINITY;
+    lightStep = 0;
+    weatherDrawn = false;
+    raining = false;
+    focusTarget: WorldTarget | null = null;
+    hintAt = 0;
+    trailKey = "";
+    lastGlanceKey = "";
+    lampLights: WorldLight[] = [];
+    motes: WorldMote[] = [];
+    portalMarkers: PortalMarker[] = [];
+    playerShadow?: Phaser.GameObjects.Ellipse;
+    focusRing?: Phaser.GameObjects.Ellipse;
+    pathTrail?: Phaser.GameObjects.Graphics;
+    clickRipple?: Phaser.GameObjects.Ellipse;
     constructor() {
       super("town");
     }
@@ -78,9 +126,18 @@ export function createTownScene(
           const world = p.positionToCamera(
             this.cameras.main,
           ) as Phaser.Math.Vector2;
+          const tileX = Math.floor(world.x / 16);
+          const tileY = Math.floor(world.y / 16);
+          showClickRipple(
+            this,
+            tileX,
+            tileY,
+            this.blocked(tileX, tileY),
+            state.reducedMotion,
+          );
           this.pendingTarget = null;
           this.travelTarget = null;
-          this.walkTo(Math.floor(world.x / 16), Math.floor(world.y / 16));
+          this.walkTo(tileX, tileY);
         },
       );
       this.scale.on("resize", () => this.resize());
@@ -154,7 +211,7 @@ export function createTownScene(
     interact(preferredTarget?: string) {
       return this.interactions.interact(preferredTarget);
     }
-    changeMap(player: Player) {
+    changeMap(player: Player, fade = false) {
       this.mapKey = player.map_key;
       this.tileX = player.tile_x;
       this.tileY = player.tile_y;
@@ -162,12 +219,34 @@ export function createTownScene(
       this.path = [];
       this.pendingTarget = null;
       this.build();
+      if (fade && !state.reducedMotion && !state.destroyed) {
+        this.cameras.main.fadeIn(220, 6, 12, 10);
+      }
       if (this.travelTarget) {
         const finalTarget = this.travelTarget;
         this.time.delayedCall(200, () => {
           if (this.travelTarget === finalTarget) this.approach(finalTarget);
         });
       }
+    }
+    beginMapTransition() {
+      if (state.reducedMotion || state.destroyed) return;
+      this.cameras.main.fadeOut(140, 6, 12, 10);
+    }
+    abortMapTransition() {
+      if (state.reducedMotion || state.destroyed) return;
+      this.cameras.main.fadeIn(160, 6, 12, 10);
+    }
+    refreshPortalMarkers() {
+      for (const marker of this.portalMarkers) {
+        marker.image.setAlpha(
+          portalAvailable(marker.portal, state.flags, state.runtime)
+            ? 0.92
+            : 0.55,
+        );
+      }
+      this.lastHint = "";
+      this.refreshHint();
     }
     position(): Player {
       return {
@@ -188,16 +267,44 @@ export function createTownScene(
     save() {
       if (!this.transitioning) callbacks.position(this.position());
     }
+    glanceAtPlayer() {
+      const key = `${this.tileX},${this.tileY}`;
+      if (key === this.lastGlanceKey) return;
+      this.lastGlanceKey = key;
+      for (const item of this.activeNpcs) {
+        const dx = this.tileX - item.homeX;
+        const dy = this.tileY - item.homeY;
+        const near = Math.abs(dx) + Math.abs(dy) <= 4;
+        const row = near
+          ? Math.abs(dx) >= Math.abs(dy)
+            ? dx > 0
+              ? 2
+              : 1
+            : dy > 0
+              ? 0
+              : 3
+          : item.baseRow;
+        if (row !== item.lastRow) {
+          item.lastRow = row;
+          item.sprite.setFrame(row * 3 + 1);
+        }
+      }
+    }
     update(time: number) {
       if (!this.player) return;
       updateEnvironment(this, state, time);
-      this.refreshHint();
+      updateEffects(this, state, time);
+      if (!state.paused && time - this.hintAt >= 100) {
+        this.hintAt = time;
+        this.refreshHint();
+      }
       if (state.paused || isTextFocus(document.activeElement)) {
         this.path = [];
         this.player.anims.stop();
         return;
       }
       if (this.busy || this.transitioning) return;
+      this.glanceAtPlayer();
       let dx = 0,
         dy = 0;
       if (state.pressed.has("arrowup") || state.pressed.has("w")) dy = -1;
@@ -219,7 +326,7 @@ export function createTownScene(
       }
       if (!dx && !dy) {
         this.player.anims.stop();
-        const row = { DOWN: 0, LEFT: 1, RIGHT: 2, UP: 3 }[this.direction] ?? 0;
+        const row = DIRECTION_ROWS[this.direction] ?? 0;
         this.player.setFrame(row * 3 + 1);
         if (this.pendingTarget) {
           const target = this.pendingTarget;
@@ -230,12 +337,13 @@ export function createTownScene(
       }
       this.direction =
         dy < 0 ? "UP" : dy > 0 ? "DOWN" : dx < 0 ? "LEFT" : "RIGHT";
-      const row = { DOWN: 0, LEFT: 1, RIGHT: 2, UP: 3 }[this.direction]!;
+      const row = DIRECTION_ROWS[this.direction]!;
       this.player.setFrame(row * 3 + 1);
       if (this.blocked(this.tileX + dx, this.tileY + dy)) return;
       this.tileX += dx;
       this.tileY += dy;
       this.busy = true;
+      puffDust(this, this.tileX, this.tileY, state.reducedMotion);
       this.player.play(`chara_0-${row}`, true);
       this.player.setDepth(this.tileY + 3);
       this.tweens.add({

@@ -1,11 +1,18 @@
 import type Phaser from "phaser";
 import type { Npc, Player } from "../../shared/types";
-import type { WorldRuntime, WorldTarget } from "../config/worldConfig";
+import type {
+  WorldPortal,
+  WorldRuntime,
+  WorldTarget,
+} from "../config/worldConfig";
 import type { RenderMap } from "../config/worldRender";
+import type { VillageLighting } from "./atmosphere";
+
 export interface WorldHandle {
   destroy(): void;
   setPaused(value: boolean): void;
   setWelcomeDrift?(value: boolean): void;
+  setReducedMotion?(value: boolean): void;
   setNpcs(npcs: Npc[]): void;
   setFlags(flags: string[]): void;
   setRuntime(runtime: WorldRuntime): void;
@@ -39,9 +46,30 @@ export interface WorldState {
   runtime?: WorldRuntime;
   paused: boolean;
   destroyed: boolean;
+  reducedMotion: boolean;
   drifting: boolean;
   driftStart: number;
   pressed: Set<string>;
+}
+
+export interface WorldLight {
+  image: Phaser.GameObjects.Image;
+  baseAlpha: number;
+  phase: number;
+  flicker: number;
+}
+
+export interface WorldMote {
+  image: Phaser.GameObjects.Image;
+  baseX: number;
+  baseY: number;
+  phase: number;
+  drift: number;
+}
+
+export interface PortalMarker {
+  image: Phaser.GameObjects.Image;
+  portal: WorldPortal;
 }
 
 // Surface shared by rendering and interaction systems, without importing the
@@ -57,12 +85,16 @@ export interface WorldSceneSurface extends Phaser.Scene {
   collision: number[];
   width: number;
   height: number;
+  indoor: boolean;
   activeNpcs: {
     npc: Npc;
     sprite: Phaser.GameObjects.Sprite;
     label: Phaser.GameObjects.Text;
     homeX: number;
     homeY: number;
+    baseRow: number;
+    lastRow: number;
+    shadow?: Phaser.GameObjects.Ellipse;
   }[];
   shade: Phaser.GameObjects.Rectangle;
   weather: Phaser.GameObjects.Graphics;
@@ -74,13 +106,33 @@ export interface WorldSceneSurface extends Phaser.Scene {
   renderMaps: Map<string, RenderMap>;
   queuedTextures: Set<string>;
   lastHint: string;
+  atmosphere: VillageLighting;
+  lightingClock: number;
+  lightStep: number;
+  weatherDrawn: boolean;
+  raining: boolean;
+  focusTarget: WorldTarget | null;
+  hintAt: number;
+  trailKey: string;
+  lastGlanceKey: string;
+  lampLights: WorldLight[];
+  motes: WorldMote[];
+  portalMarkers: PortalMarker[];
+  playerShadow?: Phaser.GameObjects.Ellipse;
+  focusRing?: Phaser.GameObjects.Ellipse;
+  pathTrail?: Phaser.GameObjects.Graphics;
+  clickRipple?: Phaser.GameObjects.Ellipse;
   build(): void;
   resize(): void;
   approach(key: string, preferredPoint?: { x: number; y: number }): void;
   nearbyTarget(preferredTarget?: string): WorldTarget | undefined;
   interact(preferredTarget?: string): Promise<void>;
   blocked(x: number, y: number): boolean;
-  changeMap(player: Player): void;
+  changeMap(player: Player, fade?: boolean): void;
+  beginMapTransition(): void;
+  abortMapTransition(): void;
+  refreshPortalMarkers(): void;
+  refreshHint(): void;
   position(): Player;
   mapPosition(): Player;
   save(): void;
