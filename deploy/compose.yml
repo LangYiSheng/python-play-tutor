@@ -39,8 +39,8 @@ services:
       REBORN_S3_PREFIX: ${REBORN_S3_PREFIX:-reborn/}
       # 生产必须保持为空；即使误填，REBORN_ENV=production 也不会开启开发工具。
       REBORN_DEV_TOOLS: ${REBORN_DEV_TOOLS:-}
-      REBORN_CONVERTER_URL: ${REBORN_CONVERTER_URL:-}
-      REBORN_CONVERTER_TOKEN: ${REBORN_CONVERTER_TOKEN:-}
+      REBORN_CONVERTER_URL: ${REBORN_CONVERTER_URL:-http://converter:8090}
+      REBORN_CONVERTER_TOKEN: ${REBORN_CONVERTER_TOKEN:?set a private REBORN_CONVERTER_TOKEN of at least 24 characters}
       REBORN_AUTHORING_AI_API_KEY: ${REBORN_AUTHORING_AI_API_KEY:-}
       REBORN_AUTHORING_AI_BASE_URL: ${REBORN_AUTHORING_AI_BASE_URL:-}
       REBORN_AUTHORING_AI_MODEL: ${REBORN_AUTHORING_AI_MODEL:-}
@@ -107,12 +107,11 @@ services:
     restart: unless-stopped
     logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
   converter:
-    profiles: [documents]
     build:
       context: ./converter
     image: pythontopia-reborn-converter:local
     environment:
-      REBORN_CONVERTER_TOKEN: ${REBORN_CONVERTER_TOKEN:-}
+      REBORN_CONVERTER_TOKEN: ${REBORN_CONVERTER_TOKEN:?set a private REBORN_CONVERTER_TOKEN of at least 24 characters}
     read_only: true
     tmpfs:
       - /work:rw,nosuid,nodev,size=512m,mode=1777
@@ -123,6 +122,12 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     networks: [conversion]
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 networks:
   judging:

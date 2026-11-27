@@ -14,13 +14,13 @@
 
 容器配置与完整本机命令见 [开发说明](docs/development.md)。本机开发与独立 Compose 部署均可使用，各环境使用独立数据库和存储。开发重玩工具需要显式双开关，生产环境不注册重置路由。
 
-从 `deploy/.env.example` 准备私有 `deploy/.env`，设置数据库密码、判题鉴权token和首次管理员信息后，一条命令启动完整基础系统：
+从 `deploy/.env.example` 准备私有 `deploy/.env`，设置数据库密码、判题令牌、PPT 转换令牌和首次管理员信息后，一条命令启动完整基础系统：
 
 ```sh
 docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml up --build -d --wait
 ```
 
-默认包含 `db / judge / api / web` 四个服务；判题没有宿主机公开端口，队列使用已有数据库，不另加 Redis。PPT转换器仍通过 `documents` profile按需启用；课程内容由教师显式导入，AI需单独配置凭据。
+默认启动 `db / judge / converter / api / web` 五个服务。判题和 PPT 转换服务通过内部网络供 API 调用。任务队列使用已有数据库。课程内容由教师显式导入，AI 需单独配置凭据。
 
 项目能力见[产品说明](docs/product.md)，开发任务从[文档索引](docs/README.md)查阅需求与对应规范。
 
@@ -40,7 +40,7 @@ shared/world/   随程序发布的地图、建筑、入口及固定对象目录
 data/course/    私有课程交换与外部来源（不纳入Git）
 assets/         保留素材源及上游署名、授权记录
 scripts/        地图生成、资源/可达检查与限定负载脚本
-deploy/         完整四服务Compose、Python判题沙箱与可选文档转换器
+deploy/         五服务 Compose、Python 判题沙箱与 PPT 转换器
 docs/           当前需求、产品/技术规范与操作手册
 ```
 

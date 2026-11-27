@@ -29,7 +29,7 @@
 
 ### 首次启动
 
-首次创建 `deploy/.env` 时，从 `deploy/.env.example` 复制，已有文件则保留。设置两个独立随机值 `REBORN_DB_PASSWORD` 和 `REBORN_GO_JUDGE_AUTH_TOKEN`；推荐分别使用32字节的十六进制随机值，避免数据库 URL 中的特殊字符。首次管理员按下文配置。AI和可选转换器未配置时保留空值。
+首次创建 `deploy/.env` 时，从 `deploy/.env.example` 复制，已有文件则保留。分别为 `REBORN_DB_PASSWORD`、`REBORN_GO_JUDGE_AUTH_TOKEN`、`REBORN_CONVERTER_TOKEN` 设置独立随机值。推荐每项使用 32 字节的十六进制随机值。首次管理员按下文配置。AI 配置可留空。
 
 ```powershell
 if (-not (Test-Path -LiteralPath deploy/.env)) { Copy-Item deploy/.env.example deploy/.env }
@@ -254,7 +254,7 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 ### 已有分离判题环境合并
 
-保持原项目名、环境文件及数据卷，补齐判题token后用 `deploy/compose.yml` 执行 `up --build -d --wait`。先确认新四服务健康、原卷挂载与历史记录保持，再删除已脱离API的旧独立判题容器/网络。不要用 `down -v`、全局prune或新项目名替代更新；不得重置旧失败提交/成绩。旧Judge0配置、轮询和Piston试验下载已退出当前部署。
+保持原项目名、环境文件及数据卷，补齐判题和 PPT 转换令牌后用 `deploy/compose.yml` 执行 `up --build -d --wait`。先确认五个服务均已就绪、原卷挂载与历史记录保持，再删除已脱离API的旧独立判题容器/网络。不要用 `down -v`、全局prune或新项目名替代更新；不得重置旧失败提交/成绩。旧Judge0配置、轮询和Piston试验下载已退出当前部署。
 
 ### 资料讲解与语音合成
 
@@ -272,10 +272,10 @@ docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.ym
 
 ### PPT / PPTX转换
 
-容器服务配置 `REBORN_CONVERTER_URL=http://converter:8090` 和随机、至少24字符的 `REBORN_CONVERTER_TOKEN`，使用 documents profile：
+基础 Compose 默认启动转换器。首次部署时，在私有环境文件中设置独立的随机令牌 `REBORN_CONVERTER_TOKEN`（至少 24 个字符）。API 与转换器读取同一份令牌。地址默认使用 `http://converter:8090`，连接其他转换服务时才需设置 `REBORN_CONVERTER_URL`。
 
 ```powershell
-docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml --profile documents up --build -d
+docker compose --env-file deploy/.env -p pythontopia-reborn -f deploy/compose.yml up --build -d --wait
 ```
 
 API 与 converter 通过私有 conversion 网络通信，转换器使用受限的 LibreOffice 容器。缺少转换服务时，可提取正文的 PPTX 支持[按页阅读文字](content-authoring.md#媒体与安全)。开发环境在 Windows 上可显式设置 `REBORN_LOCAL_PPT_PREVIEW=1`，启用禁用宏的本机 PowerPoint 或 WPS 生成 PDF。配置了隔离转换服务时优先使用该服务。
