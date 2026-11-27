@@ -514,7 +514,15 @@ function Workbench() {
       case "global-packages":
         return <Packages adminMode revision={packageRevision} courses={courses.data ?? []} onCreated={courses.reload} />;
       case "global-synthesis":
-        return <Synthesis />;
+        return <Synthesis
+          onOpenCourse={id => {
+            if (!canLeave()) return;
+            setCourseId(id); setRequestedClass(null);
+            history.pushState({}, "", pageUrl("synthesis", id, null));
+            setPage("synthesis");
+          }}
+          onOpenSettings={() => navigate("system")}
+        />;
       case "global-judge":
         return <Judge canManage />;
       case "system":

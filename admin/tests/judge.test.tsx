@@ -133,3 +133,31 @@ it("loads the next page of submissions after ten results", async () => {
   expect(screen.queryByText("题目 1")).toBeNull();
   expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
 });
+
+it("filters submissions via clickable metric cards, surfaces global queue triage, and fills pause reason presets", async () => {
+  const urls: string[] = [];
+  const alertService = {
+    ...service,
+    health: { status: "unavailable", detail: "无法连接评测服务" },
+    worker_alive: false,
+    counts: { prepared: 1, dispatching: 0, submission_unknown: 2, infrastructure_error: 1 },
+    global_counts: { prepared: 3, dispatching: 1, submission_unknown: 4, infrastructure_error: 2 },
+  };
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    urls.push(url);
+    if (init?.method === "PUT") return response({ paused: true });
+    return response(url.includes("/service") ? alertService : { items: [row], total: 1 });
+  }));
+  const user = userEvent.setup();
+  render(<Judge canManage />);
+  expect(await screen.findByText(/无法连接评测服务/)).toBeVisible();
+  expect(screen.getByText(/全站实时队列（全部日期）/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /结果待核查/ }));
+  await waitFor(() => expect(urls.some(url => url.includes("status=submission_unknown"))).toBe(true));
+  await user.click(screen.getByRole("button", { name: "查看全站异常" }));
+  await waitFor(() => expect(urls.some(url => url.includes("status=infrastructure_error") && !url.includes("since="))).toBe(true));
+  await user.click(screen.getByRole("button", { name: "暂停派发" }));
+  await user.click(screen.getByRole("button", { name: "评测服务异常排查" }));
+  expect(screen.getByLabelText("操作原因")).toHaveValue("评测服务异常排查");
+  expect(screen.getByRole("button", { name: "确认" })).toBeEnabled();
+});

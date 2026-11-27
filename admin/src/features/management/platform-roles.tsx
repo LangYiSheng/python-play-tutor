@@ -58,10 +58,10 @@ function EditRole({role,assets,done}: {role:Role; assets:CharacterAsset[]; done:
 export function PlatformRoles() {
   const data=useResource<{roles:Role[];assets:CharacterAsset[]}>("/admin/teaching-roles");
   const [editing,setEditing]=useState<Role|null>(null);
-  return <section className="space-y-3 py-4"><ErrorNotice message={data.error}/>{data.loading && <Loading/>}
-    {data.data?.roles.map(r=><div className="surface flex items-center gap-4 p-3" key={r.key}>
+  return <section className="space-y-3"><ErrorNotice message={data.error}/>{data.loading && <Loading/>}
+    <div className="grid gap-3 xl:grid-cols-2">{data.data?.roles.map(r=><div className="surface flex items-center gap-4 p-3" key={r.key}>
       <CharacterPreview compact asset={r.portrait}/><div className="flex-1"><strong>{r.name}</strong><p className="hint">{roles[r.key]}</p></div>
-      <Button variant="outline" aria-label={`编辑${r.name}`} onClick={()=>setEditing(r)}>编辑</Button></div>)}
+      <Button variant="outline" aria-label={`编辑${r.name}`} onClick={()=>setEditing(r)}>编辑</Button></div>)}</div>
     {editing && data.data && <EditRole role={editing} assets={data.data.assets} done={saved=>{setEditing(null);if(saved)data.reload();}}/>}
   </section>;
 }

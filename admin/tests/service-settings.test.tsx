@@ -1,4 +1,4 @@
-import { render } from "./render-with-toasts";
+﻿import { render } from "./render-with-toasts";
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
@@ -14,7 +14,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.get).mockImplementation(async path => path.includes('/course/settings') ? { revision: 1, assistant: { enabled: true }, roles: [] } : config);
 });
-it('retains service drafts across icon tabs ', async () => {
+it('retains service drafts across icon tabs', async () => {
   const w = render(<GlobalSettings />);
   await screen.findByRole('button', { name: '测试已保存连接' });
   const tab = screen.getByRole('tab', { name: '讲稿生成' });
@@ -25,15 +25,25 @@ it('retains service drafts across icon tabs ', async () => {
   fireEvent.click(screen.getByRole('tab', { name: '学生助教' }));
   fireEvent.click(tab);
   expect(screen.getByLabelText('页面图像模型')).toHaveValue('unsaved-vision');
+  expect(tab).toHaveAccessibleDescription('未保存');
   expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
   w.unmount();
-
+});
+it('shows the settings categories as a compact vertical list without a top page header', async () => {
+  const { container } = render(<GlobalSettings />);
+  expect(container.querySelector('.page-heading')).toBeNull();
+  const list = screen.getByRole('tablist', { name: '全站设置分类' });
+  expect(list).toHaveAttribute('aria-orientation', 'vertical');
+  expect(within(list).getAllByRole('tab')).toHaveLength(4);
+  await waitFor(() => expect(screen.getByRole('tab', { name: '讲稿生成' })).toHaveAccessibleDescription('已配置'));
+  expect(screen.getByRole('tab', { name: '语音合成' })).toHaveAccessibleDescription('待完善');
 });
 it('preserves keys after a conflict and clears transient key text only after save', async () => {
   vi.mocked(api.put).mockRejectedValueOnce(new Error('版本冲突')).mockResolvedValueOnce({ ...config, revision: 1 });
   render(<ServiceSettings service="authoring" />);
-  const key = await screen.findByLabelText('API Key （已配置）');
+  const key = await screen.findByLabelText('API Key');
   expect(key).toHaveValue('');
+  expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
   fireEvent.change(key, { target: { value: 'fixture-key' } });
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
   await screen.findByText('版本冲突');
@@ -41,22 +51,33 @@ it('preserves keys after a conflict and clears transient key text only after sav
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
   await waitFor(() => expect(key).toHaveValue(''));
   expect(await screen.findByText('设置已保存')).toBeVisible();
+  expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
   expect(api.post).not.toHaveBeenCalled();
 });
 
-it('uses one identical page-header action group and saves only the active tab', async () => {
+it('keeps primary settings visible and collapses advanced fields by default', async () => {
+  render(<ServiceSettings service="authoring" />);
+  expect(await screen.findByLabelText('API 地址')).toBeVisible();
+  expect(screen.getByLabelText('页面图像模型')).toBeVisible();
+  expect(screen.queryByRole('spinbutton', { name: '每次回复上限（tokens）' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /高级设置/ }));
+  expect(screen.getByRole('spinbutton', { name: '每次回复上限（tokens）' })).toHaveValue(8000);
+});
+
+it('shows the sticky bottom action bar only while editing the active tab and saves only that tab', async () => {
   vi.mocked(api.put).mockResolvedValue({ ...config, revision: 2 });
-  const { container } = render(<GlobalSettings />);
+  render(<GlobalSettings />);
   await screen.findByRole('button', { name: '测试已保存连接' });
-  for (const name of ['学生助教', '讲稿生成', '语音合成']) {
-    fireEvent.click(screen.getByRole('tab', { name }));
-    const save = screen.getByRole('button', { name: '保存设置' });
-    expect(save.closest('.page-heading')).not.toBeNull();
-    expect(screen.getAllByRole('button', { name: '取消编辑' })).toHaveLength(1);
-    expect(container.querySelector('.page-heading svg')).not.toBeNull();
-  }
+  expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
   fireEvent.click(screen.getByRole('tab', { name: '讲稿生成' }));
+  expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
   fireEvent.change(within(screen.getByRole('tabpanel', { name: '讲稿生成' })).getByLabelText('模型名称'), { target: { value: 'draft-writer' } });
+  const save = screen.getByRole('button', { name: '保存设置' });
+  expect(save.closest('.settings-sticky-bar')).not.toBeNull();
+  expect(screen.getAllByRole('button', { name: '取消编辑' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('tab', { name: '学生助教' }));
+  expect(screen.queryByRole('button', { name: '保存设置' })).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: '讲稿生成' }));
   fireEvent.click(screen.getByRole('button', { name: '保存设置' }));
   await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.put).mock.calls[0][0]).toBe('/teacher/services/authoring');
@@ -65,7 +86,7 @@ it('uses one identical page-header action group and saves only the active tab', 
 it.each([['https://example.invalid', 'https://example.invalid'], ['https://api.openai.com/v1/', 'https://api.deepseek.com']])('fills protocol defaults from %s without changing credentials', async (baseUrl, expectedUrl) => {
   vi.mocked(api.get).mockResolvedValue({ ...config, base_url: baseUrl, protocol: 'openai', voice: 'custom-voice', format: 'mp3', speed: 1.5 });
   render(<ServiceSettings service="speech" />);
-  const key = await screen.findByLabelText('API Key （已配置）');
+  const key = await screen.findByLabelText('API Key');
   fireEvent.change(key, { target: { value: 'unsaved-key' } });
   const user = userEvent.setup();
   await user.click(screen.getByLabelText('语音接口协议'));

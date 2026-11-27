@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { PlugZap, WandSparkles } from 'lucide-react';
 import { SettingsActions, type SettingsActionPlacement } from './settings-actions';
+import { ApiKeyField, numberIssue, SettingsField, SettingsGroup, type SettingsStatus, type SettingsStatusReporter } from './settings-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SelectField } from '@/components/select-field';
 import { SuggestInput } from '@/components/suggest-input';
 import { ErrorNotice, Loading } from '@/components/common';
@@ -22,23 +21,43 @@ type SpeechCatalog = {
 
 type Service = 'authoring' | 'speech';
 type Settings = Record<string, string | number | boolean> & { revision: number; key_configured: boolean };
-type Field = { key: string; label: string; min?: number; max?: number; step?: number; options?: string[]; placeholder?: string };
-const shared: Field[] = [{ key: 'base_url', label: 'API 地址', placeholder: '例如：https://api.example.com' }, { key: 'model', label: '模型名称' }];
+type Group = 'primary' | 'advanced';
+type Field = { key: string; label: string; group: Group; hint?: string; min?: number; max?: number; step?: number; options?: string[]; placeholder?: string };
 const fields: Record<Service, Field[]> = {
-  authoring: [...shared, { key: 'vision_model', label: '页面图像模型' },
-    { key: 'effort', label: '思考模式', options: ['none', 'minimal', 'low', 'medium', 'high'] },
-    { key: 'max_tokens', label: '每次回复上限（tokens）', min: 128, max: 65536 },
-    { key: 'daily_pages', label: '每门课程每日生成页数', min: 1, max: 10000 },
-    { key: 'timeout', label: '请求超时（秒）', min: 10, max: 600 }],
-  speech: [{ key: 'protocol', label: '语音接口协议', options: ['openai', 'deepseek', 'dashscope'] }, ...shared,
-    { key: 'voice', label: '音色名称 / ID' },
-    { key: 'format', label: '返回音频格式', options: ['mp3', 'wav', 'pcm', 'opus', 'flac', 'aac'] },
-    { key: 'speed', label: '合成语速', min: 0.25, max: 4, step: 0.05 },
-    { key: 'timeout', label: '请求超时（秒）', min: 10, max: 600 }],
+  authoring: [
+    { key: 'base_url', label: 'API 地址', group: 'primary', placeholder: 'https://api.deepseek.com' },
+    { key: 'model', label: '模型名称', group: 'primary', placeholder: 'deepseek-flash' },
+    { key: 'vision_model', label: '页面图像模型', group: 'primary', placeholder: '可选，用于识别课件页图' },
+    { key: 'daily_pages', label: '每门课程每日生成页数', group: 'primary', min: 1, max: 10000 },
+    { key: 'effort', label: '思考模式', group: 'advanced', options: ['none', 'minimal', 'low', 'medium', 'high'] },
+    { key: 'max_tokens', label: '每次回复上限（tokens）', group: 'advanced', min: 128, max: 65536, hint: '推荐 ≥ 8000' },
+    { key: 'timeout', label: '请求超时（秒）', group: 'advanced', min: 10, max: 600 },
+  ],
+  speech: [
+    { key: 'protocol', label: '语音接口协议', group: 'primary', options: ['openai', 'deepseek', 'dashscope'] },
+    { key: 'base_url', label: 'API 地址', group: 'primary', placeholder: 'https://api.example.com', hint: '留空停用语音合成' },
+    { key: 'model', label: '模型名称', group: 'primary' },
+    { key: 'voice', label: '音色名称 / ID', group: 'primary' },
+    { key: 'format', label: '返回音频格式', group: 'advanced', options: ['mp3', 'wav', 'pcm', 'opus', 'flac', 'aac'] },
+    { key: 'speed', label: '合成语速', group: 'advanced', min: 0.25, max: 4, step: 0.05 },
+    { key: 'timeout', label: '请求超时（秒）', group: 'advanced', min: 10, max: 600 },
+  ],
 };
 const labels: Record<string, string> = { none: '关闭', minimal: '最少', low: '低', medium: '中', high: '高', stella: 'Stella（女声）', tide: 'Tide（男声）', openai: 'OpenAI 兼容语音接口', deepseek: 'DeepSeek 工具语音接口', dashscope: '阿里百炼原生语音接口' };
+const text = (value: unknown) => String(value ?? '').trim();
 
-export function ServiceSettings({ service, actionsTarget, active }: SettingsActionPlacement & { service: Service }) {
+function serviceStatus(service: Service, value: Settings): SettingsStatus {
+  const url = text(value.base_url), model = text(value.model);
+  if (service === 'speech') {
+    if (!url) return { tone: 'off', text: '未启用' };
+    const ready = value.key_configured && text(value.voice) && (value.protocol === 'deepseek' || model);
+    return ready ? { tone: 'ok', text: '已配置' } : { tone: 'warn', text: '待完善' };
+  }
+  if (!url && !model && !value.key_configured) return { tone: 'off', text: '未配置' };
+  return url && model && value.key_configured ? { tone: 'ok', text: '已配置' } : { tone: 'warn', text: '待完善' };
+}
+
+export function ServiceSettings({ service, active, onStatus }: SettingsActionPlacement & { service: Service; onStatus?: SettingsStatusReporter }) {
   const [saved, setSaved] = useState<Settings>(), [draft, setDraft] = useState<Settings>();
   const [catalog, setCatalog] = useState<SpeechCatalog>();
   const [key, setKey] = useState(''), [clearKey, setClearKey] = useState(false);
@@ -61,6 +80,20 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
       .catch(() => undefined);
     return () => controller.abort();
   }, [service, saved?.key_configured, saved?.revision]);
+  useEffect(() => { if (saved) onStatus?.({ ...serviceStatus(service, saved), dirty }); }, [service, saved, dirty, onStatus]);
+  const speech = service === 'speech';
+  const deepseek = speech && draft?.protocol === 'deepseek';
+  const dashscope = speech && draft?.protocol === 'dashscope';
+  const visibleFields = fields[service].filter(field => !(deepseek && ['model', 'speed'].includes(field.key))).map(field => {
+    if (deepseek && field.key === 'voice') return { ...field, options: ['stella', 'tide'] };
+    if (deepseek && field.key === 'format') return { ...field, options: ['wav', 'pcm'] };
+    if (dashscope && field.key === 'format') return { ...field, options: ['mp3', 'wav', 'pcm', 'opus'] };
+    return field;
+  });
+  const issues = Object.fromEntries(visibleFields.filter(field => field.min !== undefined && field.max !== undefined)
+    .map(field => [field.key, draft ? numberIssue(draft[field.key], field.min!, field.max!, field.step === undefined) : ''])) as Record<string, string>;
+  const invalid = Object.values(issues).some(Boolean);
+  const advancedInvalid = visibleFields.some(field => field.group === 'advanced' && issues[field.key]);
   async function testSpeech() {
     setBusy(true); setError('');
     try {
@@ -69,7 +102,7 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   async function save() {
-    if (!draft || !saved || busy) return;
+    if (!draft || !saved || busy || invalid) return;
     setBusy(true); setError('');
     try {
       const cleaned = Object.fromEntries(
@@ -78,7 +111,7 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
           return [name, min === undefined && typeof raw === 'string' ? raw.trim() : raw];
         }),
       );
-      if (service === 'speech' && draft.instruction !== undefined) {
+      if (speech && draft.instruction !== undefined) {
         cleaned.instruction = String(draft.instruction).trim();
       }
       const trimmedKey = key.trim();
@@ -90,14 +123,6 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
       toast.add({ title: '设置已保存', type: 'success' });
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
-  const deepseek = service === 'speech' && draft?.protocol === 'deepseek';
-  const dashscope = service === 'speech' && draft?.protocol === 'dashscope';
-  const visibleFields = fields[service].filter(field => !(deepseek && ['model', 'speed'].includes(field.key))).map(field => {
-    if (deepseek && field.key === 'voice') return { ...field, options: ['stella', 'tide'] };
-    if (deepseek && field.key === 'format') return { ...field, options: ['wav', 'pcm'] };
-    if (dashscope && field.key === 'format') return { ...field, options: ['mp3', 'wav', 'pcm', 'opus'] };
-    return field;
-  });
   function applyProtocol(protocol: string, replace = false) {
     if (!draft) return;
     const example = protocol === 'deepseek'
@@ -111,81 +136,73 @@ export function ServiceSettings({ service, actionsTarget, active }: SettingsActi
     setDraft({ ...draft, ...example, base_url: replace || known.includes(root) ? example.base_url : draft.base_url, protocol });
     toast.add({ title: '示例已填入，请核对后保存。', type: 'info' });
   }
-  return <section className="space-y-4 py-4">
-    <SettingsActions actionsTarget={actionsTarget} active={active} dirty={dirty} busy={busy} onSave={() => void save()} onCancel={() => {
-      if (window.confirm('放弃当前标签的未保存修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
-    }} />
-    <p className="hint">适用范围：全站{service === 'authoring' ? '讲稿生成与校准' : '语音合成'}。由管理员维护，{service === 'authoring' ? '用于 PDF、演示文稿，不占用学生答疑预算。' : '仅合成教师已接受的讲稿。'}保存设置不会调用外部服务。</p>
+  function renderField(field: Field) {
+    if (!draft) return null;
+    const id = `${service}-${field.key}`;
+    const numeric = field.min !== undefined;
+    const placeholder = field.key === 'base_url' && deepseek ? 'https://api.deepseek.com'
+      : field.key === 'base_url' && dashscope ? 'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com' : field.placeholder;
+    const hintParts = [field.hint, numeric ? `范围 ${field.min}–${field.max}` : ''].filter(Boolean);
+    return <SettingsField key={field.key} id={id} label={field.label}
+      hint={hintParts.join(' · ')} error={issues[field.key]}>
+      {field.options ? <SelectField id={id} value={String(draft[field.key])} onValueChange={value => {
+        if (field.key === 'protocol') applyProtocol(value); else setDraft({ ...draft, [field.key]: value });
+      }}>
+        {field.options.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
+      </SelectField> : speech && (field.key === 'model' || field.key === 'voice') ? (
+        <SuggestInput
+          id={id}
+          value={String(draft[field.key])}
+          onChange={value => setDraft({ ...draft, [field.key]: value })}
+          options={(field.key === 'model' ? catalog?.models : catalog?.voices) ?? []}
+          placeholder={field.placeholder}
+          label={field.label}
+        />
+      ) : <Input id={id} type={numeric ? 'number' : 'text'} min={field.min} max={field.max} step={field.step}
+        aria-invalid={!!issues[field.key]} aria-describedby={hintParts.length || issues[field.key] ? `${id}-hint` : undefined}
+        placeholder={placeholder}
+        value={String(draft[field.key] ?? '')}
+        onChange={e => setDraft({ ...draft, [field.key]: numeric ? (e.target.value === '' ? '' : e.target.valueAsNumber) : e.target.value })} />}
+    </SettingsField>;
+  }
+  const group = (name: Group) => visibleFields.filter(field => field.group === name).map(renderField);
+  return <section className="settings-panel">
     <ErrorNotice message={error} />
-    {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="space-y-4">
-      {service === 'speech' && <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-3">
-        <p className="hint flex-1">{deepseek ? 'DeepSeek 示例：api.deepseek.com · Stella 女声 / Tide 男声 · WAV / PCM。此接口无需模型名称，合成语速固定为 1。' : dashscope ? '阿里百炼原生语音接口：地址填业务空间域名（https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com），模型如 qwen-audio-3.0-tts-flash / cosyvoice-v3-plus，音色从控制台复制；返回音频 URL 由服务端下载。' : 'OpenAI 兼容接口：填写服务基础地址、模型和音色。示例仅供配置参考，是否可用以你的供应商为准。'}</p>
-        <Button type="button" variant="outline" onClick={() => {
+    {!draft ? (!error && <Loading />) : <fieldset disabled={busy} className="settings-stack">
+      <SettingsGroup title="基础配置" headerAction={speech && <>
+        <Button type="button" variant="outline" size="sm" onClick={() => {
           if (window.confirm('将地址、音色和格式等替换为接口示例？API Key 保持不变，保存后生效。')) applyProtocol(String(draft.protocol), true);
         }}><WandSparkles />填入示例</Button>
-      </div>}
-      {service === 'speech' && <div>
-        <Button type="button" variant="outline" disabled={busy || dirty || !saved?.key_configured} onClick={() => void testSpeech()}><PlugZap />测试已保存连接</Button>
-        <p className="hint mt-2">会发送一次短语音请求；有未保存修改时请先保存或取消，测试不保存音频。</p>
-      </div>}
-      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{visibleFields.map(field => <div className="field" key={field.key}>
-        <Label htmlFor={`${service}-${field.key}`}>{field.label}</Label>
-        {field.options ? <SelectField id={`${service}-${field.key}`} value={String(draft[field.key])} onValueChange={value => {
-          if (field.key === 'protocol') applyProtocol(value); else setDraft({ ...draft, [field.key]: value });
-        }}>
-          {field.options.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}
-        </SelectField> : service === 'speech' && (field.key === 'model' || field.key === 'voice') ? (
-          <SuggestInput
-            id={`${service}-${field.key}`}
-            value={String(draft[field.key])}
-            onChange={value => setDraft({ ...draft, [field.key]: value })}
-            options={(field.key === 'model' ? catalog?.models : catalog?.voices) ?? []}
-            placeholder={field.placeholder}
-            label={field.label}
-          />
-        ) : <Input id={`${service}-${field.key}`} type={field.min === undefined ? 'text' : 'number'} min={field.min} max={field.max} step={field.step}
-          placeholder={field.key === 'base_url' ? (deepseek ? 'https://api.deepseek.com' : dashscope ? 'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com' : field.placeholder) : field.placeholder}
-          value={String(draft[field.key])}
-          onChange={e => setDraft({ ...draft, [field.key]: field.min === undefined ? e.target.value : Number(e.target.value) })} />}
-        {field.key === 'base_url' && service === 'speech' && <p className="hint">填写基础地址即可；完整语音接口地址也可识别。留空可停用合成。</p>}
-      </div>)}</div>
-      {service === 'speech' && catalog?.models && <p className="hint">模型来自{catalog.model_source === 'api' ? '阿里实时列表' : '内置列表'}（{catalog.models.length} 个）；音色为内置常用列表，复刻或设计音色可直接填 ID。</p>}
-      {dashscope && <div className="field space-y-2 rounded-md border bg-muted/20 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label htmlFor="speech-instruction">默认朗读风格指令（可选，支持 Qwen-Audio 3.x 与 CosyVoice v3.5）</Label>
-          <div className="flex flex-wrap gap-1">
-            {SPEECH_INSTRUCTION_PRESETS.map(preset => (
-              <Button
-                key={preset.id}
-                type="button"
-                size="xs"
+        <Button type="button" variant="outline" size="sm" disabled={busy || dirty || !saved?.key_configured} onClick={() => void testSpeech()}>
+          <PlugZap />测试已保存连接
+        </Button>
+      </>}>
+        <div className="settings-grid">
+          {group('primary')}
+          <ApiKeyField id={`${service}-key`} configured={!!saved?.key_configured}
+            value={key} clear={clearKey} onValueChange={setKey} onClearChange={value => { setClearKey(value); setKey(''); }} />
+          {dashscope && <SettingsField id="speech-instruction" label="默认朗读风格指令" wide
+            extra={<span className="settings-field-actions">
+              {SPEECH_INSTRUCTION_PRESETS.map(preset => <Button key={preset.id} type="button" size="xs"
                 variant={String(draft.instruction ?? '') === preset.text ? 'secondary' : 'outline'}
-                onClick={() => setDraft({ ...draft, instruction: preset.text })}
-              >
-                {preset.label}
-              </Button>
-            ))}
-            {Boolean(draft.instruction) && (
-              <Button type="button" size="xs" variant="ghost" onClick={() => setDraft({ ...draft, instruction: '' })}>
-                清空
-              </Button>
-            )}
-          </div>
+                onClick={() => setDraft({ ...draft, instruction: preset.text })}>{preset.label}</Button>)}
+              {Boolean(draft.instruction) && <Button type="button" size="xs" variant="ghost" onClick={() => setDraft({ ...draft, instruction: '' })}>清空</Button>}
+            </span>}>
+            <Input id="speech-instruction" maxLength={200}
+              placeholder="可选，留空跟随音色默认表现"
+              value={String(draft.instruction ?? '')} onChange={e => setDraft({ ...draft, instruction: e.target.value })} />
+          </SettingsField>}
         </div>
-        <Input
-          id="speech-instruction"
-          maxLength={200}
-          placeholder="留空则跟随音色默认表现；点上方预设可一键填入自然授课或流畅明快指令"
-          value={String(draft.instruction ?? '')}
-          onChange={e => setDraft({ ...draft, instruction: e.target.value })}
-        />
-        <p className="hint">会对系统音色与复刻音色同时生效；单个课件里教师也可以单独覆盖朗读语气。</p>
-      </div>}
-      <div className="field max-w-lg"><Label htmlFor={`${service}-key`}>API Key {saved?.key_configured ? '（已配置）' : '（未配置）'}</Label>
-        <Input id={`${service}-key`} type="password" autoComplete="new-password" value={key} placeholder={saved?.key_configured ? '••••••••' : '填写服务密钥'} disabled={clearKey} onChange={e => setKey(e.target.value)} />
-        <Label className="mt-2 gap-2"><Checkbox checked={clearKey} onCheckedChange={value => { setClearKey(!!value); setKey(''); }} />清除已保存密钥</Label>
-      </div>
-      {deepseek && <p className="hint">学生播放时仍可调速。<a className="underline" href="https://api-docs.deepseek.com/zh-cn/guides/tts/" target="_blank" rel="noreferrer">查看接口说明</a></p>}
+      </SettingsGroup>
+      <SettingsGroup title="高级设置" collapsible forceOpen={advancedInvalid}>
+        <div className="settings-grid">{group('advanced')}</div>
+        {deepseek && <div className="settings-group-footer">
+          <p className="hint"><a className="underline" href="https://api-docs.deepseek.com/zh-cn/guides/tts/" target="_blank" rel="noreferrer">DeepSeek 语音接口说明</a></p>
+        </div>}
+      </SettingsGroup>
     </fieldset>}
+    <SettingsActions active={active} dirty={dirty} busy={busy} saveDisabled={invalid} onSave={() => void save()} onCancel={() => {
+      if (window.confirm('放弃当前未保存的修改？')) { setDraft(saved); setKey(''); setClearKey(false); setError(''); }
+    }} />
   </section>;
 }

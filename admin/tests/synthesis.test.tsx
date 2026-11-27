@@ -77,3 +77,38 @@ it('keeps refresh failures visible and aborts reads when leaving', async () => {
   view.unmount();
   expect(signal?.aborted).toBe(true);
 });
+
+it('surfaces failure and interruption cards for one-click triage and provides global jump actions', async () => {
+  const openCourse = vi.fn();
+  const openSettings = vi.fn();
+  vi.mocked(api.get).mockResolvedValue({
+    items: [{ ...task, course_id: 9, course_name: '数据结构' }],
+    total: 1,
+    counts: { running: 0, failed: 2, interrupted: 1, done: 5 },
+  });
+  render(<Synthesis onOpenCourse={openCourse} onOpenSettings={openSettings} />);
+  await screen.findByText('PDF · 数据结构');
+  expect(screen.getByText(/2 条任务执行失败，1 条任务中断待核查/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '查看失败任务' }));
+  await waitFor(() => expect(vi.mocked(api.get).mock.calls.at(-1)?.[0]).toContain('view=history'));
+  expect(vi.mocked(api.get).mock.calls.at(-1)?.[0]).toContain('status=failed');
+  fireEvent.click(screen.getByRole('button', { name: '进入课程' }));
+  expect(openCourse).toHaveBeenCalledWith(9);
+  fireEvent.click(screen.getByRole('button', { name: '模型与语音设置' }));
+  expect(openSettings).toHaveBeenCalledTimes(1);
+});
+
+it('allows retrying directly from the course run detail dialog', async () => {
+  vi.mocked(api.get).mockImplementation(async (url) => url.endsWith('/runs/1') ? task : {
+    items: [task], total: 1, counts: { running: 0, failed: 1, interrupted: 0, done: 0 },
+  });
+  vi.mocked(api.post).mockResolvedValue({ ...task, status: 'running', queued: true });
+  render(<Synthesis courseId={7} />);
+  await screen.findByText('变量讲义');
+  fireEvent.click(screen.getByRole('button', { name: '任务详情' }));
+  const popup = await screen.findByRole('dialog', { name: /任务详情/ });
+  fireEvent.click(within(popup).getByRole('button', { name: '重试' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认重试' }));
+  await screen.findByText(/已提交重试/);
+  expect(api.post).toHaveBeenCalledWith('/teacher/courses/7/synthesis/11/retry', { expected_started_at: task.started_at });
+});

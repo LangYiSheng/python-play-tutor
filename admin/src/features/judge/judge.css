@@ -2,30 +2,199 @@
 .judge-submissions {
   margin-bottom: 16px;
 }
+.judge-service-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.judge-status-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.judge-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--muted);
+  color: var(--foreground);
+}
+.judge-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.judge-badge[data-tone="ok"] {
+  background: #eef6ef;
+  color: #217348;
+}
+.judge-badge[data-tone="warn"] {
+  background: #fdf5e6;
+  color: #8a5300;
+}
+.judge-badge[data-tone="danger"] {
+  background: #fdf0ed;
+  color: #a43f30;
+}
+.judge-incident {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #f1dcb4;
+  border-radius: 8px;
+  background: #fefaf0;
+  color: #6b4100;
+  font-size: 13px;
+}
+.judge-incident[data-tone="danger"] {
+  border-color: #f0c9c1;
+  background: #fdf4f2;
+  color: #8f2d21;
+}
+.judge-incident-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+.judge-incident-body > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.judge-incident-title {
+  font-weight: 600;
+}
+.judge-incident-note {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.9;
+}
 .judge-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin: 20px 0;
+  margin: 16px 0 12px;
 }
-.judge-metrics > div {
-  padding: 12px;
+.judge-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--background);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
 }
-.judge-metrics span {
+.judge-metric:hover {
+  background: var(--muted);
+}
+.judge-metric:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.judge-metric[aria-pressed="true"] {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+.judge-metric span {
   display: block;
   color: var(--muted-foreground);
   font-size: 12px;
 }
-.judge-metrics strong {
+.judge-metric strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 4px;
   font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
+.judge-metric[data-tone="active"] {
+  border-color: #bfd7f2;
+  background: #f4f8fd;
+}
+.judge-metric[data-tone="active"] strong {
+  color: #1d4ed8;
+}
+.judge-metric[data-tone="warn"] {
+  border-color: #f1dcb4;
+  background: #fefaf0;
+}
+.judge-metric[data-tone="warn"] strong {
+  color: #8a5300;
+}
+.judge-metric[data-tone="danger"] {
+  border-color: #f0c9c1;
+  background: #fdf4f2;
+}
+.judge-metric[data-tone="danger"] strong {
+  color: #a43f30;
+}
+
+.judge-global-queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--muted);
+  font-size: 12px;
+}
+.judge-global-queue[data-alert="true"] {
+  border: 1px solid #f1dcb4;
+  background: #fefaf0;
+  color: #6b4100;
+}
+.judge-global-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.judge-live-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.judge-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #2f855a;
+}
+
 .judge-status {
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
   white-space: nowrap;
+  background: var(--muted);
+  color: var(--foreground);
 }
 .judge-date-filter {
   display: flex;
@@ -35,25 +204,45 @@
   padding-block: 12px;
 }
 .judge-pass {
+  background: #eef6ef;
   color: #217348;
 }
+.judge-pending {
+  background: #e8f1fd;
+  color: #1d4ed8;
+}
+.judge-warn {
+  background: #fdf5e6;
+  color: #8a5300;
+}
 .judge-fail {
+  background: #fdf0ed;
+  color: #b2392e;
+}
+.judge-service .judge-fail-text {
   color: #b2392e;
 }
 .judge-events {
   max-height: 220px;
   overflow: auto;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .judge-events li {
   display: flex;
   gap: 16px;
-  padding: 8px 0;
+  padding: 7px 0;
   border-bottom: 1px solid var(--border);
 }
 .judge-events time {
   flex-shrink: 0;
   color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.judge-reason-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 .judge-detail {
   max-height: 90dvh;
@@ -65,21 +254,50 @@
   overflow: auto;
   padding-right: 6px;
 }
+.judge-id-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
 .judge-advice {
-  padding: 12px;
-  margin: 16px 0;
+  padding: 12px 14px;
+  margin: 14px 0;
   background: var(--muted);
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.7;
+}
+.judge-advice[data-tone="warn"] {
+  border: 1px solid #f1dcb4;
+  background: #fefaf0;
+  color: #6b4100;
+}
+.judge-advice[data-tone="ok"] {
+  border: 1px solid #cfe5d2;
+  background: #f2f9f3;
+  color: #1e5631;
 }
 .judge-case {
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
 .judge-case summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   font-size: 13px;
+}
+.judge-private-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #fdf5e6;
+  color: #8a5300;
+  font-size: 11px;
+  font-weight: 550;
 }
 .judge-code,
 .judge-output pre {
@@ -133,5 +351,10 @@
   .judge-events li {
     flex-direction: column;
     gap: 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .judge-metric {
+    transition: none;
   }
 }

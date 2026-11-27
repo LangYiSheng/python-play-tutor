@@ -1,0 +1,203 @@
+.synthesis-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.synthesis-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--background);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+.synthesis-metric:hover {
+  background: var(--muted);
+}
+.synthesis-metric:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.synthesis-metric[aria-pressed="true"] {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 1px var(--foreground);
+}
+.synthesis-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.synthesis-metric strong {
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.synthesis-metric[data-tone="active"] {
+  border-color: #bfd7f2;
+  background: #f4f8fd;
+}
+.synthesis-metric[data-tone="active"] strong {
+  color: #1d4ed8;
+}
+.synthesis-metric[data-tone="danger"] {
+  border-color: #f0c9c1;
+  background: #fdf4f2;
+}
+.synthesis-metric[data-tone="danger"] strong {
+  color: #a43f30;
+}
+.synthesis-metric[data-tone="warn"] {
+  border-color: #f1dcb4;
+  background: #fefaf0;
+}
+.synthesis-metric[data-tone="warn"] strong {
+  color: #8a5300;
+}
+.synthesis-metric[data-tone="ok"] strong {
+  color: #217348;
+}
+
+.synthesis-alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid #f1dcb4;
+  border-radius: 9px;
+  background: #fefaf0;
+  color: #6b4100;
+  font-size: 13px;
+}
+.synthesis-alert[data-tone="danger"] {
+  border-color: #f0c9c1;
+  background: #fdf4f2;
+  color: #8f2d21;
+}
+.synthesis-alert-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+.synthesis-alert-text > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.synthesis-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.synthesis-live-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.synthesis-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #2f855a;
+}
+
+.synthesis-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--muted);
+  color: var(--foreground);
+}
+.synthesis-pill[data-tone="active"] {
+  background: #e8f1fd;
+  color: #1d4ed8;
+}
+.synthesis-pill[data-tone="danger"] {
+  background: #fdf0ed;
+  color: #a43f30;
+}
+.synthesis-pill[data-tone="warn"] {
+  background: #fdf5e6;
+  color: #8a5300;
+}
+.synthesis-pill[data-tone="ok"] {
+  background: #eef6ef;
+  color: #217348;
+}
+.synthesis-pill[data-tone="muted"] {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.synthesis-progress {
+  display: block;
+  width: 100%;
+  max-width: 210px;
+  height: 5px;
+  margin-top: 6px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--muted);
+  accent-color: var(--primary);
+}
+.synthesis-progress[data-failed="true"] {
+  accent-color: #a43f30;
+}
+.synthesis-progress::-webkit-progress-bar {
+  background: var(--muted);
+  border-radius: 999px;
+}
+.synthesis-progress::-webkit-progress-value {
+  background: var(--primary);
+  border-radius: 999px;
+}
+.synthesis-progress[data-failed="true"]::-webkit-progress-value {
+  background: #a43f30;
+}
+.synthesis-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.synthesis-duration[data-slow="true"] {
+  color: #8a5300;
+  font-weight: 550;
+}
+
+@media (max-width: 720px) {
+  .synthesis-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .synthesis-metric {
+    transition: none;
+  }
+}
