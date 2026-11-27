@@ -89,7 +89,7 @@ function SynthesisPage({ courseId }: { courseId?: number }) {
           </div></TableCell>
         </TableRow>)}</TableBody>
       </ManagementTable>}
-      {!data.items.length && <ListEmpty title={view === "running" ? "没有进行中的任务" : "暂无执行记录"} filtered={Boolean(query.trim()) || status !== "all"} reset={() => { setQuery(""); setStatus("all"); setPage(1); }} />}
+      {!data.items.length && <div className="surface"><ListEmpty title={view === "running" ? "没有进行中的任务" : "暂无执行记录"} filtered={Boolean(query.trim()) || status !== "all"} reset={() => { setQuery(""); setStatus("all"); setPage(1); }} /></div>}
       <Pager total={data.total} page={page} size={size} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} />
     </div>}
     <p className="hint mt-3">每 5 秒更新执行状态。</p>

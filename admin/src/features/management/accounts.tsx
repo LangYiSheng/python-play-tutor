@@ -64,8 +64,8 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
     <span id="accounts-columns-0" className="ml-auto" /></div>
     <ErrorNotice message={classes.error} />
     <ErrorNotice message={accounts.error} />
-    {accounts.loading && <Loading />}
-    {accounts.data && <div className="overflow-hidden rounded-lg border bg-background">
+    {accounts.loading && <div className="surface"><Loading /></div>}
+    {accounts.data && (accounts.data.items.length > 0 ? <>
       <ManagementTable toolsId="accounts-columns-0" pageSize={{value:size,total:accounts.data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow>
         <TableHead>姓名 / {numberLabel}</TableHead><TableHead>{teacher ? "负责班级" : "所在班级"}</TableHead>
         <TableHead>账号状态</TableHead><TableHead className="text-right">操作</TableHead>
@@ -103,9 +103,10 @@ function AccountPage({ role, onChanged }: { role: "teacher" | "student"; onChang
           </DropdownMenu>
         </div>}</TableCell>
       </TableRow>;})}</TableBody></ManagementTable>
-      {!accounts.data.items.length && <ListEmpty title={teacher ? "暂无教师账号" : "暂无学生账号"} filtered={Boolean(query.trim()) || selectedClass !== "all"} reset={() => { setQuery(""); setSelectedClass("all"); setPage(1); }} action={teacher && <Button onClick={() => setEditing({action:"create"})}>创建教师账号</Button>} />}
       <Pager total={accounts.data.total} page={page} size={size} onPage={setPage} onSize={v => { setPage(1); setSize(v); }} />
-    </div>}
+    </> : <div className="surface">
+      <ListEmpty title={teacher ? "暂无教师账号" : "暂无学生账号"} filtered={Boolean(query.trim()) || selectedClass !== "all"} reset={() => { setQuery(""); setSelectedClass("all"); setPage(1); }} action={teacher && <Button onClick={() => setEditing({action:"create"})}>创建教师账号</Button>} />
+    </div>)}
     {addingStudent && <AddStudentDialog onClose={() => setAddingStudent(false)} onAdded={accounts.reload} />}
     {editing && <AccountDialog edit={editing} onClose={() => setEditing(null)} onSaved={message => {
       toast.add({ title: message, type: "success" });

@@ -396,10 +396,14 @@ export function TaskDetailsPage({ classroomId }: { classroomId: number }) {
       </div>
 
       {!d.activities.length ? (
-        <ListEmpty title="课程暂无活动" filtered={false} reset={resetFilters} />
+        <div className="surface">
+          <ListEmpty title="课程暂无活动" filtered={false} reset={resetFilters} />
+        </div>
       ) : view === "list" ? (
         filteredActivities.length === 0 ? (
-          <ListEmpty title="未找到匹配的任务点" filtered={isFiltered} reset={resetFilters} />
+          <div className="surface">
+            <ListEmpty title="未找到匹配的任务点" filtered={isFiltered} reset={resetFilters} />
+          </div>
         ) : (
           <div className="surface overflow-hidden">
             <ManagementTable

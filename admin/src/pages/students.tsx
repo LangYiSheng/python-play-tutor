@@ -4,6 +4,7 @@ import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
 import { useState, type FormEvent } from "react";
 import {
+  Download,
   Upload,
   RefreshCw,
   Search,
@@ -42,6 +43,7 @@ import { api, errorMessage } from "@/lib/api";
 import { useResource } from "@/lib/use-resource";
 import { useDraft } from "@/lib/drafts";
 import { AddStudentDialog } from "@/features/management/add-student-dialog";
+import { downloadRosterTemplate } from "@/lib/roster-template";
 import type { Student, StudentPreview } from "@/lib/types";
 export function Students({ classroomId }: { classroomId: number }) {
   const base = `/teacher/classrooms/${classroomId}/students`;
@@ -165,86 +167,99 @@ export function Students({ classroomId }: { classroomId: number }) {
         <Button onClick={() => setAdding(true)}><UserPlus />添加学生</Button>
       </PageHeader>
       {adding && <AddStudentDialog classroomId={classroomId} onClose={() => setAdding(false)} onAdded={list.reload} />}
-      <div className="surface">
-        <div className="toolbar">
-          <div className="search">
-            <Search size={16} />
-            <Input
-              aria-label="搜索学生"
-              placeholder="搜索学号或姓名"
-              value={query}
-              onChange={(e) => filter("query", e.target.value)}
-            />
-          </div>
-          <SelectField
-            aria-label="账号状态"
-            value={status}
-            onValueChange={(value) => filter("status", value)}
-          >
-            <option value="all">全部状态</option>
-            <option value="pending">待修改初始密码</option>
-            <option value="ready">已设置密码</option>
-            <option value="disabled">已停用</option>
-          </SelectField>
-          <SelectField
-            aria-label="学生排序"
-            value={sort}
-            onValueChange={(value) => filter("sort", value)}
-          >
-            <option value="student_id">按学号排序</option>
-            <option value="name">按姓名排序</option>
-          </SelectField>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="刷新学生"
-            onClick={list.reload}
-            disabled={list.loading}
-          >
-            <RefreshCw />
-          </Button>
-        <span id="students-columns-0" className="ml-auto" /></div>
-        {selected.length > 0 ? (
-          <div className="selection-bar">
-            <span>已选择 {selected.length} 名学生</span>
-            {rows.length <= 500 ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelected(rows.map((s) => s.student_id))}
-              >
-                选择全部筛选结果（{rows.length}）
-              </Button>
-            ) : null}
-            <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
-              取消选择
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="search">
+          <Search size={16} />
+          <Input
+            aria-label="搜索学生"
+            placeholder="搜索学号或姓名"
+            value={query}
+            onChange={(e) => filter("query", e.target.value)}
+          />
+        </div>
+        <SelectField
+          aria-label="账号状态"
+          value={status}
+          onValueChange={(value) => filter("status", value)}
+        >
+          <option value="all">全部状态</option>
+          <option value="pending">待修改初始密码</option>
+          <option value="ready">已设置密码</option>
+          <option value="disabled">已停用</option>
+        </SelectField>
+        <SelectField
+          aria-label="学生排序"
+          value={sort}
+          onValueChange={(value) => filter("sort", value)}
+        >
+          <option value="student_id">按学号排序</option>
+          <option value="name">按姓名排序</option>
+        </SelectField>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="刷新学生"
+          onClick={list.reload}
+          disabled={list.loading}
+        >
+          <RefreshCw />
+        </Button>
+        <span id="students-columns-0" className="ml-auto" />
+      </div>
+      {selected.length > 0 ? (
+        <div className="selection-bar mb-3 rounded-lg border">
+          <span>已选择 {selected.length} 名学生</span>
+          {rows.length <= 500 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(rows.map((s) => s.student_id))}
+            >
+              选择全部筛选结果（{rows.length}）
             </Button>
-            <div className="ml-auto flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openAction("reset-password", selected)}
-              >
-                <KeyRound />
-                重置密码
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => openAction("remove", selected)}
-              >
-                <UserMinus />
-                移出班级
-              </Button>
-            </div>
+          ) : null}
+          <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+            取消选择
+          </Button>
+          <div className="ml-auto flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openAction("reset-password", selected)}
+            >
+              <KeyRound />
+              重置密码
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => openAction("remove", selected)}
+            >
+              <UserMinus />
+              移出班级
+            </Button>
           </div>
-        ) : null}
-        <ErrorNotice message={list.error || (!modal ? error : "")} />
-        {list.loading ? (
+        </div>
+      ) : null}
+      <ErrorNotice message={list.error || (!modal ? error : "")} />
+      {list.loading ? (
+        <div className="surface">
           <Loading />
-        ) : !list.data ? null : rows.length === 0 ? (
-          <ListEmpty title="本班还没有学生" filtered={Boolean(list.data.length)} reset={() => { filter("query",""); filter("status","all"); }} action={<Button onClick={() => open("import")}>导入学生名册</Button>} />
-        ) : (
+        </div>
+      ) : !list.data ? null : rows.length === 0 ? (
+        <div className="surface">
+          <ListEmpty
+            title="本班还没有学生"
+            filtered={Boolean(list.data.length)}
+            reset={() => {
+              filter("query", "");
+              filter("status", "all");
+            }}
+            action={<Button onClick={() => open("import")}>导入学生名册</Button>}
+          />
+        </div>
+      ) : (
+        <>
           <ManagementTable toolsId="students-columns-0" pageSize={{value:size,total:rows.length,change:v => {setSize(v);setPage(1);}}}>
             <TableHeader>
               <TableRow>
@@ -317,18 +332,18 @@ export function Students({ classroomId }: { classroomId: number }) {
               ))}
             </TableBody>
           </ManagementTable>
-        )}
-        <Pager
-          page={safePage}
-          size={size}
-          total={rows.length}
-          onPage={setPage}
-          onSize={(v) => {
-            setSize(v);
-            setPage(1);
-          }}
-        />
-      </div>
+          <Pager
+            page={safePage}
+            size={size}
+            total={rows.length}
+            onPage={setPage}
+            onSize={(v) => {
+              setSize(v);
+              setPage(1);
+            }}
+          />
+        </>
+      )}
       <Dialog
         open={modal !== null}
         onOpenChange={(value) => {
@@ -356,7 +371,30 @@ export function Students({ classroomId }: { classroomId: number }) {
           {modal === "import" ? (
             <form inert={busy} aria-busy={busy} onSubmit={confirmImport}>
               <div className="field">
-                <Label htmlFor="roster-file">CSV 或 XLSX 文件</Label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label htmlFor="roster-file">CSV 或 XLSX 文件</Label>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void downloadRosterTemplate("xlsx")}
+                    >
+                      <Download />
+                      下载 Excel 模板
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void downloadRosterTemplate("csv")}
+                    >
+                      下载 CSV 模板
+                    </Button>
+                  </div>
+                </div>
                 <Input
                   id="roster-file"
                   type="file"
@@ -365,7 +403,7 @@ export function Students({ classroomId }: { classroomId: number }) {
                   onChange={(e) => void importFile(e.target.files?.[0])}
                 />
                 <p className="hint">
-                  首行依次为「学号」「姓名」，学号使用文本格式；最多 500
+                  首行依次为「学号」「姓名」，学号使用文本格式（Excel 模板已预设文本列）；最多 500
                   人，2 MB。
                 </p>
               </div>

@@ -154,3 +154,23 @@ def test_excel_preserves_text_and_rejects_formulas_numbers_limits():
         parse_table("students.csv", ("学号,姓名\n" + "12,同学\n" * 501).encode())
     with pytest.raises(ValueError, match="2MB"):
         parse_table("students.csv", b"x" * (2 * 1024 * 1024 + 1))
+
+
+def test_roster_templates_round_trip_through_import_preview(client, teacher, student, classroom):
+    assert client.get("/api/teacher/roster-template", headers=student["headers"]).status_code == 403
+    preview_path = f"/api/teacher/classrooms/{classroom['id']}/students/import-preview"
+    for fmt, mime in [
+        ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ("csv", "text/csv"),
+    ]:
+        tpl = client.get(f"/api/teacher/roster-template?fmt={fmt}", headers=teacher["headers"])
+        assert tpl.status_code == 200
+        assert mime in tpl.headers["content-type"]
+        res = client.post(
+            preview_path,
+            headers=teacher["headers"],
+            files={"file": (f"template.{fmt}", tpl.content, mime)},
+        )
+        assert res.status_code == 200, res.text
+        ids = [row["student_id"] for row in res.json()["students"]]
+        assert ids == ["20260001", "20260002"]

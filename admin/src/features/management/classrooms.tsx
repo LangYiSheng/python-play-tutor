@@ -101,7 +101,7 @@ export function ClassroomManagement({ courseId, isAdmin, onOpen, onOpenCourse, o
     >
       {onCreate && <Button onClick={onCreate}><Plus />创建班级</Button>}
     </PageHeader>
-    <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="mb-4 flex flex-wrap items-center gap-3">
       <TableSearch
         label={globalMode ? "搜索班级、课程或教师" : "搜索班级名称"}
         placeholder={globalMode ? "搜索班级、课程或教师" : undefined}
@@ -119,8 +119,8 @@ export function ClassroomManagement({ courseId, isAdmin, onOpen, onOpenCourse, o
       </SelectField>
     <span id="classrooms-columns-0" className="ml-auto" /></div>
     <ErrorNotice message={list.error} />
-    {list.loading && <Loading />}
-    {rows && <div className="overflow-hidden rounded-lg border bg-background"><ManagementTable toolsId="classrooms-columns-0" paginate key={`${query}:${status}:${teacherFilter}`}><TableHeader><TableRow>
+    {list.loading && <div className="surface"><Loading /></div>}
+    {rows && (rows.length > 0 ? <ManagementTable toolsId="classrooms-columns-0" paginate key={`${query}:${status}:${teacherFilter}`}><TableHeader><TableRow>
       <TableHead>班级名称</TableHead>
       {globalMode && <TableHead>所属课程 / 任课教师</TableHead>}
       <TableHead>班级加入码</TableHead>
@@ -175,7 +175,7 @@ export function ClassroomManagement({ courseId, isAdmin, onOpen, onOpenCourse, o
             {(isAdmin || !row.has_learning_records) && <DropdownMenuItem variant="destructive" onClick={() => setChange({ row, action: "delete" })}>正式删除</DropdownMenuItem>}
           </DropdownMenuContent></DropdownMenu>}
       </div></TableCell>
-    </TableRow>)}</TableBody></ManagementTable>{!rows.length && <ListEmpty title="尚未创建班级" filtered={isFiltered} reset={() => { setStatus("active"); setQuery(""); setTeacherFilter("all"); }} action={onCreate ? <Button onClick={onCreate}>创建第一个班级</Button> : undefined} />}</div>}
+    </TableRow>)}</TableBody></ManagementTable> : <div className="surface"><ListEmpty title="尚未创建班级" filtered={isFiltered} reset={() => { setStatus("active"); setQuery(""); setTeacherFilter("all"); }} action={onCreate ? <Button onClick={onCreate}>创建第一个班级</Button> : undefined} /></div>)}
     {change && <ClassActionDialog {...change} onClose={() => setChange(null)} onSaved={() => {
       toast.add({ title: `${change.row.name} 已完成${actions[change.action]}。`, type: "success" });
       setChange(null); list.reload(); onChanged();

@@ -113,60 +113,71 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
           (!editing ? error : "")
         }
       />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <TableSearch label="搜索章节" placeholder="搜索章节名称" value={releaseQuery} onValueChange={setReleaseQuery} />
+        <SelectField aria-label="章节开放状态" value={releaseFilter} onValueChange={setReleaseFilter}>
+          <option value="all">全部开放状态</option>
+          {Object.entries(releaseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </SelectField>
+        <span id="teaching-columns-0" className="ml-auto" />
+      </div>
+      {course.loading || releases.loading ? (
         <div className="surface">
-          <div className="toolbar">
-            <TableSearch label="搜索章节" placeholder="搜索章节名称" value={releaseQuery} onValueChange={setReleaseQuery} />
-            <SelectField aria-label="章节开放状态" value={releaseFilter} onValueChange={setReleaseFilter}>
-              <option value="all">全部开放状态</option>
-              {Object.entries(releaseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </SelectField>
-          <span id="teaching-columns-0" className="ml-auto" /></div>
-          {course.loading || releases.loading ? (
-            <Loading />
-          ) : !chapters.length ? (
-            <ListEmpty title="还没有章节" description="可在课程内容列表添加章节。" filtered={Boolean(releaseQuery.trim()) || releaseFilter !== "all"} reset={() => { setReleaseQuery(""); setReleaseFilter("all"); }} />
-          ) : (
-            <ManagementTable toolsId="teaching-columns-0" paginate key={releaseQuery + releaseFilter}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>章节</TableHead>
-                  <TableHead>开放状态</TableHead>
-                  <TableHead>开放时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {chapters.map(({ chapter: c, release: r, state }) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.title}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            r?.status === "published" ? "outline" : "secondary"
-                          }
-                        >
-                          {releaseLabels[state]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {r?.opens_at ? date(r.opens_at) : r ? "立即开放" : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => edit(c)}
-                        >
-                          <Pencil />
-                          设置
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                ))}
-              </TableBody>
-            </ManagementTable>
-          )}
+          <Loading />
         </div>
+      ) : !chapters.length ? (
+        <div className="surface">
+          <ListEmpty
+            title="还没有章节"
+            description="可在「章节与课件」中添加章节。"
+            filtered={Boolean(releaseQuery.trim()) || releaseFilter !== "all"}
+            reset={() => {
+              setReleaseQuery("");
+              setReleaseFilter("all");
+            }}
+          />
+        </div>
+      ) : (
+        <ManagementTable toolsId="teaching-columns-0" paginate key={releaseQuery + releaseFilter}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>章节</TableHead>
+              <TableHead>开放状态</TableHead>
+              <TableHead>开放时间</TableHead>
+              <TableHead className="text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {chapters.map(({ chapter: c, release: r, state }) => (
+              <TableRow key={c.id}>
+                <TableCell className="font-medium">{c.title}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      r?.status === "published" ? "outline" : "secondary"
+                    }
+                  >
+                    {releaseLabels[state]}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {r?.opens_at ? date(r.opens_at) : r ? "立即开放" : "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => edit(c)}
+                  >
+                    <Pencil />
+                    设置
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </ManagementTable>
+      )}
       <Dialog
         open={!!editing}
         onOpenChange={(v) => {

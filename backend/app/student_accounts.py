@@ -5,7 +5,8 @@ import zipfile
 from xml.etree.ElementTree import ParseError
 from defusedxml.common import DefusedXmlException
 from typing import Annotated, Literal
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -214,3 +215,69 @@ def batch_students(classroom_id: int, body: BatchInput, db: Annotated[Session, D
             db.delete(db.get(Membership, (student.id, classroom_id)))
     db.commit()
     return {"affected": len(rows)}
+
+
+template_router = APIRouter(tags=["student accounts"])
+TEMPLATE_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("20260001", "张三"),
+    ("20260002", "李四"),
+)
+
+
+def build_roster_template(fmt: Literal["xlsx", "csv"]) -> tuple[bytes, str, str]:
+    if fmt == "csv":
+        lines = ["学号,姓名", *(f"{sid},{name}" for sid, name in TEMPLATE_EXAMPLES)]
+        payload = ("\ufeff" + "\r\n".join(lines) + "\r\n").encode("utf-8")
+        return payload, "text/csv; charset=utf-8", "学生名册导入模板.csv"
+
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "学生名册"
+    sheet.column_dimensions["A"].width = 18
+    sheet.column_dimensions["A"].number_format = "@"
+    sheet.column_dimensions["B"].width = 16
+    sheet.column_dimensions["B"].number_format = "@"
+
+    header_id = sheet.cell(row=1, column=1, value="学号")
+    header_name = sheet.cell(row=1, column=2, value="姓名")
+    header_id.number_format = "@"
+    header_name.number_format = "@"
+
+    for row_index, (sid, name) in enumerate(TEMPLATE_EXAMPLES, start=2):
+        id_cell = sheet.cell(row=row_index, column=1, value=sid)
+        name_cell = sheet.cell(row=row_index, column=2, value=name)
+        id_cell.data_type = "s"
+        id_cell.number_format = "@"
+        name_cell.data_type = "s"
+        name_cell.number_format = "@"
+
+    # Pre-format all 500 importable rows as Text so leading zeros stay intact in Excel/WPS.
+    for row_index in range(len(TEMPLATE_EXAMPLES) + 2, MAX_ROWS + 2):
+        sheet.cell(row=row_index, column=1).number_format = "@"
+        sheet.cell(row=row_index, column=2).number_format = "@"
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+    return (
+        buffer.getvalue(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "学生名册导入模板.xlsx",
+    )
+
+
+@template_router.get("/teacher/roster-template")
+def roster_template(
+    _user: Annotated[User, Depends(require_teacher)],
+    fmt: Literal["xlsx", "csv"] = "xlsx",
+) -> Response:
+    payload, media_type, filename = build_roster_template(fmt)
+    ascii_name = f"roster-template.{fmt}"
+    encoded = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}",
+    }
+    return Response(content=payload, media_type=media_type, headers=headers)

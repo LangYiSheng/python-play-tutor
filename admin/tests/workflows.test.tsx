@@ -28,6 +28,8 @@ it("previews a roster without creating accounts and preserves leading zeroes on 
   const user = userEvent.setup();
   render(<Students classroomId={31} />);
   await user.click(screen.getByRole("button", { name: "导入学生" }));
+  expect(screen.getByRole("button", { name: "下载 Excel 模板" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "下载 CSV 模板" })).toBeVisible();
   await user.upload(screen.getByLabelText("CSV 或 XLSX 文件"),
     new File(["学号,姓名\n00123456,测试学生"], "students.csv", { type: "text/csv" }));
   await screen.findByText(/将新建 1 人/);

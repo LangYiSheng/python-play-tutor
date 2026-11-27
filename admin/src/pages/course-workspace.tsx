@@ -14,8 +14,9 @@ import { CreateCourseDialog } from "./create-course-dialog";
 import { CourseDeleteDialog } from "./course-delete-dialog";
 
 type CourseList = ReturnType<typeof useResource<CourseInstance[]>>;
-export function CoursePicker({courses, items, classes, onOpen, admin, exporting, exportCourse}: {
+export function CoursePicker({courses, items, classes, onOpen, onCreated, teacherName, admin, exporting, exportCourse}: {
   courses: CourseList; items: CourseInstance[]; classes: Classroom[]; onOpen: (id: number) => void;
+  onCreated: (course: { id: number; name: string }) => void; teacherName: string;
   admin: boolean; exporting: number | null; exportCourse: (course: CourseInstance) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"rename" | "transfer" | null>(null);
@@ -63,7 +64,7 @@ export function CoursePicker({courses, items, classes, onOpen, admin, exporting,
         {rooms && <p className="hint line-clamp-2" title={rooms}>教学班 · {rooms}</p>}
         <div className="hub-card-footer"><Button onClick={() => onOpen(c.id)}>进入课程</Button></div>
       </article>})}</div>
-    {creating && <CreateCourseDialog onClose={() => setCreating(false)} onCreated={() => { setCreating(false); courses.reload(); }}/>}
+    {creating && <CreateCourseDialog teacherName={teacherName} onClose={() => setCreating(false)} onCreated={created => { setCreating(false); onCreated(created); }}/>}
     {deleting && <CourseDeleteDialog course={deleting} onClose={() => setDeleting(null)} onDeleted={() => {
       setDeleting(null);
       courses.reload();

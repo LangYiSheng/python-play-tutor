@@ -187,7 +187,7 @@ function JudgePage({ classroomId, canManage }: JudgeProps) {
             <TableCell>{timestamp(row.created_at)}</TableCell>
             <TableCell><Button variant="outline" size="sm" onClick={() => setSelected(row.id)} aria-label={`查看 ${row.student_name} 的提交 ${row.id}`}><Eye />查看提交</Button></TableCell>
           </TableRow>)}</TableBody></ManagementTable>
-      </> : <ListEmpty filteredTitle="没有匹配的提交" title="暂无正式提交" description="这里只显示正式提交的 Python 答案。" filtered={Boolean(query || status) || preset !== "all"} reset={() => { setQuery(""); setSearch(""); setStatus(""); applyDates(null,"all"); }} />}
+      </> : <div className="surface"><ListEmpty filteredTitle="没有匹配的提交" title="暂无正式提交" description="这里只显示正式提交的 Python 答案。" filtered={Boolean(query || status) || preset !== "all"} reset={() => { setQuery(""); setSearch(""); setStatus(""); applyDates(null,"all"); }} /></div>}
       {submissions.data && submissions.data.total > 0 ? <Pager page={page} size={size} total={submissions.data.total} onPage={setPage} onSize={v => { setSize(v); setPage(1); }} /> : null}
     </section>
     <Dialog open={control !== null} onOpenChange={open => { if (!open && !busy) setControl(null); }}>

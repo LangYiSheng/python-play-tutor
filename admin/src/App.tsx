@@ -3,6 +3,7 @@ import { SelectField } from "@/components/select-field";
 import { useState, useEffect, lazy, Suspense, type ReactNode } from "react";
 import {
   GraduationCap,
+  Compass,
   School,
   ChartNoAxesCombined,
   Presentation,
@@ -55,6 +56,7 @@ import { DraftProvider, useCanLeave } from "@/lib/drafts";
 import { openTownPreview } from "@/lib/town-preview";
 import type { User, Classroom } from "@/lib/types";
 import { CoursePicker } from "@/pages/course-workspace";
+import { CourseGuide, type GuideTarget } from "@/pages/course-guide";
 import { InsightsPage } from "@/features/analytics/insights-page";
 import { TaskDetailsPage } from "@/features/analytics/details-page";
 import { GradesPage } from "@/features/analytics/grades-page";
@@ -84,6 +86,7 @@ const globalNav = [
   { key: "global-judge", title: "评测管理", icon: ShieldCheck },
   { key: "system", title: "全站设置", icon: Settings },
 ] as const;
+const guideNav = { key: "guide", title: "开课引导", icon: Compass } as const;
 const statisticsNav = [
   { key: "insights", title: "学情洞察", icon: ChartNoAxesCombined },
   { key: "details", title: "任务点明细", icon: List },
@@ -103,8 +106,14 @@ const settingsNav = [
   { key: "synthesis", title: "资料合成管理", icon: FileAudio },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
-const courseNav = [...statisticsNav, ...classNav, ...contentNav, ...settingsNav,
+const courseNav = [guideNav, ...statisticsNav, ...classNav, ...contentNav, ...settingsNav,
   { key: "students", title: "学生管理", icon: Users }] as const;
+
+const defaultClassNames = ["一班", "二班", "三班", "四班", "五班", "六班", "七班", "八班", "九班", "十班"];
+function nextClassName(existingNames: string[]) {
+  const taken = new Set(existingNames.map((name) => name.trim()));
+  return defaultClassNames.find((candidate) => !taken.has(candidate)) ?? `${existingNames.length + 1}班`;
+}
 const hubNav = [{ key: "courses", title: "课程选择", icon: School }, { key: "packages", title: "课程包管理", icon: Package }] as const;
 const pages = [...hubNav, ...globalNav, ...courseNav] as const;
 type Page = (typeof pages)[number]["key"];
@@ -187,6 +196,7 @@ function Workbench() {
   const [classError, setClassError] = useState("");
   const [classListRevision, setClassListRevision] = useState(0);
   const [packageRevision, setPackageRevision] = useState(0);
+  const [recentCourse, setRecentCourse] = useState<Pick<CourseInstance, "id" | "name"> | null>(null);
   const [exporting, setExporting] = useState<number | null>(null);
   async function exportCourse(course: CourseInstance) {
     if (exporting !== null) return;
@@ -237,7 +247,7 @@ function Workbench() {
   }
   const canLeave = useCanLeave();
   const courses = useResource<CourseInstance[]>(user && !user.must_change_password ? "/teacher/courses" : null);
-  const course = courses.data?.find(row => row.id === courseId);
+  const course = courses.data?.find(row => row.id === courseId) ?? (recentCourse?.id === courseId ? recentCourse : undefined);
   const inCourse = (classes ?? []).filter(row => row.course_id === courseId).sort((a, b) => a.id - b.id);
   const storageKey = user && courseId ? `classroom:${user.id}:${courseId}` : null;
   const remembered = storageKey ? Number(sessionStorage.getItem(storageKey)) : null;
@@ -254,14 +264,36 @@ function Workbench() {
       history.replaceState(history.state, "", url);
     }
   }, [classroomId, usesClassPicker, storageKey, requestedClass, page]);
-  function pageUrl(next: Page, cid = courseId, room: number | null = classroomId) {
+  function pageUrl(next: Page, cid = courseId, room: number | null = classroomId, extra?: Record<string, string>) {
     if (!courseNav.some(item => item.key === next)) return `/teacher/${next}`;
-    return `/teacher/${next}?course=${cid}${room ? "&class=" + room : ""}`;
+    const params = new URLSearchParams();
+    params.set("course", String(cid));
+    if (room) params.set("class", String(room));
+    if (extra) {
+      for (const [k, v] of Object.entries(extra)) params.set(k, v);
+    }
+    return `/teacher/${next}?${params}`;
+  }
+  function openNewClassDialog() {
+    setError("");
+    setClassName(nextClassName(inCourse.map(c => c.name)));
+    setNewClass(true);
   }
   function selectCourse(id: number) {
     if (!canLeave()) return;
+    const hasActiveClass = (classes ?? []).some(row => row.course_id === id);
+    const target: Page = hasActiveClass ? "classes" : "guide";
     setCourseId(id); setRequestedClass(null);
-    history.pushState({}, "", pageUrl("insights", id, null)); setPage("insights");
+    history.pushState({}, "", pageUrl(target, id, null)); setPage(target);
+  }
+  function openCreatedCourse(created?: { id: number; name: string }) {
+    courses.reload();
+    if (!created || !canLeave()) return;
+    setRecentCourse(created);
+    setCourseId(created.id);
+    setRequestedClass(null);
+    history.pushState({}, "", pageUrl("guide", created.id, null));
+    setPage("guide");
   }
   useEffect(() => {
     let active = true;
@@ -365,8 +397,13 @@ function Workbench() {
       setClassName("");
       setNewClass(false);
       setRequestedClass(row.id);
-      history.pushState({}, "", pageUrl("students", courseId, row.id));
-      setPage("students");
+      if (page === "guide") {
+        setClassListRevision((v) => v + 1);
+        toast.add({ title: `已创建班级「${row.name}」`, type: "success" });
+      } else {
+        history.pushState({}, "", pageUrl("students", courseId, row.id));
+        setPage("students");
+      }
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -462,7 +499,7 @@ function Workbench() {
       case "classes":
         if (!course) break;
         return <ClassroomManagement courseId={course.id} isAdmin={isAdmin} onOpen={openClass}
-          onCreate={() => setNewClass(true)} onChanged={() => setClassListRevision(value => value + 1)} />;
+          onCreate={openNewClassDialog} onChanged={() => setClassListRevision(value => value + 1)} />;
       case "teachers":
       case "accounts":
         return <Accounts role={page === "teachers" ? "teacher" : "student"} onChanged={() => setClassListRevision(value => value + 1)} />;
@@ -484,6 +521,27 @@ function Workbench() {
         return <GlobalSettings />;
     }
     if (!course) return courses.loading ? <Loading/> : <Empty title="课程不存在或无法访问" />;
+    if (page === "guide") return <CourseGuide
+      courseId={course.id}
+      classroomId={classroomId}
+      revision={classListRevision + inCourse.length}
+      openingTown={openingTown}
+      onEnterTown={id => void enterTown(id)}
+      onCreateClass={openNewClassDialog}
+      onOpenStudents={id => void openClass(id)}
+      onOpenReview={() => {
+        if (!canLeave()) return;
+        const url = pageUrl("content-graph", course.id, classroomId);
+        history.pushState({ initialReview: {} }, "", url);
+        setPage("content-graph");
+      }}
+      pageHref={(target: GuideTarget, extra) => pageUrl(target, course.id, classroomId, extra)}
+      onNavigate={(target: GuideTarget, extra) => {
+        if (!canLeave()) return;
+        history.pushState({}, "", pageUrl(target, course.id, classroomId, extra));
+        setPage(target);
+      }}
+    />;
     if (page === "insights") return <InsightsPage courseId={course.id} onOpenClassAnalytics={(roomId, target) => {
       if (!canLeave()) return;
       setRequestedClass(roomId);
@@ -495,7 +553,7 @@ function Workbench() {
     if (classPage && classes === null) return <Loading/>;
     if (classPage && !classroom) return <div className="surface">
       <Empty title="本课程尚未创建班级" />
-      <div className="flex justify-center pb-8"><Button onClick={() => setNewClass(true)}>创建班级</Button></div>
+      <div className="flex justify-center pb-8"><Button onClick={openNewClassDialog}>创建班级</Button></div>
     </div>;
     if (page === "students") return <><ButtonLink href={pageUrl("classes")} variant="ghost" className="mb-3" onClick={e => { e.preventDefault(); navigate("classes"); }}><ChevronLeft/>返回班级列表</ButtonLink><Students classroomId={classroom!.id}/></>;
     if (page === "details") return <TaskDetailsPage classroomId={classroom!.id} />;
@@ -570,8 +628,8 @@ function Workbench() {
       <ErrorNotice message={error}/>
       <Tabs value={page} onValueChange={value => navigate(value === "packages" ? "packages" : "courses")}>
         <TabsList aria-label="教学工作台">{hubNav.map(item => <TabsTrigger key={item.key} value={item.key}>{item.title}</TabsTrigger>)}</TabsList>
-        <TabsContent value="courses"><CoursePicker classes={classes ?? []} exportCourse={exportCourse} exporting={exporting} courses={courses} items={myCourses} onOpen={selectCourse} admin={isAdmin}/></TabsContent>
-        <TabsContent value="packages"><Packages revision={packageRevision} courses={myCourses} onCreated={courses.reload}/></TabsContent>
+        <TabsContent value="courses"><CoursePicker classes={classes ?? []} exportCourse={exportCourse} exporting={exporting} courses={courses} items={myCourses} onOpen={selectCourse} onCreated={openCreatedCourse} teacherName={user.name} admin={isAdmin}/></TabsContent>
+        <TabsContent value="packages"><Packages revision={packageRevision} courses={myCourses} onCreated={openCreatedCourse}/></TabsContent>
       </Tabs>
     </main> : <div className={`workbench ${sidebar ? "" : "sidebar-collapsed"}`}>
       {sidebar && <button className="sidebar-backdrop" aria-label="关闭导航菜单" onClick={() => setSidebar(false)} />}
@@ -581,6 +639,7 @@ function Workbench() {
           <div className="sidebar-return"><a href="/teacher/courses" aria-label="返回课程选择" title={sidebar ? undefined : "返回课程选择"} onClick={e => { e.preventDefault(); navigate("courses"); }}><ChevronLeft size={18} aria-hidden/><span className="nav-text">返回课程选择</span></a></div>
           {globalPage && isAdmin && <nav aria-label="工作台导航">{globalNav.map(link)}</nav>}
           {course && !globalPage && <nav aria-label="课程导航">
+            {link(guideNav)}
             {navLink(classNav[0], page === "classes" || page === "students")}
             {group("statistics-nav", "学情统计", ChartNoAxesCombined, statisticsNav)}
             {link(classNav[1])}

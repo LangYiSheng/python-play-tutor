@@ -15,6 +15,7 @@ from app import (
     assistant,
     auth,
     classroom_courses,
+    course_onboarding,
     platform_roles,
     courses,
     curriculum,
@@ -104,9 +105,11 @@ def create_app() -> FastAPI:
         assessments,
         student_accounts,
         classroom_courses,
+        course_onboarding,
         course_exchange,
     ):
         app.include_router(module.router, prefix="/api")
+    app.include_router(student_accounts.template_router, prefix="/api")
     app.include_router(knowledge_graph.router, prefix="/api/teacher/courses/{course_id}")
     # Narration authoring is additive and isolated; see app/narration.
     from app.course_content.reports import router as report_router

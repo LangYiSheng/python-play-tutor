@@ -147,3 +147,12 @@ it("copies the class join code and opens its student roster", async () => {
   expect(screen.queryByRole("columnheader", { name: "任课教师" })).toBeNull();
   expect(screen.queryByRole("button", { name: "学习记录" })).toBeNull();
 });
+
+it("hides table headers and column tools when classroom list is empty", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json([])));
+  render(<ClassroomManagement {...props} isAdmin={false} />);
+  expect(await screen.findByText("尚未创建班级")).toBeVisible();
+  expect(screen.getByRole("button", { name: "创建第一个班级" })).toBeVisible();
+  expect(screen.queryByRole("columnheader", { name: "班级名称" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "列设置" })).toBeNull();
+});

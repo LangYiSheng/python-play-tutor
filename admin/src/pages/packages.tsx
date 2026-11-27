@@ -143,7 +143,7 @@ export function Packages({
 }: {
   revision?: number;
   courses: Pick<CourseInstance, "id" | "name" | "teacher_name">[];
-  onCreated: () => void;
+  onCreated: (course?: { id: number; name: string }) => void;
   adminMode?: boolean;
 }) {
   const [scope, setScope] = useState(adminMode ? "all" : "mine");
@@ -269,10 +269,12 @@ export function Packages({
 
   function createCourse() {
     if (!selected || !courseName.trim()) return;
-    return operate("creating", signal => createCourseFromPackage(selected.key, courseName.trim(), requestKey, signal), result => {
+    const title = courseName.trim();
+    return operate("creating", signal => createCourseFromPackage(selected.key, title, requestKey, signal), result => {
+      const resolvedName = result.name || title;
       setAction(null);
-      onCreated();
-      toast.add({ title: `已创建课程「${result.name}」`, type: "success" });
+      toast.add({ title: `已创建课程「${resolvedName}」`, type: "success" });
+      onCreated({ id: result.id, name: resolvedName });
     });
   }
 

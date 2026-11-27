@@ -553,11 +553,13 @@ export function GradesPage({
       </div>
 
       {!d.activities.length || !filteredStudents.length ? (
-        <ListEmpty
-          title={!d.activities.length ? "课程暂无测验" : "暂无学生成绩"}
-          filtered={isFiltered}
-          reset={resetFilters}
-        />
+        <div className="surface">
+          <ListEmpty
+            title={!d.activities.length ? "课程暂无测验" : "暂无学生成绩"}
+            filtered={isFiltered}
+            reset={resetFilters}
+          />
+        </div>
       ) : (
         <div className="surface overflow-x-auto">
           <ManagementTable
