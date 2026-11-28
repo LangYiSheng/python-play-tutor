@@ -4,13 +4,15 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import ColumnElement, Row, Select, case, func, select
+from sqlalchemy import ColumnElement, Row, Select, String, case, cast, func, literal, select, union_all
 from sqlalchemy.orm import Session, load_only
 
 from ..auth import as_utc, require_admin, require_teacher
 from ..db import get_db
 from ..materials.access import teacher_material as visible_material
-from ..models import CourseInstance, Material, User, now
+from ..course_studio.jobs import serialize_job
+from ..course_studio.models import CourseStudioJob
+from ..models import Chapter, CourseInstance, Material, User, now
 from ..teacher_scope import teacher_instance_id
 from . import repository, task_progress
 from .request_contracts import GenerateInput, PageGenerateInput, RangeInput
@@ -110,21 +112,72 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
                query: str = "", status: Literal["all", "running", "done", "failed", "interrupted", "cancelled"] = "all",
                view: Literal["all", "running", "history"] = "all",
                page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=100)] = 20) -> dict[str, Any]:
-    state = run_state()
-    statement = visible_runs(db, user, course_id)
+    narration = visible_runs(db, user, course_id)
+    narration = narration.where(~func.coalesce(NarrationRun.progress["queue_dismissed"].as_boolean(), False))
+    studio = (select(CourseStudioJob, CourseInstance.name, Chapter.title, User.name)
+              .join(CourseInstance, CourseInstance.id == CourseStudioJob.course_instance_id)
+              .outerjoin(Chapter, (Chapter.id == CourseStudioJob.payload["chapter_id"].as_integer())
+                         & (Chapter.course_instance_id == CourseInstance.id))
+              .outerjoin(User, User.id == CourseStudioJob.requested_by)
+              .where(~func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False)))
+    if course_id is not None:
+        studio = studio.where(CourseInstance.id == course_id)
+    studio_kinds = {"knowledge_extract": "AI 知识点抽取", "exercises_generate": "AI 智能出题",
+                    "coding_exercises_generate": "AI 编程出题", "exam_fill_gaps": "AI 试卷补题"}
     if query.strip():
-        statement = statement.where(Material.title.icontains(query.strip(), autoescape=True))
-    counts: dict[str, int] = dict(db.execute(statement.with_only_columns(state, func.count()).group_by(state)).all())
+        term = query.strip()
+        narration = narration.where(Material.title.icontains(term, autoescape=True))
+        studio = studio.where(Chapter.title.icontains(term, autoescape=True) | CourseInstance.name.icontains(term, autoescape=True)
+                              | CourseStudioJob.kind.in_([k for k, name in studio_kinds.items() if term.casefold() in name.casefold()]))
+    # Apply counts, filtering and pagination to one ordered index before loading detailed progress.
+    index = union_all(
+        narration.with_only_columns(literal("narration").label("source"), cast(NarrationRun.id, String).label("key"),
+                                    NarrationRun.started_at.label("moment"), run_state().label("state")),
+        studio.with_only_columns(literal("studio"), CourseStudioJob.id, CourseStudioJob.created_at,
+                                 case((CourseStudioJob.status == "queued", "running"), else_=CourseStudioJob.status)),
+    ).subquery()
+    counts: dict[str, int] = dict(db.execute(select(index.c.state, func.count()).group_by(index.c.state)
+                             .execution_options(include_deleted=True)).all())
+    refs = select(index.c.source, index.c.key)
     if view != "all":
-        statement = statement.where(state == "running" if view == "running" else state != "running")
+        refs = refs.where(index.c.state == "running" if view == "running" else index.c.state != "running")
     if status != "all":
-        statement = statement.where(state == status)
-    total = db.scalar(select(func.count()).select_from(statement.subquery())) or 0
-    items = []
-    for row in db.execute(statement.order_by(NarrationRun.started_at.desc(), NarrationRun.id.desc()).offset((page - 1) * size).limit(size)):
-        items.append(history_item(row, db, course_view=course_id is not None))
-    return {"items": items, "total": total,
+        refs = refs.where(index.c.state == status)
+    total = db.scalar(select(func.count()).select_from(refs.subquery()).execution_options(include_deleted=True)) or 0
+    keys = db.execute(refs.order_by(index.c.moment.desc(), index.c.source, index.c.key.desc())
+                      .offset((page - 1) * size).limit(size).execution_options(include_deleted=True)).all()
+    rows = {}
+    narration_ids = [int(key) for source, key in keys if source == "narration"]
+    if narration_ids:
+        for row in db.execute(narration.where(NarrationRun.id.in_(narration_ids))):
+            rows[("narration", str(row[0].id))] = history_item(row, db, course_view=course_id is not None)
+    studio_ids = [key for source, key in keys if source == "studio"]
+    if studio_ids:
+        for job, course_name, chapter_title, requester in db.execute(studio.where(CourseStudioJob.id.in_(studio_ids))
+                                                                     .execution_options(include_deleted=True)):
+            rows[("studio", job.id)] = {"source": "studio", "job": serialize_job(job), "title": chapter_title or course_name,
+                                        "course_name": course_name, "requested_by": requester or "—"}
+    return {"items": [rows[key] for key in keys if key in rows], "total": total,
             "counts": {key: counts.get(key, 0) for key in ("running", "done", "failed", "interrupted", "cancelled")}}
+
+
+@router.post("/runs/{run_id}/dismiss")
+def dismiss_run(course_id: int, run_id: int, db: Annotated[Session, Depends(get_db)],
+                user: Annotated[User, Depends(require_teacher)]) -> dict[str, bool]:
+    teacher_instance_id(db, user, course_id, exclusive=True)
+    row = db.execute(visible_runs(db, user, course_id).where(NarrationRun.id == run_id)).one_or_none()
+    if row is None:
+        raise HTTPException(404, "任务记录不存在")
+    record = row[0]
+    if record.status != "failed":
+        raise HTTPException(409, "只能忽略失败的课件任务")
+    current = db.scalar(select(NarrationJob).where(NarrationJob.material_id == record.material_id,
+                        NarrationJob.started_at == record.started_at, NarrationJob.status == "failed").with_for_update())
+    record.progress = {**(record.progress or {}), "queue_dismissed": True}
+    if current is not None:
+        current.progress = {**(current.progress or {}), "queue_dismissed": True}
+    db.commit()
+    return {"queue_dismissed": True}
 
 
 class RetryInput(BaseModel):

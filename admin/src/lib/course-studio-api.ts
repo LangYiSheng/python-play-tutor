@@ -198,6 +198,7 @@ export interface ExamRecord {
 
 export interface ExamCandidate {
   id: string;
+  difficulty?: string;
   chapter: string;
   type: ExamSectionType;
   question: string;
@@ -330,7 +331,11 @@ export const courseStudioApi = {
     );
   },
   listJobs: (courseId: number, limit = 20, signal?: AbortSignal) =>
-    api.get<{ jobs: CourseStudioJob[] }>(`${root(courseId)}/jobs?limit=${limit}`, signal),
+    api.get<{ jobs: CourseStudioJob[] }>(`${root(courseId)}/jobs?workspace=true&limit=${limit}`, signal),
+  dismissJob: (courseId: number, jobId: string) =>
+    api.post(`${root(courseId)}/jobs/${encodeURIComponent(jobId)}/dismiss`, {}),
+  retryJob: (courseId: number, jobId: string) =>
+    api.post<CourseStudioJob>(`${root(courseId)}/jobs/${encodeURIComponent(jobId)}/retry`, {}),
   cancelJob: (courseId: number, jobId: string) =>
     api.post<CourseStudioJob>(`${root(courseId)}/jobs/${encodeURIComponent(jobId)}/cancel`, {}),
 };
@@ -393,14 +398,6 @@ export function useCourseStudioJobs(
   }, [courseId, tick]);
 
   const refresh = useCallback(() => setTick((n) => n + 1), []);
-  const cancel = useCallback(
-    async (jobId: string) => {
-      const updated = await courseStudioApi.cancelJob(courseId, jobId);
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? updated : j)));
-      return updated;
-    },
-    [courseId],
-  );
   const activeCount = jobs.filter((j) => j.status === "queued" || j.status === "running").length;
-  return { jobs, activeCount, error, refresh, cancel };
+  return { jobs, activeCount, error, refresh };
 }

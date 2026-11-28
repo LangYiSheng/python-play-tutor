@@ -49,10 +49,10 @@ it("dismisses a failed task after confirmation and preserves its failed status",
   const user = userEvent.setup(), reload = vi.fn();
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({status:"failed", queue_dismissed:true})));
   render(<Queue jobs={[{...job, status:"failed", retryable:true}]} reload={reload}/>);
-  await user.click(screen.getByRole("button", {name:"取消任务"}));
+  await user.click(screen.getByRole("button", {name:"忽略"}));
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText(/失败记录将保留/)).toBeVisible();
-  await user.click(within(dialog).getByRole("button", {name:"确认取消任务"}));
-  expect(await screen.findByText("失败任务已从队列移除")).toBeVisible();
+  expect(within(dialog).getByText(/已生成的内容会保留/)).toBeVisible();
+  await user.click(within(dialog).getByRole("button", {name:"确认忽略"}));
+  expect(await screen.findByText("已忽略失败任务")).toBeVisible();
   expect(reload).toHaveBeenCalledOnce();
 });

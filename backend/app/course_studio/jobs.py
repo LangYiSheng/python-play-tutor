@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -105,16 +105,18 @@ def enqueue_job(
     return job
 
 
-def list_jobs(db: Session, course_instance_id: int, *, limit: int = 30) -> list[CourseStudioJob]:
-    """List recent jobs for one course instance."""
-    return list(
-        db.scalars(
-            select(CourseStudioJob)
-            .where(CourseStudioJob.course_instance_id == course_instance_id)
-            .order_by(CourseStudioJob.created_at.desc(), CourseStudioJob.id.desc())
-            .limit(max(1, min(100, int(limit))))
-        )
-    )
+def list_jobs(db: Session, course_instance_id: int, *, limit: int = 30, workspace: bool = False) -> list[CourseStudioJob]:
+    """List recent jobs and optionally all outstanding work for the course."""
+    limit = max(1, min(100, int(limit)))
+    base = select(CourseStudioJob).where(CourseStudioJob.course_instance_id == course_instance_id)
+    latest = base.order_by(CourseStudioJob.created_at.desc(), CourseStudioJob.id.desc())
+    if workspace:
+        visible = ~func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False)
+        # Outstanding work remains visible even beyond the recent completion window.
+        recent = latest.with_only_columns(CourseStudioJob.id).limit(limit)
+        return list(db.scalars(latest.where(visible, CourseStudioJob.status.in_(("queued", "running", "failed", "interrupted"))
+                                           | CourseStudioJob.id.in_(recent))))
+    return list(db.scalars(latest.limit(limit)))
 
 
 def get_job(db: Session, course_instance_id: int, job_id: str) -> CourseStudioJob:

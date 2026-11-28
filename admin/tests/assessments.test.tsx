@@ -210,6 +210,7 @@ it("submits AI objective exercise generation and creates an exam via wizard", as
   expect(submitted[0].path).toBe("/api/teacher/courses/12/course-studio/chapters/17/exercises/generate");
   expect(submitted[0].body.counts).toEqual({ single: 4, multiple: 2, true_false: 2, fill_blank: 2 });
 
+  await user.keyboard("{Escape}");
   await user.click(screen.getByRole("tab", { name: "课程组卷" }));
   await user.click(await screen.findByRole("button", { name: "新建试卷" }));
   await user.click(await screen.findByRole("button", { name: /下一步：检查题库缺口/ }));
@@ -218,7 +219,7 @@ it("submits AI objective exercise generation and creates an exam via wizard", as
   expect(await screen.findByText("Python 变量命名正确的是？")).toBeVisible();
 });
 
-it("supports one-click approve, batch approve, and dismissible completed AI job banner", async () => {
+it("supports one-click approve, batch approve, and hides completed AI jobs from the work queue", async () => {
   const updates: { path: string; body: Record<string, unknown> }[] = [];
   vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
     const url = new URL(path, location.origin);
@@ -267,13 +268,8 @@ it("supports one-click approve, batch approve, and dismissible completed AI job 
   const user = userEvent.setup();
   render(<AssessmentsPage courseId={12} />);
 
-  // Completed AI job panel starts collapsed; opening it shows clean summary instead of stale "正在..." text
-  expect(screen.queryByText("AI 创作任务")).not.toBeInTheDocument();
-  await user.click(await screen.findByRole("button", { name: /AI 出题任务/ }));
-  expect(await screen.findByText("已完成：新增 2 道待审题目")).toBeVisible();
-  expect(screen.queryByText(/正在根据课件内容生成客观题/)).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "收起任务面板" }));
-  expect(screen.queryByText("AI 创作任务")).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "通过待审第一题" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /AI 出题任务/ })).not.toBeInTheDocument();
 
   // One-click row approve
   await user.click(await screen.findByRole("button", { name: "通过待审第一题" }));
@@ -330,13 +326,13 @@ it("allows collapsing and reopening AI job panel while generation is running", a
   // Teacher can expand to inspect progress and collapse again while still running
   await user.click(toggleBtn);
   expect(await screen.findByText(/正在按知识点配额生成单选题/)).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "收起任务面板" }));
+  await user.click(screen.getByRole("button", { name: "关闭" }));
   expect(screen.queryByText("AI 创作任务")).not.toBeInTheDocument();
 
-  // Header button toggles open and closed as well
+  // Escape closes the task dialog and returns to the question bank
   await user.click(toggleBtn);
   expect(await screen.findByText("AI 创作任务")).toBeVisible();
-  await user.click(toggleBtn);
+  await user.keyboard("{Escape}");
   expect(screen.queryByText("AI 创作任务")).not.toBeInTheDocument();
 });
 
@@ -540,11 +536,7 @@ it("submits AI coding exercise generation and displays coding job summary with f
   expect(screen.getByText("新生成")).toBeVisible();
   expect(screen.getByText(/生成于 刚刚/)).toBeVisible();
 
-  // Completed coding job shows in AI task panel with coding label & failure note
-  await user.click(await screen.findByRole("button", { name: /AI 出题任务（1）/ }));
-  expect(await screen.findByText("AI 编程出题")).toBeVisible();
-  expect(screen.getByText("已完成：新增 2 道已验编程题草稿（1 道未通过自动验题）")).toBeVisible();
-  expect(screen.getByText(/独立盲解输出不一致/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: /AI 出题任务/ })).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "AI 智能出题" }));
   await user.click(await screen.findByRole("button", { name: /Python 编程题（自动验题）/ }));

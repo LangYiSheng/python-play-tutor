@@ -16,6 +16,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NarrationReview } from '@/features/materials/narration/review';
 import { NarrationPlayer } from '@/features/materials/narration/player';
 import { api, errorMessage } from '@/lib/api';
+import type { CourseStudioJob } from "@/lib/course-studio-api";
+import { displayMessage, KIND_LABELS, STATUS_LABELS, StudioJobActions } from "@/features/content-workspace/studio-job-list";
 import { formatTimestamp } from '@/lib/time';
 import { TaskButtons, TaskDetail, useTaskCommands } from '@/features/content-workspace/task-queue';
 import { taskFailed, taskPercent, taskStage, taskStatus, taskTitle, taskWork, type TaskSnapshot } from '@/features/content-workspace/task-presentation';
@@ -23,6 +25,7 @@ import '@/features/content-workspace/inspector-content.css';
 import '@/features/synthesis/synthesis.css';
 
 type Task = TaskSnapshot & {
+  source?: "narration";
   course_id?: number;
   course_name?: string;
   id: number; material_id: number; title: string; material_kind: string; kind: string; status: string;
@@ -30,7 +33,8 @@ type Task = TaskSnapshot & {
   done: number; total: number; message: string; started_at: string | null; finished_at: string | null;
   failed: { page_no: number; error?: string }[]; retryable: boolean; retry_note: string;
 };
-type Overview = { items: Task[]; total: number; counts: Record<string, number> };
+type StudioRow = { source: "studio"; job: CourseStudioJob; title: string; course_name: string; requested_by: string };
+type Overview = { items: (Task | StudioRow)[]; total: number; counts: Record<string, number> };
 const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '已中断', cancelled: '已取消', cancelling: '正在取消' };
 
 function formatTime(value: string | null) {
@@ -124,7 +128,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
   const hasAlerts = failedCount > 0 || interruptedCount > 0;
 
   return <>
-    <PageHeader title="资料合成管理">
+    <PageHeader title="任务管理">
       {updatedAt && <span className="synthesis-live-meta" aria-live="polite">
         <span className="synthesis-live-dot" aria-hidden="true" />
         上次更新 {updatedAt}
@@ -135,7 +139,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
     </PageHeader>
     <ErrorNotice message={error} />{commands.feedback}
     {!data && !error && <div className="mb-4"><MetricsRowSkeleton embedded /></div>}
-    {data && <div className="synthesis-metrics" role="group" aria-label="合成任务总览">
+    {data && <div className="synthesis-metrics" role="group" aria-label="生成任务总览">
       <button type="button" className="synthesis-metric" data-tone={runningCount > 0 ? 'active' : 'neutral'}
         aria-pressed={view === 'running'} onClick={() => focusFilter('running', 'all')}>
         <span className="synthesis-metric-label"><Activity size={14} aria-hidden="true" />正在执行</span>
@@ -162,7 +166,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
         <AlertTriangle size={16} aria-hidden="true" />
         <span>
           {[failedCount ? `${failedCount} 条任务执行失败` : '', interruptedCount ? `${interruptedCount} 条任务中断待核查` : ''].filter(Boolean).join('，')}。
-          {courseId === undefined ? '可进入对应课程重试、取消或核查课件。' : '失败任务可确认后重试，中断任务请先打开课件审校核查。'}
+          {courseId === undefined ? '可进入对应课程处理。' : '可查看任务详情、重试或忽略失败任务。'}
         </span>
       </div>
       <div className="synthesis-alert-actions">
@@ -184,15 +188,36 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
       </TabsList>
     </Tabs>
     <div className="mb-4 flex flex-wrap items-center gap-3">
-      <Input className="max-w-sm" aria-label="搜索资料名称" placeholder="搜索资料名称" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
+      <Input className="max-w-sm" aria-label="搜索任务或资料名称" placeholder="搜索任务或资料名称" value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} />
       {view === 'history' && <SelectField aria-label="任务状态" value={status} onValueChange={v => { setStatus(v); setPage(1); }}>
         <option value="all">全部状态</option>{Object.entries(statuses).filter(([key]) => key !== 'running' && key !== 'cancelling').map(([key, label]) => <option value={key} key={key}>{label}</option>)}
       </SelectField>}
       <span id="synthesis-columns-0" className="ml-auto" />
     </div>
     {!data ? !error && <TableSkeleton /> : <div>
-      {data.items.length > 0 && <ManagementTable toolsId="synthesis-columns-0" pageSize={{value:size,total:data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow><TableHead>任务 / 资料</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
+      {data.items.length > 0 && <ManagementTable toolsId="synthesis-columns-0" pageSize={{value:size,total:data.total,change:v => {setSize(v);setPage(1);}}}><TableHeader><TableRow><TableHead>任务 / 内容</TableHead><TableHead>类型 / 范围</TableHead><TableHead>状态 / 进度</TableHead><TableHead>执行时间</TableHead><TableHead className="text-right">操作</TableHead></TableRow></TableHeader>
         <TableBody>{data.items.map(item => {
+          if (item.source === "studio") {
+            const { job } = item;
+            const active = job.status === "running" || job.status === "queued";
+            return <TableRow key={job.id}>
+              <TableCell><span className="font-medium">{item.title}</span>
+                <div className="hint">{courseId === undefined ? item.course_name : "AI 创作"}</div></TableCell>
+              <TableCell>{KIND_LABELS[job.kind] ?? job.kind}<div className="hint">{item.requested_by}</div></TableCell>
+              <TableCell className="max-w-72 whitespace-normal"><span className="synthesis-pill" data-tone={active ? "active" : job.status === "failed" ? "danger" : job.status === "done" ? "ok" : "muted"}>
+                {job.cancel_requested && active ? "正在取消" : STATUS_LABELS[job.status] ?? job.status}</span>
+                {active && job.progress.total > 0 && <progress className="synthesis-progress" aria-label="AI 任务进度" max={job.progress.total} value={job.progress.done} />}
+                <div className="hint">{displayMessage(job)}</div>{job.error && <p className="text-destructive">{job.error}</p>}
+                {Array.isArray(job.result?.failures) && job.result.failures.length > 0 && <details><summary>查看失败明细</summary>
+                  <ul>{job.result.failures.map((failure, index) => <li key={index}>{String(failure)}</li>)}</ul></details>}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">提交：{formatTime(job.created_at)}
+                {job.finished_at && <div>结束：{formatTime(job.finished_at)}</div>}</TableCell>
+              <TableCell><div className="flex justify-end gap-1">{courseId !== undefined
+                ? <StudioJobActions job={job} courseId={courseId} refresh={() => setRefresh(n => n + 1)} />
+                : onOpenCourse && <Button size="sm" variant="ghost" onClick={() => onOpenCourse(job.course_instance_id)}><ArrowUpRight />进入课程</Button>}</div></TableCell>
+            </TableRow>;
+          }
           const percent = taskPercent(item);
           const failed = taskFailed(item);
           const duration = formatDuration(item.started_at, item.finished_at);
@@ -243,7 +268,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
     {courseId !== undefined && review && <NarrationReview courseId={courseId} materialId={review.material_id} title={review.title} onClose={() => { setReview(undefined); setRefresh(n => n + 1); }} />}
     {courseId !== undefined && listen && <NarrationPlayer courseId={courseId} materialId={listen.material_id} title={listen.title} onClose={() => setListen(undefined)} />}
     {selected && <RunDetailDialog key={selected.id} task={selected} courseId={courseId}
-      onRequest={courseId !== undefined ? commands.request : undefined}
+      onRequest={courseId !== undefined ? command => { setSelected(undefined); commands.request(command); } : undefined}
       onReview={courseId !== undefined ? (item => { setSelected(undefined); setReview(item); }) : undefined}
       onListen={courseId !== undefined ? (item => { setSelected(undefined); setListen(item); }) : undefined}
       onOpenCourse={courseId === undefined ? onOpenCourse : undefined}

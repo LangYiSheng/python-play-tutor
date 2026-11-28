@@ -58,10 +58,10 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
             course_instance_id: 1,
             kind: "knowledge_extract",
             scope_key: "ch:17",
-            status: "done",
-            progress: { done: 1, total: 1, message: "已完成：新增 1 个知识点" },
-            result: { created: 1, updated: 0 },
-            error: "",
+            status: "failed",
+            progress: { done: 0, total: 1, message: "抽取失败" },
+            result: null,
+            error: "模型服务超时",
             cancel_requested: false,
             started_at: null,
             finished_at: null,
@@ -139,6 +139,7 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
 
   // Task drawer on KnowledgeGraph only shows knowledge_extract jobs (never exercises or TTS)
   expect(await screen.findByText("AI 知识点抽取")).toBeVisible();
+  expect(screen.getByRole("button", { name: "忽略" })).toBeVisible();
   expect(screen.queryByText("AI 智能出题")).not.toBeInTheDocument();
   expect(screen.queryByText("语音合成")).not.toBeInTheDocument();
 

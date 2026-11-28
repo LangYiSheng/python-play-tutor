@@ -28,7 +28,7 @@ import {
   ExternalLink,
   LoaderCircle,
   ShieldCheck,
-  FileAudio,
+  ListTodo,
 } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,7 +96,7 @@ const globalNav = [
   { key: "global-packages", title: "课程包管理", icon: Package },
   { key: "teachers", title: "教师管理", icon: Presentation },
   { key: "accounts", title: "学生管理", icon: Users },
-  { key: "global-synthesis", title: "资料合成管理", icon: FileAudio },
+  { key: "global-synthesis", title: "任务管理", icon: ListTodo },
   { key: "global-judge", title: "评测管理", icon: ShieldCheck },
   { key: "system", title: "全站设置", icon: Settings },
 ] as const;
@@ -117,7 +117,7 @@ const contentNav = [
   { key: "activities", title: "学习任务", icon: ClipboardList },
 ] as const;
 const settingsNav = [
-  { key: "synthesis", title: "资料合成管理", icon: FileAudio },
+  { key: "synthesis", title: "任务管理", icon: ListTodo },
   { key: "judge", title: "评测管理", icon: ShieldCheck },
 ] as const;
 const courseNav = [guideNav, ...statisticsNav, ...classNav, ...contentNav, ...settingsNav,
@@ -690,7 +690,7 @@ function Workbench() {
             {group("statistics-nav", "学情统计", ChartNoAxesCombined, statisticsNav)}
             {link(classNav[1])}
             <p className="nav-label">课程内容</p>{contentNav.map(link)}
-            <div className="course-settings-nav">{group("settings-nav", "设置", Settings, settingsNav)}</div>
+            <div className="course-settings-nav">{settingsNav.map(link)}</div>
           </nav>}
         </div>
         <div className="sidebar-bottom">

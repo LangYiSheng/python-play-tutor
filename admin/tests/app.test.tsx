@@ -76,7 +76,7 @@ it("opens the administrator workspace before any class exists", async () => {
   await screen.findByRole("heading", { name: "课程选择" });
   expect(screen.queryByRole("link", { name: "教师管理" })).toBeNull();
   await userEvent.click(screen.getByRole("link", { name: "进入后台" }));
-  for (const name of ["全局概览", "课程管理", "班级管理", "课程包管理", "教师管理", "学生管理", "资料合成管理", "评测管理", "全站设置"]) {
+  for (const name of ["全局概览", "课程管理", "班级管理", "课程包管理", "教师管理", "学生管理", "任务管理", "评测管理", "全站设置"]) {
     expect(screen.getByRole("link", { name })).toBeVisible();
   }
   expect(screen.queryByRole("link", { name: "课程包" })).not.toBeInTheDocument();
@@ -92,10 +92,10 @@ it("distinguishes global and classroom navigation and exposes the sidebar's togg
   await screen.findByRole("heading", { name: "图谱课程 3" });
   expect(screen.queryByLabelText("待审批")).not.toBeInTheDocument();
   for (const group of [
-    ["开课引导", "班级管理", "学情统计", "定时开放"], ["章节与课件", "题库与组卷", "学习任务", "设置"],
+    ["开课引导", "班级管理", "学情统计", "定时开放"], ["章节与课件", "题库与组卷", "学习任务", "任务管理", "评测管理"],
   ]) {
     const icons = group.map(name => {
-      const role = ["学情统计", "设置"].includes(name) ? "button" : "link";
+      const role = name === "学情统计" ? "button" : "link";
       const icon = screen.getByRole(role, { name }).querySelector("svg");
       expect(icon).toHaveAttribute("aria-hidden", "true");
       return icon!.innerHTML;

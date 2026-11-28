@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from ..auth import require_teacher
@@ -270,9 +271,10 @@ def list_course_studio_jobs(
     db: Db,
     user: Teacher,
     limit: int = Query(30, ge=1, le=100),
+    workspace: bool = False,
 ) -> dict[str, Any]:
     instance_id = teacher_instance_id(db, user, course_id)
-    rows = jobs.list_jobs(db, instance_id, limit=limit)
+    rows = jobs.list_jobs(db, instance_id, limit=limit, workspace=workspace)
     return {"jobs": [jobs.serialize_job(row) for row in rows]}
 
 
@@ -288,3 +290,47 @@ def cancel_studio_job(course_id: int, job_id: str, db: Db, user: Teacher) -> dic
     instance_id = teacher_instance_id(db, user, course_id)
     job = jobs.request_cancel(db, instance_id, job_id)
     return jobs.serialize_job(job)
+
+
+@router.post("/jobs/{job_id}/dismiss")
+def dismiss_studio_job(course_id: int, job_id: str, db: Db, user: Teacher):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
+    job = jobs.get_job(db, instance_id, job_id)
+    if job.status not in {"failed", "interrupted"}:
+        raise HTTPException(409, "只能忽略失败或中断的任务")
+    job.progress = {**(job.progress or {}), "queue_dismissed": True}
+    db.commit()
+    return {"queue_dismissed": True}
+
+
+@router.post("/jobs/{job_id}/retry", status_code=202, response_model=JobSnapshot)
+def retry_studio_job(course_id: int, job_id: str, db: Db, user: Teacher):
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
+    job = jobs.get_job(db, instance_id, job_id)
+    if job.status not in {"failed", "interrupted"} or (job.progress or {}).get("queue_dismissed"):
+        raise HTTPException(409, "该任务已处理，请刷新列表")
+    payload = dict(job.payload or {})
+    chapter_id = payload.pop("chapter_id", None)
+    payload.pop("owner_filter_id", None)
+    payload.pop("owner_id", None)
+    if job.kind != "exam_fill_gaps" and not isinstance(chapter_id, int):
+        raise HTTPException(409, "缺少原章节信息，请重新配置任务")
+    # Enqueue commits this acknowledgment along with the new job after rechecking current inputs.
+    job.progress = {**(job.progress or {}), "queue_dismissed": True}
+    try:
+        if job.kind == "knowledge_extract":
+            body = KnowledgeExtractRequest.model_validate(payload)
+            new_job = knowledge_service.enqueue_extract_knowledge(db, user, course_id, chapter_id, material_ids=body.material_ids)
+        elif job.kind == "exercises_generate":
+            config = ExerciseGenerateRequest.model_validate(payload)
+            new_job = exercise_service.enqueue_generate_exercises(db, user, course_id, chapter_id, **config.model_dump())
+        elif job.kind == "coding_exercises_generate":
+            coding = CodingExerciseGenerateRequest.model_validate(payload)
+            new_job = exercise_service.enqueue_generate_coding_exercises(db, user, course_id, chapter_id, **coding.model_dump())
+        elif job.kind == "exam_fill_gaps":
+            new_job = exam_service.enqueue_fill_gaps(db, user, course_id, ExamFillGapsRequest.model_validate(payload))
+        else:
+            raise HTTPException(409, "此任务类型不支持重试")
+    except ValidationError as exc:
+        raise HTTPException(409, "原配置已失效，请重新配置任务") from exc
+    return jobs.serialize_job(new_job)

@@ -3,7 +3,10 @@ from datetime import timedelta
 
 import pytest
 
-from app.models import Classroom, now
+from sqlalchemy import select
+
+from app.course_studio.models import CourseStudioJob
+from app.models import Chapter, Classroom, now
 from app.narration import repository, service
 from app.narration.models import NarrationRun
 from app.narration.tts import endpoint
@@ -149,3 +152,50 @@ def test_legacy_failure_has_no_blind_retry(client, db, classroom, teacher):
 @pytest.mark.parametrize("root", ["https://api.deepseek.com", "https://api.deepseek.com/v1", "https://api.deepseek.com/v1/tools/tts/"])
 def test_speech_endpoint_accepts_root_or_complete_url(root):
     assert endpoint(root, "/v1/tools/tts") == "https://api.deepseek.com/v1/tools/tts"
+
+
+def test_combined_feed_filters_and_persists_dismissed_attempts(client, db, classroom, teacher, student):
+    course_id, headers = classroom["course_id"], teacher["headers"]
+    material = material_fixture(db, classroom, ["正文"])
+    old_run = NarrationRun(material_id=material.id, kind="generate", status="failed", started_at=now() - timedelta(hours=2))
+    job = CourseStudioJob(course_instance_id=course_id, kind="exercises_generate", status="failed",
+                          scope_key="test", progress={"done": 0}, error="生成失败")
+    db.add_all([old_run, job])
+    db.commit()
+    base = overview(classroom)
+    studio = f"/api/teacher/courses/{course_id}/course-studio/jobs"
+    page = client.get(base + "?view=history&status=failed&size=1", headers=headers).json()
+    assert page["total"] == page["counts"]["failed"] == 2
+    assert page["items"][0]["job"]["id"] == job.id
+    assert client.get(base + "?query=智能出题", headers=headers).json()["total"] == 1
+    assert client.get(base + "?size=1&page=2", headers=headers).json()["items"][0]["id"] == old_run.id
+    assert client.post(f"{studio}/{job.id}/dismiss", headers=student["headers"]).status_code == 403
+    other_id = client.post("/api/teacher/courses", json={"name": "另一课程"}, headers=headers).json()["id"]
+    assert client.get(f"/api/teacher/courses/{other_id}/synthesis", headers=headers).json()["total"] == 0
+    assert client.post(f"/api/teacher/courses/{other_id}/course-studio/jobs/{job.id}/dismiss", headers=headers).status_code == 404
+    for dismiss_path in (f"{studio}/{job.id}/dismiss", f"{base}/runs/{old_run.id}/dismiss"):
+        for _ in range(2):
+            assert client.post(dismiss_path, headers=headers).json()["queue_dismissed"]
+    assert client.get(base, headers=headers).json()["counts"]["failed"] == 0
+    assert client.get(studio + "?workspace=true", headers=headers).json()["jobs"] == []
+    assert client.get(f"{studio}/{job.id}", headers=headers).json()["status"] == "failed"
+    assert client.get(f"{base}/runs/{old_run.id}", headers=headers).json()["status"] == "failed"
+
+
+def test_studio_retry_validates_current_scope_and_is_single_use(client, db, classroom, teacher, monkeypatch):
+    from test_course_studio_services import _sample_material
+
+    monkeypatch.setenv("REBORN_AUTHORING_AI_API_KEY", "test-key")
+    course_id, headers = classroom["course_id"], teacher["headers"]
+    chapter = db.scalar(select(Chapter).where(Chapter.course_instance_id == course_id))
+    _sample_material(db, course_id, chapter.id, teacher["id"])
+    job = CourseStudioJob(course_instance_id=course_id, kind="exercises_generate", status="failed",
+                          scope_key=f"chapter:{chapter.id}:exercises", payload={"chapter_id": chapter.id, "counts": {"single": 1}})
+    db.add(job)
+    db.commit()
+    url = f"/api/teacher/courses/{course_id}/course-studio/jobs/{job.id}/retry"
+    retry = client.post(url, headers=headers)
+    assert retry.status_code == 202, retry.text
+    assert retry.json()["status"] == "queued" and retry.json()["id"] != job.id
+    assert client.post(url, headers=headers).status_code == 409
+    assert client.get(overview(classroom), headers=headers).json()["counts"]["running"] == 1

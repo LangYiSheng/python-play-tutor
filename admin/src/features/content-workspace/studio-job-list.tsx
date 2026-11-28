@@ -1,18 +1,20 @@
-import { CheckCircle2, Loader2, Square, X } from "lucide-react";
+import { CheckCircle2, Loader2, RotateCcw, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { errorMessage } from "@/lib/api";
-import type { CourseStudioJob } from "@/lib/course-studio-api";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { courseStudioApi, type CourseStudioJob } from "@/lib/course-studio-api";
 
-const KIND_LABELS: Record<string, string> = {
+export const KIND_LABELS: Record<string, string> = {
   knowledge_extract: "AI 知识点抽取",
   exercises_generate: "AI 智能出题",
   coding_exercises_generate: "AI 编程出题",
   exam_fill_gaps: "AI 试卷补题",
 };
 
-const STATUS_LABELS: Record<string, string> = {
+export const STATUS_LABELS: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
   done: "已完成",
@@ -81,7 +83,7 @@ function summaryForEndedJob(job: CourseStudioJob): string {
   return msg;
 }
 
-function displayMessage(job: CourseStudioJob): string {
+export function displayMessage(job: CourseStudioJob): string {
   if (job.status === "done") return summaryForDoneJob(job);
   if (job.status === "failed" || job.status === "interrupted" || job.status === "cancelled") {
     return summaryForEndedJob(job);
@@ -100,35 +102,57 @@ function displayMessage(job: CourseStudioJob): string {
   return msg;
 }
 
-export function StudioJobList({
-  jobs,
-  onCancel,
-  onClose,
-}: {
-  jobs: CourseStudioJob[];
-  onCancel: (jobId: string) => Promise<unknown>;
-  onClose?: () => void;
+export function outstandingJob(job: CourseStudioJob) {
+  return ["queued", "running", "failed", "interrupted"].includes(job.status);
+}
+
+export function StudioJobActions({ job, courseId, refresh }: {
+  job: CourseStudioJob; courseId: number; refresh: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const active = job.status === "running" || job.status === "queued";
+  if (!outstandingJob(job)) return null;
+
+  async function act(command: "cancelJob" | "retryJob" | "dismissJob") {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await courseStudioApi[command](courseId, job.id);
+      setConfirm(false);
+      refresh();
+    } catch (error) {
+      toast.add({ title: errorMessage(error), type: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return active
+    ? <Button size="xs" variant="outline" disabled={busy || job.cancel_requested} onClick={() => void act("cancelJob")}>
+        <Square />{job.cancel_requested ? "正在取消…" : "取消"}
+      </Button>
+    : <>
+        <Button size="xs" variant="outline" disabled={busy} onClick={() => setConfirm(true)}><RotateCcw />重试</Button>
+        <Button size="xs" variant="ghost" disabled={busy} onClick={() => void act("dismissJob")}>忽略</Button>
+        <Dialog open={confirm} onOpenChange={open => { if (!busy) setConfirm(open); }}>
+          <DialogContent><DialogHeader><DialogTitle>重试{KIND_LABELS[job.kind] ?? "生成任务"}？</DialogTitle>
+            <DialogDescription>将按原配置重新生成，可能产生模型费用。已生成的内容会保留。</DialogDescription>
+          </DialogHeader><DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setConfirm(false)}>返回</Button>
+            <Button disabled={busy} onClick={() => void act("retryJob")}>确认重试</Button>
+          </DialogFooter></DialogContent>
+        </Dialog>
+      </>;
+}
+
+export function StudioJobList({ jobs, courseId, refresh }: {
+  jobs: CourseStudioJob[]; courseId: number; refresh: () => void;
 }) {
   if (!jobs.length) return null;
-
   return (
     <section className="inspector-section" aria-label="AI 创作任务">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="!mb-0">AI 创作任务</h3>
-        {onClose && (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-label="收起任务面板"
-            onClick={onClose}
-          >
-            <X /> 收起
-          </Button>
-        )}
-      </div>
       <ul className="space-y-1.5 text-xs">
-        {jobs.slice(0, 10).map((job) => {
+        {jobs.map((job) => {
           const active = job.status === "queued" || job.status === "running";
           const done = job.status === "done";
           const pct =
@@ -161,20 +185,7 @@ export function StudioJobList({
                   >
                     {STATUS_LABELS[job.status] ?? job.status}
                   </Badge>
-                  {active && (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={job.cancel_requested}
-                      onClick={() => {
-                        void onCancel(job.id).catch((e) =>
-                          toast.add({ title: errorMessage(e), type: "error" }),
-                        );
-                      }}
-                    >
-                      <Square /> {job.cancel_requested ? "正在取消…" : "取消"}
-                    </Button>
-                  )}
+                  <StudioJobActions job={job} courseId={courseId} refresh={refresh} />
                 </div>
               </div>
               {message && <p className="break-words text-muted-foreground leading-relaxed">{message}</p>}

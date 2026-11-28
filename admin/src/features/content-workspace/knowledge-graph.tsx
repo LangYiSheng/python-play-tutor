@@ -31,7 +31,7 @@ import { KnowledgeListView } from "./knowledge-list-view";
 import { StudioGraphCanvas } from "./studio-graph-canvas";
 import { StudioGraphInspector } from "./studio-graph-inspector";
 import { buildKnowledgeTree, cleanGraphLabel, type GNode } from "./studio-graph-layout";
-import { StudioJobList } from "./studio-job-list";
+import { outstandingJob, StudioJobList } from "./studio-job-list";
 import type { TaskSnapshot } from "./task-presentation";
 import { useGraphData } from "./use-graph-data";
 import "./inspector-content.css";
@@ -174,7 +174,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
   }, [treeRoot, selectedId]);
 
   const graphJobs = useMemo(
-    () => studioJobs.jobs.filter((j) => j.kind === "knowledge_extract"),
+    () => studioJobs.jobs.filter((j) => j.kind === "knowledge_extract" && outstandingJob(j)),
     [studioJobs.jobs],
   );
   const activeGraphJobs = useMemo(
@@ -183,7 +183,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
   );
   const pendingEntries =
     pending?.data && pending.data.material_count + Number(pending.data.question_count > 0);
-  const totalTaskCount = activeGraphJobs > 0 ? activeGraphJobs : graphJobs.length;
+  const totalTaskCount = graphJobs.length;
 
   function changeViewMode(next: ViewMode) {
     setViewMode(next);
@@ -440,7 +440,7 @@ function GraphPage({ courseId, initialReview }: GraphProps) {
                       description="点击上方「AI 生成知识图谱」或右侧章节「AI 抽取」后，这里会展示抽取进度。语音合成与课件梳理任务请在「章节与课件」查看。"
                     />
                   ) : (
-                    <StudioJobList jobs={graphJobs} onCancel={studioJobs.cancel} />
+                    <StudioJobList jobs={graphJobs} courseId={courseId} refresh={studioJobs.refresh} />
                   )}
                 </>
               ) : (

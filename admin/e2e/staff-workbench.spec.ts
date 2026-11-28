@@ -19,8 +19,8 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
   await page.getByRole("link", { name: "进入后台" }).click();
   await page.getByRole("link", { name: "全站设置" }).click();
   await expect(page.getByRole("textbox", { name: "模型名称", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "资料合成管理" }).click();
-  await expect(page.getByRole("table")).toBeVisible();
+  await page.getByRole("link", { name: "任务管理" }).click();
+  await expect(page.getByRole("group", { name: "生成任务总览" })).toBeVisible();
   await page.getByRole("link", { name: "评测管理" }).click();
   await expect(page.getByRole("heading", { name: "评测管理", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "教师管理" }).click();
@@ -54,9 +54,9 @@ test("管理员创建教师，教师首次登录建班，管理员查看并管�
     await teacher.getByLabel("课程来源").click();
     await teacher.getByRole("option", { name: "创建空课程" }).click();
     await teacher.getByRole("dialog").getByRole("button", { name: "创建班级" }).click();
-    const nav = teacher.getByRole("navigation", { name: "班级导航" });
-    for (const group of ["班级教学", "课程内容", "课程编排", "任务与设置"]) {
-      await expect(nav.getByText(group, { exact: true })).toBeVisible();
+    const nav = teacher.getByRole("navigation", { name: "课程导航" });
+    for (const entry of ["任务管理", "评测管理"]) {
+      await expect(nav.getByRole("link", { name: entry })).toBeVisible();
     }
     await nav.getByRole("link", { name: "课程包" }).click();
     await expect(teacher.getByRole("table", { name: "可用课程包" })).toBeVisible();

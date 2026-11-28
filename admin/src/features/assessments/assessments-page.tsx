@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Sparkles } from "lucide-react";
-import { PageHeader } from "@/components/common";
+import { Empty, ErrorNotice, PageHeader } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
-import { StudioJobList } from "@/features/content-workspace/studio-job-list";
+import { outstandingJob, StudioJobList } from "@/features/content-workspace/studio-job-list";
 import { Questions } from "@/features/questions/questions-page";
 import { statuses } from "@/features/questions/types";
 import { useCanLeave } from "@/lib/drafts";
@@ -68,7 +68,6 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
       captureJobQuestionIds(job);
       reloadBankRef.current?.();
       setExamRevision((n) => n + 1);
-      setJobsVisible(false);
       const created = typeof job.result?.created === "number" ? job.result.created : null;
       const isCoding = job.kind === "coding_exercises_generate";
       const summary =
@@ -81,7 +80,7 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
               ? `AI 编程出题已完成，新增 ${created} 道已验草稿，已刷新题库`
               : `AI 出题已完成，新增 ${created} 道待审题目，已刷新题库`
             : isCoding
-              ? "AI 编程出题已完成（未新增题目，可在任务面板查看原因）"
+              ? "AI 编程出题已完成（未新增题目，可在任务管理查看原因）"
               : "AI 出题已完成（无新增不重复题目）";
       toast.add({ title: summary, type: "success" });
     }
@@ -124,7 +123,8 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
     }
     return ids;
   }, [assessmentJobs, recentQuestionIds]);
-  const activeCount = assessmentJobs.filter(
+  const outstanding = assessmentJobs.filter(outstandingJob);
+  const activeCount = outstanding.filter(
     (j) => j.status === "queued" || j.status === "running",
   ).length;
 
@@ -188,32 +188,23 @@ export function AssessmentsPage({ courseId }: { courseId: number }) {
         title="题库与组卷"
         description="维护课程题库、编写并导出试卷。AI 生成的题目经审核后可用于组卷，学生练习与测验在「学习任务」发布。"
       >
-        {(assessmentJobs.length > 0 || activeCount > 0) && (
-          <Button
-            variant="outline"
-            size="sm"
-            aria-expanded={jobsVisible}
-            onClick={() => setJobsVisible((v) => !v)}
-          >
+        {(outstanding.length > 0 || studioJobs.error) && (
+          <Button variant="outline" size="sm" aria-haspopup="dialog" onClick={() => setJobsVisible(true)}>
             {activeCount > 0 && <Loader2 className="animate-spin" />}
-            AI 出题任务（{activeCount > 0 ? `${activeCount} 进行中` : assessmentJobs.length}）
+            AI 出题任务（{activeCount === outstanding.length && activeCount ? `${activeCount} 进行中` : outstanding.length}）
           </Button>
         )}
       </PageHeader>
 
-      <Collapsible className="mb-0!" open={jobsVisible && assessmentJobs.length > 0}>
-        <CollapsibleContent>
-          <div className="pb-4">
-            <div className="surface p-3.5">
-              <StudioJobList
-                jobs={assessmentJobs}
-                onCancel={studioJobs.cancel}
-                onClose={() => setJobsVisible(false)}
-              />
-            </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+      <Dialog open={jobsVisible} onOpenChange={setJobsVisible}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" aria-describedby={undefined}>
+          <DialogHeader><DialogTitle>AI 创作任务</DialogTitle></DialogHeader>
+          <ErrorNotice message={studioJobs.error} />
+          {outstanding.length > 0
+            ? <StudioJobList jobs={outstanding} courseId={courseId} refresh={studioJobs.refresh} />
+            : <Empty title="当前没有进行中或待处理的出题任务" />}
+        </DialogContent>
+      </Dialog>
 
       <Tabs value={route.tab} onValueChange={switchTab} className="space-y-4">
         <TabsList variant="line">
