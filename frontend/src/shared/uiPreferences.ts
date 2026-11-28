@@ -16,7 +16,7 @@ export const useUiPreferences = defineStore("ui-preferences", () => {
       ? saved.textScale!
       : 1,
   );
-  const autoAdvancePractice = ref(saved?.autoAdvancePractice === true);
+  const autoAdvancePractice = ref(saved?.autoAdvancePractice !== false);
   const reduceMotion = ref(saved?.reduceMotion === true);
   const subtitleSize = ref(subtitleSizes.some(size => size === saved?.subtitleSize) ? saved.subtitleSize! : 1);
   const boundedVolume = (value: unknown) =>

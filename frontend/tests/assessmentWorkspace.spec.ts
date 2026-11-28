@@ -30,7 +30,7 @@ afterEach(async () => { await flushPromises(); vi.restoreAllMocks(); vi.unstubAl
 describe("assessment and practice presentation", () => {
   it.each([false,true])("allows the next practice question after a correct answer (automatic %s)", async automatic => {
     const {pinia} = setup("practice");
-    useUiPreferences().autoAdvancePractice = automatic;
+    if (!automatic) useUiPreferences().autoAdvancePractice = false;
     vi.spyOn(api,"post").mockResolvedValue(result("q1", "accepted"));
     vi.spyOn(api,"get").mockResolvedValue({completed:false, accepted_question_ids:["q1"]});
     const w = mount(PracticeWorkspace,{props:{activityId:"test"},global:{plugins:[pinia],stubs:{AssistantPanel:true}}});
@@ -91,9 +91,8 @@ describe("assessment and practice presentation", () => {
       expect(skill().get("span").text()).toBe("1 / 2");
       expect(skill().get("small").text()).toBe("判断题 1/2");
       expect(wrapper.get(".skill-count").text()).toContain("已达标 0 / 1");
-      expect(wrapper.get(".practice-passed").text()).toBe("已通过");
+      expect(wrapper.get(".practice-question-heading").text()).toContain(extra!.title);
       expect(wrapper.find(".practice-complete").exists()).toBe(false);
-      await wrapper.get('[aria-label="下一题"]').trigger("click");
       await submit();
       expect(wrapper.get(".practice-question-heading").text()).not.toContain("追加题");
       expect(skill().get("span").text()).toBe("2 / 2");

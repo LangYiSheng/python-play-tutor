@@ -85,6 +85,8 @@ it('checks only on explicit submission, can submit the initial state, and retrie
   await flushPromises();
   expect(check).toHaveBeenCalledOnce();
   expect(post.mock.calls[1]![1]).toEqual(request);
+  expect(wrapper.get('.practice-question-heading h3').text()).toContain('2. 判断');
+  await wrapper.get('button[aria-label="上一题"]').trigger('click');
   expect(wrapper.get('.submission-result').text()).toContain('回答正确');
   expect(wrapper.get('.submission-result').text()).toContain('四盏路灯亮了');
   wrapper.unmount();
