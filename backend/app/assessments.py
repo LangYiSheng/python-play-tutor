@@ -77,6 +77,8 @@ def assessment_payload(db, user, classroom_id, activity):
                 continue
             extra: dict[str, str] = {}
             fb = row.feedback or {}
+            if row.status == "wrong_answer" and str(fb.get("detail") or "").strip() in {"请结合课件重新思考", "请重新思考"}:
+                extra["detail"] = "回答错误"
             if "explanation" not in fb or (row.status != "accepted" and "correct_answer" not in fb):
                 q = db.get(Question, key)
                 if q is not None:

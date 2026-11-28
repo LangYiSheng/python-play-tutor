@@ -113,7 +113,8 @@ def stage_submission(db, user, classroom_id, activity, question, answer, code, k
         row.status, row.feedback = "prepared", {"detail": "已保存，等待判题"}
     else:
         row.status = "accepted" if grade_answer(answer, secret.answer, question.kind) else "wrong_answer"
-        feedback = {"detail": "回答正确" if row.status == "accepted" else "请结合课件重新思考", "status": row.status}
+        wrong_detail = "回答错误" if activity.kind == "assessment" else "请结合课件重新思考"
+        feedback = {"detail": "回答正确" if row.status == "accepted" else wrong_detail, "status": row.status}
         if row.status == "accepted" or activity.kind == "assessment":
             explanation = question_explanation(question)
             if explanation:

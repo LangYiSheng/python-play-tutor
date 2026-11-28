@@ -39,11 +39,17 @@ describe("public judge sample feedback", () => {
       created_at: "2026-11-27T00:00:00Z",
     };
     const wrapper = mount(PracticeQuestionCard, { props: { question, index: 0, answer: "1", code: "", result } });
+    expect(wrapper.get(".submission-result > p").text()).toBe("请结合课件重新思考");
     const section = wrapper.get(".submission-explanation");
     expect(section.text()).toContain("参考答案：2");
     expect(section.text()).toContain("答案解析");
     expect(section.text()).toContain("切片左闭右开");
     wrapper.unmount();
+
+    const lockedAssessment = mount(PracticeQuestionCard, { props: { question, index: 0, answer: "1", code: "", readOnly: true, result } });
+    expect(lockedAssessment.find(".submission-result > p").exists()).toBe(false);
+    expect(lockedAssessment.get(".submission-explanation").text()).toContain("参考答案：2");
+    lockedAssessment.unmount();
   });
   it("deduplicates prompt when it matches title or repeats the title as its first line", () => {
     const singleLine = mount(PracticeQuestionCard, {

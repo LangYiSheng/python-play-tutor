@@ -97,6 +97,17 @@ def test_locked_assessment_reveals_explanation_and_correct_answer_on_wrong_items
     assert wrong_items
     for item in wrong_items:
         assert item["feedback"].get("correct_answer")
+        assert "重新思考" not in item["feedback"].get("detail", "")
+        assert item["feedback"].get("detail") == "回答错误"
+
+    # Legacy/historical submitted rows that stored the old practice detail must not expose "重新思考" on read.
+    row = db.get(Submission, wrong_items[0]["id"])
+    row.feedback = {**(row.feedback or {}), "detail": "请结合课件重新思考"}
+    db.commit()
+    reloaded = client.get(url(classroom) + f"?classroom_id={classroom['id']}", headers=student["headers"])
+    assert reloaded.status_code == 200
+    reloaded_wrong = next(item for item in reloaded.json()["results"] if item["id"] == wrong_items[0]["id"])
+    assert reloaded_wrong["feedback"].get("detail") == "回答错误"
 
 
 def test_hand_in_requires_every_current_question_and_rolls_back_if_any_grade_is_unavailable(client, db, student, classroom):

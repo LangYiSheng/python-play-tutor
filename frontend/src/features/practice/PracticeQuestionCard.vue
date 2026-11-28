@@ -94,7 +94,9 @@ const canSubmit = computed(() => props.question.kind === 'interactive'
   : questionType(props.question.kind).complete(props, props.question));
 const resultDetail = computed(() => {
   const detail = props.result?.feedback.detail?.trim() ?? "";
-  return props.result && detail !== submissionStatusName[props.result.status] ? detail : "";
+  if (!props.result || detail === submissionStatusName[props.result.status]) return "";
+  if (props.readOnly && props.result.status === "wrong_answer" && (detail === "请结合课件重新思考" || detail === "请重新思考")) return "";
+  return detail;
 });
 const resultExplanation = computed(() => props.result?.feedback.explanation?.trim() ?? "");
 const resultCorrectAnswer = computed(() => props.result?.feedback.correct_answer?.trim() ?? "");
