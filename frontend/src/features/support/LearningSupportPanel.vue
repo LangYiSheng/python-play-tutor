@@ -64,6 +64,7 @@
       <nav v-if="timeOutline?.length" aria-label="视频片段跳转"><ol class="support-outline-list"><li v-for="item in timeOutline" :key="`${item.timeSeconds}-${item.title}`"><button :title="item.title" @click="$emit('selectTime', item.timeSeconds)"><span class="support-outline-page">{{ Math.floor(item.timeSeconds / 60) }}:{{ String(Math.floor(item.timeSeconds % 60)).padStart(2, '0') }}</span><span class="support-outline-title">{{ item.title }}</span></button></li></ol></nav>
     </section>
     <section v-if="questionOutline?.length" :id="`${panelId}-questions`" class="support-questions" role="tabpanel" :aria-labelledby="`${panelId}-questions-tab`" :hidden="tab !== 'questions'" :inert="tab !== 'questions'">
+      <div v-if="hasQuestionActions()" class="support-question-actions"><slot name="question-actions" /></div>
       <nav class="support-question-navigation" aria-label="题目快速跳转">
         <div class="question-status-legend"><span v-for="(label, state) in questionStateLabel" :key="state" :data-state="state">{{ label }}</span></div>
         <section v-for="group in questionGroups" :key="group.kind" class="question-jump-group"><h4>{{ questionKindLabel[group.kind] }} <span>{{ group.items.length }} 题</span></h4>

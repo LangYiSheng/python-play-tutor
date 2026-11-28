@@ -83,6 +83,34 @@ describe("public judge sample feedback", () => {
     expect(multiLine.get(".question-prompt").text()).toBe('s = "= python= "\nprint(s.strip(" =np"))');
     multiLine.unmount();
   });
+  it("renders objective hints below answer choices with single-hint and numbered pill labels", () => {
+    const single = mount(PracticeQuestionCard, {
+      props: {
+        question: { id: "q-hint-1", title: "类型判断", kind: "single_choice", prompt: "选出浮点数类型", options: ["int", "float"], samples: [], hints: ["小数在 Python 中用 float 表示"] },
+        index: 0,
+        answer: "",
+        code: "",
+      },
+    });
+    expect(single.find(".problem-description details").exists()).toBe(false);
+    const fieldset = single.get("fieldset").element;
+    const hints = single.get(".question-hints").element;
+    expect(Boolean(fieldset.compareDocumentPosition(hints) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect(single.get(".question-hint summary").text()).toBe("查看提示");
+    expect(single.get(".question-hint-body").text()).toBe("小数在 Python 中用 float 表示");
+    single.unmount();
+
+    const multiple = mount(PracticeQuestionCard, {
+      props: {
+        question: { id: "q-hint-2", title: "运算", kind: "boolean", prompt: "判断结果", options: [], samples: [], hints: ["先看运算符优先级", "注意整除向下取整"] },
+        index: 1,
+        answer: "",
+        code: "",
+      },
+    });
+    expect(multiple.findAll(".question-hint summary").map(item => item.text())).toEqual(["提示 1", "提示 2"]);
+    multiple.unmount();
+  });
   it("shows safe public diagnostics in formal summaries without case output or private fields", async () => {
     vi.spyOn(pythonRunner,'createPythonRunner').mockReturnValue({run:vi.fn(),ready:async()=>[],dispose:vi.fn()});
     const pinia = createPinia();

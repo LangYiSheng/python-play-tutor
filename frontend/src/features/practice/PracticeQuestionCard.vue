@@ -9,11 +9,21 @@
       <span class="question-kind">{{ kindName[question.kind] }}</span> <slot name="metadata" />
       <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
     </header>
-    <section v-if="displayPrompt || (question.hints?.length ?? 0) > 0" class="problem-description"><p v-if="displayPrompt" class="question-prompt">{{ displayPrompt }}</p><details v-for="(hint, i) in question.hints ?? []" :key="i"><summary>提示 {{ i + 1 }}</summary><p>{{ hint }}</p></details></section>
+    <section v-if="displayPrompt" class="problem-description"><p class="question-prompt">{{ displayPrompt }}</p></section>
     <component :is="view.input" v-if="question.kind === 'interactive'" :key="interactiveResetKey" :question="question" :answer="answer"
       :disabled="readOnly || busy || Boolean(pendingMode) || !showSubmit"
       @runtime-change="interactiveRuntime = $event" @update:answer="$emit('update:answer', $event)" />
     <component :is="view.input" v-else :question="question" :answer="answer" :disabled="readOnly || busy || Boolean(pendingMode)" :heading-id="headingId" @update:answer="$emit('update:answer', $event)" />
+    <div v-if="question.hints?.length" class="question-hints">
+      <details v-for="(hint, i) in question.hints" :key="i" class="question-hint">
+        <summary>
+          <GameIcon name="hint" class="hint-bulb" />
+          <span>{{ question.hints.length === 1 ? "查看提示" : `提示 ${i + 1}` }}</span>
+          <GameIcon name="chevronDown" class="hint-chevron" />
+        </summary>
+        <p class="question-hint-body">{{ hint }}</p>
+      </details>
+    </div>
     <div v-if="(!readOnly && showSubmit) || $slots['footer-prev'] || $slots['footer-next']" class="question-footer-actions">
       <slot name="footer-prev" />
       <div v-if="!readOnly && showSubmit" class="submission-actions">

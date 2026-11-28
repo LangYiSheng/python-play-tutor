@@ -28,7 +28,8 @@ describe("learning goals and character assistant", () => {
     await wrapper.findAll('[role="tab"]').find(tab => tab.text() === "快速跳转")!.trigger("click");
     expect(wrapper.find(".support-question-actions").exists()).toBe(false);
     showActions.value = true; await nextTick();
-    expect(wrapper.get(".support-question-actions").text()).toBe("提交试卷");
+    expect(wrapper.get(".support-goals .support-question-actions").text()).toBe("提交试卷");
+    expect(wrapper.get(".support-questions .support-question-actions").text()).toBe("提交试卷");
     showActions.value = false; await nextTick();
     expect(wrapper.find(".support-question-actions").exists()).toBe(false);
     wrapper.unmount();
@@ -43,7 +44,7 @@ describe("learning goals and character assistant", () => {
     expect(tabs.map(tab => tab.text())).toEqual(["题目列表", "快速跳转", "练习场教练"]);
     await tabs[1]!.trigger("click");
     const directory = wrapper.get('[aria-label="题目快速跳转"]');
-    expect(wrapper.get('.support-question-actions').text()).toContain("提交试卷");
+    expect(wrapper.get('.support-questions .support-question-actions').text()).toContain("提交试卷");
     expect(directory.text()).toContain("已作答");
     expect(directory.findAll("button").every(button => button.attributes("data-state") !== "accepted")).toBe(true);
     const questions = directory.findAll("button");

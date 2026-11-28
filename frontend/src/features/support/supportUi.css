@@ -46,6 +46,11 @@
   margin: 12px 0;
 }
 
+.game-workspace .support-questions > .support-question-actions {
+  margin: 0;
+  padding: 12px .7rem 2px;
+}
+
 .game-workspace .support-question-actions > button {
   width: 100%;
 }
