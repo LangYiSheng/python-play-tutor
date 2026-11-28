@@ -290,6 +290,9 @@
 }
 
 .quest-heading {
+  --chapter-badge-bg: #193d32e8;
+  --chapter-badge-border: #d3ad5f8c;
+  --chapter-badge-color: #f3d28b;
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -298,6 +301,10 @@
   color: #f3d28b;
   font-size: clamp(1.05rem, 1.4vw, 1.25rem) !important;
   line-height: 1.4 !important;
+}
+
+.quest-heading :deep(.chapter-number) {
+  margin-top: 2px;
 }
 
 .quest-heading > .game-icon {

@@ -10,7 +10,7 @@
       </div>
     </header>
     <aside v-if="tracked" class="quest-tracker" aria-label="当前目标">
-      <h2 class="quest-heading"><ChapterNumber :number="tracked.chapter.order_index"/><span>{{ tracked.chapter.title }}</span></h2>
+      <h2 class="quest-heading"><ChapterNumber :number="tracked.chapter.order_index"/> <span>{{ tracked.chapter.title }}</span></h2>
       <p class="quest-next" aria-live="polite">{{ tracked.title }}</p>
       <div class="quest-actions">
         <div v-if="goals.length > 1" class="quest-pager" role="group" aria-label="追踪目标">

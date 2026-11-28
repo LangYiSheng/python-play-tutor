@@ -537,7 +537,7 @@ test("seven game workspaces share the real shell, controls and readable 100–20
   await shell(page, "练习", practiceCards, baseline);
   await expect(panel(page).locator('input[type="radio"]:checked')).toHaveValue(draftAnswer);
   await reachable(panel(page).getByRole("radio").nth(1));
-  await reachable(panel(page).getByRole("button", { name: "提交答案", exact: true }));
+  await reachable(panel(page).getByRole("button", { name: "提交本题", exact: true }));
   await assistantTab(page, "练习场教练");
   await noHorizontalOverflow(page);
   await shot(page, info, "08-practice-200-percent");

@@ -58,15 +58,22 @@ describe("chapter library", () => {
     const wrapper = await library();
     expect(wrapper.findAll(".required-label")).toHaveLength(1);
     expect(wrapper.get(".library-chapter-heading").text()).toContain("2 / 35 页");
+    expect(wrapper.get(".library-chapter-heading progress").attributes("value")).toBe("2");
+    expect(wrapper.get(".library-chapter-heading progress").attributes("max")).toBe("35");
+    expect(wrapper.get('input[type="search"]').attributes("aria-label")).toBe("搜索资料");
+    expect(wrapper.find(".library-toolbar label").exists()).toBe(false);
     await wrapper.get('input[type="search"]').setValue("小游戏");
     expect(wrapper.find(".required-label").exists()).toBe(false);
     expect(wrapper.get(".library-chapter-heading").text()).toContain("2 / 35 页");
     session.taskChapters[0]!.tasks[1]!.required = true;
     await nextTick();
     expect(wrapper.get(".library-chapter-heading").text()).toContain("必读已完成 1 / 2 份");
+    expect(wrapper.get(".library-chapter-heading progress").attributes("value")).toBe("1");
+    expect(wrapper.get(".library-chapter-heading progress").attributes("max")).toBe("2");
     session.taskChapters[0]!.tasks.forEach(item => item.required = false);
     await nextTick();
     expect(wrapper.get(".library-chapter-heading").text()).toContain("无必读资料");
+    expect(wrapper.find(".library-chapter-heading progress").exists()).toBe(false);
   });
   it("groups only authorized materials by chapter and combines chapter and normalized search", async () => {
     const get = vi.spyOn(api, "get").mockResolvedValue(items);

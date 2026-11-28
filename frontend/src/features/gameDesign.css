@@ -47,8 +47,8 @@
 }
 
 .game-workspace > .workspace-compact {
-  max-width: 80rem;
-  max-height: 45rem;
+  max-width: 92rem;
+  max-height: 54rem;
 }
 
 .game-workspace .workspace-topbar {
@@ -545,25 +545,36 @@ html[data-reduced-motion="true"] .game-workspace .game-switch-track, html[data-r
 }
 
 .game-workspace .support-progress-bar {
+  --progress-bar-radius: 999px;
   width: 100%;
   height: var(--support-bar-height, 8px);
-  border: 0;
-  border-radius: 8px;
-  overflow: hidden;
+  border: 0 solid;
+  border-radius: var(--progress-bar-radius);
+  overflow: clip;
   appearance: none;
-  background: var(--game-line);
+  background: var(--support-bar-track, var(--game-line));
 }
 
 .game-workspace .support-progress-bar::-webkit-progress-bar {
-  background: var(--game-line);
+  background: transparent;
 }
 
 .game-workspace .support-progress-bar::-webkit-progress-value {
-  background: var(--game-forest);
-  border-radius: 8px;
+  background: var(--support-bar-fill, var(--game-forest));
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.2s;
 }
 
 .game-workspace .support-progress-bar::-moz-progress-bar {
-  background: var(--game-forest);
-  border-radius: 8px;
+  background: var(--support-bar-fill, var(--game-forest));
+  border-radius: var(--progress-bar-radius);
+  transition: inline-size 0.2s;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .game-workspace .support-progress-bar::-webkit-progress-value { transition: none; }
+  .game-workspace .support-progress-bar::-moz-progress-bar { transition: none; }
+}
+
+html[data-reduced-motion="true"] .game-workspace .support-progress-bar::-webkit-progress-value { transition: none; }
+html[data-reduced-motion="true"] .game-workspace .support-progress-bar::-moz-progress-bar { transition: none; }

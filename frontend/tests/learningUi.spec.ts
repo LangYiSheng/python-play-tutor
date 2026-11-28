@@ -58,7 +58,7 @@ resources: []});
     expect(progress.attributes("value")).toBe("0");
     expect(progress.attributes("max")).toBe("1");
     await wrapper.get('input[value="true"]').setValue();
-    await wrapper.findAll("button").find(button => button.text() === "提交答案")!.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === "提交本题")!.trigger("click");
     await flushPromises();
     expect(get).toHaveBeenCalledWith("/activities/practice/progress?classroom_id=2");
     expect(progress.attributes("value")).toBe("1");
@@ -205,7 +205,7 @@ resources: []});
     await flushPromises();
     const submit = wrapper
       .findAll("button")
-      .find((b) => b.text() === "提交答案")!;
+      .find((b) => b.text() === "提交本题")!;
     expect(submit.attributes("disabled")).toBeDefined();
     await submit.trigger("click");
     expect(post).not.toHaveBeenCalled();

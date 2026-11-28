@@ -72,10 +72,10 @@ test("practice corrections and a locked whole assessment share the question dire
   await expect(panel.locator(".question-list,.question-position,.learning-meta,.answer-hint,.draft-note")).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "试卷模式", exact: true })).toHaveCount(0);
   await panel.getByLabel("错误", { exact: true }).check();
-  await panel.getByRole("button", { name: "提交答案", exact: true }).click();
+  await panel.getByRole("button", { name: "提交本题", exact: true }).click();
   await expect(panel.locator(".submission-result strong")).toHaveText("回答错误");
   await panel.getByLabel("正确", { exact: true }).check();
-  await panel.getByRole("button", { name: "提交答案", exact: true }).click();
+  await panel.getByRole("button", { name: "提交本题", exact: true }).click();
   await expect(panel.locator(".submission-result strong")).toHaveText("回答正确");
   expect(await panel.locator(".submission-result").evaluate(element => {
     const box = element.getBoundingClientRect(), title = element.querySelector("strong")!.getBoundingClientRect();
@@ -83,9 +83,9 @@ test("practice corrections and a locked whole assessment share the question dire
   })).toBeLessThanOrEqual(2);
   await expect(panel.locator(".submission-result small")).toHaveCount(0);
   await expect(directory.getByRole("button").first()).toHaveAttribute("data-state", "accepted");
-  await panel.getByRole("button", { name: "下一题", exact: true }).click();
+  await panel.getByRole("button", { name: "下一题", exact: true }).first().click();
   await panel.getByLabel("填写答案", { exact: true }).fill("done");
-  await panel.getByRole("button", { name: "提交答案", exact: true }).click();
+  await panel.getByRole("button", { name: "提交本题", exact: true }).click();
   await expect.poll(() => nodeState("practice")).toBe("complete");
   await page.screenshot({ path: info.outputPath("practice-corrected.png"), animations: "disabled" });
   await panel.getByRole("button", { name: "关闭当前工作区", exact: true }).click();

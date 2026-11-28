@@ -28,6 +28,28 @@
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
         <PracticeQuestionCard ref="questionCards" v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :interactive-reset-key="interactiveResetKey" :can-reset-interactive="canResetInteractive" @reset-interactive="resetInteractive(question.id)" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample, checkInteractive) => submitQuestion(question.id, mode, runSample, checkInteractive)">
+          <template v-if="showObjectiveFooter" #footer-prev>
+            <button class="town-secondary question-nav-button" type="button" :disabled="!prevQuestion || requestBusy" @click="prevQuestion && selectQuestion(prevQuestion.id)">
+              <GameIcon name="arrowLeft" /><span>上一题</span>
+            </button>
+          </template>
+          <template v-if="showObjectiveFooter" #footer-next>
+            <button v-if="isAssessment && isLastQuestion" class="primary question-nav-button question-nav-submit" type="button" :disabled="!allAnswered || requestBusy || publicRunBusy || loading" @click="submitPaper">
+              <GameIcon name="check" /><span>{{ requestBusy ? '正在交卷…' : paperSubmissionPending ? '重试交卷' : '提交试卷' }}</span>
+            </button>
+            <button v-else class="town-secondary question-nav-button" type="button" :disabled="!nextQuestion || requestBusy" @click="nextQuestion && selectQuestion(nextQuestion.id)">
+              <span>下一题</span><GameIcon name="arrowRight" />
+            </button>
+          </template>
+          <template v-if="showObjectiveFooter && isAssessment && isLastQuestion && !allAnswered" #footer-note>
+            <p class="question-unanswered-hint" role="status">
+              <GameIcon name="alertCircle" />
+              <span>还有 {{ unansweredQuestions.length }} 题未作答，完成全部题目后可提交试卷。</span>
+              <button v-if="unansweredQuestions[0]" class="question-jump-unanswered" type="button" :disabled="requestBusy" @click="selectQuestion(unansweredQuestions[0]!.question.id)">
+                前往第 {{ unansweredQuestions[0]!.index + 1 }} 题
+              </button>
+            </p>
+          </template>
           <template v-if="!isAssessment && nextQuestion" #next>
             <button class="town-secondary" type="button" :disabled="requestBusy" @click="selectQuestion(nextQuestion.id)">下一题 <GameIcon name="arrowRight"/></button>
           </template>
@@ -136,7 +158,13 @@ const actionTarget = computed(() => viewMode.value === 'single' && props.toolbar
 const localRunning = ref<Record<string, boolean>>({});
 const publicRunBusy = computed(() => Object.values(localRunning.value).some(Boolean));
 const current = computed(() => questions.value[questionIndex.value]);
+const prevQuestion = computed(() => questions.value[questionIndex.value - 1]);
 const nextQuestion = computed(() => questions.value[questionIndex.value + 1]);
+const isLastQuestion = computed(() => questions.value.length > 0 && questionIndex.value === questions.value.length - 1);
+const unansweredQuestions = computed(() => questions.value
+  .map((question, index) => ({ question, index }))
+  .filter(({ question }) => !hasAnswer(question)));
+const showObjectiveFooter = computed(() => viewMode.value === 'single' && (!isAssessment.value || !paper.value?.locked));
 const practiceRefreshFailed = ref(false);
 const personalPractice = computed(() => activityProgress.value?.practice);
 const passedCount = computed(() => activityProgress.value?.accepted_question_ids?.length ?? 0);

@@ -23,7 +23,7 @@
 | LEARN-01 | 教师在学习任务页按章节设置资料阅读要求、练习和测验。客观题、编程题分别发布练习，测验可以有多份。选做练习不阻塞测验。 | [内容规范](content-authoring.md)、[产品说明](product.md) |
 | LEARN-02 | 上传 PDF 关联章节时默认必读整份。教师可修改要求，其他资料勾选必读后默认读完整份。高级设置可按页范围、任意不同页数和有效时长组合。视频按有效观看时长和片段计算。 | [内容规范](content-authoring.md)、[产品说明](product.md) |
 | LEARN-03 | 阅读位置独立于参与页数和累计时长。后台标签页暂停计时，重复阅读同一页只计一页。 | [内容规范](content-authoring.md)、[产品说明](product.md) |
-| LEARN-04 | 练习只用单题模式，提供上一题、下一题和侧栏目录跳转；每题“提交答案”，错误可改正后重新提交，跳题保留各题草稿和反馈。 | [游戏设计](design/game-interface.md)、[内容配置](content-authoring.md) |
+| LEARN-04 | 练习只用单题模式，提供上一题、下一题和侧栏目录跳转；每题“提交本题”，错误可改正后重新提交，跳题保留各题草稿和反馈。 | [游戏设计](design/game-interface.md)、[内容配置](content-authoring.md) |
 | LEARN-05 | 单元测验支持单题与整卷两种排版，共用答案；全部作答后从题目目录上方统一交卷。交卷后服务器锁卷，展示逐题对错，不能修改或绕过整卷接口逐题提交。 | [HTTP 契约](api-contract.md)、[游戏设计](design/game-interface.md) |
 | LEARN-06 | 测验满分 100，按 `correct_count * 100 // total` 向下取整；未判完为 `null`，不能显示成 0 分。所有题目真实判定结束即完成测验，全对另行表示；错误答案不阻断一次性测验剧情，基础设施故障不算答错。 | [产品](product.md)、[HTTP 契约](api-contract.md) |
 | LEARN-07 | 四位固定角色在各自室内接待学生，根据本章任务的可用、锁定、进行中和完成状态选择对白。 | [内容规范](content-authoring.md)、[产品说明](product.md) |

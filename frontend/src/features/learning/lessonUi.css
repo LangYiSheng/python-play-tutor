@@ -227,7 +227,7 @@
 /* Activity goals use the same compact rows as the page outline. */
 .game-workspace .activity-reading-summary { display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--game-line); }
 .game-workspace .activity-reading-summary-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.game-workspace .activity-reading-summary strong { font: inherit; font-weight: 650; }
+.game-workspace .activity-reading-summary strong { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font: inherit; font-weight: 650; }
 .game-workspace .activity-reading-goals progress { width: 100%; height: 6px; display: block; }
 .game-workspace .activity-reading-resource { padding: 10px 0; border-bottom: 1px solid var(--game-line); }
 .game-workspace .activity-resource-heading { display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; text-align: left; background: transparent; border: 0; border-radius: 3px; padding: 7px 4px; }

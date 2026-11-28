@@ -14,11 +14,16 @@
       :disabled="readOnly || busy || Boolean(pendingMode) || !showSubmit"
       @runtime-change="interactiveRuntime = $event" @update:answer="$emit('update:answer', $event)" />
     <component :is="view.input" v-else :question="question" :answer="answer" :disabled="readOnly || busy || Boolean(pendingMode)" :heading-id="headingId" @update:answer="$emit('update:answer', $event)" />
-    <div v-if="!readOnly && showSubmit" class="submission-actions">
-      <button class="primary" :disabled="busy || !canSubmit" @click="$emit('submit', 'submit', undefined, interactiveRuntime?.check)">{{ busy ? "等待判定…" : pendingMode === 'submit' ? '重试提交' : "提交答案" }}</button>
-      <button v-if="question.kind === 'interactive'" type="button" :disabled="!canResetInteractive"
-        title="恢复本题的初始状态，保留提交记录" @click="$emit('resetInteractive')">重置本题</button>
+    <div v-if="(!readOnly && showSubmit) || $slots['footer-prev'] || $slots['footer-next']" class="question-footer-actions">
+      <slot name="footer-prev" />
+      <div v-if="!readOnly && showSubmit" class="submission-actions">
+        <button class="primary" :disabled="busy || !canSubmit" @click="$emit('submit', 'submit', undefined, interactiveRuntime?.check)">{{ busy ? "等待判定…" : pendingMode === 'submit' ? '重试提交' : "提交本题" }}</button>
+        <button v-if="question.kind === 'interactive'" type="button" :disabled="!canResetInteractive"
+          title="恢复本题的初始状态，保留提交记录" @click="$emit('resetInteractive')">重置本题</button>
+      </div>
+      <slot name="footer-next" />
     </div>
+    <slot name="footer-note" />
     <div v-if="result" class="submission-result" :data-status="result.status">
       <header class="submission-result-heading">
         <GameIcon :name="result.status === 'accepted' ? 'check' : pendingSubmissionStates.includes(result.status) ? 'refresh' : 'close'" class="result-symbol" />

@@ -100,10 +100,10 @@ async function centeredCompactWorkspace(page: Page) {
   const book = await workspace(page).locator(".workspace-shell").boundingBox();
   expect(book).not.toBeNull();
   const viewport = page.viewportSize()!;
-  expect(book!.width).toBe(1280);
-  expect(book!.height).toBe(720);
-  expect(book!.x).toBe((viewport.width - 1280) / 2);
-  expect(book!.y).toBe((viewport.height - 12 - 720) / 2);
+  expect(book!.width).toBe(1472);
+  expect(book!.height).toBe(864);
+  expect(book!.x).toBe((viewport.width - 1472) / 2);
+  expect(book!.y).toBe((viewport.height - 12 - 864) / 2);
 }
 async function noHorizontalOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

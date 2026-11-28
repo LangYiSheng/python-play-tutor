@@ -2,7 +2,7 @@
   <section class="story-journal">
     <div v-if="session.taskChapters.length" class="journal-book">
       <aside class="journal-index">
-        <h3 class="journal-cover game-card-title"><GameIcon name="journal"/>章节任务</h3>
+        <GamePanelHeader icon="journal" title="章节任务" />
         <nav class="quest-directory" aria-label="章节任务">
           <section v-for="chapter in session.taskChapters" :key="chapter.id" class="quest-card" :class="{'is-current': chapter.id === selected?.id}">
             <button class="chapter-title" :aria-pressed="chapter.id === selected?.id" @click="chapterId = chapter.id">
@@ -14,34 +14,38 @@
           </section>
         </nav>
       </aside>
-      <main v-if="selected" class="quest-detail journal-entry">
-        <header><small>{{ selected.completed ? '本章已完成' : '本章学习中' }}</small><h3><ChapterNumber :number="selected.order_index"/> {{ selected.title }}</h3></header>
-        <section v-if="requiredTasks.length" class="journal-objectives">
-          <div><h4 class="game-card-title"><GameIcon name="chart"/>必做任务进度</h4><span>{{ completedCount }} / {{ requiredTasks.length }} 项</span></div>
-          <progress class="support-progress-bar" aria-label="必做任务进度" :value="completedCount" :max="requiredTasks.length"/>
-        </section>
-        <section v-for="kind in taskKinds.filter(k => selected!.tasks.some(t => t.kind === k))" :key="kind" class="journal-checklist">
-          <h4 class="game-card-title"><GameIcon :name="kind === 'reading' ? 'book' : kind === 'programming' ? 'code' : 'journal'"/>{{ taskRoles[kind].label }}</h4>
-          <ol>
-            <li v-for="(task, index) in selected.tasks.filter(t => t.kind === kind)" :key="task.id" :class="{complete:task.completed, ready:!task.locked && !task.completed}">
-              <span class="node-icon" aria-hidden="true"><GameIcon v-if="task.completed" name="check"/><template v-else>{{ index + 1 }}</template></span>
-              <div class="task-summary">
-                <strong>{{ task.title }}</strong>
-                <small>{{ task.required ? '必做' : '选做' }} · {{ taskProgress(task) }}</small>
-                <progress v-if="task.total > 0" class="support-progress-bar" :aria-label="task.title + '进度'" :value="task.completed ? task.total : task.current" :max="task.total"/>
-              </div>
-              <button class="town-secondary" @click="session.guideTo(taskRoles[kind].key)">前往{{ taskRoleName(kind, session.world?.npcs) }}<GameIcon name="compass"/></button>
-            </li>
-          </ol>
-        </section>
-        <p v-if="!selected.tasks.length" class="town-empty">本章暂无任务点。</p>
-      </main>
+      <section v-if="selected" class="journal-detail-panel">
+        <GamePanelHeader icon="target" title="章节详情" :detail="selected.completed ? '本章已完成' : '本章学习中'" />
+        <main class="quest-detail journal-entry">
+          <header><h3><ChapterNumber :number="selected.order_index"/> <span>{{ selected.title }}</span></h3></header>
+          <section v-if="requiredTasks.length" class="journal-objectives">
+            <div><h4 class="game-card-title"><GameIcon name="chart"/>必做任务进度</h4><span>{{ completedCount }} / {{ requiredTasks.length }} 项</span></div>
+            <progress class="support-progress-bar" aria-label="必做任务进度" :value="completedCount" :max="requiredTasks.length"/>
+          </section>
+          <section v-for="kind in taskKinds.filter(k => selected!.tasks.some(t => t.kind === k))" :key="kind" class="journal-checklist">
+            <h4 class="game-card-title"><GameIcon :name="kind === 'reading' ? 'book' : kind === 'programming' ? 'code' : 'journal'"/>{{ taskRoles[kind].label }}</h4>
+            <ol>
+              <li v-for="(task, index) in selected.tasks.filter(t => t.kind === kind)" :key="task.id" :class="{complete:task.completed, ready:!task.locked && !task.completed}">
+                <span class="node-icon" aria-hidden="true"><GameIcon v-if="task.completed" name="check"/><template v-else>{{ index + 1 }}</template></span>
+                <div class="task-summary">
+                  <strong>{{ task.title }}</strong>
+                  <small>{{ task.required ? '必做' : '选做' }} · {{ taskProgress(task) }}</small>
+                  <progress v-if="task.total > 0" class="support-progress-bar" :aria-label="task.title + '进度'" :value="task.completed ? task.total : task.current" :max="task.total"/>
+                </div>
+                <button class="town-secondary" @click="session.guideTo(taskRoles[kind].key)">前往{{ taskRoleName(kind, session.world?.npcs) }}<GameIcon name="compass"/></button>
+              </li>
+            </ol>
+          </section>
+          <p v-if="!selected.tasks.length" class="town-empty">本章暂无任务点。</p>
+        </main>
+      </section>
     </div>
     <p v-else class="town-empty">当前班级还没有开放章节。</p>
   </section>
 </template>
 <script setup lang="ts">
 import ChapterNumber from "../shared/ChapterNumber.vue";
+import GamePanelHeader from "../shared/GamePanelHeader.vue";
 import { computed, ref } from "vue";
 import GameIcon from "../shared/GameIcon.vue";
 import {useSession} from "../shared/session";
@@ -56,22 +60,20 @@ function track(goal: ReturnType<typeof chapterGoals>[number]) { chapterId.value 
 </script>
 <style scoped>
 .story-journal { display:flex; flex:1; min-width:0; min-height:0; color:var(--game-ink); }
-.journal-book { display:grid; grid-template-columns:minmax(260px,28%) minmax(0,1fr); gap:var(--game-gap); flex:1; min-width:0; min-height:0; }
-.journal-index,.quest-detail { min-width:0; min-height:0; border:1px solid var(--game-line); border-radius:var(--game-radius); background:var(--game-paper); }
-.journal-index { display:flex; flex-direction:column; overflow:hidden; }
-.journal-cover { margin:0; padding:10px 14px; border-bottom:1px solid var(--game-line); background:#e9e5da; }
-.quest-directory,.quest-detail { overflow:auto; overscroll-behavior:contain; }
+.journal-book { display:grid; grid-template-columns:minmax(290px,28%) minmax(0,1fr); gap:var(--game-gap); flex:1; min-width:0; min-height:0; }
+.journal-index,.journal-detail-panel { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; border:1px solid var(--game-line); border-radius:var(--game-radius); background:var(--game-paper); }
+.quest-directory,.quest-detail { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
 .quest-directory { padding:10px; }
 .quest-card { padding:4px; margin-bottom:8px; border:1px solid var(--game-line); border-radius:var(--game-control-radius); background:var(--game-paper-raised); }
-.quest-card.is-current { background:#e8eddf; border-color:#b8c7ab; }
+.quest-card.is-current { --chapter-badge-bg:var(--game-forest); --chapter-badge-border:var(--game-forest); --chapter-badge-color:var(--game-paper-raised); background:#e8eddf; border-color:#b8c7ab; }
 .quest-card button { display:flex; align-items:center; gap:8px; width:100%; padding:8px; margin:0; border:0; box-shadow:none; background:transparent; text-align:left; overflow-wrap:anywhere; }
 .chapter-title { color:var(--game-forest); }
-.chapter-title > strong { flex:1; }
+.chapter-title > strong { flex:1; min-width:0; }
 .quest-card .journal-goal { color:var(--game-muted); font-size:var(--game-caption-size); line-height:1.5; }
 .quest-card button:hover,.quest-card .journal-goal[aria-pressed=true] { background:var(--game-paper); color:var(--game-forest); }
 .quest-card .game-icon,.town-secondary .game-icon { flex:none; width:16px; height:16px; }
 .quest-detail { padding:var(--game-panel-padding); }
-.quest-detail h3 { margin:6px 0 14px; color:var(--game-forest); font-size:1.25rem; overflow-wrap:anywhere; }
+.quest-detail h3 { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0 0 14px; color:var(--game-forest); font-size:1.25rem; overflow-wrap:anywhere; }
 .quest-detail small,.journal-objectives span { color:var(--game-muted); font-size:var(--game-caption-size); }
 .journal-objectives { margin-bottom:16px; padding:12px 0; border-block:1px solid var(--game-line); }
 .journal-objectives > div { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }

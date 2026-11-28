@@ -7,7 +7,7 @@ import {
   X, Leaf, Music, Video, SquarePen, ChevronRight, Grid2X2, Folder,
   Activity, ChartColumnIncreasing, Upload, LogOut, Plus, Copy, RefreshCw, Save,
   ArrowLeft, ArrowRight, ArrowUp, ArrowDown, ExternalLink,
-  Check, Circle, CircleX, Clock, CircleAlert, PanelRightClose, PanelRightOpen,
+  Check, Circle, CircleX, Clock, CircleAlert, PanelRightClose, PanelRightOpen, Search,
 } from "@lucide/vue";
 const icons = {
   spinner: LoaderCircle, description: FileText, code: CodeXml, cases: ListChecks, terminal: Terminal, target: Target, list: List,
@@ -20,6 +20,7 @@ const icons = {
   arrowLeft: ArrowLeft, arrowRight: ArrowRight, arrowUp: ArrowUp, arrowDown: ArrowDown,
   external: ExternalLink, check: Check, circleX: CircleX, clock: Clock,
   circle: Circle, alertCircle: CircleAlert, panelClose: PanelRightClose, panelOpen: PanelRightOpen,
+  search: Search,
 };
 defineProps<{ name: keyof typeof icons }>();
 </script>

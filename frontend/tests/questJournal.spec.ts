@@ -34,8 +34,8 @@ it("shows the real chapter number and replaces navigation once all required work
   const {session, global} = setup();
   session.taskChapters = [{id:9, title:"算法", order_index:7, completed:false, tasks:[task("assessment", "exam")]}];
   const journal = mount(QuestJournal,{global}), hud = mount(GameHUD,{global});
-  expect(journal.get("main h3").text()).toContain("7 算法");
-  expect(journal.get(".chapter-title [aria-label='第 7 章']").exists()).toBe(true);
+  expect(journal.get("main h3").text()).toContain("第 7 章 算法");
+  expect(journal.get(".chapter-title .chapter-number").text()).toBe("第 7 章");
   const chapter = session.taskChapters[0]!, exam = chapter.tasks[0]!;
   Object.assign(exam, {handed_in:true, grading_status:"grading"});
   await hud.vm.$nextTick();
@@ -61,6 +61,10 @@ it("switches the HUD between available targets and guides to its fixed NPC",asyn
 });
 it("offers unlocked practice across chapters and leaves locked items visible",async()=>{
   const {session,global}=setup(),w=mount(ChapterActivityList,{global,props:{category:"objective"}});
+  const directoryButton = w.findAll(".town-directory-item")[1]!;
+  expect(directoryButton.get(".chapter-number").text()).toBe("第 1 章");
+  expect(directoryButton.get(".chapter-nav-title").text()).toBe("第一章");
+  expect(w.findAll(".chapter-group-progress progress")).not.toHaveLength(0);
   expect(w.findAll(".task-row")).toHaveLength(4);
   expect(w.get(".task-row:disabled").text()).toContain("请先阅读必读资料");
   await w.get(".task-row").trigger("click");

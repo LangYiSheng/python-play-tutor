@@ -244,6 +244,7 @@ describe("assessment and practice presentation", () => {
     expect(wrapper.get(".assessment-actions .assessment-answer-count").text()).toBe("答对 1 / 2 题");
     expect(wrapper.findAll("input").every(input => input.attributes("disabled") !== undefined)).toBe(true);
     expect(wrapper.findAll(".submission-result")).toHaveLength(2);
+    expect(wrapper.find(".question-footer-actions").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("submission-q1");
     expect(wrapper.emitted("complete")).toBeUndefined();
     expect(wrapper.find('.practice-complete').exists()).toBe(false);
@@ -257,8 +258,46 @@ describe("assessment and practice presentation", () => {
     await flushPromises();
     expect(wrapper.get('input[value="true"]').attributes("disabled")).toBeDefined();
     expect(wrapper.findAll("button").some(button => button.text() === "提交试卷")).toBe(false);
+    expect(wrapper.find(".question-footer-actions").exists()).toBe(false);
     expect(post).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled();
     wrapper.unmount(); await flushPromises();
+  });
+  it("shows bottom navigation on objective questions, prompts unanswered items on the last assessment question, and hides footer controls after submission", async () => {
+    const { pinia } = setup();
+    vi.spyOn(api, "get").mockResolvedValue(paper());
+    vi.spyOn(api, "put").mockImplementation(async (_path, body) => paper({ id: "attempt", revision: 1, answers: (body as { answers: AssessmentAnswer[] }).answers }) as never);
+    const post = vi.spyOn(api, "post").mockImplementation(async (_path, body) => paper({ id: "attempt", status: "graded", revision: 2, locked: true, answers: (body as { answers: AssessmentAnswer[] }).answers, results: [result("q1", "accepted"), result("q2", "accepted")], correct_count: 2, score: 100, completed: true }) as never);
+    const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
+    try {
+      await flushPromises();
+      const footerButtons = () => wrapper.findAll(".question-footer-actions button");
+      expect(footerButtons().map(b => b.text())).toEqual(["上一题", "下一题"]);
+      expect(footerButtons()[0]!.attributes("disabled")).toBeDefined();
+      expect(footerButtons()[1]!.attributes("disabled")).toBeUndefined();
+      // Navigate to the last question without answering q1
+      await footerButtons()[1]!.trigger("click");
+      expect(wrapper.get(".practice-question-heading h3").text()).toContain("q2");
+      expect(footerButtons().map(b => b.text())).toEqual(["上一题", "提交试卷"]);
+      expect(footerButtons()[1]!.attributes("disabled")).toBeDefined();
+      expect(wrapper.get(".question-unanswered-hint").text()).toContain("还有 2 题未作答");
+      // Answer q2: still missing q1
+      await wrapper.get('input[name="answer-q2"][value="true"]').setValue();
+      expect(footerButtons()[1]!.attributes("disabled")).toBeDefined();
+      expect(wrapper.get(".question-unanswered-hint").text()).toContain("还有 1 题未作答");
+      // Jump to unanswered q1 via hint button, answer q1, return to q2
+      await wrapper.get(".question-jump-unanswered").trigger("click");
+      expect(wrapper.get(".practice-question-heading h3").text()).toContain("q1");
+      await wrapper.get('input[name="answer-q1"][value="false"]').setValue();
+      await footerButtons()[1]!.trigger("click");
+      expect(wrapper.find(".question-unanswered-hint").exists()).toBe(false);
+      expect(footerButtons()[1]!.text()).toBe("提交试卷");
+      expect(footerButtons()[1]!.attributes("disabled")).toBeUndefined();
+      await footerButtons()[1]!.trigger("click");
+      await flushPromises();
+      expect(post).toHaveBeenCalledOnce();
+      expect(wrapper.find(".question-footer-actions").exists()).toBe(false);
+      expect(wrapper.find(".question-unanswered-hint").exists()).toBe(false);
+    } finally { wrapper.unmount(); }
   });
   it("keeps practice single-question only and preserves independent answers for navigation", async () => {
     const { pinia } = setup("practice");
@@ -280,7 +319,7 @@ describe("assessment and practice presentation", () => {
     const wrapper = mount(PracticeWorkspace, { props: { activityId: "test" }, global: { plugins: [pinia], stubs: { AssistantPanel: true } } });
     await flushPromises();
     await wrapper.get('input[value="false"]').setValue();
-    await wrapper.findAll("button").find(button => button.text() === "提交答案")!.trigger("click");
+    await wrapper.findAll("button").find(button => button.text() === "提交本题")!.trigger("click");
     await flushPromises();
     expect(wrapper.get('input[value="true"]').attributes("disabled")).toBeDefined();
     const firstBody = post.mock.calls[0]![1];

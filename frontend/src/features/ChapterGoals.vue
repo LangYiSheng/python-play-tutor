@@ -1,7 +1,7 @@
 <template>
   <nav v-if="chapter" class="activity-reading-goals" :aria-label="chapter.title">
     <header class="activity-reading-summary">
-      <strong><ChapterNumber :number="chapter.order_index"/> {{ chapter.title }}</strong>
+      <strong><ChapterNumber :number="chapter.order_index"/> <span>{{ chapter.title }}</span></strong>
       <div class="activity-reading-summary-line">
         <span>{{ required.length ? `必读 ${completedCount} / ${required.length} 份` : '本章资料均为选读' }}</span>
         <span v-if="required.length && completedCount === required.length">已完成</span>

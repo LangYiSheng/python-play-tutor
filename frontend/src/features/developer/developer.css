@@ -1,8 +1,8 @@
 /* Developer tools own content layout; shared game controls own their appearance. */
 .game-workspace .developer-workspace {
   width: 100%;
-  max-width: 1280px;
-  max-height: 720px;
+  max-width: 92rem;
+  max-height: 54rem;
   margin: auto;
   overflow: hidden;
 }

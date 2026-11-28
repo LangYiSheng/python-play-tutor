@@ -98,9 +98,9 @@ test("completes the four NPC journey with a dedicated one-question exercise and 
           await page.locator('input[type="radio"][value="true"]').first().check();
           if (category === "assessment") {
             await page.getByRole("tab",{name:"题目列表"}).click();
-            await page.getByRole("button",{name:"提交试卷",exact:true}).click();
+            await page.locator(".assessment-actions").getByRole("button",{name:"提交试卷",exact:true}).click();
           } else {
-            await page.getByRole("button",{name:"提交答案",exact:true}).click();
+            await page.getByRole("button",{name:"提交本题",exact:true}).click();
           }
         }
         await expect.poll(finished,{timeout:60000}).toBe(true);

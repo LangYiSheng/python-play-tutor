@@ -15,7 +15,7 @@ export async function answerStoryQuestions(page: Page, answers: { title?: string
     else await page.getByRole("textbox", { name: "填写答案" }).fill(item.answer);
     if (!assessment) {
       const receipt = page.waitForResponse(response => response.url().endsWith("/api/submissions") && response.request().method() === "POST");
-      await page.getByRole("button", { name: "提交答案", exact: true }).click();
+      await page.getByRole("button", { name: "提交本题", exact: true }).click();
       const saved = await receipt;
       expect(saved.ok()).toBe(true);
       expect((await saved.json()).status).toBe("accepted");
@@ -24,7 +24,7 @@ export async function answerStoryQuestions(page: Page, answers: { title?: string
   if (assessment) {
     await page.getByRole("tab", { name: "题目列表", exact: true }).click();
     const receipt = page.waitForResponse(response => /\/assessment\/submit$/.test(response.url()) && response.request().method() === "POST");
-    await page.getByRole("button", { name: "提交试卷", exact: true }).click();
+    await page.locator(".assessment-actions").getByRole("button", { name: "提交试卷", exact: true }).click();
     expect((await receipt).ok()).toBe(true);
   }
   const returned = page.waitForResponse(response => /\/story\/sessions\/[^/]+\/return$/.test(response.url()) && response.request().method() === "POST");

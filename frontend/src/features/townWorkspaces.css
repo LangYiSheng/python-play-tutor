@@ -12,7 +12,7 @@
   --town-ink: var(--game-ink);
   --town-green: var(--game-forest);
   display: grid;
-  grid-template-columns: 220px minmax(0,1fr);
+  grid-template-columns: 260px minmax(0,1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -66,6 +66,9 @@
 }
 
 .game-workspace .town-directory-item.is-current {
+  --chapter-badge-bg: var(--game-forest);
+  --chapter-badge-border: var(--game-forest);
+  --chapter-badge-color: var(--game-paper-raised);
   background: #e8eddf;
   color: var(--game-forest);
   border-color: #c5d0bb;
@@ -75,9 +78,10 @@
 .game-workspace .town-directory-item > svg {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
 }
 
-.game-workspace .town-directory-item > span {
+.game-workspace .town-directory-item:not(.chapter-nav-card) > span:not(.chapter-number) {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -172,7 +176,7 @@
 
 @media (max-width:1000px) {
   .game-workspace .town-book {
-    grid-template-columns: 190px minmax(0,1fr);
+    grid-template-columns: 220px minmax(0,1fr);
   }
 }
 
@@ -208,5 +212,158 @@
   }
   .game-workspace .town-row {
     flex-wrap: wrap;
+  }
+}
+
+/* Unified chapter-index + main-panel layout shared by Library, ChapterActivityList, and QuestJournal. */
+.game-workspace .chapter-book {
+  display: grid;
+  grid-template-columns: minmax(290px, 28%) minmax(0, 1fr);
+  gap: var(--game-gap);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.game-workspace .chapter-index-panel,
+.game-workspace .chapter-main-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--game-line);
+  border-radius: var(--game-radius);
+  background: var(--game-paper);
+  color: var(--game-ink);
+}
+
+.game-workspace .chapter-index-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+}
+
+.game-workspace .chapter-index-body .town-directory {
+  gap: 8px;
+}
+
+.game-workspace .chapter-main-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--game-panel-padding);
+}
+
+.game-workspace .chapter-nav-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--game-line);
+  border-radius: var(--game-control-radius);
+  background: var(--game-paper-raised);
+  color: var(--game-ink);
+  text-align: left;
+}
+
+.game-workspace .chapter-nav-card:hover {
+  background: #fffdf5;
+  border-color: #bfa982;
+}
+
+.game-workspace .chapter-nav-card.is-current {
+  --chapter-badge-bg: var(--game-forest);
+  --chapter-badge-border: var(--game-forest);
+  --chapter-badge-color: var(--game-paper-raised);
+  background: #e8eddf;
+  border-color: #b8c7ab;
+  color: var(--game-forest);
+}
+
+.game-workspace .chapter-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.game-workspace .chapter-nav-head > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--game-forest);
+}
+
+.game-workspace .chapter-nav-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.game-workspace .chapter-nav-count {
+  flex-shrink: 0;
+  color: var(--game-muted);
+  font-size: var(--game-caption-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.game-workspace .chapter-nav-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.game-workspace .chapter-nav-progress-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--game-muted);
+  font-size: var(--game-caption-size);
+  line-height: 1.35;
+}
+
+.game-workspace .chapter-nav-progress-text.is-complete {
+  color: var(--game-forest);
+  font-weight: 500;
+}
+
+.game-workspace .chapter-nav-meta .support-progress-bar {
+  --support-bar-height: 5px;
+  --support-bar-track: #dfd4bc;
+}
+
+.game-workspace .chapter-panel-count {
+  color: var(--game-muted);
+  font-size: var(--game-caption-size);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (max-width: 1000px) {
+  .game-workspace .chapter-book {
+    grid-template-columns: minmax(240px, 32%) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .game-workspace .chapter-book {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 35%) minmax(0, 1fr);
+  }
+  .game-workspace .chapter-main-body {
+    padding: 12px;
   }
 }
