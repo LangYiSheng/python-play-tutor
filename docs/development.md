@@ -477,7 +477,7 @@ python -m app.course_packages.manifest --check 'E:/course-exchange/my-course'
 
 管理员在全站设置的智能体设置的语音合成标签切换协议或填入示例，核对后保存。DeepSeek官方示例为基础地址 `https://api.deepseek.com`、音色 `stella` 或 `tide`、WAV/PCM，无模型字段和合成调速；依据[官方语音指南](https://api-docs.deepseek.com/zh-cn/guides/tts/)。接口路径由服务端统一拼接；已填写完整 `/v1/tools/tts`、`/v1/audio/speech`、`/api/v1/services/audio/tts/SpeechSynthesizer` 或 `/v1` 的地址不会再次重复拼接。阿里百炼原生接口示例：基础地址 `https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com`、模型 `qwen-audio-3.1-tts-flash` 或 `cosyvoice-v3-plus`、音色按控制台填写，格式 mp3/wav/pcm/opus，语速 0.5–2；接口返回 JSON 中的音频 URL，服务端会再下载。语音设置页会从兼容接口拉取 TTS 模型并合并内置列表，音色提供内置常用中文列表、也可直接填复刻音色 ID；保存后可点「测试已保存连接」发送一次短合成请求验证地址、密钥与音色。自定义服务地址及API Key不会因切换协议被自动覆盖，明确填入示例只更新非密钥字段；测试只发送一句短合成请求，不保存音频，也不会自动定时探测。
 
-资料合成管理分正在执行与历史记录，按每次执行排查进度与失败页；仅最新且参数完整的明确失败可确认重试，旧次或中断结果先核查。b72c49e018a3新增narration_runs并回填narration_jobs中实际保留的非idle记录，之后每次执行、重试独立留存。升级前备份数据库并确认没有正在执行的任务；不自动派发、重置或伪造历史，继续复用现有请求及逐页提交机制。
+任务管理分正在执行与历史记录，按每次执行排查进度与失败页；仅最新且参数完整的明确失败可确认重试，旧次或中断结果先核查。b72c49e018a3新增narration_runs并回填narration_jobs中实际保留的非idle记录，之后每次执行、重试独立留存。升级前备份数据库并确认没有正在执行的任务；不自动派发、重置或伪造历史，继续复用现有请求及逐页提交机制。
 
 ## 体验开发工具验收
 

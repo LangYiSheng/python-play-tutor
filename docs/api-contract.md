@@ -76,6 +76,7 @@ All routes use /api. JSON fields use snake_case. Bearer session authentication i
 - `GET /teacher/classrooms/{id}/progress` 汇总成员的章节任务进度。`GET /teacher/classrooms/{id}/students/{student_id}` 提供个人章节、资料、作答（含题目名称、题型与所属活动标题）及测验记录。已完成章节按当前开放章节的必读资料、必做练习和测验计算。
 - POST /teacher/courses/{course_id}/materials/upload multipart {chapter_ids?:JSON-encoded integer array,title,material_id?,file} -> {id,status,title}; omitted chapter_ids creates an unclassified upload, or preserves existing links on replacement. PUT /teacher/courses/{course_id}/materials/{id} {title?,chapter_ids?} edits metadata and multiple chapter links. GET /teacher/courses/{course_id}/materials lists authorized metadata; GET /teacher/courses/{course_id}/materials/{id} and /file provide owner/admin preview, including unclassified material, without classroom publication. DELETE /teacher/courses/{course_id}/materials/{id} requires the cascade preview protocol (409). queued/processing/ready/failed processing states persist. Student access requires an association to a chapter open in the current classroom. Same material_id replaces the current file while preserving type; chapter links determine its presence in each chapter.
 
+- `POST /teacher/courses/{course_id}/materials/upload-preview` 接收 multipart 的文件清单 `manifest`、可选单文件资料名 `title` 与 ZIP 文件 `archives`，返回预期章节、资料名与跳过项。预览仅读取清单，实际导入时校验文件内容。
 - `POST /teacher/courses/{course_id}/materials/upload-batch` 支持多文件和课件 ZIP，接收 multipart 的 `files`、`chapter_ids?`，返回 `created,skipped`。含课程包清单的 ZIP 须经课程包导入流程。
 
 ## Active teaching assistant
@@ -146,6 +147,8 @@ Pausing a chapter suspends learner access. Reopening it restores access to the c
 
 ## 章节任务点
 
+教师可用 `PUT /teacher/courses/{course_id}/chapters/{chapter_id}/activities/order` 调整本章练习和测验的顺序。请求传入原顺序 `previous` 与新顺序 `ordered`，两者均为本章可见的全部活动 ID。服务器在同一事务中保存并接受重复提交，活动列表变化时返回 409。候选题接口提供 `difficulty` 和最多 160 字符的 `prompt_preview`，完整题目按需读取教师题目详情接口。
+
 学生通过 `GET /chapter-tasks?classroom_id=…` 获取全部已开放章节。每章的 `tasks` 包含资料、客观题、编程题和测验的必做标记、`completed`、`locked`、`lock_reason` 及进度单位。正文阅读通过 `POST /chapters/{chapter_id}/materials/{material_id}/participation?classroom_id=…` 上报 `session_id,sequence,visible,page_id?`，视频另传 `position,playing,playback_rate`。服务端按学生、班级、章节和资料累计不同页面、有效前台时间或有效观看片段。
 
 教师通过 `GET /teacher/courses/{course_id}/chapters/{chapter_id}/material-tasks` 获取 `items`，同路径下 `PUT /{material_id}` 接收 `required,rule,order_index?`。同路径下的 `PUT /order` 接收原顺序 `previous` 与新顺序 `ordered`（本章全部资料 ID），在一个事务中保存排序。列表冲突返回 409。必读资料默认整份。分页资料支持 `scope=all|range|count` 和 `minimum_seconds`，视频支持观看时长和指定片段。学生完成必读资料后解锁两类练习，完成必做练习后解锁测验。追加必读资料会重新校验未完成活动，已有完成记录、已交试卷和成绩保留。
@@ -187,7 +190,9 @@ GET /teacher/course/packages 返回个人导出及历史共享目录。DELETE /t
 - Retired content is excluded from current teaching and export. Learner evidence and required private files remain. Judge history queries explicitly include retired question/activity metadata; student GET /submissions/{id} can read only their own retained receipt in an authorized class, with existing hidden-case redaction. A still-current submitted assessment retains its original questions, even if those questions were retired from the bank. No restore, purge, regrade or arbitrary force-delete endpoint is introduced.
 
 
-### 资料合成管理
+### 任务管理
+
+课程和管理员的 synthesis 列表按同一时间顺序对课件执行与 AI 创作任务筛选、计数和分页。课件行沿用执行记录格式，AI 创作行使用 `source=studio` 并包含 `job` 快照。课程的 `course-studio/jobs?workspace=true` 返回未忽略的待处理任务及最近的执行情况。`POST /api/teacher/courses/{course_id}/course-studio/jobs/{job_id}/dismiss` 忽略已失败或中断的创作任务，`/retry` 按原配置重新校验并创建新任务。`POST /api/teacher/courses/{course_id}/synthesis/runs/{run_id}/dismiss` 按执行记录忽略失败课件任务，支持历史失败。忽略后队列、列表与统计同步排除该次执行，保留原记录。
 
 - `GET /api/teacher/courses/{course_id}/synthesis`：教师本班/管理员可读，学生403。参数 `query/view/status/page/size`；view为all/running/history，status为all/running/done/failed/interrupted/cancelled，页大小1–100。按执行记录分页，不列未执行资料。返回items、筛选total和搜索范围counts。每项包含执行记录id、资料ID/标题/类型、kind/status、done/total、message、failed、started_at/finished_at、requested_by显示名、scope、material_available、retryable/retry_note；不返回凭据、正文或文件地址。已删除资料仍保留执行记录，关闭查看和重试。
 - `GET /api/teacher/courses/{course_id}/synthesis/runs/{run_id}` 按执行编号读取详情。全站管理员可用 `GET /api/admin/synthesis/runs/{run_id}`。进度包含本次请求的阶段、当前阶段及其百分比和单位；定位信息使用已记录的批次和页码，旧记录只在能核对时补充页码。
