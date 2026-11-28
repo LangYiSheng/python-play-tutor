@@ -36,16 +36,11 @@ def state(material_id: int, job: NarrationJob | None) -> dict[str, Any]:
     progress = (job.progress or {}) if job else {}
     request = progress.get("request") or {}
     operation = request.get("operation")
-    status = (
-        "interrupted"
-        if job and job.status == "running" and not repository.job_running(job)
-        else job.status
-        if job
-        else "idle"
-    )
+    status = repository.displayed_status(job)
     can_resume = status == "cancelled" or (status == "interrupted" and bool(progress.get("never_started")))
     retryable = bool(
         job
+        and not progress.get("queue_dismissed")
         and (status == "failed" or can_resume)
         and operation in _RETRYABLE_OPERATIONS
         and progress.get("retry_fingerprint")
@@ -70,6 +65,8 @@ def state(material_id: int, job: NarrationJob | None) -> dict[str, Any]:
         "stage": described.get("stage") or progress.get("stage", ""),
         "chain": progress.get("chain") or request.get("chain") or [],
         "retryable": retryable,
+        "cancellable": bool(job and job.started_at and not progress.get("queue_dismissed") and (
+            job.status in {"failed", "interrupted"} or status == "running" and operation in _RETRYABLE_OPERATIONS - {"generate_page", "audio_page"})),
         "started_at": as_utc(job.started_at).isoformat() if job and job.started_at else None,
     }
 

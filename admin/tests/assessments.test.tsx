@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AssessmentsPage } from "../src/features/assessments/assessments-page";
 
@@ -337,8 +337,13 @@ it("allows collapsing and reopening AI job panel while generation is running", a
 });
 
 it("shows partial created counts on interrupted and legacy exercise jobs", async () => {
-  vi.stubGlobal("fetch", async (path: string) => {
+  let cancelled = false;
+  vi.stubGlobal("fetch", async (path: string, init: RequestInit) => {
     const url = new URL(path, location.origin);
+    if (url.pathname.endsWith("/course-studio/jobs/j-interrupted-zero/cancel") && init.method === "POST") {
+      cancelled = true;
+      return json({status:"cancelled"});
+    }
     if (url.pathname.endsWith("/catalog")) return json({ chapters: [chapter] });
     if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
@@ -378,7 +383,7 @@ it("shows partial created counts on interrupted and legacy exercise jobs", async
             course_instance_id: 1,
             kind: "exercises_generate",
             scope_key: "chapter:17:exercises",
-            status: "interrupted",
+              status: cancelled ? "cancelled" : "interrupted",
             progress: { done: 0, total: 1, message: "已加入智能出题队列" },
             result: null,
             error: "服务重启，任务已中断",
@@ -405,6 +410,9 @@ it("shows partial created counts on interrupted and legacy exercise jobs", async
   expect(await screen.findByText("中断前已生成并入库 12 道待审题目（跳过重复或无效 1 道）")).toBeVisible();
   expect(screen.getByText(/中断前已执行 10\/12 批/)).toBeVisible();
   expect(screen.getByText("中断前未写入题目")).toBeVisible();
+  await user.click(within(screen.getByText("中断前未写入题目").closest("li")!).getByRole("button", {name:"取消任务"}));
+  await waitFor(() => expect(screen.queryByText("中断前未写入题目")).not.toBeInTheDocument());
+  expect(cancelled).toBe(true);
 });
 
 it("shows coding_type filter only when kind is python and resets it when switching back", async () => {

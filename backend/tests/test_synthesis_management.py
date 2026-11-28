@@ -26,7 +26,9 @@ def test_overview_scope_types_and_interrupted_tasks(client, db, classroom, teach
     response = client.get(overview(classroom) + "?query=正在", headers=teacher["headers"])
     assert response.status_code == 200, response.text
     item = response.json()["items"][0]
-    assert item["status"] == "interrupted" and not item["retryable"]
+    assert item["status"] == "interrupted" and not item["retryable"] and not item["cancellable"]
+    assert client.post(overview(classroom) + f"/runs/{item['id']}/cancel", headers=teacher["headers"]).status_code == 409
+    assert db.get(NarrationRun, item["id"]).status == "running"
     assert client.get(overview(classroom), headers=student["headers"]).status_code == 403
     db.get(Classroom, classroom["id"]).course.teacher_id = student["id"]
     db.commit()
@@ -157,7 +159,7 @@ def test_speech_endpoint_accepts_root_or_complete_url(root):
 def test_combined_feed_filters_and_persists_dismissed_attempts(client, db, classroom, teacher, student):
     course_id, headers = classroom["course_id"], teacher["headers"]
     material = material_fixture(db, classroom, ["正文"])
-    old_run = NarrationRun(material_id=material.id, kind="generate", status="failed", started_at=now() - timedelta(hours=2))
+    old_run = NarrationRun(material_id=material.id, kind="generate", status="failed", started_at=now() - timedelta(hours=2), message="文本生成超时")
     job = CourseStudioJob(course_instance_id=course_id, kind="exercises_generate", status="failed",
                           scope_key="test", progress={"done": 0}, error="生成失败")
     db.add_all([old_run, job])
@@ -173,13 +175,58 @@ def test_combined_feed_filters_and_persists_dismissed_attempts(client, db, class
     other_id = client.post("/api/teacher/courses", json={"name": "另一课程"}, headers=headers).json()["id"]
     assert client.get(f"/api/teacher/courses/{other_id}/synthesis", headers=headers).json()["total"] == 0
     assert client.post(f"/api/teacher/courses/{other_id}/course-studio/jobs/{job.id}/dismiss", headers=headers).status_code == 404
-    for dismiss_path in (f"{studio}/{job.id}/dismiss", f"{base}/runs/{old_run.id}/dismiss"):
-        for _ in range(2):
-            assert client.post(dismiss_path, headers=headers).json()["queue_dismissed"]
-    assert client.get(base, headers=headers).json()["counts"]["failed"] == 0
+    for resource in (f"{studio}/{job.id}", f"{base}/runs/{old_run.id}"):
+        for action in ("cancel", "dismiss", "cancel"):
+            assert client.post(f"{resource}/{action}", headers=headers).json()["status"] == "cancelled"
+    cancelled = client.get(base + "?view=history&status=cancelled", headers=headers).json()
+    assert cancelled["total"] == cancelled["counts"]["cancelled"] == 2
+    assert cancelled["counts"]["failed"] == 0
     assert client.get(studio + "?workspace=true", headers=headers).json()["jobs"] == []
-    assert client.get(f"{studio}/{job.id}", headers=headers).json()["status"] == "failed"
-    assert client.get(f"{base}/runs/{old_run.id}", headers=headers).json()["status"] == "failed"
+    studio_detail = client.get(f"{studio}/{job.id}", headers=headers).json()
+    assert studio_detail["status"] == "cancelled" and studio_detail["error"] == "生成失败"
+    run_detail = client.get(f"{base}/runs/{old_run.id}", headers=headers).json()
+    assert run_detail["status"] == "cancelled" and run_detail["diagnostic"] == "文本生成超时"
+
+
+def test_cancel_historical_interrupted_run_without_timestamp_targets_only_its_id(client, db, classroom, teacher):
+    material = material_fixture(db, classroom, ["正文"])
+    sibling, target = [NarrationRun(material_id=material.id, kind="generate", status="interrupted", message=reason)
+                       for reason in ("第一批中断", "第二批中断")]
+    db.add_all([sibling, target])
+    db.commit()
+    root = overview(classroom) + "/runs/"
+    detail = client.get(root + str(target.id), headers=teacher["headers"]).json()
+    assert detail["cancellable"] and not detail["started_at"]
+    assert client.post(root + str(target.id) + "/cancel", headers=teacher["headers"]).json()["status"] == "cancelled"
+    assert db.get(NarrationRun, sibling.id).status == "interrupted"
+    assert client.get(root + str(target.id), headers=teacher["headers"]).json()["diagnostic"] == "第二批中断"
+
+
+def test_legacy_dismissed_jobs_appear_in_cancelled_history(client, db, classroom, teacher):
+    from app.narration.models import NarrationJob
+
+    headers = teacher["headers"]
+    material = material_fixture(db, classroom, ["正文"])
+    material_job = NarrationJob(material_id=material.id, kind="digest", status="failed", started_at=now(),
+                                progress={"queue_dismissed": True, "retry_fingerprint": "legacy",
+                                          "request": {"operation": "digest"}}, message="旧课件失败")
+    studio_job = CourseStudioJob(course_instance_id=classroom["course_id"], kind="exercises_generate", scope_key="test",
+                                 status="interrupted", progress={"queue_dismissed": True}, error="旧出题中断")
+    db.add_all([material_job, studio_job])
+    repository.sync_run(db, material_job)
+    db.commit()
+    base = overview(classroom)
+    history = client.get(base + "?view=history&status=cancelled", headers=headers).json()
+    assert history["counts"]["failed"] == history["counts"]["interrupted"] == 0
+    assert history["total"] == history["counts"]["cancelled"] == 2
+    run = next(row for row in history["items"] if row.get("source") != "studio")
+    assert run["status"] == "cancelled" and run["diagnostic"] == "旧课件失败" and not run["retryable"]
+    studio = next(row["job"] for row in history["items"] if row.get("source") == "studio")
+    assert studio["status"] == "cancelled" and studio["error"] == "旧出题中断"
+    state = client.get(url(classroom, material, "/job"), headers=headers).json()
+    assert state["status"] == "cancelled" and not state["retryable"]
+    assert client.post(f"{base}/{material.id}/retry", headers=headers,
+                       json={"expected_started_at": run["started_at"]}).status_code == 409
 
 
 def test_studio_retry_validates_current_scope_and_is_single_use(client, db, classroom, teacher, monkeypatch):
@@ -198,4 +245,11 @@ def test_studio_retry_validates_current_scope_and_is_single_use(client, db, clas
     assert retry.status_code == 202, retry.text
     assert retry.json()["status"] == "queued" and retry.json()["id"] != job.id
     assert client.post(url, headers=headers).status_code == 409
-    assert client.get(overview(classroom), headers=headers).json()["counts"]["running"] == 1
+    feed = client.get(overview(classroom), headers=headers).json()
+    assert feed["counts"]["running"] == feed["counts"]["failed"] == 1
+    listed = client.get(overview(classroom).replace("/synthesis", "/course-studio/jobs?workspace=true"), headers=headers)
+    assert [j["id"] for j in listed.json()["jobs"]] == [retry.json()["id"]]
+    failed = next(row["job"] for row in feed["items"] if row["job"]["id"] == job.id)
+    assert failed["status"] == "failed" and failed["retried"]
+    assert client.post(url.replace("/retry", "/cancel"), headers=headers).json()["status"] == "cancelled"
+    assert client.get(url.replace(job.id + "/retry", retry.json()["id"]), headers=headers).json()["status"] == "queued"

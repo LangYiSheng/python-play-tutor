@@ -1,5 +1,6 @@
 import {
   narrationApi,
+  canRetryNarrationJob,
   type CalibrationReport,
   type MaterialVoiceMode,
   type NarrationAudioStatus,
@@ -21,6 +22,7 @@ export function useNarrationReview(
   initialPage?: number,
   jumpTarget?: { pageNo: number; seq: number } | null,
   onKnowledgeUpdated?: () => void,
+  taskRevision = 0,
 ) {
   const [data, setData] = useState<NarrationList | null>(null);
   const [quota, setQuota] = useState<NarrationQuota | null>(null);
@@ -154,7 +156,7 @@ export function useNarrationReview(
       stopped = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [courseId, materialId, silentRefresh]);
+  }, [courseId, materialId, silentRefresh, taskRevision]);
 
   useEffect(() => {
     let active = true;
@@ -352,7 +354,7 @@ export function useNarrationReview(
     }
   }
   async function retryFailedJob() {
-    if (!job || busyNow) return;
+    if (!canRetryNarrationJob(job) || busyNow) return;
     const failedCount = job.failed?.length ?? 0;
     const isAudio = job.kind === "audio";
     const isPipeline = job.kind === "pipeline";
@@ -360,21 +362,7 @@ export function useNarrationReview(
     setError("");
     const captured = token();
     try {
-      if (job.retryable !== false && job.started_at) {
-        try {
-          await narrationApi.retryJob(courseId, materialId, job.started_at);
-        } catch (err) {
-          if (isAudio && data) {
-            await narrationApi.audioBatch(courseId, materialId, 1, data.coverage.pages);
-          } else {
-            throw err;
-          }
-        }
-      } else if (isAudio && data) {
-        await narrationApi.audioBatch(courseId, materialId, 1, data.coverage.pages);
-      } else {
-        throw new Error("当前任务状态不支持直接重试，请刷新页面后重试");
-      }
+      await narrationApi.retryJob(courseId, materialId, job.started_at);
       if (captured === token()) {
         toast.add({
           title: failedCount > 0 ? `已提交重试 ${failedCount} 个失败页` : "已从断点重试任务",
@@ -413,9 +401,11 @@ export function useNarrationReview(
       }
     } catch (e) {
       setError(errorMessage(e));
+      const current = await narrationApi.job(courseId, materialId).catch(() => null);
+      if (mountedRef.current && captured === token() && current) setJob(current);
     } finally {
+      await silentRefresh();
       setBusy("");
-      await load().catch(() => {});
     }
   }
   const running = Boolean(job?.running || job?.queued);

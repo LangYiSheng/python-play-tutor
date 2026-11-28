@@ -28,7 +28,8 @@ def test_cancel_waiting_is_durable_idempotent_and_retries_a_new_attempt(client, 
         response = client.post(path, json=expected, headers=headers)
         assert response.status_code == 200 and response.json()["status"] == "cancelled"
     assert jobs.drain(db) == 0
-    job, = client.get(f"/api/teacher/courses/{classroom['course_id']}/course-graph/tasks", headers=headers).json()
+    assert client.get(f"/api/teacher/courses/{classroom['course_id']}/course-graph/tasks", headers=headers).json() == []
+    job, = client.get(f"/api/teacher/courses/{classroom['course_id']}/synthesis?status=cancelled", headers=headers).json()["items"]
     assert job["retryable"] and job["run_id"] and not job["cancellable"]
     assert client.post(command(classroom, material, "retry"), json=expected, headers=headers).status_code == 200
     assert client.post(path, json=expected, headers=headers).status_code == 409
@@ -54,7 +55,8 @@ def test_cancelling_claimed_task_finishes_current_window_and_stops_before_next(c
     monkeypatch.setattr(digest, "run_window", window)
     assert jobs.drain(db) == 1 and called == [[1]]
     assert [row.text for row in repository.content_rows(db, material.id)] == ["已完成"]
-    job, = client.get(f"/api/teacher/courses/{classroom['course_id']}/course-graph/tasks", headers=teacher["headers"]).json()
+    assert client.get(f"/api/teacher/courses/{classroom['course_id']}/course-graph/tasks", headers=teacher["headers"]).json() == []
+    job, = client.get(f"/api/teacher/courses/{classroom['course_id']}/synthesis?status=cancelled", headers=teacher["headers"]).json()["items"]
     assert job["status"] == "cancelled" and job["percent"] == 50 and job["retryable"]
 
 

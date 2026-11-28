@@ -1,5 +1,5 @@
 """Class-scoped active tasks and durable execution history."""
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,17 +32,17 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, can
     progress = (job.progress or {}) if job else {}
     request = progress.get("request") or {}
     running = bool(job and repository.job_running(job))
-    status = "interrupted" if job and job.status == "running" and not running else job.status if job else "idle"
+    status = repository.displayed_status(job)
     if running and (cancel_requested or isinstance(job, NarrationRun) and job.cancel_requested_at):
         status = "cancelling"
     can_resume = status == "cancelled" or (status == "interrupted" and progress.get("never_started"))
-    retryable = bool(job and (status == "failed" or can_resume) and request.get("operation") in OPERATIONS
+    retryable = bool(job and not progress.get("queue_dismissed") and (status == "failed" or can_resume) and request.get("operation") in OPERATIONS
                      and progress.get("retry_fingerprint"))
     if status == "failed" and request.get("operation") in {"generate_range", "audio_batch"} and not progress.get("retry_pages"):
         retryable = False
     cancellable = bool(status == "running" and request.get("operation") in WORKER_OPERATIONS and job and job.started_at)
     dismissed = bool(progress.get("queue_dismissed"))
-    if status == "failed" and job and job.started_at:
+    if job and job.status in {"failed", "interrupted"} and job.started_at:
         cancellable = not dismissed
     note = ""
     if status == "interrupted" and not retryable:
@@ -51,9 +51,11 @@ def snapshot(material: Material, job: NarrationJob | NarrationRun | None, *, can
         note = "请打开资料审校后重新发起"
     elif status == "running" and not cancellable:
         note = "当前请求已执行，等待调用返回"
+    original = progress.get("cancelled_from") or (job.status if job else None)
+    diagnostic_status = original if dismissed and original in {"failed", "interrupted"} else status
     return {"id": job.id if job else None, "material_id": material.id, "title": material.title, "material_kind": material.kind,
             "kind": job.kind if job else "", "status": status, "running": running,
-            **task_progress.describe(job, status, latest_db), "queue_dismissed": dismissed,
+            **task_progress.describe(job, diagnostic_status, latest_db), "queue_dismissed": dismissed,
             "started_at": as_utc(job.started_at).isoformat() if job and job.started_at else None,
             "finished_at": as_utc(job.finished_at).isoformat() if job and job.finished_at else None,
             "cancellable": cancellable, "retryable": retryable, "retry_note": note}
@@ -63,7 +65,9 @@ def run_state(model: type[NarrationRun] | type[NarrationJob] = NarrationRun) -> 
     cutoff = now() - timedelta(seconds=repository.JOB_STALE_SECONDS)
     moment = func.coalesce(model.heartbeat_at, model.started_at)
     unclaimed = func.coalesce(model.progress["queued"].as_boolean(), False)
-    return case(((model.status == "running") & ~unclaimed & ((moment < cutoff) | moment.is_(None)), "interrupted"), else_=model.status)
+    dismissed = func.coalesce(model.progress["queue_dismissed"].as_boolean(), False)
+    return case((model.status.in_(("failed", "interrupted")) & dismissed, "cancelled"),
+                ((model.status == "running") & ~unclaimed & ((moment < cutoff) | moment.is_(None)), "interrupted"), else_=model.status)
 
 
 def visible_runs(db: Session, user: User, course_id: int | None) -> Select[*RunRow]:
@@ -87,7 +91,8 @@ def history_item(row: Row[*RunRow], db: Session, *, course_view: bool) -> dict[s
     item.update(requested_by=name or "—", material_available=material.deleted_at is None,
                 course_id=course_id, course_name=course_name, run_id=record.id)
     if not (course_view and current_job_id) or material.deleted_at is not None:
-        item.update(retryable=False, cancellable=False, retry_note="")
+        item.update(retryable=False, cancellable=course_view and record.status in {"failed", "interrupted"}
+                    and not item["queue_dismissed"], retry_note="")
     request = (record.progress or {}).get("request") or {}
     body = request.get("body") or {}
     item["scope"] = (f"第 {request['page_no']} 页" if request.get("page_no") else
@@ -113,13 +118,11 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
                view: Literal["all", "running", "history"] = "all",
                page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=1, le=100)] = 20) -> dict[str, Any]:
     narration = visible_runs(db, user, course_id)
-    narration = narration.where(~func.coalesce(NarrationRun.progress["queue_dismissed"].as_boolean(), False))
     studio = (select(CourseStudioJob, CourseInstance.name, Chapter.title, User.name)
               .join(CourseInstance, CourseInstance.id == CourseStudioJob.course_instance_id)
               .outerjoin(Chapter, (Chapter.id == CourseStudioJob.payload["chapter_id"].as_integer())
                          & (Chapter.course_instance_id == CourseInstance.id))
-              .outerjoin(User, User.id == CourseStudioJob.requested_by)
-              .where(~func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False)))
+              .outerjoin(User, User.id == CourseStudioJob.requested_by))
     if course_id is not None:
         studio = studio.where(CourseInstance.id == course_id)
     studio_kinds = {"knowledge_extract": "AI 知识点抽取", "exercises_generate": "AI 智能出题",
@@ -134,7 +137,10 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
         narration.with_only_columns(literal("narration").label("source"), cast(NarrationRun.id, String).label("key"),
                                     NarrationRun.started_at.label("moment"), run_state().label("state")),
         studio.with_only_columns(literal("studio"), CourseStudioJob.id, CourseStudioJob.created_at,
-                                 case((CourseStudioJob.status == "queued", "running"), else_=CourseStudioJob.status)),
+                                 case((CourseStudioJob.status == "queued", "running"),
+                                      (CourseStudioJob.status.in_(("failed", "interrupted"))
+                                       & func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False), "cancelled"),
+                                      else_=CourseStudioJob.status)),
     ).subquery()
     counts: dict[str, int] = dict(db.execute(select(index.c.state, func.count()).group_by(index.c.state)
                              .execution_options(include_deleted=True)).all())
@@ -161,23 +167,51 @@ def list_tasks(db: Annotated[Session, Depends(get_db)], user: Annotated[User, De
             "counts": {key: counts.get(key, 0) for key in ("running", "done", "failed", "interrupted", "cancelled")}}
 
 
+def cancel_ended_attempt(db: Session, material_id: int, started_at: datetime | None, *,
+                         run_id: int | None = None, require_current: bool = False) -> NarrationJob | NarrationRun:
+    # Match the worker's lock order. Re-read both rows after locking to fence a resumed or replaced attempt.
+    current = None
+    if started_at is not None:
+        current = db.scalar(select(NarrationJob).where(NarrationJob.material_id == material_id, NarrationJob.started_at == started_at)
+                            .with_for_update().execution_options(populate_existing=True))
+    if require_current and current is None:
+        raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
+    run_query = select(NarrationRun).where(NarrationRun.material_id == material_id)
+    run_query = run_query.where(NarrationRun.id == run_id) if run_id is not None else run_query.where(NarrationRun.started_at == started_at)
+    record = db.scalar(run_query.with_for_update().execution_options(populate_existing=True))
+    attempt = current or record
+    if attempt is None:
+        raise HTTPException(404, "任务记录不存在")
+    if attempt.status == "cancelled":
+        return attempt
+    raw_status = attempt.status
+    if raw_status not in {"failed", "interrupted"}:
+        raise HTTPException(409, "任务状态已变化，请刷新任务列表")
+    timestamp = now()
+    for row in (current, record):
+        if row is not None:
+            row.progress = {**(row.progress or {}), "queue_dismissed": True, "cancelled_from": raw_status}
+            row.status = "cancelled"
+            row.finished_at = row.finished_at or timestamp
+    if record is not None:
+        record.cancel_requested_at = record.cancel_requested_at or timestamp
+    elif current is not None:
+        repository.sync_run(db, current)
+    db.commit()
+    return attempt
+
+
+@router.post("/runs/{run_id}/cancel")
 @router.post("/runs/{run_id}/dismiss")
-def dismiss_run(course_id: int, run_id: int, db: Annotated[Session, Depends(get_db)],
-                user: Annotated[User, Depends(require_teacher)]) -> dict[str, bool]:
+def cancel_run(course_id: int, run_id: int, db: Annotated[Session, Depends(get_db)],
+               user: Annotated[User, Depends(require_teacher)]) -> dict[str, Any]:
     teacher_instance_id(db, user, course_id, exclusive=True)
     row = db.execute(visible_runs(db, user, course_id).where(NarrationRun.id == run_id)).one_or_none()
     if row is None:
         raise HTTPException(404, "任务记录不存在")
     record = row[0]
-    if record.status != "failed":
-        raise HTTPException(409, "只能忽略失败的课件任务")
-    current = db.scalar(select(NarrationJob).where(NarrationJob.material_id == record.material_id,
-                        NarrationJob.started_at == record.started_at, NarrationJob.status == "failed").with_for_update())
-    record.progress = {**(record.progress or {}), "queue_dismissed": True}
-    if current is not None:
-        current.progress = {**(current.progress or {}), "queue_dismissed": True}
-    db.commit()
-    return {"queue_dismissed": True}
+    attempt = cancel_ended_attempt(db, record.material_id, record.started_at, run_id=record.id)
+    return {"status": attempt.status, "queue_dismissed": True}
 
 
 class RetryInput(BaseModel):
@@ -192,17 +226,9 @@ def cancel_task(course_id: int, material_id: int, body: RetryInput,
     job = repository.job_of(db, material_id)
     if not job or not repository.same_attempt(job.started_at, body.expected_started_at):
         raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
-    if job.status == "failed":
-        failed = db.scalar(select(NarrationJob).where(NarrationJob.id == job.id,
-            NarrationJob.started_at == job.started_at, NarrationJob.status == "failed")
-            .with_for_update().execution_options(populate_existing=True))
-        if not failed:
-            raise HTTPException(409, "资料的当前任务已变化，请刷新队列")
-        if not (failed.progress or {}).get("queue_dismissed"):
-            failed.progress = {**(failed.progress or {}), "queue_dismissed": True}
-            repository.sync_run(db, failed)
-            db.commit()
-        return snapshot(material, failed)
+    if job.status in {"failed", "interrupted"}:
+        attempt = cancel_ended_attempt(db, material_id, job.started_at, require_current=True)
+        return snapshot(material, attempt)
     # Workers lock the job row while writing a window. Only take it without waiting
     # when we can remove an unclaimed request; an in-flight request uses the run row.
     pending = None

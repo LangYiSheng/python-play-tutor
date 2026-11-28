@@ -113,22 +113,26 @@ it('allows retrying directly from the course run detail dialog', async () => {
   expect(api.post).toHaveBeenCalledWith('/teacher/courses/7/synthesis/11/retry', { expected_started_at: task.started_at });
 });
 
-it('shows AI jobs in the unified history and refreshes the counters after dismissal', async () => {
+it('keeps a cancelled AI job in history and refreshes its failure count', async () => {
   const row = { source: 'studio', title: '循环', course_name: '基础课', requested_by: '教师',
     job: { id: 'j1', kind: 'coding_exercises_generate', status: 'failed', course_instance_id: 7,
       progress: { done: 1, total: 2, message: '' }, result: { created: 1 }, error: '生成超时' } };
-  let dismissed = false;
+  let cancelled = false;
   vi.mocked(api.get).mockImplementation(async () => ({
-    items: dismissed ? [] : [row], counts: { running: 0, failed: Number(!dismissed) }, total: Number(!dismissed),
+    items: cancelled ? [{...row, job:{...row.job, status:"cancelled"}}] : [row], counts: { running: 0, failed: Number(!cancelled) }, total: 1,
   }));
-  vi.mocked(api.post).mockImplementation(async () => { dismissed = true; return { queue_dismissed: true }; });
+  vi.mocked(api.post).mockImplementation(async () => { cancelled = true; return {...row.job, status:"cancelled"}; });
   render(<Synthesis courseId={7} />);
   fireEvent.click(await screen.findByRole('tab', { name: '历史记录' }));
   expect(await screen.findByText('AI 编程出题')).toBeVisible();
   expect(screen.getByText('失败前已生成并入库 1 道待审题目')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: '忽略' }));
-  expect(api.post).toHaveBeenCalledWith('/teacher/courses/7/course-studio/jobs/j1/dismiss', {});
-  await waitFor(() => expect(screen.queryByText('生成超时')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: '取消任务' }));
+  expect(api.post).toHaveBeenCalledWith('/teacher/courses/7/course-studio/jobs/j1/cancel', {});
+  const updatedRow = within(screen.getByRole('row', {name:/AI 编程出题/}));
+  expect(await updatedRow.findByText('已取消')).toBeVisible();
+  expect(updatedRow.getByText('生成超时')).toBeVisible();
+  expect(updatedRow.queryByRole('button', {name:'取消任务'})).not.toBeInTheDocument();
+  expect(screen.getByRole('button', {name:/执行失败/})).toHaveTextContent("0");
 });
 
 it.each([

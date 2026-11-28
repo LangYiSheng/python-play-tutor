@@ -318,6 +318,16 @@ def interrupt_running(db: Session | None = None) -> int:
     return len(jobs)
 
 
+def displayed_status(job: NarrationJob | NarrationRun | None) -> str:
+    if job is None:
+        return "idle"
+    if job.status in {"failed", "interrupted"} and (job.progress or {}).get("queue_dismissed"):
+        return "cancelled"
+    if job.status == "running" and not job_running(job):
+        return "interrupted"
+    return job.status
+
+
 def job_running(job: NarrationJob | NarrationRun) -> bool:
     """活着的任务才算“正在运行”；心跳过期说明进程已经死了，可以接管。"""
     if job.status != "running":
@@ -359,7 +369,7 @@ def acquire(db: Session, material: Material, kind: str, user: User | None = None
     if expected:
         from fastapi import HTTPException
         if (job is None or job.status not in {"failed", "cancelled", "interrupted"} or not job.started_at
-                or not same_attempt(job.started_at, expected)
+                or (job.progress or {}).get("queue_dismissed") or not same_attempt(job.started_at, expected)
                 or not retry_matches(db, material, (job.progress or {}).get("retry_fingerprint"))):
             raise HTTPException(409, "任务或资料已变化，请刷新并重新审校")
     if job is None:

@@ -288,7 +288,7 @@ def get_studio_job(course_id: int, job_id: str, db: Db, user: Teacher) -> dict[s
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobSnapshot)
 def cancel_studio_job(course_id: int, job_id: str, db: Db, user: Teacher) -> dict[str, Any]:
-    instance_id = teacher_instance_id(db, user, course_id)
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     job = jobs.request_cancel(db, instance_id, job_id)
     return jobs.serialize_job(job)
 
@@ -296,19 +296,17 @@ def cancel_studio_job(course_id: int, job_id: str, db: Db, user: Teacher) -> dic
 @router.post("/jobs/{job_id}/dismiss")
 def dismiss_studio_job(course_id: int, job_id: str, db: Db, user: Teacher):
     instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
-    job = jobs.get_job(db, instance_id, job_id)
-    if job.status not in {"failed", "interrupted"}:
-        raise HTTPException(409, "只能忽略失败或中断的任务")
-    job.progress = {**(job.progress or {}), "queue_dismissed": True}
-    db.commit()
-    return {"queue_dismissed": True}
+    job = jobs.request_cancel(db, instance_id, job_id, failed_only=True)
+    return {"queue_dismissed": True, "status": job.status}
+
 
 
 @router.post("/jobs/{job_id}/retry", status_code=202, response_model=JobSnapshot)
 def retry_studio_job(course_id: int, job_id: str, db: Db, user: Teacher):
     instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
     job = jobs.get_job(db, instance_id, job_id)
-    if job.status not in {"failed", "interrupted"} or (job.progress or {}).get("queue_dismissed"):
+    progress = job.progress or {}
+    if job.status not in {"failed", "interrupted"} or progress.get("queue_dismissed") or progress.get("retried"):
         raise HTTPException(409, "该任务已处理，请刷新列表")
     payload = dict(job.payload or {})
     chapter_id = payload.pop("chapter_id", None)
@@ -317,7 +315,7 @@ def retry_studio_job(course_id: int, job_id: str, db: Db, user: Teacher):
     if job.kind != "exam_fill_gaps" and not isinstance(chapter_id, int):
         raise HTTPException(409, "缺少原章节信息，请重新配置任务")
     # Enqueue commits this acknowledgment along with the new job after rechecking current inputs.
-    job.progress = {**(job.progress or {}), "queue_dismissed": True}
+    job.progress = {**progress, "retried": True}
     try:
         if job.kind == "knowledge_extract":
             body = KnowledgeExtractRequest.model_validate(payload)

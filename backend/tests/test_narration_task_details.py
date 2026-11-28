@@ -47,11 +47,15 @@ def test_resumed_calibration_uses_matching_report_and_dismissal_preserves_histor
     assert client.post(cancel, json={"expected_started_at": start.isoformat()}, headers=headers).status_code == 409
     for _ in range(2):
         result = client.post(cancel, json=stamp, headers=headers)
-        assert result.status_code == 200 and result.json()["status"] == "failed" and result.json()["queue_dismissed"]
+        assert result.status_code == 200 and result.json()["status"] == "cancelled" and result.json()["queue_dismissed"]
     assert client.get(graph, params={"classroom_id": classroom["id"]}, headers=headers).json() == []
     history = client.get(overview(classroom), params={"status": "failed"}, headers=headers).json()
-    assert history["total"] == history["counts"]["failed"] == 2
+    assert history["total"] == history["counts"]["failed"] == 1 and history["counts"]["cancelled"] == 1
     assert client.get(detail_path, headers=headers).json()["message"] == task["message"]
+    db.info["narration_retry_expected"] = stamp["expected_started_at"]
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException, match="任务或资料已变化"):
+        repository.acquire(db, material, "digest", request={"operation": "digest"})
     repository.acquire(db, material, "digest", request={"operation": "digest"})
     assert client.post(cancel, json=stamp, headers=headers).status_code == 409
 

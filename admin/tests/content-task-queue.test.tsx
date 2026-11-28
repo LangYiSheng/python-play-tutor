@@ -33,11 +33,12 @@ it("reports actual progress and confirms cancellation for exactly the displayed 
 
 it("shows interrupted jobs and offers retry only for a retryable attempt", async () => {
   const user = userEvent.setup(), request = vi.fn();
-  const interrupted = {...job, status:"interrupted", percent:null, cancellable:false, retryable:false, retry_note:"需核查执行结果"};
+  const interrupted = {...job, run_id:42, status:"interrupted", percent:null, cancellable:false, retryable:false, retry_note:"需核查执行结果"};
   const view = render(<TaskDetail job={interrupted} material="判断语句" request={request}/>);
   expect(screen.getByText("已中断").closest(".inspector-task")).toHaveAttribute("data-failed", "true");
   expect(screen.getByText("未记录百分比")).toBeInTheDocument();
   expect(screen.queryByRole("button", {name:"重试"})).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", {name:"取消任务"})).not.toBeInTheDocument();
   expect(screen.getByText("需核查执行结果")).toBeInTheDocument();
   const failed = {...interrupted, status:"failed", retryable:true};
   view.rerender(<TaskDetail job={failed} material="判断语句" request={request}/>);
@@ -45,14 +46,21 @@ it("shows interrupted jobs and offers retry only for a retryable attempt", async
   expect(request).toHaveBeenCalledWith({command:"retry", job:failed, material:"判断语句"});
 });
 
-it("dismisses a failed task after confirmation and preserves its failed status", async () => {
+it.each([
+  {status:"failed", run_id:42, path:"/runs/42/cancel", body:{}},
+  {status:"interrupted", run_id:43, path:"/runs/43/cancel", body:{}},
+  {status:"failed", run_id:undefined, path:"/3/cancel", body:{expected_started_at:job.started_at}},
+])("cancels an authorized $status task via $path and refreshes the queue", async ({status, run_id, path, body}) => {
   const user = userEvent.setup(), reload = vi.fn();
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({status:"failed", queue_dismissed:true})));
-  render(<Queue jobs={[{...job, status:"failed", retryable:true}]} reload={reload}/>);
-  await user.click(screen.getByRole("button", {name:"忽略"}));
+  const fetch = vi.fn(async () => Response.json({status:"cancelled"}));
+  vi.stubGlobal("fetch", fetch);
+  render(<Queue jobs={[{...job, status, run_id, retryable:true, cancellable:true}]} reload={reload}/>);
+  await user.click(screen.getByRole("button", {name:"取消任务"}));
   const dialog = screen.getByRole("dialog");
   expect(within(dialog).getByText(/已生成的内容会保留/)).toBeVisible();
-  await user.click(within(dialog).getByRole("button", {name:"确认忽略"}));
-  expect(await screen.findByText("已忽略失败任务")).toBeVisible();
+  await user.click(within(dialog).getByRole("button", {name:"确认取消任务"}));
+  expect(await screen.findByText("任务已取消")).toBeVisible();
+  expect(fetch).toHaveBeenCalledWith("/api/teacher/courses/1/synthesis"+path,
+    expect.objectContaining({method:"POST", body:JSON.stringify(body)}));
   expect(reload).toHaveBeenCalledOnce();
 });

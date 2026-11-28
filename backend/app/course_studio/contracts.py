@@ -35,6 +35,7 @@ class JobSnapshot(BaseModel):
     result: dict[str, Any] | None = None
     error: str = ""
     cancel_requested: bool = False
+    retried: bool = False
     started_at: str | None = None
     finished_at: str | None = None
     created_at: str

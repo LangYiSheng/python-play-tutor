@@ -52,6 +52,7 @@ export function NarrationWorkbench({
   materialPoints = [],
   onOpenKnowledgeTab,
   onKnowledgeUpdated,
+  taskRevision = 0,
   jumpTarget,
 }: {
   courseId: number;
@@ -62,9 +63,10 @@ export function NarrationWorkbench({
   materialPoints?: KnowledgePointItem[];
   onOpenKnowledgeTab?: () => void;
   onKnowledgeUpdated?: () => void;
+  taskRevision?: number;
   jumpTarget?: { pageNo: number; seq: number } | null;
 }) {
-  const review = useNarrationReview(courseId, materialId, initialPage, jumpTarget, onKnowledgeUpdated);
+  const review = useNarrationReview(courseId, materialId, initialPage, jumpTarget, onKnowledgeUpdated, taskRevision);
   const {
     data,
     quota,

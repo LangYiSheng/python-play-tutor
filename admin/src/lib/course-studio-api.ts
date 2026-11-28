@@ -75,6 +75,7 @@ export interface CourseStudioJob {
   result: Record<string, unknown> | null;
   error: string;
   cancel_requested: boolean;
+  retried?: boolean;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -332,8 +333,6 @@ export const courseStudioApi = {
   },
   listJobs: (courseId: number, limit = 20, signal?: AbortSignal) =>
     api.get<{ jobs: CourseStudioJob[] }>(`${root(courseId)}/jobs?workspace=true&limit=${limit}`, signal),
-  dismissJob: (courseId: number, jobId: string) =>
-    api.post(`${root(courseId)}/jobs/${encodeURIComponent(jobId)}/dismiss`, {}),
   retryJob: (courseId: number, jobId: string) =>
     api.post<CourseStudioJob>(`${root(courseId)}/jobs/${encodeURIComponent(jobId)}/retry`, {}),
   cancelJob: (courseId: number, jobId: string) =>

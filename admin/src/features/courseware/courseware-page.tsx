@@ -104,7 +104,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
     [knowledge.reload],
   );
   const handleCourseStudioJobFailed = useCallback((job: CourseStudioJob) => {
-    if (job.kind === "knowledge_extract") {
+    if (job.kind === "knowledge_extract" && job.status !== "cancelled") {
       toast.add({
         title: "课件知识点抽取失败",
         description: job.error || "请检查 AI 模型配置后重试",
@@ -466,6 +466,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
               onOpenTasks={() => setTasksOpen(true)}
               onExtractKnowledge={() => void extractMaterialKnowledge(activeMaterial)}
               onKnowledgeUpdated={knowledge.reload}
+              taskRevision={taskRev}
               onPreview={previewMaterial}
               onListen={setListening}
               onEdit={editor.edit}

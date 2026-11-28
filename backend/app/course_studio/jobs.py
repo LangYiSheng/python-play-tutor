@@ -51,7 +51,8 @@ def serialize_job(job: CourseStudioJob) -> dict[str, Any]:
         "course_instance_id": job.course_instance_id,
         "kind": job.kind,
         "scope_key": job.scope_key,
-        "status": job.status,
+        "status": "cancelled" if prog.get("queue_dismissed") and job.status in {"failed", "interrupted"} else job.status,
+        "retried": bool(prog.get("retried")),
         "progress": {
             "done": int(prog.get("done") or 0),
             "total": int(prog.get("total") or 0),
@@ -125,7 +126,8 @@ def list_jobs(db: Session, course_instance_id: int, *, limit: int = 30, workspac
     base = select(CourseStudioJob).where(CourseStudioJob.course_instance_id == course_instance_id)
     latest = base.order_by(CourseStudioJob.created_at.desc(), CourseStudioJob.id.desc())
     if workspace:
-        visible = ~func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False)
+        visible = (~func.coalesce(CourseStudioJob.progress["queue_dismissed"].as_boolean(), False)
+                   & ~func.coalesce(CourseStudioJob.progress["retried"].as_boolean(), False))
         # Outstanding work remains visible even beyond the recent completion window.
         recent = latest.with_only_columns(CourseStudioJob.id).limit(limit)
         return list(db.scalars(latest.where(visible, CourseStudioJob.status.in_(("queued", "running", "failed", "interrupted"))
@@ -143,14 +145,24 @@ def get_job(db: Session, course_instance_id: int, job_id: str) -> CourseStudioJo
     return job
 
 
-def request_cancel(db: Session, course_instance_id: int, job_id: str) -> CourseStudioJob:
-    """Request cancellation for a queued or running job."""
-    job = get_job(db, course_instance_id, job_id)
-    if job.status in {"done", "failed", "cancelled", "interrupted"}:
+def request_cancel(db: Session, course_instance_id: int, job_id: str, *, failed_only: bool = False) -> CourseStudioJob:
+    """Cancel outstanding work or close a failed attempt, keeping results and diagnostics."""
+    job = db.scalar(select(CourseStudioJob).where(CourseStudioJob.id == job_id,
+                    CourseStudioJob.course_instance_id == course_instance_id).with_for_update()
+                    .execution_options(populate_existing=True))
+    if job is None:
+        raise HTTPException(404, "任务不存在或不属于当前课程")
+    if failed_only and job.status not in {"failed", "interrupted", "cancelled"}:
+        raise HTTPException(409, "只能取消失败或中断的任务")
+    if job.status in {"done", "cancelled"}:
         return job
     timestamp = now()
-    job.cancel_requested_at = timestamp
-    if job.status == "queued":
+    job.cancel_requested_at = job.cancel_requested_at or timestamp
+    if job.status in {"failed", "interrupted"}:
+        job.progress = {**(job.progress or {}), "queue_dismissed": True, "cancelled_from": job.status}
+        job.status = "cancelled"
+        job.finished_at = job.finished_at or timestamp
+    elif job.status == "queued":
         job.status = "cancelled"
         job.finished_at = timestamp
         job.progress = {**(job.progress or {}), "message": "任务已取消"}

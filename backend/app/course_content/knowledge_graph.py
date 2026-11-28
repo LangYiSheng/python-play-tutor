@@ -123,14 +123,13 @@ def active_tasks(course_id: int, db: Db, user: Teacher):
              .options(load_only(Material.id, Material.title, Material.kind)).where(Material.id.in_(materials)))
     status = run_state(NarrationJob)
     active = query.where(status == "running").order_by(NarrationJob.started_at, NarrationJob.id)
-    recent = query.where(status.in_(("failed", "interrupted", "cancelled")),
-                         ~func.coalesce(NarrationJob.progress["queue_dismissed"].as_boolean(), False)).order_by(
+    recent = query.where(status.in_(("failed", "interrupted"))).order_by(
         NarrationJob.started_at.desc(), NarrationJob.id.desc()).limit(30)
     items = []
     for job, material, run_id, requested in [*db.execute(active), *db.execute(recent)]:
         item = {**job_state(material.id, job), **snapshot(material, job, cancel_requested=requested is not None, latest_db=db)}
         item["run_id"] = run_id
-        item["cancellable"] = bool((run_id or item["status"] == "failed") and item["cancellable"])
+        item["cancellable"] = bool((run_id or item["status"] in {"failed", "interrupted"}) and item["cancellable"])
         if item["status"] == "cancelling":
             item["message"] = "已请求取消，等待当前步骤结束"
         items.append(item)

@@ -183,6 +183,11 @@ export interface NarrationJobState {
   started_at: string | null;
 }
 
+export function canRetryNarrationJob(job: NarrationJobState | null): job is NarrationJobState & { started_at: string } {
+  return Boolean(job?.retryable && job.started_at && !job.running && !job.queued &&
+    ["failed", "interrupted", "cancelled"].includes(job.status));
+}
+
 export const narrationApi = {
   list: (courseId: number, materialId: number) =>
     api.get<NarrationList>(base(courseId, materialId)),

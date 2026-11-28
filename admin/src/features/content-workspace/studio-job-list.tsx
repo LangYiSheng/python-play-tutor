@@ -103,7 +103,7 @@ export function displayMessage(job: CourseStudioJob): string {
 }
 
 export function outstandingJob(job: CourseStudioJob) {
-  return ["queued", "running", "failed", "interrupted"].includes(job.status);
+  return !job.retried && ["queued", "running", "failed", "interrupted"].includes(job.status);
 }
 
 export function StudioJobActions({ job, courseId, refresh }: {
@@ -112,19 +112,19 @@ export function StudioJobActions({ job, courseId, refresh }: {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const active = job.status === "running" || job.status === "queued";
-  if (!outstandingJob(job)) return null;
+  if (!active && job.status !== "failed" && job.status !== "interrupted") return null;
 
-  async function act(command: "cancelJob" | "retryJob" | "dismissJob") {
+  async function act(command: "cancelJob" | "retryJob") {
     if (busy) return;
     setBusy(true);
     try {
       await courseStudioApi[command](courseId, job.id);
       setConfirm(false);
-      refresh();
     } catch (error) {
       toast.add({ title: errorMessage(error), type: "error" });
     } finally {
       setBusy(false);
+      refresh();
     }
   }
   return active
@@ -132,8 +132,8 @@ export function StudioJobActions({ job, courseId, refresh }: {
         <Square />{job.cancel_requested ? "正在取消…" : "取消"}
       </Button>
     : <>
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => setConfirm(true)}><RotateCcw />重试</Button>
-        <Button size="xs" variant="ghost" disabled={busy} onClick={() => void act("dismissJob")}>忽略</Button>
+        {!job.retried && <Button size="xs" variant="outline" disabled={busy} onClick={() => setConfirm(true)}><RotateCcw />重试</Button>}
+        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act("cancelJob")}><Square/>取消任务</Button>
         <Dialog open={confirm} onOpenChange={open => { if (!busy) setConfirm(open); }}>
           <DialogContent><DialogHeader><DialogTitle>重试{KIND_LABELS[job.kind] ?? "生成任务"}？</DialogTitle>
             <DialogDescription>将按原配置重新生成，可能产生模型费用。已生成的内容会保留。</DialogDescription>
@@ -183,7 +183,7 @@ export function StudioJobList({ jobs, courseId, refresh }: {
                         : undefined
                     }
                   >
-                    {STATUS_LABELS[job.status] ?? job.status}
+                    {active && job.cancel_requested ? "正在取消" : STATUS_LABELS[job.status] ?? job.status}
                   </Badge>
                   <StudioJobActions job={job} courseId={courseId} refresh={refresh} />
                 </div>

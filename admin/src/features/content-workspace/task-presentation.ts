@@ -46,7 +46,7 @@ export function taskPercent(job: TaskSnapshot) {
 }
 
 export function taskFailed(job: TaskSnapshot) {
-  return job.status === "failed" || job.status === "interrupted" || Boolean(job.failed?.length);
+  return job.status !== "cancelled" && (job.status === "failed" || job.status === "interrupted" || Boolean(job.failed?.length));
 }
 
 export function taskStatus(job: TaskSnapshot) {

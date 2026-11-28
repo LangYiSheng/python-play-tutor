@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, RotateCcw, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleOff, Loader2, RotateCcw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { NarrationJobState } from "./api";
+import { canRetryNarrationJob, type NarrationJobState } from "./api";
 
 const PIPELINE_STAGES: [string, string][] = [
   ["digest", "整理原文"],
@@ -61,9 +61,10 @@ export function JobProgressBar({
 
   const chain = job.chain ?? [];
   const hasStages = job.kind === "pipeline" && (chain.length > 0 || active);
-  const failed = job.status === "failed" || job.status === "interrupted" || job.status === "cancelled";
+  const cancelled = job.status === "cancelled";
+  const failed = job.status === "failed" || job.status === "interrupted";
   const finished = job.status === "done";
-  const hasVisibleContent = active || failed || (finished && hasStages) || Boolean(job.failed?.length);
+  const hasVisibleContent = active || failed || cancelled || (finished && hasStages) || Boolean(job.failed?.length);
   if (!hasVisibleContent) return null;
 
   const jobKey = `${job.id ?? ""}:${job.started_at ?? ""}:${job.status}`;
@@ -92,13 +93,7 @@ export function JobProgressBar({
     firstFailedError && job.message && !job.message.includes(firstFailedError)
       ? `${job.message} · ${firstFailedError}`
       : job.message || firstFailedError;
-  const canRetry = Boolean(
-    failed &&
-      onRetry &&
-      (job.retryable === true ||
-        (job.retryable === undefined && Boolean(job.started_at)) ||
-        (job.kind === "audio" && (job.failed?.length ?? 0) > 0)),
-  );
+  const canRetry = Boolean(onRetry && canRetryNarrationJob(job));
   const failedCount = job.failed?.length ?? 0;
 
   return (
@@ -116,6 +111,8 @@ export function JobProgressBar({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {active ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+        ) : cancelled ? (
+          <CircleOff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         ) : failed ? (
           <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
         ) : (
@@ -124,6 +121,7 @@ export function JobProgressBar({
 
         {hasStages ? (
           <div className="flex flex-wrap items-center gap-1">
+            {cancelled && <span>已取消</span>}
             {PIPELINE_STAGES.map(([key, label], index) => {
               const isDone = finished || (stageIndex >= 0 && index < stageIndex);
               const isCurrent = !isDone && key === currentStage;
@@ -152,7 +150,7 @@ export function JobProgressBar({
         ) : (
           <span className="font-medium">
             {KIND_LABELS[job.kind] ?? "后台任务"}
-            {job.queued ? " · 排队中" : active ? " · 进行中" : failed ? " · 未完成" : " · 已完成"}
+            {job.queued ? " · 排队中" : active ? " · 进行中" : cancelled ? " · 已取消" : failed ? " · 未完成" : " · 已完成"}
           </span>
         )}
 

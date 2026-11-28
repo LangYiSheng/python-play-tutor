@@ -34,7 +34,7 @@ export function MaterialTasksDialog({
         <DialogHeader>
           <DialogTitle>课件制作任务（梳理与语音合成）</DialogTitle>
           <DialogDescription>
-            查看本课程的课件制作进度，可重试或忽略失败任务。
+            查看本课程的课件制作进度，可重试或取消失败任务。
           </DialogDescription>
         </DialogHeader>
         {error && <ErrorNotice message={error} />}

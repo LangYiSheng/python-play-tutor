@@ -8,7 +8,7 @@ import { api, errorMessage, token } from "@/lib/api";
 import { taskNodeId } from "./graph-layout";
 import { stageTitle, taskFailed, taskPercent, taskStage, taskStatus, taskTitle, taskWork, type TaskSnapshot } from "./task-presentation";
 
-type Command = "cancel" | "retry" | "dismiss";
+type Command = "cancel" | "retry";
 export type TaskCommand = { command: Command; job: TaskSnapshot; material: string };
 type Controls = { request: (target: TaskCommand) => void };
 
@@ -24,11 +24,10 @@ export function useTaskCommands(courseId: number | undefined, refresh: () => voi
     const { job, command, material } = pending;
     try {
       const base = `/teacher/courses/${courseId}/synthesis`;
-      const dismissRun = command === "dismiss" && job.run_id;
-      const path = dismissRun ? `${base}/runs/${job.run_id}/dismiss`
-        : `${base}/${job.material_id}/${command === "dismiss" ? "cancel" : command}`;
-      const result = await api.post<{status: string}>(path, dismissRun ? {} : { expected_started_at: job.started_at });
-      const label = command === "dismiss" ? "已忽略失败任务" : command === "cancel" ? (result.status === "cancelled" ? "任务已取消" : "已请求取消")
+      const cancelRecord = command === "cancel" && job.run_id && (job.status === "failed" || job.status === "interrupted");
+      const path = cancelRecord ? `${base}/runs/${job.run_id}/cancel` : `${base}/${job.material_id}/${command}`;
+      const result = await api.post<{status: string}>(path, cancelRecord ? {} : { expected_started_at: job.started_at });
+      const label = command === "cancel" ? (result.status === "cancelled" ? "任务已取消" : "已请求取消")
         : result.status === "failed" ? "重试仍有失败" : result.status === "done" ? "重试已完成" : "已提交重试";
       if (captured === token()) toast.add({ title: label, description: material,
         type: command === "retry" && result.status === "failed" ? "warning" : "success" });
@@ -40,16 +39,16 @@ export function useTaskCommands(courseId: number | undefined, refresh: () => voi
     } finally { setBusy(false); refresh(); }
   }
   const retry = pending?.command === "retry";
-  const dismiss = pending?.command === "dismiss";
+  const stopped = pending?.job.status === "failed" || pending?.job.status === "interrupted";
   const feedback = <>
     {pending && <Dialog open onOpenChange={open => {if (!open && !busy) setPending(null);}}>
-      <DialogContent><DialogHeader><DialogTitle>{retry ? "重试" : dismiss ? "忽略" : "取消"}{taskTitle(pending.job)}？</DialogTitle>
+      <DialogContent><DialogHeader><DialogTitle>{retry ? "重试" : "取消"}{taskTitle(pending.job)}？</DialogTitle>
         <DialogDescription>{pending.material} · {taskStatus(pending.job)}</DialogDescription></DialogHeader>
         <p className="text-sm">{retry ? "将按原配置重新发起任务，可能产生模型或配音费用。"
-          : dismiss ? "该任务将从任务列表中移除，已生成的内容会保留。"
+          : stopped ? "任务将标记为已取消。已生成的内容会保留，可在任务历史中查看。"
           : "排队任务会立即取消。已开始的步骤会先收尾，已保存的结果会保留。"}</p>
         <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setPending(null)}>返回</Button>
-          <Button disabled={busy} onClick={() => void submit()}>{retry ? "确认重试" : dismiss ? "确认忽略" : "确认取消任务"}</Button></DialogFooter>
+          <Button disabled={busy} onClick={() => void submit()}>{retry ? "确认重试" : "确认取消任务"}</Button></DialogFooter>
       </DialogContent></Dialog>}
   </>;
   return { request, feedback };
@@ -76,9 +75,7 @@ function StageList({ job }: {job: TaskSnapshot}) {
 export function TaskButtons({ job, material, request, variant = "outline" }: {
   job: TaskSnapshot; material: string; variant?: "outline" | "ghost"
 } & Controls) {
-  const dismissible = job.status === "failed" && !job.queue_dismissed && (job.run_id || job.cancellable && job.started_at);
-  return <>{dismissible && <Button size="sm" variant={variant} onClick={() => request({job, material, command:"dismiss"})}>忽略</Button>}
-    {job.status !== "failed" && job.cancellable && job.started_at &&
+  return <>{job.cancellable && (job.run_id || job.started_at) &&
     <Button size="sm" variant={variant} onClick={() => request({job, material, command:"cancel"})}><Square/>取消任务</Button>}
     {job.retryable && job.started_at &&
     <Button size="sm" variant={variant} onClick={() => request({job, material, command:"retry"})}><RotateCcw/>重试</Button>}</>;

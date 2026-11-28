@@ -39,6 +39,7 @@ afterEach(() => {
 
 it("renders PPT knowledge graph in tree/radial/list views and triggers AI extraction", async () => {
   const extracted: string[] = [];
+  let cancelled = false;
   vi.stubGlobal("fetch", async (path: string, init?: RequestInit) => {
     const url = new URL(path, location.origin);
     if (url.pathname.endsWith("/course-graph")) {
@@ -49,6 +50,10 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
       });
     }
     if (url.pathname.endsWith("/course-graph/tasks")) return json([]);
+    if (url.pathname.endsWith("/course-studio/jobs/job-kp-0/cancel") && init?.method === "POST") {
+      cancelled = true;
+      return json({status:"cancelled"});
+    }
     if (url.pathname.endsWith("/content-review/summary")) return json({ material_count: 0, question_count: 0 });
     if (url.pathname.endsWith("/course-studio/jobs")) {
       return json({
@@ -58,7 +63,7 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
             course_instance_id: 1,
             kind: "knowledge_extract",
             scope_key: "ch:17",
-            status: "failed",
+            status: cancelled ? "cancelled" : "failed",
             progress: { done: 0, total: 1, message: "抽取失败" },
             result: null,
             error: "模型服务超时",
@@ -139,7 +144,9 @@ it("renders PPT knowledge graph in tree/radial/list views and triggers AI extrac
 
   // Task drawer on KnowledgeGraph only shows knowledge_extract jobs (never exercises or TTS)
   expect(await screen.findByText("AI 知识点抽取")).toBeVisible();
-  expect(screen.getByRole("button", { name: "忽略" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "取消任务" }));
+  await waitFor(() => expect(screen.queryByText("AI 知识点抽取")).not.toBeInTheDocument());
+  expect(cancelled).toBe(true);
   expect(screen.queryByText("AI 智能出题")).not.toBeInTheDocument();
   expect(screen.queryByText("语音合成")).not.toBeInTheDocument();
 

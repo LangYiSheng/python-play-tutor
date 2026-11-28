@@ -166,7 +166,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
         <AlertTriangle size={16} aria-hidden="true" />
         <span>
           {[failedCount ? `${failedCount} 条任务执行失败` : '', interruptedCount ? `${interruptedCount} 条任务中断待核查` : ''].filter(Boolean).join('，')}。
-          {courseId === undefined ? '可进入对应课程处理。' : '可查看任务详情、重试或忽略失败任务。'}
+          {courseId === undefined ? '可进入对应课程处理。' : '可查看任务详情、重试或取消失败任务。'}
         </span>
       </div>
       <div className="synthesis-alert-actions">

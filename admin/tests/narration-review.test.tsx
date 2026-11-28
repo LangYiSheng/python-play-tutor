@@ -79,6 +79,10 @@ function stub(
     vi.fn(async (url: string, init: RequestInit = {}) => {
       const method = init.method ?? "GET";
       if (method !== "GET") calls.push({ url, method, body: init.body ? JSON.parse(init.body as string) : undefined });
+      if (url.endsWith("/retry") && overrides.retryError) {
+        overrides.job = overrides.jobAfterRetry ?? overrides.job;
+        return json({ detail: overrides.retryError }, 409);
+      }
       if (url.endsWith("/quota")) return json({ used_today: 4, daily_limit: 300, available: true });
       if (url.endsWith("/audio"))
         return json({
@@ -295,6 +299,19 @@ it("renders a live progress bar with percentage and position while a job runs", 
   expect(bar).toHaveAttribute("aria-valuenow", "33");
   expect(screen.getByText("3 / 9 组（33%）")).toBeTruthy();
   expect(screen.getByText("第 4 组 · 第 13–16 页")).toBeTruthy();
+});
+
+it("shows stale retry errors without starting a full audio generation and refreshes the cancelled task", async () => {
+  const calls: { url: string; method: string; body?: unknown }[] = [];
+  const job = { id: 20, material_id: 7, kind: "audio", status: "failed", running: false, queued: false,
+    failed: [{ page_no: 2, error: "服务超时" }], done: 1, total: 2, retryable: true, started_at: "2026-11-26T02:00:00Z" };
+  stub(calls, { job, jobAfterRetry: { ...job, status: "cancelled", retryable: false }, retryError: "任务已变化，请刷新" });
+  render(<NarrationReview courseId={3} materialId={7} title="测试" onClose={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: /一键重试失败页/ }));
+  expect(await screen.findByText("任务已变化，请刷新")).toBeVisible();
+  expect(await screen.findByText("全文配音 · 已取消")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /重试失败页|重试任务/ })).toBeNull();
+  expect(calls).toEqual([{ url: "/api/teacher/courses/3/synthesis/7/retry", method: "POST", body: { expected_started_at: job.started_at } }]);
 });
 
 it("offers a one-click retry failed pages button on failed audio jobs", async () => {

@@ -31,6 +31,7 @@ export function MaterialWorkspace({
   onOpenTasks,
   onExtractKnowledge,
   onKnowledgeUpdated,
+  taskRevision,
   onPreview,
   onListen,
   onEdit,
@@ -50,6 +51,7 @@ export function MaterialWorkspace({
   onOpenTasks?: () => void;
   onExtractKnowledge?: () => void;
   onKnowledgeUpdated?: () => void;
+  taskRevision?: number;
   onPreview: (m: Material) => void;
   onListen: (m: Material) => void;
   onEdit: (m: Material) => void;
@@ -210,6 +212,7 @@ export function MaterialWorkspace({
               materialPoints={materialPoints}
               onOpenKnowledgeTab={() => setActiveTab("knowledge")}
               onKnowledgeUpdated={onKnowledgeUpdated}
+              taskRevision={taskRevision}
               mode={activeTab === "script" ? "script" : "source"}
             />
           </div>
