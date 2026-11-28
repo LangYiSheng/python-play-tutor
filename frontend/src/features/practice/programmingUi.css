@@ -574,38 +574,28 @@
 .game-workspace .coding-summary-edit > .game-icon { flex-shrink: 0; }
 
 .game-workspace .coding-badges {
+  margin-bottom: 8px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
-.game-workspace .coding-difficulty-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: .75rem;
-  font-weight: 600;
-  border: 1px solid var(--game-line);
-  background: #ede6d7;
-  color: var(--game-ink, #513b28);
+.game-workspace .learning-layout .coding-badges .question-kind {
+  margin: 0;
 }
 
-.game-workspace .coding-difficulty-badge[data-difficulty="易"] {
-  border-color: #9dc5b8;
+.game-workspace .coding-badges .question-kind[data-difficulty="易"] {
   background: #e6f2ee;
   color: #1f5c4a;
 }
 
-.game-workspace .coding-difficulty-badge[data-difficulty="中"] {
-  border-color: #d6b67c;
+.game-workspace .coding-badges .question-kind[data-difficulty="中"] {
   background: #f8eed9;
   color: #7d5314;
 }
 
-.game-workspace .coding-difficulty-badge[data-difficulty="难"] {
-  border-color: #d79d95;
+.game-workspace .coding-badges .question-kind[data-difficulty="难"] {
   background: #f9e7e4;
   color: #8f2d24;
 }

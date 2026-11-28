@@ -10,6 +10,13 @@ test('practice submission runs real public Python samples, saves a receipt and s
   await page.getByRole('button',{name:'提交代码',exact:true}).click();
   await expect(page.locator('.result-origin')).toHaveText('正式提交',{timeout:30000});
   await expect(page.locator('.coding-pass-count')).toHaveText('2 / 2 个测试用例通过');
+  const badges = await page.locator('.coding-badges .question-kind').evaluateAll(nodes =>
+    nodes.map(node => ({height:node.getBoundingClientRect().height, y:node.getBoundingClientRect().y, background:getComputedStyle(node).backgroundColor})));
+  expect(badges).toHaveLength(2);
+  expect(badges[0]!.height).toBe(badges[1]!.height);
+  expect(badges[0]!.y).toBe(badges[1]!.y);
+  expect(badges[0]!.background).not.toBe(badges[1]!.background);
+  await expect(page.locator('.coding-result-summary').getByRole('button',{name:'下一题'})).toBeVisible();
   const saved=await page.evaluate(()=>Reflect.get(window,'fixtureSubmissions'));
   expect(saved).toHaveLength(1); expect(saved[0].browser_cases).toHaveLength(2);
   expect(saved[0].browser_cases[1].stdout).toBe('你好，Python！\n');

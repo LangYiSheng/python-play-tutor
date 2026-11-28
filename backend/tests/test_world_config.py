@@ -27,10 +27,7 @@ def test_canonical_world_and_portal_anchors_have_one_source():
     points = interaction_points()
     assert points["library_door"] == ("town_hub", 8, 22)
     assert points["library_exit"] == ("library", 9, 12)
-    assert ("library", 4, 4) in points["library_shelf"]
-    assert ("library", 15, 8) in points["library_shelf"]
-    assert len(points["library_shelf"]) == 10
-    assert points["practice_plaza"] == ("town_hub", 38, 24)
+    assert not {"library_shelf", "practice_plaza", "town_square"}.intersection(points)
     assert points["library"] == ("town_hub", 8, 22)
     assert points["training"] == ("town_hub", 8, 31)
 
@@ -44,7 +41,7 @@ def test_invalid_world_configuration_is_rejected(mutation):
     elif mutation == "spawn":
         config["default_spawn"]["tile_x"] = 50
     elif mutation == "anchor":
-        config["interactions"]["library_shelf"]["points"][0]["tile_y"] = 14
+        config["interactions"]["marker"] = {"label": "测试", "kind": "object", "map_key": "library", "tile_x": 1, "tile_y": 14}
     elif mutation == "portal":
         config["portals"][0]["to"]["tile_x"] = 18
     elif mutation == "duplicate_portal":
@@ -139,7 +136,7 @@ def test_walk_bounds_exclude_decoration_from_player_and_npc_positions(client, st
 @pytest.mark.parametrize("invalid", ["empty", "duplicate", "too_many", "unknown_map", "mixed"])
 def test_multi_point_interactions_reject_unbounded_duplicate_or_invalid_geometry(invalid):
     config = deepcopy(load_world_config())
-    shelf = config["interactions"]["library_shelf"]
+    shelf = config["interactions"]["marker"] = {"kind": "object", "label": "测试", "points": [{"map_key": "library", "tile_x": 1, "tile_y": 1}]}
     if invalid == "empty":
         shelf["points"] = []
     elif invalid == "duplicate":

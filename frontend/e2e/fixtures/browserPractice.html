@@ -13,7 +13,7 @@ const session=useSession();
 session.user={id:999,name:'测试学生',student_id:'999',role:'student'}; session.classroomId=999;
 session.world={player:{map_key:'town_hub',tile_x:22,tile_y:36,direction:'down'},quests:[],chapters:[],flags:[],npcs:[]};
 const samples=[{input:'小林',output:'你好，小林！'},{input:'Python',output:'你好，Python！'}];
-const question={id:'browser-python',kind:'python',title:'向小镇问好',prompt:'读取一个名字，输出：你好，名字！',samples,starter_code:'print("你好，" + input() + "！")'};
+const question={id:'browser-python',kind:'python',title:'向小镇问好',prompt:'读取一个名字，输出：你好，名字！',samples,source:{coding_type:'debug',difficulty:'难'},starter_code:'print("你好，" + input() + "！")'};
 const other=['single_choice','boolean','fill'].map((kind,index)=>({id:`question-${index}`,kind,title:['选择正确答案','判断语句','填写答案'][index],prompt:'用于验证题目卡片标题栏',options:kind==='single_choice'?['甲','乙']:[],samples:[]}));
 session.activity=async()=>({id:'browser-practice',title:'小镇练习：公开样例评测',kind:'practice',chapter_id:1,assistant_allowed:false,resources:[],questions:[question,...other]});
 api.get=async path=>{

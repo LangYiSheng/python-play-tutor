@@ -10,8 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .coding_questions import check_fill_submission_for_question
-from .question_types import question_type
-from .assessment_grades import ACCEPTED, GRADED, grade_status
+from .assessment_grades import ACCEPTED, GRADED, assessment_answered, grade_status
 from .auth import current_user
 from .db import get_db
 from .models import AssessmentAttempt, Classroom, Question, QuestionSecret, Submission, User, now
@@ -142,7 +141,7 @@ def _normalize(entries, questions, *, complete=False):
         if item.answer is not None and len(json.dumps(item.answer, ensure_ascii=False)) > 20000:
             raise HTTPException(422, "单题答案过长")
         if complete:
-            valid = question_type(question.kind).complete(question, item.answer, item.code)
+            valid = assessment_answered(question, item.answer, item.code)
             if not valid:
                 raise HTTPException(422, "请先完成所有题目再提交试卷")
             fill_error = check_fill_submission_for_question(question, item.code)

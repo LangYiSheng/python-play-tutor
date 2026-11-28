@@ -31,8 +31,7 @@ Building signs show names only; unopened buildings have no E prompts or closed-s
 The bottom map workspace shows the current logical map, cropped away from scenic extensions,
 with a large left preview and a separate right target card containing icon filters.
 There is no map chooser or WASD/arrow selection handling. Only explicit navigation moves the player.
-All ten real library bookcases bind to the same library_shelf semantic through distinct points;
-the central service aisle, two complete wide reading tables and four separate short stools replace
+The ten library bookcases are scenery. The central service aisle, two complete wide reading tables and four separate short stools replace
 the former oversized rug, lone table and incorrect long seating slices. Table footprints cover
 their surface area and stools have distinct collision tiles.
 The player marker uses the current in-memory Sprite position and remains visible under all filters.

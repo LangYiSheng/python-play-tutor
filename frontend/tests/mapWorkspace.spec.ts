@@ -71,6 +71,7 @@ describe("the map previews places and navigates only on request", () => {
     expect(canvas.attributes("width")).toBe(String(bounds.width * 16));
     expect(canvas.attributes("height")).toBe(String(bounds.height * 16));
     expect(paintMapPreview).toHaveBeenCalledWith(canvas.element, "town_hub", expect.any(AbortSignal), bounds);
+    expect(wrapper.text()).not.toMatch(/南侧广场|东侧练习场/);
     expect(wrapper.findAll('.map-marker.building')).toHaveLength(11);
     const marker = wrapper.get('[aria-label="地图标记：镇长 Py"]');
     expect(marker.attributes("style")).toContain(`left: ${(22.5 - bounds.x) / bounds.width * 100}%`);
@@ -95,7 +96,7 @@ describe("the map previews places and navigates only on request", () => {
     expect(player.attributes("style")).toContain(`left: ${9.5 / 18 * 100}%`);
     expect(player.attributes("style")).toContain(`top: ${11.5 / 14 * 100}%`);
     expect(wrapper.get('[aria-label="选择图书管理员"]').exists()).toBe(true);
-    expect(wrapper.findAll('[aria-label="选择图书馆书架"]')).toHaveLength(1);
+    expect(wrapper.findAll('[aria-label="选择图书馆书架"]')).toHaveLength(0);
     expect(wrapper.text()).not.toContain("西侧");
     await wrapper.get('[aria-label="筛选建筑"]').trigger("click");
     expect(wrapper.get('[aria-label="选择返回小镇"]').exists()).toBe(true);

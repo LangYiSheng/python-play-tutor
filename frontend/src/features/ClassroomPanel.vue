@@ -18,7 +18,7 @@
           <div v-else class="town-empty classroom-no-current"><GameIcon name="people" /><h3>尚未选择班级</h3><p>选择已加入的班级，或使用教师提供的加入码加入新班级。</p><div class="classroom-actions"><button v-if="session.classes.length" class="town-primary" @click="selectSection('switch')">选择班级</button><button class="town-secondary" @click="selectSection('join')">加入班级</button></div></div>
           <section v-if="currentClass" class="town-section classroom-learning" aria-label="当前学习进度">
             <div class="classroom-section-heading"><h3 class="game-card-title"><GameIcon name="chart" />学习进度</h3><span>{{ completedChapters }} / {{ availableChapters }} 章已完成</span></div>
-            <p v-if="nextGoal" class="classroom-next-goal">{{ nextGoal.chapter.title }} · {{ nextGoal.title }}</p>
+            <p v-if="nextGoal" class="classroom-next-goal"><ChapterNumber :number="nextGoal.chapter.order_index"/> {{ nextGoal.chapter.title }} · {{ nextGoal.title }}</p>
             <button class="town-secondary" @click="session.open({kind:'journal'})">查看章节进度</button>
           </section>
         </template>
@@ -39,6 +39,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import ChapterNumber from "../shared/ChapterNumber.vue";
 import { computed, onBeforeUnmount, ref } from "vue";
 import GameIcon from "../shared/GameIcon.vue";
 import { useSession } from "../shared/session";

@@ -1,10 +1,10 @@
 """Resolve the same chapter state for access control, reports and learner navigation."""
 from sqlalchemy import select
 
-from app.assessment_grades import grade_status
+from app.assessment_grades import assessment_answered, grade_status
 from app.chapter_tasks.rules import reading_task
 from app.practice_sessions import practice_progress
-from app.models import Activity, ActivityQuestion, AssessmentAttempt, Chapter, ChapterRelease, Material, MaterialChapter, MaterialParticipation, Submission, now
+from app.models import Activity, ActivityQuestion, AssessmentAttempt, Chapter, ChapterRelease, Material, MaterialChapter, MaterialParticipation, Question, Submission, now
 
 
 def chapter_materials(chapter, teacher_id):
@@ -25,6 +25,7 @@ def open_chapters(db, room):
 def activity_task(db, user, room, activity):
     kind = activity.content.get("practice_kind", "objective") if activity.kind == "practice" else "assessment"
     complete = handed_in = False
+    grading_status = None
     if activity.content.get("practice_rules") and kind != "assessment":
         detail = practice_progress(db, user, room.id, activity)
         goals = detail["practice"]["goals"]
@@ -37,15 +38,20 @@ def activity_task(db, user, room, activity):
         if kind == "assessment":
             attempt = db.scalar(select(AssessmentAttempt).where(AssessmentAttempt.activity_id == activity.id,
                                 AssessmentAttempt.user_id == user.id, AssessmentAttempt.classroom_id == room.id))
-            current = len(ids.intersection(attempt.answers)) if attempt else 0
-            if attempt and attempt.state == "submitted":
+            current = 0
+            if attempt and attempt.state == "draft":
+                answers = attempt.answers
+                questions = db.scalars(select(Question).where(Question.id.in_(ids.intersection(answers))))
+                current = sum(assessment_answered(q, answers[q.id].get("answer"), answers[q.id].get("code")) for q in questions)
+            if attempt and attempt.state in {"submitted", "legacy"}:
                 total = len(attempt.question_ids)
                 current = len(attempt.answers)
                 statuses = db.scalars(select(Submission.status).where(
                     Submission.id.in_(list(attempt.submission_ids.values())),
                     Submission.user_id == user.id, Submission.classroom_id == room.id,
                     Submission.activity_id == activity.id)).all()
-                complete = grade_status(statuses, total) == "graded"
+                grading_status = grade_status(statuses, total)
+                complete = grading_status == "graded"
                 handed_in = True
         else:
             passed = db.scalars(select(Submission.question_id).where(Submission.activity_id == activity.id,
@@ -55,7 +61,7 @@ def activity_task(db, user, room, activity):
             complete = bool(total) and current == total
     return {"id": activity.id, "activity_id": activity.id, "title": activity.title, "kind": kind,
             "required": kind == "assessment" or activity.content.get("required", True), "completed": complete,
-            "locked": False, "handed_in": handed_in, "lock_reason": None,
+            "locked": False, "handed_in": handed_in, "grading_status": grading_status, "lock_reason": None,
             "current": current, "total": total, "unit": "题"}
 
 

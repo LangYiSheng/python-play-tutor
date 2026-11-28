@@ -1154,11 +1154,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -1298,11 +1293,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -1442,11 +1432,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -1586,11 +1571,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -1730,11 +1710,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -1874,11 +1849,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -2018,11 +1988,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -2162,11 +2127,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -2306,11 +2266,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },
@@ -2450,11 +2405,6 @@
               "name": "collidable",
               "type": "bool",
               "value": false
-            },
-            {
-              "name": "interaction_id",
-              "type": "string",
-              "value": "library_shelf"
             }
           ]
         },

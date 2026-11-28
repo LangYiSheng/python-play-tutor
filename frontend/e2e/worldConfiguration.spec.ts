@@ -315,17 +315,7 @@ test("map preview, filters, WASD, library doors and cross-map guidance share one
   await expect(page.locator(".toast-layer p")).toHaveCount(0, { timeout: 8_000 });
   await checkCanvas();
   await page.screenshot({ path: testInfo.outputPath("library-exit-marker.png") });
-  // A distant bookcase leads to the same librarian visit as the HUD shortcut.
-  const libraryArt = await (await request.get(definition.maps.library!.asset!)).json() as TiledMap;
-  const cabinets = libraryArt.layers.flatMap(layer => layer.objects ?? []).filter(object =>
-    object.properties?.some(property => property.name === "interaction_id" && property.value === "library_shelf"),
-  );
-  expect(cabinets.length).toBeGreaterThanOrEqual(8);
-  const eastCabinet = cabinets.filter(object => object.y >= 80).sort((a, b) => b.x - a.x)[0]!;
-  expect(eastCabinet).toBeTruthy();
-  await clickVisibleWorldPoint(page, definition.maps.library!, (await world()).player, {
-    x: eastCabinet.x + eastCabinet.width / 2, y: eastCabinet.y + eastCabinet.height / 2,
-  });
+  await findNpc(page, "图书管理员");
   const librarianDialogue = page.getByRole("dialog", { name: "角色对白" });
   await expect(librarianDialogue).toBeVisible({ timeout: 45_000 });
   await librarianDialogue.getByRole("button", { name: /查看学习资料/ }).click();
@@ -338,7 +328,7 @@ test("map preview, filters, WASD, library doors and cross-map guidance share one
   await expect(page.locator(".world-hint")).toHaveText("E · 交谈");
   const indoorNavigation = await openMap(page);
   await expect(indoorNavigation.getByLabel("玩家当前位置", { exact: true })).toBeVisible();
-  await expect(indoorNavigation.getByRole("button", { name: "选择图书馆书架", exact: true })).toBeVisible();
+  await expect(indoorNavigation.getByRole("button", { name: "选择图书馆书架", exact: true })).toHaveCount(0);
   await expect(indoorNavigation.getByText("西侧书架", { exact: true })).toHaveCount(0);
   await expect(indoorNavigation.getByRole("combobox")).toHaveCount(0);
   await expect(indoorNavigation.getByRole("button", { name: "选择镇长 Py", exact: true })).toHaveCount(0);

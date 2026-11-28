@@ -30,6 +30,26 @@ it("lists parallel goals per chapter and shows the whole selected chapter",async
   expect(session.trackedQuest).toBe("2:reading");
   expect(w.get("main").text()).toContain("请先阅读必读资料");
 });
+it("shows the real chapter number and replaces navigation once all required work is done", async () => {
+  const {session, global} = setup();
+  session.taskChapters = [{id:9, title:"算法", order_index:7, completed:false, tasks:[task("assessment", "exam")]}];
+  const journal = mount(QuestJournal,{global}), hud = mount(GameHUD,{global});
+  expect(journal.get("main h3").text()).toContain("7 算法");
+  expect(journal.get(".chapter-title [aria-label='第 7 章']").exists()).toBe(true);
+  const chapter = session.taskChapters[0]!, exam = chapter.tasks[0]!;
+  Object.assign(exam, {handed_in:true, grading_status:"grading"});
+  await hud.vm.$nextTick();
+  expect(hud.text()).toContain("测验已交卷");
+  expect(hud.find(".quest-go").exists()).toBe(false);
+  exam.completed = chapter.completed = true;
+  await hud.vm.$nextTick();
+  expect(hud.text()).toContain("任务已全部完成");
+  expect(hud.find(".quest-go").exists()).toBe(false);
+  session.taskChapters = [];
+  await hud.vm.$nextTick();
+  expect(hud.text()).not.toContain("任务已全部完成");
+  hud.unmount(); journal.unmount();
+});
 it("switches the HUD between available targets and guides to its fixed NPC",async()=>{
   const {global}=setup(), w=mount(GameHUD,{global});
   await w.get('[aria-label="切换追踪目标"]').trigger("click");

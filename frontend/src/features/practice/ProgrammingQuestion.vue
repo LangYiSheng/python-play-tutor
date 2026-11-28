@@ -5,7 +5,7 @@
       <div class="coding-pane-body">
         <div v-if="$slots.metadata || codingType || difficultyLabel" class="coding-badges">
           <span class="question-kind">{{ codingBadge }}</span>
-          <span v-if="difficultyLabel" class="coding-difficulty-badge" :data-difficulty="difficultyLabel">{{ difficultyLabel }}</span>
+          <span v-if="difficultyLabel" class="question-kind" :data-difficulty="difficultyLabel">{{ difficultyLabel }}</span>
           <slot name="metadata" />
         </div>
         <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
@@ -50,6 +50,7 @@
             <p class="result-origin">{{ resultSource === 'submission' ? '正式提交' : '公开样例 · 不计成绩' }}</p>
             <div class="coding-result-summary">
               <h4 class="coding-outcome" :data-tone="outcomeTone" role="status">{{ outcomeTitle }}</h4>
+              <slot v-if="resultSource === 'submission' && result?.status === 'accepted'" name="next"/>
               <span v-if="resultSource === 'submission' && submissionCounts" class="coding-pass-count">{{ submissionCounts.passed }} / {{ submissionCounts.total }} 个测试用例通过</span>
               <span v-if="resultDuration !== undefined" class="coding-run-time">{{ resultSource === 'submission' ? '提交用时' : '用时' }} {{ resultDuration }} ms</span>
               <button v-if="resultSource === 'local' && selectedResult?.status === 'wrong_answer'" class="coding-diff-toggle" :aria-pressed="diffEnabled" @click="diffEnabled = !diffEnabled">Diff {{ diffEnabled ? '开' : '关' }}</button>

@@ -28,6 +28,9 @@
       <p v-if="loading" class="learning-empty" role="status">正在读取题目…</p>
       <div v-else-if="questions.length" ref="questionRegion" class="question-body" :data-coding="current?.kind === 'python' && viewMode === 'single'" :class="{ 'question-paper': isAssessment && viewMode === 'paper' }" @scroll.passive="syncPaperSelection">
         <PracticeQuestionCard ref="questionCards" v-for="question in visibleQuestions" :key="question.id" :question="question" :paper-mode="isAssessment && viewMode === 'paper'" @open-single="openSingleQuestion(question.id)" :toolbar-target="actionTarget" :index="questions.findIndex(item => item.id === question.id)" :answer="drafts[question.id]?.answer ?? ''" :code="drafts[question.id]?.code ?? ''" :read-only="Boolean(isAssessment && (paper?.locked || paperSubmissionPending))" :busy="questionBusy(question.id)" :show-submit="!isAssessment && !submissionBlocked(question.id)" :pending-mode="drafts[question.id]?.pending?.mode" :interactive-reset-key="interactiveResetKey" :can-reset-interactive="canResetInteractive" @reset-interactive="resetInteractive(question.id)" :result="questionResult(question.id)" :assistant-feedback="assistantFeedback[question.id]" @assistant-feedback="assistantFeedback[question.id] = $event" @running-change="localRunning[question.id] = $event" @update:answer="updateAnswer(question.id, $event)" @update:code="updateCode(question.id, $event)" @submit="(mode, runSample, checkInteractive) => submitQuestion(question.id, mode, runSample, checkInteractive)">
+          <template v-if="!isAssessment && nextQuestion" #next>
+            <button class="town-secondary" type="button" :disabled="requestBusy" @click="selectQuestion(nextQuestion.id)">下一题 <GameIcon name="arrowRight"/></button>
+          </template>
           <template v-if="currentItem?.status === 'accepted'" #metadata>
             <span class="practice-passed">已通过</span>
           </template>
@@ -78,6 +81,7 @@ import { randomUUID } from "../../shared/uuid";
 import type { AssistantFeedback, AssistantState } from '../../shared/assistantState';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { api, ApiError } from "../../shared/api";
+import { useUiPreferences } from '../../shared/uiPreferences';
 import { useSession } from "../../shared/session";
 import type { Activity, ActivityProgress, AssessmentAnswer, AssessmentAttempt, Question, QuestionOutlineState, Submission } from "../../shared/types";
 import { pendingSubmissionStates } from "./practicePresentation";
@@ -97,6 +101,7 @@ interface Draft extends QuestionDraft { submission_id?: string; pending?: { key:
 const props = defineProps<{ activityId: string; toolbarTarget?: string; modeTarget?: string; initialQuestion?: number }>();
 const emit = defineEmits<{ complete: []; activityKind: [kind: string] }>();
 const session = useSession(), { collapsed: sidebarCollapsed } = useWorkspaceSidebar();
+const preferences = useUiPreferences();
 const activity = ref<Activity>(), activityProgress = ref<ActivityProgress>(), paper = ref<AssessmentAttempt>();
 const drafts = ref<Record<string, Draft>>({}), results = ref<Record<string, Submission>>({});
 const assistantFeedback = ref<Record<string, AssistantFeedback>>({});
@@ -131,6 +136,7 @@ const actionTarget = computed(() => viewMode.value === 'single' && props.toolbar
 const localRunning = ref<Record<string, boolean>>({});
 const publicRunBusy = computed(() => Object.values(localRunning.value).some(Boolean));
 const current = computed(() => questions.value[questionIndex.value]);
+const nextQuestion = computed(() => questions.value[questionIndex.value + 1]);
 const practiceRefreshFailed = ref(false);
 const personalPractice = computed(() => activityProgress.value?.practice);
 const passedCount = computed(() => activityProgress.value?.accepted_question_ids?.length ?? 0);
@@ -205,7 +211,11 @@ const learningGoals = computed(() => {
   const passed = questions.value.filter(question => activityProgress.value?.accepted_question_ids?.includes(question.id));
   return [{ title: '完成练习', completed: activityProgress.value?.completed ?? false, progress: { value: passed.length, max: total, label: `已完成 ${passed.length} / ${total} 题` } }];
 });
-function hasAnswer(question: Question) { const draft = drafts.value[question.id]; return Boolean(draft && questionType(question.kind).complete(draft, question)); }
+function hasAnswer(question: Question) {
+  const draft = drafts.value[question.id];
+  if (isAssessment.value && question.kind === 'python' && draft?.code.trim() === (question.starter_code ?? '').trim()) return false;
+  return Boolean(draft && questionType(question.kind).complete(draft, question));
+}
 function questionResult(id: string) { return isAssessment.value && paper.value?.locked ? paper.value.results.find(result => result.question_id === id) : results.value[id]; }
 function questionBusy(id: string) { const result = results.value[id]; return isAssessment.value && requestBusy.value || requestBusy.value && busyQuestionId.value === id || !isAssessment.value && Boolean(result && pendingSubmissionStates.includes(result.status)); }
 function normalizeAnswer(question: Question): AssessmentAnswer { const draft = drafts.value[question.id] ?? restoreDraft(question, null); return { question_id: question.id, ...submissionAnswer(question, draft) }; }
@@ -270,7 +280,7 @@ function configureDraftQueue(saved: AssessmentAttempt, ticket: number, activityI
   draftQueue.set(allAnswers());
 }
 function restoreQuestion(question: Question) {
-  const old = localJson(questionKey(question.id));
+  const old = isAssessment.value ? undefined : localJson(questionKey(question.id));
   drafts.value[question.id] = {
     ...restoreDraft(question, old?.answer, old?.code ?? question.starter_code ?? ''),
     submission_id: old?.submission_id, pending: old?.pending,
@@ -367,12 +377,22 @@ async function submitQuestion(id: string, mode: 'submit', runSample?: RunPythonS
     if (!currentOwner() || ticket !== generation) return;
     results.value[id] = received; draft.submission_id = received.id; draft.pending = undefined; persistLocal();
     await handleQuestionResult(id, received, ticket);
+    if (currentOwner() && ticket === generation) {
+      requestBusy.value = false;
+      advanceAfterCorrect(id, received);
+    }
   } catch (cause) { if (currentOwner() && ticket === generation) { error.value = cause instanceof Error ? cause.message : '提交失败，请重试。'; if (cause instanceof ApiError && (cause.status === 422 || cause.status === 409)) { draft.pending = undefined; persistLocal(); if (activityProgress.value?.practice) await refreshPractice(ticket); } } }
   finally { if (currentOwner() && ticket === generation) { requestBusy.value = false; busyQuestionId.value = ''; } }
 }
-async function handleQuestionResult(id: string, result: Submission, ticket: number) {
+function advanceAfterCorrect(id: string, result: Submission) {
+  if (preferences.autoAdvancePractice && !isAssessment.value && !practiceRefreshFailed.value &&
+      result.status === 'accepted' && result.mode === 'submit' && current.value?.id === id && nextQuestion.value) {
+    void selectQuestion(nextQuestion.value.id);
+  }
+}
+async function handleQuestionResult(id: string, result: Submission, ticket: number, restoring = false) {
   if (!currentOwner() || ticket !== generation) return;
-  if (pendingSubmissionStates.includes(result.status)) { polls.set(id, setTimeout(() => void pollQuestion(id, result.id, ticket), 1500)); return; }
+  if (pendingSubmissionStates.includes(result.status)) { polls.set(id, setTimeout(() => void pollQuestion(id, result.id, ticket, restoring), 1500)); return; }
   if (isAssessment.value || result.mode !== 'submit') return;
   if (activityProgress.value?.practice) {
     await refreshPractice(ticket);
@@ -390,7 +410,8 @@ async function pollQuestion(id: string, submissionId: string, ticket: number, re
     if (drafts.value[id]?.submission_id !== submissionId) return;
     results.value[id] = received;
     if (!(restoring && activityProgress.value?.practice && !pendingSubmissionStates.includes(received.status))) {
-      await handleQuestionResult(id, received, ticket);
+      await handleQuestionResult(id, received, ticket, restoring);
+      if (!restoring && currentOwner() && ticket === generation) advanceAfterCorrect(id, received);
     }
   } catch (cause) {
     if (currentOwner() && ticket === generation) error.value = cause instanceof Error ? cause.message : '结果读取失败';

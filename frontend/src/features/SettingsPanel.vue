@@ -26,6 +26,7 @@
           </section>
         </template>
         <section v-else-if="selected === 'interface'" class="town-section settings-group">
+          <div class="setting-row"><label for="settings-auto-advance" class="setting-copy"><strong>练习答对后自动进入下一题</strong></label><span class="game-switch"><input id="settings-auto-advance" v-model="preferences.autoAdvancePractice" type="checkbox" role="switch"/><span class="game-switch-track" aria-hidden="true"></span></span></div>
           <div class="setting-row"><label for="settings-subtitle-size" class="setting-copy"><strong>讲解字幕大小</strong><span class="setting-description">仅调整资料讲解的字幕。</span></label><GameSelect id="settings-subtitle-size" v-model="preferences.subtitleSize" aria-label="讲解字幕大小" :options="subtitleSizes.map((size, index) => ({ value: size, label: ['小', '标准', '中', '大', '特大'][index]! }))" /></div>
           <p class="subtitle-preview" :style="{ fontSize: `${preferences.subtitleSize}rem` }">从计算工具出发，一起理解计算思维。</p>
           <div class="setting-row"><label for="settings-text-scale" class="setting-copy"><strong>文字大小</strong><span class="setting-description">调整学习内容和菜单的文字大小。</span></label><GameSelect id="settings-text-scale" v-model="preferences.textScale" aria-label="文字大小" :options="textScales.map(scale => ({ value: scale, label: `${scale * 100}%${scale === 1 ? ' · 标准' : ''}` }))" /></div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import tiledTown from "../public/assets/maps/town_hub.json";
-import { buildingMessage, getWorldMap, mapTargets, nearbyWorldTarget, portalRoute, reachableApproach, reachableTargetApproach, resolveWorldTarget, resolveWorldTargets, worldConfig, worldTargetHint, type WorldDefinition, type WorldTarget } from "../src/game/config/worldConfig";
+import { buildingMessage, getWorldMap, mapTargets, nearbyWorldTarget, portalRoute, reachableApproach, resolveWorldTarget, worldConfig, worldTargetHint, type WorldDefinition, type WorldTarget } from "../src/game/config/worldConfig";
 const courseAccess = (can_enter: boolean) => ({ building_access: { library: { enabled: true, unlocked: can_enter, can_enter, blocked_message: "课程尚未开放" } } });
 
 describe("configured world places and portals", () => {
@@ -28,7 +28,7 @@ describe("configured world places and portals", () => {
     expect(entrance.portal?.id).toBe("library_door");
     expect(worldTargetHint(entrance, [], courseAccess(false))).toBe("");
     expect(worldTargetHint(entrance, [], courseAccess(true))).toBe("进入");
-    expect(resolveWorldTarget("practice_plaza", [])).toEqual(expect.objectContaining({ x: 38, y: 24, kind: "object" }));
+    for (const retired of ['practice_plaza', 'town_square', 'library_shelf']) expect(resolveWorldTarget(retired, [])).toBeUndefined();
     expect(worldTargetHint(resolveWorldTarget("mayor_hall", [])!, [], courseAccess(false))).toBe("");
   });
   it("plans both directions through configured portals and honors entry requirements", () => {
@@ -59,26 +59,10 @@ describe("configured world places and portals", () => {
     expect(route!.path.length).toBeGreaterThan(0);
     expect(reachableApproach({ x: 0, y: 0 }, { x: 3, y: 3 }, 1, 4, 4, () => true)).toBeNull();
   });
-  it("keeps one semantic shelf entry while every physical shelf has a usable anchor", () => {
-    const entries = mapTargets("library").filter(target => target.id === "library_shelf");
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.label).toBe("图书馆书架");
-    expect(entries[0]?.points).toHaveLength(10);
-    const shelves = resolveWorldTargets("library_shelf", []);
-    expect(shelves).toHaveLength(10);
-    expect(shelves).toContainEqual(expect.objectContaining({ x: 4, y: 4 }));
-    expect(shelves).toContainEqual(expect.objectContaining({ x: 15, y: 8 }));
-    const guide = reachableTargetApproach({ x: 4, y: 4 }, shelves, 18, 14, () => false);
-    expect(guide?.path).toHaveLength(0);
-    const clicked = reachableTargetApproach({ x: 4, y: 4 }, shelves, 18, 14, () => false, { x: 15, y: 8 });
-    expect(clicked?.target).toEqual(expect.objectContaining({ x: 15, y: 8 }));
-    expect(clicked?.path.length).toBeGreaterThan(0);
-  });
   it("updates compact nearby actions at fractional moving positions and excludes closed buildings", () => {
-    const shelves = resolveWorldTargets("library_shelf", []);
-    const within = nearbyWorldTarget({ map_key: "library", x: 15, y: 10 }, shelves, []);
-    expect(worldTargetHint(within!, [])).toBe("问路");
-    expect(nearbyWorldTarget({ map_key: "library", x: 15, y: 10.01 }, shelves, [])).toBeUndefined();
+    const npcTarget: WorldTarget = { id: "person", map_key: "library", x: 15, y: 8, label: "管理员", kind: "npc", radius: 2 };
+    expect(nearbyWorldTarget({ map_key: "library", x: 15, y: 10 }, [npcTarget], [])).toEqual(npcTarget);
+    expect(nearbyWorldTarget({ map_key: "library", x: 15, y: 10.01 }, [npcTarget], [])).toBeUndefined();
     const closed = resolveWorldTarget("training", [])!;
     expect(nearbyWorldTarget({ map_key: closed.map_key, x: closed.x, y: closed.y }, [closed], [])).toBeUndefined();
     expect(nearbyWorldTarget({ map_key: closed.map_key, x: closed.x, y: closed.y }, [closed], [], closed.id)).toBeUndefined();

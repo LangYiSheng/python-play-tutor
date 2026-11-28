@@ -10,7 +10,7 @@
       </div>
     </header>
     <aside v-if="tracked" class="quest-tracker" aria-label="当前目标">
-      <h2 class="quest-heading"><GameIcon name="journal" /><span>{{ tracked.chapter.title }}</span></h2>
+      <h2 class="quest-heading"><ChapterNumber :number="tracked.chapter.order_index"/><span>{{ tracked.chapter.title }}</span></h2>
       <p class="quest-next" aria-live="polite">{{ tracked.title }}</p>
       <div class="quest-actions">
         <div v-if="goals.length > 1" class="quest-pager" role="group" aria-label="追踪目标">
@@ -20,6 +20,10 @@
         </div>
         <button class="quest-go" @click="$emit('guide', tracked.target)"><GameIcon name="compass"/>立即前往</button>
       </div>
+    </aside>
+    <aside v-else-if="finished || pendingPaper" class="quest-tracker" aria-label="当前目标">
+      <h2 class="quest-heading"><GameIcon :name="finished ? 'check' : 'journal'"/>{{ finished ? '任务已全部完成' : '测验已交卷' }}</h2>
+      <p class="quest-next" aria-live="polite">{{ finished ? '可以逛逛小镇，等老师发布新任务。' : pendingPaper?.grading_status === 'attention' ? '等待老师核查测验结果。' : '正在批改，可以先逛逛小镇。' }}</p>
     </aside>
     <nav class="hud-dock" aria-label="小镇菜单">
       <button data-world-focus @click="session.open({ kind: 'journal' })">
@@ -44,17 +48,32 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed } from "vue";
+import ChapterNumber from "../shared/ChapterNumber.vue";
+import { computed, watch } from "vue";
 import { useSession } from "../shared/session";
 import GameIcon from "../shared/GameIcon.vue";
 import {chapterGoals} from "../shared/chapterTasks";
 import { canUseDevTools } from "../shared/devTools";
-defineProps<{ blocked?: boolean }>();
+const props = defineProps<{ blocked?: boolean }>();
 const session = useSession();
 
 defineEmits<{ guide: [key: string] }>();
 const goals = computed(() => chapterGoals(session.taskChapters, session.world?.npcs));
 const tracked = computed(() => goals.value.find(g => g.id === session.trackedQuest) ?? goals.value[0]);
+const required = computed(() => session.taskChapters.flatMap(chapter => chapter.tasks.filter(task => task.required)));
+const finished = computed(() => required.value.length > 0 && required.value.every(task => task.completed));
+const pendingPaper = computed(() => required.value.find(task => task.handed_in && !task.completed));
+watch(() => !props.blocked && required.value.some(task => task.grading_status === 'grading'), (pending, _, onCleanup) => {
+  if (!pending) return;
+  let stopped = false;
+  let timer = setTimeout(refresh, 3000);
+  async function refresh() {
+    try { await session.refreshTasks(); }
+    catch { /* The next refresh can recover a temporary connection failure. */ }
+    if (!stopped) timer = setTimeout(refresh, 5000);
+  }
+  onCleanup(() => { stopped = true; clearTimeout(timer); });
+}, { immediate: true });
 function cycle(step: number) {
   if (tracked.value) session.trackedQuest = goals.value[(goals.value.indexOf(tracked.value) + step + goals.value.length) % goals.value.length]!.id;
 }

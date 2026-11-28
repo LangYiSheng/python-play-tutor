@@ -35,7 +35,7 @@ test("completes the four NPC journey with a dedicated one-question exercise and 
   const close = page.getByRole("button",{name:"关闭当前工作区"});
   async function visit(name:string) {
     await page.locator(".hud-dock").getByRole("button",{name:/任务日志/}).click();
-    await page.locator(".town-directory-item").filter({hasText:chapter!.title}).first().click();
+    await page.locator(".quest-directory .chapter-title").filter({hasText:chapter!.title}).first().click();
     await page.getByRole("button",{name:"前往"+name,exact:true}).first().click();
     await expect(dialogue).toBeVisible({timeout:45000});
     await expect(dialogue.locator(".eyebrow")).toHaveText(name);
@@ -51,7 +51,7 @@ test("completes the four NPC journey with a dedicated one-question exercise and 
   const siblings = chapters.find(c => c.tasks.filter(t => t.kind === "reading").length > 1);
   if (siblings) {
     const materials = siblings.tasks.filter(t => t.kind === "reading");
-    const section = page.locator(".library-chapter").filter({has:page.getByRole("heading",{name:siblings.title,exact:true})});
+    const section = page.locator(".library-chapter").filter({has:page.getByRole("heading",{name:siblings.title})});
     await section.getByRole("button").first().click();
     const nav = page.getByRole("navigation",{name:siblings.title});
     await expect(nav).toBeVisible();
@@ -62,7 +62,7 @@ test("completes the four NPC journey with a dedicated one-question exercise and 
   }
   const read = chapter!.tasks.find(t => t.kind === "reading" && t.required)!;
   expect(read).toBeDefined();
-  await page.locator(".library-chapter").filter({has:page.getByRole("heading",{name:chapter!.title,exact:true})})
+  await page.locator(".library-chapter").filter({has:page.getByRole("heading",{name:chapter!.title})})
     .getByRole("button",{name:new RegExp(read.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))}).first().click();
   await expect(page.getByRole("navigation",{name:chapter!.title})).toBeVisible();
   const pdf = page.locator(".pdf-reader");

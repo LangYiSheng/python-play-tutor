@@ -1,15 +1,16 @@
 <template>
   <section class="library-chapter" :aria-labelledby="headingId">
     <header class="library-chapter-heading">
-      <h3 :id="headingId" class="game-card-title"><GameIcon name="book"/>{{ title }}</h3>
+      <h3 :id="headingId" class="game-card-title"><ChapterNumber v-if="number != null" :number="number"/><GameIcon v-else name="book"/><span>{{ title }}</span></h3>
       <span v-if="summary">{{ summary }}</span>
     </header>
     <div class="library-list"><slot/></div>
   </section>
 </template>
 <script setup lang="ts">
+import ChapterNumber from "../shared/ChapterNumber.vue";
 import GameIcon from "../shared/GameIcon.vue";
-defineProps<{title:string; headingId:string; summary?:string}>();
+defineProps<{title:string; number?:number; headingId:string; summary?:string}>();
 </script>
 <style scoped>
 .library-chapter { margin-bottom:20px; }

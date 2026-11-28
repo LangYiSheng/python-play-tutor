@@ -8,7 +8,7 @@
             <GameIcon name="grid"/><span>全部章节</span><small>{{ materials.length }}</small>
           </button>
           <button v-for="item in chapters" :key="item.id" class="town-directory-item" :class="{ 'is-current': chapter === item.id }" :aria-pressed="chapter === item.id" @click="selectChapter(item.id)">
-            <GameIcon name="book"/>
+            <ChapterNumber v-if="item.number != null" :number="item.number"/><GameIcon v-else name="book"/>
             <span>{{ item.title }}</span><small>{{ item.materials.length }}</small>
           </button>
         </nav>
@@ -21,7 +21,7 @@
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <p v-else-if="loading" class="town-empty" role="status">正在加载资料…</p>
         <template v-else>
-          <ChapterCardGroup v-for="group in filteredChapters" :key="group.id" :title="group.title" :heading-id="`library-chapter-${group.id}`" :summary="group.readingProgress">
+          <ChapterCardGroup v-for="group in filteredChapters" :key="group.id" :number="group.number" :title="group.title" :heading-id="`library-chapter-${group.id}`" :summary="group.readingProgress">
             <ChapterContentCard v-for="material in group.materials" :key="material.id" :title="material.title"
               :icon="material.kind === 'video' ? 'video' : 'book'" :badge="group.tasks.get(material.id)?.required ? '必读' : undefined"
               :disabled="material.status !== 'ready'" @click="open(material, group.id)"
@@ -36,6 +36,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import ChapterNumber from "../shared/ChapterNumber.vue";
 import ChapterCardGroup from "./ChapterCardGroup.vue";
 import ChapterContentCard from "./ChapterContentCard.vue";
 import { taskProgress } from "../shared/chapterTasks";
@@ -62,14 +63,14 @@ const chapters = computed(() => {
     }
   }
   return [...groups].map(([id, items]) => {
-    const details = session.world?.chapters.find(item => item.id === id);
+    const details = session.taskChapters.find(c => c.id === id) ?? session.world?.chapters.find(item => item.id === id);
     const entries = session.taskChapters.find(c => c.id === id)?.tasks.filter(t => t.kind === "reading") ?? [];
     const tasks = new Map(entries.map(task => [task.material_id, task]));
     const required = entries.filter(task => task.required);
     const readingProgress = !required.length ? "无必读资料" : required.length === 1
       ? `必读进度 · ${taskProgress(required[0]!)}`
       : `必读已完成 ${required.filter(task => task.completed).length} / ${required.length} 份`;
-    return { id, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, tasks, readingProgress,
+    return { id, number: details?.order_index, title: details?.title ?? "其他资料", order: details?.order_index ?? Number.MAX_SAFE_INTEGER, tasks, readingProgress,
       materials: items.sort((a, b) => entries.findIndex(t => t.material_id === a.id) - entries.findIndex(t => t.material_id === b.id)) };
   }).sort((a, b) => a.order - b.order || a.id - b.id);
 });

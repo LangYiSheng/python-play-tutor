@@ -170,7 +170,7 @@ def test_python_whole_paper_uses_existing_judge_and_unknown_is_never_resubmitted
     db.add(activity)
     db.flush()
     db.add(make_question(db, id="test-python-paper-q", activity_id=activity.id, chapter_ids=[179], title="Test", kind="python", prompt="Test fixture",
-                    options=[], samples=[{"input": "", "output": "public"}]))
+                    options=[], starter_code="# Enter your answer", samples=[{"input": "", "output": "public"}]))
     db.flush()
     db.add(QuestionSecret(question_id="test-python-paper-q", hidden_cases=[{"input": "secret-in", "output": "secret-out"}]))
     db.commit()
@@ -178,9 +178,21 @@ def test_python_whole_paper_uses_existing_judge_and_unknown_is_never_resubmitted
                 "idempotency_key": "old-public-run", "mode": "run", "code": "print('public')"}
     run = client.post("/api/submissions", headers=student["headers"], json=run_body)
     assert run.status_code == 422
+    starter = {"question_id": "test-python-paper-q", "code": "# Enter your answer"}
+    paper_url = f"/api/activities/{activity.id}/assessment"
+    assert client.put(paper_url, headers=student["headers"], json={
+        "classroom_id": classroom["id"], "revision": 0, "answers": [starter]}).status_code == 200
+    from app.chapter_tasks.service import activity_task
+    from app.models import User
+    def task():
+        return activity_task(db, db.get(User, student["id"]), db.get(Classroom, classroom["id"]), activity)
+    assert task()["current"] == 0
+    assert client.post(paper_url + "/submit", headers=student["headers"], json={
+        "classroom_id": classroom["id"], "idempotency_key": "unedited-template", "answers": [starter]}).status_code == 422
     submitted = client.post(f"/api/activities/{activity.id}/assessment/submit", headers=student["headers"], json={
         "classroom_id": classroom["id"], "idempotency_key": "python-whole-paper", "answers": [{"question_id": "test-python-paper-q", "code": "print('public')"}]})
     assert submitted.status_code == 201 and submitted.json()["status"] == "grading" and submitted.json()["locked"]
+    assert task()["grading_status"] == "grading" and task()["handed_in"]
     assert submitted.json()["score"] is None and submitted.json()["max_score"] == 100
     assert "secret-in" not in submitted.text and "secret-out" not in submitted.text
     sid = submitted.json()["results"][0]["id"]
@@ -202,6 +214,7 @@ def test_python_whole_paper_uses_existing_judge_and_unknown_is_never_resubmitted
     assert judge.calls == 1
     db.expire_all()
     paper = client.get(f"/api/activities/{activity.id}/assessment?classroom_id={classroom['id']}", headers=student["headers"]).json()
+    assert task()["grading_status"] == "attention"
     assert paper["status"] == "attention" and not paper["completed"] and paper["locked"]
     assert paper["score"] is None and paper["max_score"] == 100
 

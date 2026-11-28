@@ -5,7 +5,7 @@ const key = "pythontopia-reborn-interface";
 export const textScales = [1, 1.25, 1.5, 2] as const;
 export const subtitleSizes = [0.875, 1, 1.125, 1.25, 1.5] as const;
 export const useUiPreferences = defineStore("ui-preferences", () => {
-  let saved: { textScale?: number; subtitleSize?: number; reduceMotion?: boolean; musicVolume?: number } = {};
+  let saved: { textScale?: number; subtitleSize?: number; reduceMotion?: boolean; musicVolume?: number; autoAdvancePractice?: boolean } = {};
   try {
     saved = JSON.parse(localStorage.getItem(key) ?? "{}");
   } catch {
@@ -16,6 +16,7 @@ export const useUiPreferences = defineStore("ui-preferences", () => {
       ? saved.textScale!
       : 1,
   );
+  const autoAdvancePractice = ref(saved?.autoAdvancePractice === true);
   const reduceMotion = ref(saved?.reduceMotion === true);
   const subtitleSize = ref(subtitleSizes.some(size => size === saved?.subtitleSize) ? saved.subtitleSize! : 1);
   const boundedVolume = (value: unknown) =>
@@ -35,7 +36,7 @@ export const useUiPreferences = defineStore("ui-preferences", () => {
     };
     media.addEventListener("change", update);
     const stop = watch(
-      [textScale, subtitleSize, reduceMotion, reducedMotion, musicVolume],
+      [textScale, subtitleSize, reduceMotion, reducedMotion, musicVolume, autoAdvancePractice],
       () => {
         musicVolume.value = boundedVolume(musicVolume.value);
         document.documentElement.style.setProperty(
@@ -53,6 +54,7 @@ export const useUiPreferences = defineStore("ui-preferences", () => {
               subtitleSize: subtitleSize.value,
               reduceMotion: reduceMotion.value,
               musicVolume: musicVolume.value,
+              autoAdvancePractice: autoAdvancePractice.value,
             }),
           );
         } catch {
@@ -66,5 +68,5 @@ export const useUiPreferences = defineStore("ui-preferences", () => {
       media.removeEventListener("change", update);
     };
   }
-  return { textScale, subtitleSize, reduceMotion, reducedMotion, musicVolume, connect };
+  return { textScale, subtitleSize, reduceMotion, reducedMotion, musicVolume, autoAdvancePractice, connect };
 });

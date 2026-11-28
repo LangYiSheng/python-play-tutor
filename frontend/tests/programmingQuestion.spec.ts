@@ -240,7 +240,7 @@ it("displays coding subtype badge, blocks tampered fill_code skeleton, and reset
     global: { stubs: { CodeEditor: true } },
   });
   expect(wrapper.text()).toContain("程序填空");
-  expect(wrapper.get(".coding-difficulty-badge").text()).toBe("难");
+  expect(wrapper.get(".coding-badges .question-kind[data-difficulty]").text()).toBe("难");
   expect(wrapper.get(".coding-skeleton-alert").text()).toContain("填空区");
 
   await wrapper.findAll("button").find(b => b.text() === "运行公开样例")!.trigger("click");

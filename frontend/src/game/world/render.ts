@@ -105,17 +105,6 @@ export function buildWorld(
         "pointerdown",
         fromWorldCanvas(scene.game.canvas, () => scene.approach(building.id)),
       );
-    } else if (prop.interactionId === "library_shelf") {
-      image.setInteractive({ useHandCursor: true });
-      image.on(
-        "pointerdown",
-        fromWorldCanvas(scene.game.canvas, () =>
-          scene.approach(prop.interactionId!, {
-            x: Math.floor(prop.x / 16),
-            y: Math.floor(prop.y / 16),
-          }),
-        ),
-      );
     }
     if (building) {
       const label = scene.add

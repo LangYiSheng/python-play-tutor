@@ -6,7 +6,7 @@ import { routerKey } from "vue-router";
 import WorldPage from "../src/features/WorldPage.vue";
 import { useSession } from "../src/shared/session";
 
-it("guides a shelf visitor to the librarian and opens the library only through their dialogue", async () => {
+it("opens the library through the librarian and ignores a retired shelf target", async () => {
   const pinia = createPinia();
   setActivePinia(pinia);
   const session = useSession();
@@ -28,7 +28,7 @@ it("guides a shelf visitor to the librarian and opens the library only through t
     const scene = wrapper.getComponent(canvas);
     scene.vm.$emit("interact", "library_shelf", "object");
     await flushPromises();
-    expect(guide).toHaveBeenCalledWith("librarian");
+    expect(guide).not.toHaveBeenCalled();
     expect(session.workspace).toBeNull();
     expect(wrapper.findComponent({name: "DialogueLayer"}).exists()).toBe(false);
 

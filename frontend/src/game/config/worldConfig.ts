@@ -143,7 +143,7 @@ export function worldTargetHint(target: WorldTarget, flags: readonly string[], r
   if (target.kind === "npc") return "交谈";
   if (target.portal) return portalAvailable(target.portal, flags, runtime) ? (/返回|离开/.test(target.portal.action_label) ? "返回" : "进入") : "";
   if (target.building) return "";
-  return target.id === "library_shelf" ? "问路" : "查看";
+  return "查看";
 }
 export function nearbyWorldTarget(position: Tile & { map_key: string }, targets: readonly WorldTarget[], flags: readonly string[], preferredId?: string, runtime?: WorldRuntime | null): WorldTarget | undefined {
   let best: WorldTarget | undefined;

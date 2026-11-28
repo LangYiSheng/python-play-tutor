@@ -6,7 +6,7 @@
         <nav class="quest-directory" aria-label="章节任务">
           <section v-for="chapter in session.taskChapters" :key="chapter.id" class="quest-card" :class="{'is-current': chapter.id === selected?.id}">
             <button class="chapter-title" :aria-pressed="chapter.id === selected?.id" @click="chapterId = chapter.id">
-              <strong>{{ chapter.title }}</strong><GameIcon :name="chapter.completed ? 'check' : 'chevron'"/>
+              <ChapterNumber :number="chapter.order_index"/><strong>{{ chapter.title }}</strong><GameIcon :name="chapter.completed ? 'check' : 'chevron'"/>
             </button>
             <button v-for="goal in goals.filter(g => g.chapter.id === chapter.id)" :key="goal.id" class="journal-goal" :aria-pressed="session.trackedQuest === goal.id" @click="track(goal)">
               <GameIcon name="compass"/><span>{{ goal.title }}</span>
@@ -15,7 +15,7 @@
         </nav>
       </aside>
       <main v-if="selected" class="quest-detail journal-entry">
-        <header><small>{{ selected.completed ? '本章已完成' : '本章学习中' }}</small><h3>{{ selected.title }}</h3></header>
+        <header><small>{{ selected.completed ? '本章已完成' : '本章学习中' }}</small><h3><ChapterNumber :number="selected.order_index"/> {{ selected.title }}</h3></header>
         <section v-if="requiredTasks.length" class="journal-objectives">
           <div><h4 class="game-card-title"><GameIcon name="chart"/>必做任务进度</h4><span>{{ completedCount }} / {{ requiredTasks.length }} 项</span></div>
           <progress class="support-progress-bar" aria-label="必做任务进度" :value="completedCount" :max="requiredTasks.length"/>
@@ -41,6 +41,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import ChapterNumber from "../shared/ChapterNumber.vue";
 import { computed, ref } from "vue";
 import GameIcon from "../shared/GameIcon.vue";
 import {useSession} from "../shared/session";
@@ -64,7 +65,8 @@ function track(goal: ReturnType<typeof chapterGoals>[number]) { chapterId.value 
 .quest-card { padding:4px; margin-bottom:8px; border:1px solid var(--game-line); border-radius:var(--game-control-radius); background:var(--game-paper-raised); }
 .quest-card.is-current { background:#e8eddf; border-color:#b8c7ab; }
 .quest-card button { display:flex; align-items:center; gap:8px; width:100%; padding:8px; margin:0; border:0; box-shadow:none; background:transparent; text-align:left; overflow-wrap:anywhere; }
-.chapter-title { justify-content:space-between; color:var(--game-forest); }
+.chapter-title { color:var(--game-forest); }
+.chapter-title > strong { flex:1; }
 .quest-card .journal-goal { color:var(--game-muted); font-size:var(--game-caption-size); line-height:1.5; }
 .quest-card button:hover,.quest-card .journal-goal[aria-pressed=true] { background:var(--game-paper); color:var(--game-forest); }
 .quest-card .game-icon,.town-secondary .game-icon { flex:none; width:16px; height:16px; }

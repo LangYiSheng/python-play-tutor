@@ -12,6 +12,8 @@ export interface ChapterTask {
   completed: boolean;
   locked: boolean;
   lock_reason: string | null;
+  handed_in?: boolean;
+  grading_status?: 'grading' | 'attention' | 'graded' | null;
   current: number;
   total: number;
   unit: string;
@@ -38,7 +40,7 @@ export function taskRoleName(kind: TaskKind, npcs: RoleNames = []) {
 export function chapterGoals(chapters: TaskChapter[], npcs: RoleNames = []) {
   return chapters.flatMap(chapter => taskKinds.flatMap(kind => {
     const tasks = chapter.tasks.filter(task => task.kind === kind && task.required);
-    if (!tasks.some(task => !task.completed && !task.locked)) return [];
+    if (!tasks.some(task => !task.completed && !task.locked && !task.handed_in)) return [];
     const progress = tasks.length > 1 ? `（${tasks.filter(task => task.completed).length}/${tasks.length}）` : "";
     const role = taskRoles[kind];
     return [{ id: `${chapter.id}:${kind}`, chapter, kind, target: role.key, title: `拜访${taskRoleName(kind, npcs)}，${role.goal}${progress}` }];
@@ -46,6 +48,7 @@ export function chapterGoals(chapters: TaskChapter[], npcs: RoleNames = []) {
 }
 export function taskProgress(task: ChapterTask) {
   if (task.completed) return "已完成";
+  if (task.handed_in) return task.grading_status === 'attention' ? '已交卷，等待老师核查' : '已交卷，正在批改';
   if (task.locked) return task.lock_reason || "请先完成本章前置任务";
   return task.total ? `${task.current} / ${task.total} ${task.unit}` : "待完成";
 }

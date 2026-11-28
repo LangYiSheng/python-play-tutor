@@ -73,7 +73,7 @@ describe("chapter library", () => {
     const post = vi.spyOn(api, "post");
     const wrapper = await library();
     expect(get).toHaveBeenCalledExactlyOnceWith("/library?classroom_id=2");
-    expect(wrapper.findAll(".library-chapter-heading h3").map(item => item.text())).toEqual(["第一章：计算工具与计算思维", "第二章：Python语言基础", "第三章：计算机信息表示"]);
+    expect(wrapper.findAll(".library-chapter-heading h3 > span:last-child").map(item => item.text())).toEqual(["第一章：计算工具与计算思维", "第二章：Python语言基础", "第三章：计算机信息表示"]);
     expect(wrapper.get('[aria-label="资料章节"]').text()).not.toContain("未开放资料");
     expect(wrapper.find("h2").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("留一页");

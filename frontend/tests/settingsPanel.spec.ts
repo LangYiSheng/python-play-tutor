@@ -80,10 +80,11 @@ describe("categorized settings", () => {
     await wrapper.find("#settings-tab-interface").trigger("click");
     wrapper.findAllComponents(GameSelect).find(select => select.props("id") === "settings-text-scale")!.vm.$emit("update:modelValue", 2);
     await wrapper.find("#settings-reduce-motion").setValue(true);
+    await wrapper.get("#settings-auto-advance").setValue(true);
     await nextTick();
     expect(preferences.textScale).toBe(2);
     expect(preferences.reduceMotion).toBe(true);
-    expect(JSON.parse(localStorage.getItem("pythontopia-reborn-interface")!)).toEqual({ textScale: 2, subtitleSize: 1, reduceMotion: true, musicVolume: 0.62 });
+    expect(JSON.parse(localStorage.getItem("pythontopia-reborn-interface")!)).toEqual({ textScale: 2, subtitleSize: 1, reduceMotion: true, musicVolume: 0.62, autoAdvancePractice: true });
     wrapper.findAllComponents(GameSelect).find(select => select.props("id") === "settings-subtitle-size")!.vm.$emit("update:modelValue", 1.5);
     await nextTick();
     expect(wrapper.get('.subtitle-preview').attributes('style')).toContain('1.5rem');

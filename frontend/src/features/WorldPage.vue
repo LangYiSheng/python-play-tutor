@@ -177,10 +177,7 @@ function positionChanged(player: Player) {
 }
 async function interact(target: string, type: "npc" | "object") {
   if (busy.value || session.workspace) return;
-  if (type === "object") {
-    if (target === "library_shelf") await guide(taskRoles.reading.key);
-    return;
-  }
+  if (type === "object") return;
   const kind = taskKinds.find(kind => taskRoles[kind].key === target);
   if (!kind) return;
   const generation = visitGeneration;

@@ -3,15 +3,15 @@
     <div class="town-book">
       <aside class="town-sidebar"><nav class="town-directory" aria-label="章节目录">
         <button class="town-directory-item" :class="{ 'is-current': !selected }" :aria-pressed="!selected" @click="selected = 0">全部章节</button>
-        <button v-for="chapter in chapters" :key="chapter.id" class="town-directory-item" :class="{ 'is-current': selected === chapter.id }" :aria-pressed="selected === chapter.id" @click="selected = chapter.id">{{ chapter.title }}</button>
+        <button v-for="chapter in chapters" :key="chapter.id" class="town-directory-item" :class="{ 'is-current': selected === chapter.id }" :aria-pressed="selected === chapter.id" @click="selected = chapter.id"><ChapterNumber :number="chapter.order_index"/> {{ chapter.title }}</button>
       </nav></aside>
       <main class="town-content">
         <ChapterCardGroup v-for="chapter in chapters.filter(c => !selected || c.id === selected)" :key="chapter.id"
-          :title="chapter.title" :heading-id="`activities-chapter-${chapter.id}`">
+          :number="chapter.order_index" :title="chapter.title" :heading-id="`activities-chapter-${chapter.id}`">
           <ChapterContentCard v-for="task in chapter.tasks" :key="task.id" class="task-row" :title="task.title"
             :icon="category === 'assessment' ? 'journal' : category === 'programming' ? 'code' : 'practice'"
             :badge="task.required ? '必做' : undefined" :disabled="task.locked" @click="start(task)"
-            :action="task.locked ? '尚未解锁' : task.completed ? '查看' : task.current ? '继续作答' : '开始作答'">
+            :action="task.locked ? '尚未解锁' : task.completed || task.handed_in ? '查看' : task.current ? '继续作答' : '开始作答'">
             {{ task.required ? '' : '选做 · ' }}{{ taskProgress(task) }}
           </ChapterContentCard>
         </ChapterCardGroup>
@@ -21,6 +21,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import ChapterNumber from "../shared/ChapterNumber.vue";
 import ChapterCardGroup from "./ChapterCardGroup.vue";
 import ChapterContentCard from "./ChapterContentCard.vue";
 import {computed, ref} from "vue";

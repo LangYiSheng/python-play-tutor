@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { defineComponent, h } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PracticeWorkspace from "../src/features/practice/PracticeWorkspace.vue";
+import { useUiPreferences } from '../src/shared/uiPreferences';
 import { useSession } from "../src/shared/session";
 import { api } from "../src/shared/api";
 import type { AssessmentAttempt, AssessmentAnswer, Submission } from "../src/shared/types";
@@ -27,6 +28,24 @@ function paper(overrides: Partial<AssessmentAttempt> = {}): AssessmentAttempt { 
 function result(id: string, status: Submission["status"]): Submission { return { id: `submission-${id}`, activity_id: "test", question_id: id, mode: "submit", status, feedback: { detail: status === "accepted" ? "回答正确" : "请重新思考" }, created_at: "2026-11-08T00:00:00Z" }; }
 afterEach(async () => { await flushPromises(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); sessionStorage.clear(); });
 describe("assessment and practice presentation", () => {
+  it.each([false,true])("allows the next practice question after a correct answer (automatic %s)", async automatic => {
+    const {pinia} = setup("practice");
+    useUiPreferences().autoAdvancePractice = automatic;
+    vi.spyOn(api,"post").mockResolvedValue(result("q1", "accepted"));
+    vi.spyOn(api,"get").mockResolvedValue({completed:false, accepted_question_ids:["q1"]});
+    const w = mount(PracticeWorkspace,{props:{activityId:"test"},global:{plugins:[pinia],stubs:{AssistantPanel:true}}});
+    try {
+      await flushPromises();
+      await w.get('input[value="true"]').setValue();
+      await w.get('.submission-actions button').trigger('click');
+      await flushPromises();
+      if (!automatic) {
+        expect(w.get('.practice-question-heading h3').text()).toContain('q1');
+        await w.get('.submission-result-heading button').trigger('click');
+      }
+      expect(w.get('.practice-question-heading h3').text()).toContain('q2');
+    } finally { w.unmount(); }
+  });
   it("allows immediate correction and completes only after the appended question passes", async () => {
     const { pinia, session } = setup("practice");
     const activity = await session.activity("test");
@@ -176,7 +195,7 @@ describe("assessment and practice presentation", () => {
       await flushPromises();
       expect(wrapper.get('input[value="true"]').attributes("disabled")).toBeUndefined();
       await wrapper.findAll("button").find(button => button.text().includes("下一题"))!.trigger("click");
-      expect(wrapper.get('input[value="false"]').element).toHaveProperty("checked", true);
+      expect(wrapper.get('input[value="false"]').element).toHaveProperty("checked", false);
       await wrapper.get('input[value="true"]').setValue();
       await vi.advanceTimersByTimeAsync(450);
       await flushPromises();
@@ -303,11 +322,16 @@ it('keeps submission below goals and disables it while public samples are runnin
   const {pinia,session}=setup();
   const activity=await session.activity('test');
   vi.mocked(session.activity).mockResolvedValue({...activity,questions:[{id:'q1',title:'编程题',kind:'python',prompt:'输出',options:[],starter_code:'print(1)',samples:[{input:'',output:'1'}]},activity.questions[1]!]});
+  localStorage.setItem('draft:1:2:q1', JSON.stringify({code:'print(99)'}));
   vi.spyOn(api,'get').mockResolvedValue(paper({answers:[{question_id:'q2',answer:true}]}));
   let finish!: (value: {stdout:string;stderr:string}) => void;
   vi.spyOn(pythonRunner,'createPythonRunner').mockReturnValue({run:()=>new Promise(resolve=>{finish=resolve;}),ready:async()=>[],dispose:vi.fn()});
   const wrapper=mount(PracticeWorkspace,{props:{activityId:'test'},global:{plugins:[pinia],stubs:{CodeEditor:true,AssistantPanel:true}}});
   await flushPromises();
+  expect(wrapper.find('.assessment-actions button').exists()).toBe(false);
+  expect(wrapper.text()).toContain('已作答 1 / 2 题');
+  wrapper.getComponent({name:'ProgrammingQuestion'}).vm.$emit('update:code', 'print(2)');
+  await wrapper.vm.$nextTick();
   expect(wrapper.get('.support-goals .assessment-actions button').attributes('disabled')).toBeUndefined();
   await wrapper.findAll('button').find(button=>button.text()==='运行公开样例')!.trigger('click');
   expect(wrapper.get('.support-goals .assessment-actions button').attributes('disabled')).toBeDefined();

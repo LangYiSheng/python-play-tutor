@@ -1,6 +1,7 @@
 <template>
   <component :is="view.paper" v-if="paperMode && view.paper" :question="question" :index="index" :code="code" :read-only="readOnly" :result="result" :feedback="assistantFeedback" @open="$emit('openSingle')" />
   <component :is="view.input" v-else-if="view.standalone" v-bind="$props" @running-change="$emit('runningChange', $event)" @assistant-feedback="$emit('assistantFeedback', $event)" @update:code="$emit('update:code', $event)" @submit="(mode: 'submit', runSample?: RunPythonSample) => $emit('submit', mode, runSample)">
+    <template v-if="$slots.next" #next><slot name="next" /></template>
     <template v-if="$slots.metadata" #metadata><slot name="metadata" /></template>
   </component>
   <article v-else class="practice-question-card" :data-question-id="question.id" :aria-labelledby="headingId">
@@ -22,6 +23,7 @@
       <header class="submission-result-heading">
         <GameIcon :name="result.status === 'accepted' ? 'check' : pendingSubmissionStates.includes(result.status) ? 'refresh' : 'close'" class="result-symbol" />
         <strong role="status">{{ result.mode === 'run' ? `公开样例 · ${submissionStatusName[result.status]}` : submissionStatusName[result.status] }}</strong>
+        <slot v-if="result.status === 'accepted' && result.mode === 'submit'" name="next" />
       </header>
       <p v-if="resultDetail">{{ resultDetail }}</p>
       <section v-if="resultCorrectAnswer || resultExplanation" class="submission-explanation" aria-label="答案解析">
