@@ -27,6 +27,7 @@ from .contracts import (
     ExamPatchRequest,
     ExerciseGenerateRequest,
     ExerciseValidateResponse,
+    JobDetail,
     JobListResponse,
     JobSnapshot,
     KnowledgeExtractRequest,
@@ -278,11 +279,11 @@ def list_course_studio_jobs(
     return {"jobs": [jobs.serialize_job(row) for row in rows]}
 
 
-@router.get("/jobs/{job_id}", response_model=JobSnapshot)
+@router.get("/jobs/{job_id}", response_model=JobDetail)
 def get_studio_job(course_id: int, job_id: str, db: Db, user: Teacher) -> dict[str, Any]:
     instance_id = teacher_instance_id(db, user, course_id)
     job = jobs.get_job(db, instance_id, job_id)
-    return jobs.serialize_job(job)
+    return {**jobs.serialize_job(job), "output_questions": jobs.output_questions(db, job, user)}
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobSnapshot)

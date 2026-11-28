@@ -13,8 +13,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..auth import as_utc
+from ..course_content.review_catalog import visible
 from ..db import SessionLocal
-from ..models import User, now
+from ..models import Question, User, now
 from .models import CourseStudioJob
 
 log = logging.getLogger("course_studio.jobs")
@@ -64,6 +65,19 @@ def serialize_job(job: CourseStudioJob) -> dict[str, Any]:
         "created_at": as_utc(job.created_at).isoformat(),
         "updated_at": as_utc(job.updated_at).isoformat(),
     }
+
+
+def output_questions(db: Session, job: CourseStudioJob, user: User) -> list[dict[str, str]]:
+    ids = job.result.get("question_ids") if isinstance(job.result, dict) else None
+    if not isinstance(ids, list):
+        return []
+    question_ids = [qid for qid in ids if isinstance(qid, str)]
+    if not question_ids:
+        return []
+    query = select(Question.id, Question.title).where(
+        *visible(Question, job.course_instance_id, user), Question.id.in_(question_ids))
+    titles = {qid: title for qid, title in db.execute(query)}
+    return [{"id": qid, "title": titles[qid]} for qid in question_ids if qid in titles]
 
 
 def enqueue_job(

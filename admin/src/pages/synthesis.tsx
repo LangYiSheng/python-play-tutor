@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { NarrationReview } from '@/features/materials/narration/review';
 import { NarrationPlayer } from '@/features/materials/narration/player';
 import { api, errorMessage } from '@/lib/api';
-import type { CourseStudioJob } from "@/lib/course-studio-api";
+import { StudioTaskDetail, type StudioTaskRow } from "@/features/synthesis/studio-task-detail";
 import { displayMessage, KIND_LABELS, STATUS_LABELS, StudioJobActions } from "@/features/content-workspace/studio-job-list";
 import { formatTimestamp } from '@/lib/time';
 import { TaskButtons, TaskDetail, useTaskCommands } from '@/features/content-workspace/task-queue';
@@ -33,8 +33,7 @@ type Task = TaskSnapshot & {
   done: number; total: number; message: string; started_at: string | null; finished_at: string | null;
   failed: { page_no: number; error?: string }[]; retryable: boolean; retry_note: string;
 };
-type StudioRow = { source: "studio"; job: CourseStudioJob; title: string; course_name: string; requested_by: string };
-type Overview = { items: (Task | StudioRow)[]; total: number; counts: Record<string, number> };
+type Overview = { items: (Task | StudioTaskRow)[]; total: number; counts: Record<string, number> };
 const statuses: Record<string, string> = { running: '处理中', done: '已完成', failed: '失败', interrupted: '已中断', cancelled: '已取消', cancelling: '正在取消' };
 
 function formatTime(value: string | null) {
@@ -86,6 +85,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
   const [data, setData] = useState<Overview>(), [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false), [updatedAt, setUpdatedAt] = useState('');
   const [review, setReview] = useState<Task>(), [listen, setListen] = useState<Task>(), [selected, setSelected] = useState<Task>();
+  const [selectedStudio, setSelectedStudio] = useState<StudioTaskRow>();
   const commands = useTaskCommands(courseId, () => setRefresh(n => n + 1));
   const firstLoad = useRef(true);
   useEffect(() => {
@@ -213,7 +213,9 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">提交：{formatTime(job.created_at)}
                 {job.finished_at && <div>结束：{formatTime(job.finished_at)}</div>}</TableCell>
-              <TableCell><div className="flex justify-end gap-1">{courseId !== undefined
+              <TableCell><div className="flex flex-wrap justify-end gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setSelectedStudio(item)}><Eye/>任务详情</Button>
+                {courseId !== undefined
                 ? <StudioJobActions job={job} courseId={courseId} refresh={() => setRefresh(n => n + 1)} />
                 : onOpenCourse && <Button size="sm" variant="ghost" onClick={() => onOpenCourse(job.course_instance_id)}><ArrowUpRight />进入课程</Button>}</div></TableCell>
             </TableRow>;
@@ -267,6 +269,7 @@ function SynthesisPage({ courseId, onOpenCourse, onOpenSettings }: SynthesisProp
     <p className="hint mt-3">每 5 秒自动更新执行状态。</p>
     {courseId !== undefined && review && <NarrationReview courseId={courseId} materialId={review.material_id} title={review.title} onClose={() => { setReview(undefined); setRefresh(n => n + 1); }} />}
     {courseId !== undefined && listen && <NarrationPlayer courseId={courseId} materialId={listen.material_id} title={listen.title} onClose={() => setListen(undefined)} />}
+    {selectedStudio && <StudioTaskDetail key={selectedStudio.job.id} row={selectedStudio} close={() => setSelectedStudio(undefined)}/>}
     {selected && <RunDetailDialog key={selected.id} task={selected} courseId={courseId}
       onRequest={courseId !== undefined ? command => { setSelected(undefined); commands.request(command); } : undefined}
       onReview={courseId !== undefined ? (item => { setSelected(undefined); setReview(item); }) : undefined}

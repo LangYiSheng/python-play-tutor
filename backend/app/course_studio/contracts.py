@@ -41,6 +41,15 @@ class JobSnapshot(BaseModel):
     updated_at: str
 
 
+class JobOutputQuestion(BaseModel):
+    id: str
+    title: str
+
+
+class JobDetail(JobSnapshot):
+    output_questions: list[JobOutputQuestion]
+
+
 class JobListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

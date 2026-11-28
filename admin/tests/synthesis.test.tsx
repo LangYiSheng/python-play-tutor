@@ -130,3 +130,45 @@ it('shows AI jobs in the unified history and refreshes the counters after dismis
   expect(api.post).toHaveBeenCalledWith('/teacher/courses/7/course-studio/jobs/j1/dismiss', {});
   await waitFor(() => expect(screen.queryByText('生成超时')).not.toBeInTheDocument());
 });
+
+it.each([
+  { scope: 'course', courseId: 7, listPath: '/teacher/courses/7/synthesis' },
+  { scope: 'administrator', courseId: undefined, listPath: '/admin/synthesis' },
+])('opens a completed AI coding job from the $scope history and reads its results without starting work', async ({ courseId, listPath }) => {
+  const job = {
+    id: 'coding-7', kind: 'coding_exercises_generate', course_instance_id: 7,
+    scope_key: 'chapter:17:coding_exercises', status: 'done', cancel_requested: false, error: '',
+    created_at: '2026-11-28T01:00:00Z', started_at: '2026-11-28T01:00:10Z',
+    finished_at: '2026-11-28T01:02:00Z', updated_at: '2026-11-28T01:02:00Z',
+    progress: { done: 4, total: 4, message: '已完成：新增 2 道已验编程题草稿' },
+    result: { created: 2, skipped: 1, failed: 1, question_ids: ['q-a', 'q-b'], failures: ['边界样例验题失败'] },
+  };
+  const row = { source: 'studio', title: '二进制转换', course_name: '计算机基础', requested_by: '赵老师', job };
+  const questions = [{ id: 'q-a', title: '把二进制转换成整数' }, { id: 'q-b', title: '修复小数位权计算' }];
+  const detailUrl = '/teacher/courses/7/course-studio/jobs/coding-7';
+  vi.mocked(api.get).mockImplementation(async url => {
+    if (url === detailUrl) return { ...job, output_questions: questions };
+    if (!url.startsWith(listPath + '?')) throw new Error('意外的请求 ' + url);
+    const history = new URL(url, location.origin).searchParams.get('view') === 'history';
+    return { items: history ? [row] : [], total: Number(history), counts: { running: 0, done: 1 } };
+  });
+  const openCourse = vi.fn();
+  render(<Synthesis courseId={courseId} onOpenCourse={courseId === undefined ? openCourse : undefined} />);
+  fireEvent.click(await screen.findByRole('tab', { name: '历史记录' }));
+  const resultRow = await screen.findByRole('row', { name: /AI 编程出题/ });
+  fireEvent.click(within(resultRow).getByRole('button', { name: '任务详情' }));
+  const dialog = within(await screen.findByRole('dialog', { name: '任务详情 · AI 编程出题' }));
+  expect(api.get).toHaveBeenCalledWith(detailUrl, expect.any(AbortSignal));
+  for (const question of questions) expect(await dialog.findByText(question.title)).toBeVisible();
+  for (const [label, value] of [['任务状态', '已完成'], ['执行进度', '4 / 4'], ['新增题目', '2'], ['跳过', '1'], ['未通过验题', '1']]) {
+    expect(dialog.getByText(label).nextElementSibling).toHaveTextContent(value);
+  }
+  expect(dialog.getByText(job.progress.message)).toBeVisible();
+  expect(dialog.getByText(job.result.failures[0])).toBeVisible();
+  expect(api.post).not.toHaveBeenCalled();
+  if (courseId === undefined) {
+    fireEvent.click(dialog.getByRole('button', { name: '关闭详情' }));
+    fireEvent.click(within(resultRow).getByRole('button', { name: '进入课程' }));
+    expect(openCourse).toHaveBeenCalledWith(7);
+  }
+});

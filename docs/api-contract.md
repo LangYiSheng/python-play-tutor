@@ -132,7 +132,7 @@ Pausing a chapter suspends learner access. Reopening it restores access to the c
 - 知识点抽取与图谱导出：`GET /knowledge` 返回按章分组的课件与知识点结构（含课件来源页码）；`POST /chapters/{chapter_id}/knowledge/extract` 提交后台抽取任务（202 `JobSnapshot`）；`GET /knowledge/export?fmt=xmind|xlsx|docx&chapter_id?` 导出思维导图、Excel 清单或 Word 大纲。
 - AI 智能出题与学习通导出：`POST /chapters/{chapter_id}/exercises/generate`（202 `JobSnapshot`）基于章节资料生成严格四类客观题（`single`/`multiple`/`true_false`/`fill_blank` 单空）草稿写入题目表（`status="draft", source_type="ai_generated"`），非客观题/简答题返回 422；`POST /chapters/{chapter_id}/coding-exercises/generate`（202 `JobSnapshot`，`kind="coding_exercises_generate"`）基于章节资料生成 Python 编程题（`fill_code`/`debug`/`design`，单次 1–12 题，支持正交难度、用途、聚焦知识点、语法边界约束与独立盲解复验），经沙箱权威输出回填与初始代码反送分检验后以草稿入库（生产环境未配置 `go-judge` 返回 409）。教师审校改为 `ready` 后可用于小镇练习与组卷（`usage="assessment"` 仅用于测验、不进入练习抽题池）。`GET /exercises/validate` 与 `GET /exercises/export?fmt=xuexitong_xlsx|xuexitong_txt|xlsx` 执行学习通模板校验并导出客观题（自动跳过非客观题）。
 - 智能组卷：`GET /exams` 列出课程备课试卷；`POST /exams/gaps` 核查蓝图四类客观题及 A/B 卷重复率上限下的缺口；`POST /exams/fill-gaps`（202 `JobSnapshot`）按章节补齐客观题草稿；`POST /exams/generate`（201）抽题生成并持久化试卷快照；`GET/PATCH/DELETE /exams/{exam_id}` 与 `GET /exams/{exam_id}/candidates` 支持元信息编辑、调分、上下移、换题与移出；`GET /exams/{exam_id}/export?kind=student_docx|teacher_docx|blueprint_xlsx|xuexitong_xlsx|xuexitong_txt|zip&variant=A|B` 导出学生卷、解析卷、双向细目表、学习通导入或整包 ZIP。组卷草稿独立于学生在小镇作答的章节测验。
-- 任务轮询与取消：`GET /jobs?limit=20`、`POST /jobs/{job_id}/cancel`。
+- `GET /jobs?limit=20` 读取任务列表，`GET /jobs/{job_id}` 读取单次执行的状态、进度、结果与错误。详情中的 `output_questions` 按生成顺序列出该任务记录且当前可见的题目 ID 和标题。`POST /jobs/{job_id}/cancel` 请求取消任务。
 
 ## 班级课程与包交换
 

@@ -14,7 +14,7 @@ from app.auth import hash_password, issue
 from app.course_studio import adapter, jobs
 from app.course_studio.engine import exams, exercises, export, knowledge, ooxml, pacing, text_utils
 from app.course_studio.models import CourseStudioExam, CourseStudioJob
-from app.models import Material, User
+from app.models import Material, Question, User, now
 from app.narration.models import PageContent
 
 
@@ -402,6 +402,34 @@ def test_exams_ab_generation_patching_and_zip_export() -> None:
     assert "期中测试-命题双向细目表.xlsx" in archive_names
 
 
+def test_job_detail_resolves_only_visible_outputs_in_generation_order(client, db, teacher, student, classroom, admin_account) -> None:
+    course_id = classroom["course_id"]
+    other_id = client.post("/api/teacher/courses", headers=teacher["headers"], json={"name": "其他课程"}).json()["id"]
+    other_teacher = User(student_id="56637818393", name="其他教师", role="teacher", password_hash=hash_password("fixture-password"))
+    db.add(other_teacher)
+    db.flush()
+    for key, instance, owner in [("z", course_id, teacher["id"]), ("a", course_id, None), ("deleted", course_id, teacher["id"]),
+                                 ("other", other_id, teacher["id"]), ("private", course_id, other_teacher.id)]:
+        db.add(Question(id=key, course_instance_id=instance, owner_id=owner, title=f"{key} 题", kind="boolean", prompt="合成题",
+                        deleted_at=now() if key == "deleted" else None))
+    result = {"question_ids": ["z", "missing", "other", "deleted", "a", "private"]}
+    job = CourseStudioJob(course_instance_id=course_id, kind="exercises_generate", status="failed",
+                          scope_key="test-question-detail", progress={"done": 1, "total": 2}, result=result)
+    db.add(job)
+    db.commit()
+    base = f"/api/teacher/courses/{course_id}/course-studio/jobs"
+    url = f"{base}/{job.id}"
+    snapshot = client.get(base, headers=teacher["headers"]).json()["jobs"][0]
+    assert "output_questions" not in snapshot
+    outputs = [{"id":"z", "title":"z 题"}, {"id":"a", "title":"a 题"}]
+    assert client.get(url, headers=teacher["headers"]).json() == {**snapshot, "output_questions": outputs}
+    assert client.get(url, headers=admin_account["headers"]).json()["output_questions"] == [*outputs, {"id":"private", "title":"private 题"}]
+    assert client.get(f"/api/teacher/courses/{other_id}/course-studio/jobs/{job.id}", headers=admin_account["headers"]).status_code == 404
+    assert client.get(url, headers=student["headers"]).status_code == 403
+    other_headers = {"Authorization": "Bearer " + issue(db, other_teacher)["access_token"]}
+    assert client.get(url, headers=other_headers).status_code == 403
+
+
 def test_course_studio_jobs_api_isolation_lifecycle_and_adapter(client, db, teacher, student, classroom) -> None:
     instance_id = db.info["fixture_course_instance_id"]
 
@@ -452,6 +480,7 @@ def test_course_studio_jobs_api_isolation_lifecycle_and_adapter(client, db, teac
     assert detail.status_code == 200
     assert detail.json()["status"] == "done"
     assert detail.json()["result"] == {"created": 3}
+    assert detail.json()["output_questions"] == []
 
     # Cancel queued job via HTTP
     job2 = jobs.enqueue_job(db, course_instance_id=instance_id, kind="test_ok", scope_key="chapter:2")
