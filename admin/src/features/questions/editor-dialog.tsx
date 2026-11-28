@@ -1,6 +1,5 @@
 import { useCallback, useEffect } from "react";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { EditorTabs } from "@/components/editor-tabs";
 import { ErrorNotice } from "@/components/common";
 import { SelectField } from "@/components/select-field";
 import { Badge } from "@/components/ui/badge";
@@ -98,7 +97,6 @@ export function QuestionDialog({
     saveWithStatus,
   } = editor;
 
-  const isComplex = kind === "python" || kind === "interactive";
   const TypeFields = questionEditors[kind].Fields;
   const navBusy = busy || Boolean(queue?.loading);
 
@@ -365,154 +363,99 @@ export function QuestionDialog({
         >
           <div className="dialog-scroll">
             <ErrorNotice message={error} />
-            {isComplex ? (
-              <EditorTabs
-                key={editor.id}
-                pages={[
-                  {
-                    label: "题目信息",
-                    content: (
-                      <div className="flex flex-col gap-4">
-                        <div className="field !mb-0">
-                          <Label htmlFor="q-title">题目名称</Label>
-                          <Input
-                            id="q-title"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            required
-                            maxLength={200}
-                          />
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          {kindSelect}
-                          {difficultySelect}
-                          {statusSelect}
-                        </div>
-                        {kind === "python" && (
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="field !mb-0">
-                              <Label htmlFor="q-coding-type">编程形式</Label>
-                              <SelectField
-                                id="q-coding-type"
-                                value={codingType || "__none__"}
-                                onValueChange={(value) => {
-                                  setCodingType(value === "__none__" ? "" : (value as CodingType));
-                                  setDirty(true);
-                                }}
-                              >
-                                <option value="__none__">未细分（通用编程题）</option>
-                                {Object.entries(codingTypeLabels).map(([k, v]) => (
-                                  <option key={k} value={k}>
-                                    {v}
-                                  </option>
-                                ))}
-                              </SelectField>
-                            </div>
-                            <div className="field !mb-0">
-                              <Label htmlFor="q-coding-usage">教学用途</Label>
-                              <SelectField
-                                id="q-coding-usage"
-                                value={usage}
-                                onValueChange={(value) => {
-                                  setUsage(value as CodingUsage);
-                                  setDirty(true);
-                                }}
-                              >
-                                {Object.entries(codingUsageLabels).map(([k, v]) => (
-                                  <option key={k} value={k}>
-                                    {v}
-                                  </option>
-                                ))}
-                              </SelectField>
-                            </div>
-                          </div>
-                        )}
-                        <div className="field !mb-0">
-                          <Label htmlFor="q-prompt">题干</Label>
-                          <Textarea
-                            id="q-prompt"
-                            rows={5}
-                            className="max-h-72 overflow-y-auto"
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            required
-                            maxLength={30000}
-                          />
-                        </div>
-                        {explanationField}
-                      </div>
-                    ),
-                  },
-                  {
-                    label: kind === "interactive" ? "编写与试答" : "初始代码与提示",
-                    content: <TypeFields {...editor} />,
-                  },
-                  ...(kind === "python"
-                    ? [
-                        {
-                          label: "测试用例",
-                          content: (
-                            <Cases
-                              samples={editor.samples}
-                              hidden={editor.cases}
-                              codingType={editor.codingType}
-                              starterCode={editor.starterCode}
-                              referenceSolution={editor.referenceSolution}
-                              onSamples={(value) => {
-                                editor.setSamples(value);
-                                setDirty(true);
-                              }}
-                              onHidden={(value) => {
-                                editor.setCases(value);
-                                setDirty(true);
-                              }}
-                            />
-                          ),
-                        },
-                      ]
-                    : []),
-                  { label: "内容关联", content: linksSection },
-                ]}
-              />
-            ) : (
-              <div className="grid gap-5 pt-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(310px,1fr)]">
-                <div className="flex min-w-0 flex-col gap-4">
-                  <div className="field !mb-0">
-                    <Label htmlFor="q-prompt">题干</Label>
-                    <Textarea
-                      id="q-prompt"
-                      rows={4}
-                      className="max-h-60 overflow-y-auto"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      required
-                      maxLength={30000}
-                    />
-                  </div>
-                  <TypeFields {...editor} />
-                  {explanationField}
+            <div className="grid gap-5 pt-1 lg:grid-cols-[minmax(0,1.45fr)_minmax(310px,1fr)]">
+              <div className="flex min-w-0 flex-col gap-4">
+                <div className="field !mb-0">
+                  <Label htmlFor="q-prompt">题干</Label>
+                  <Textarea
+                    id="q-prompt"
+                    rows={4}
+                    className="max-h-60 overflow-y-auto"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    required
+                    maxLength={30000}
+                  />
                 </div>
-                <aside className="question-links-aside flex min-w-0 flex-col gap-4 rounded-lg border bg-muted/20 p-3.5">
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {kindSelect}
-                    {difficultySelect}
-                    {statusSelect}
-                  </div>
-                  <div className="field !mb-0">
-                    <Label htmlFor="q-title">题目名称</Label>
-                    <Input
-                      id="q-title"
-                      value={title}
-                      placeholder="默认同步题干首行"
-                      onChange={(e) => setTitle(e.target.value)}
-                      maxLength={200}
-                    />
-                    <p className="hint">用于列表简短展示，留空时自动取题干首行。</p>
-                  </div>
-                  <div className="border-t pt-3.5">{linksSection}</div>
-                </aside>
+                <TypeFields {...editor} />
+                {kind === "python" && (
+                  <Cases
+                    samples={editor.samples}
+                    hidden={editor.cases}
+                    codingType={editor.codingType}
+                    starterCode={editor.starterCode}
+                    referenceSolution={editor.referenceSolution}
+                    onSamples={(value) => {
+                      editor.setSamples(value);
+                      setDirty(true);
+                    }}
+                    onHidden={(value) => {
+                      editor.setCases(value);
+                      setDirty(true);
+                    }}
+                  />
+                )}
+                {explanationField}
               </div>
-            )}
+              <aside className="question-links-aside flex min-w-0 flex-col gap-4 rounded-lg border bg-muted/20 p-3.5">
+                <div className="grid grid-cols-3 gap-2.5">
+                  {kindSelect}
+                  {difficultySelect}
+                  {statusSelect}
+                </div>
+                <div className="field !mb-0">
+                  <Label htmlFor="q-title">题目名称</Label>
+                  <Input
+                    id="q-title"
+                    value={title}
+                    placeholder="默认同步题干首行"
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={200}
+                  />
+                  <p className="hint">用于列表简短展示，留空时自动取题干首行。</p>
+                </div>
+                {kind === "python" && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="field !mb-0">
+                      <Label htmlFor="q-coding-type">编程形式</Label>
+                      <SelectField
+                        id="q-coding-type"
+                        value={codingType || "__none__"}
+                        onValueChange={(value) => {
+                          setCodingType(value === "__none__" ? "" : (value as CodingType));
+                          setDirty(true);
+                        }}
+                      >
+                        <option value="__none__">未细分（通用编程题）</option>
+                        {Object.entries(codingTypeLabels).map(([k, v]) => (
+                          <option key={k} value={k}>
+                            {v}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </div>
+                    <div className="field !mb-0">
+                      <Label htmlFor="q-coding-usage">教学用途</Label>
+                      <SelectField
+                        id="q-coding-usage"
+                        value={usage}
+                        onValueChange={(value) => {
+                          setUsage(value as CodingUsage);
+                          setDirty(true);
+                        }}
+                      >
+                        {Object.entries(codingUsageLabels).map(([k, v]) => (
+                          <option key={k} value={k}>
+                            {v}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </div>
+                  </div>
+                )}
+                <div className="border-t pt-3.5">{linksSection}</div>
+              </aside>
+            </div>
           </div>
           <DialogFooter className="mt-3 flex-wrap items-center gap-2 border-t pt-3 sm:justify-between">
             <span className="hidden text-[11px] text-muted-foreground sm:inline">

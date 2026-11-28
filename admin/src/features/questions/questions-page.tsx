@@ -374,7 +374,7 @@ export function Questions({
           {editor.savedWarning}
         </p>
       )}
-      <div className="surface">
+      <div>
         {pointId && (
           <div className="flex items-center gap-3 border-b px-4 py-2 text-sm">
             <span>

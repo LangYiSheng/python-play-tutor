@@ -22,7 +22,6 @@ export function useActivityEditor(
     [published, setPublished] = useState(true),
     [practiceKind, setPracticeKind] = useState<"objective" | "programming">("objective"),
     [required, setRequired] = useState(true),
-    [order, setOrder] = useState(1),
     [selected, setSelected] = useState<string[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -32,16 +31,17 @@ export function useActivityEditor(
   function edit(a: Activity | null, pick = false, category: "objective" | "programming" | "assessment" = "objective") {
     setEditing(a);
     setId(a?.id ?? newId("activity"));
-    setTitle(a?.title ?? "");
+    const chapterTitle = course?.chapters.find(item => item.id === chapterId)?.title;
+    const categoryLabel = { objective: "客观题练习", programming: "编程题练习", assessment: "测验" }[category];
+    setTitle(a?.title ?? [chapterTitle, categoryLabel].filter(Boolean).join(" "));
     setChapter(chapterId);
     setKind(a?.kind ?? (category === "assessment" ? "assessment" : "practice"));
     setPointIds(a?.knowledge_point_ids ?? []);
     setRules(structuredClone(a?.practice_rules ?? { goals: [] }));
-    setPracticeMode(a?.kind === "practice" && !a.practice_rules ? "fixed" : "goals");
+    setPracticeMode((a ? !a.practice_rules : category === "programming") ? "fixed" : "goals");
     setPublished(a?.published ?? true);
     setPracticeKind(a?.practice_kind ?? (category === "programming" ? "programming" : "objective"));
     setRequired(a?.required ?? true);
-    setOrder(a?.order_index ?? 1 + Math.max(0, ...(course?.activities ?? []).filter(item => item.chapter_id === chapterId).map(item => item.order_index ?? 0)));
     setSelected(a?.question_ids ?? []);
     setQuestionMode(pick);
     setError("");
@@ -69,7 +69,7 @@ export function useActivityEditor(
       const body = {
         title,
         ...(kind === "practice" && {practice_kind: practiceKind}),
-        published, required: kind === "assessment" || required, order_index: order,
+        published, required: kind === "assessment" || required,
         ...((kind === "assessment" || (kind === "practice" && !goalPractice)) &&
           (!editing || selected.length !== editing.question_ids.length || selected.some((id,i) => id !== editing.question_ids[i])) &&
           { question_ids: selected }),
@@ -126,7 +126,7 @@ export function useActivityEditor(
     setRules,
     published,
     setPublished,
-    practiceKind, required, setRequired, order, setOrder,
+    practiceKind, required, setRequired,
     selected,
     setSelected,
     error,

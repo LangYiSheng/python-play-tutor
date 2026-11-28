@@ -47,6 +47,8 @@ export function ActivityDialog({
     setDirty,
     save,
   } = editor;
+  const programming = kind === "practice" && editor.practiceKind === "programming";
+  const pickLabel = programming ? "选择编程题" : "按知识点选题";
   return (
     <Dialog
       open={open}
@@ -71,7 +73,7 @@ export function ActivityDialog({
         >
           <div className="dialog-scroll">
             <ErrorNotice message={error || questions.error} />
-            <EditorTabs initial={questionMode ? "按知识点选题" : "活动信息"} pages={[
+            <EditorTabs initial={questionMode ? pickLabel : "活动信息"} pages={[
               { label: "活动信息", content: <div className="activity-form-grid"><section className="activity-form-card"><h3>基本信息</h3>
                 <div className="field">
                   <Label htmlFor="a-title">活动名称</Label>
@@ -85,7 +87,6 @@ export function ActivityDialog({
                 </section>
                 <section className="activity-form-card publish-options"><h3>发布设置</h3>
                 <div className="grid gap-4">
-                  <label className="field">显示顺序<Input type="number" min={0} max={100000} required value={editor.order} onChange={e => editor.setOrder(Number(e.target.value))}/></label>
                   <label className="field">发布状态<SelectField value={editor.published ? "published" : "draft"} onValueChange={value => { editor.setPublished(value === "published"); setDirty(true); }}>
                     <option value="published">已发布</option><option value="draft">草稿</option></SelectField></label>
                 </div>
@@ -118,7 +119,7 @@ export function ActivityDialog({
                       onChange={value => { editor.setRules(value); setDirty(true); }} />
               </>}] : []),
               ...(kind === "assessment" || (kind === "practice" && !editor.goalPractice) ?
-                ["按知识点选题", "题目顺序"].map(label => ({ label, content: <PaperEditor order={label === "题目顺序"} assessment={kind === "assessment"}
+                [pickLabel, "题目顺序"].map(label => ({ label, content: <PaperEditor order={label === "题目顺序"} assessment={kind === "assessment"} programming={programming} courseId={editor.courseId}
                   candidates={candidates} questions={questions.data ?? []} points={(course.data?.knowledge_points ?? []).filter(p => p.chapter_id === chapter)}
                   selected={selected} onChange={ids => { setSelected(ids); setDirty(true); }} /> })) : []),
               ...(!editor.goalPractice ? [{ label: "关联知识点", content: <KnowledgePointPicker

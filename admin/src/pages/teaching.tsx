@@ -1,8 +1,8 @@
 import { ListEmpty } from "@/components/common";
 import { ManagementTable } from "@/components/management-table";
 import { SelectField } from "@/components/select-field";
-import { useState, type FormEvent } from "react";
-import { CalendarClock, Pencil } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { CalendarClock, Pause, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,7 +51,6 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
       `/teacher/classrooms/${classroomId}/releases`,
     );
   const [editing, setEditing] = useState<Chapter | null>(null),
-    [status, setStatus] = useState<ChapterRelease["status"]>("published"),
     [opensAt, setOpensAt] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -59,27 +58,37 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
     [releaseQuery, setReleaseQuery] = useState(""),
     [releaseFilter, setReleaseFilter] = useState("all");
   useDraft(!!editing && dirty);
+  const nextOpening = Math.min(...(releases.data ?? [])
+    .filter(row => row.status === "published" && row.opens_at)
+    .map(row => Date.parse(row.opens_at!))
+    .filter(time => time > Date.now()));
+  const reload = releases.reload;
+  useEffect(() => {
+    if (!Number.isFinite(nextOpening)) return;
+    const timer = window.setTimeout(reload, Math.min(2_147_483_647, nextOpening - Date.now() + 1));
+    return () => window.clearTimeout(timer);
+  }, [nextOpening, reload, releases.data]);
   function edit(chapter: Chapter) {
     const row = releases.data?.find((r) => r.chapter_id === chapter.id);
     setEditing(chapter);
-    setStatus(row?.status ?? "published");
     setOpensAt(
       row?.opens_at ? isoToLocalDateTime(row.opens_at) : "",
     );
     setDirty(false);
     setError("");
   }
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    if (!editing) return;
+  async function updateRelease(chapter: Chapter, status: ChapterRelease["status"], scheduledTime?: string) {
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
+      const opens_at = scheduledTime ? localDateTimeToIso(scheduledTime) : null;
+      if (opens_at && Date.parse(opens_at) <= Date.now()) throw new Error("请选择将来的开放时间");
       await api.put(
-        `/teacher/classrooms/${classroomId}/releases/${editing.id}`,
+        `/teacher/classrooms/${classroomId}/releases/${chapter.id}`,
         {
           status,
-          opens_at: opensAt ? localDateTimeToIso(opensAt) : null,
+          opens_at,
         },
       );
       setEditing(null);
@@ -91,6 +100,10 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
     } finally {
       setBusy(false);
     }
+  }
+  function schedule(e: FormEvent) {
+    e.preventDefault();
+    if (editing && opensAt) void updateRelease(editing, "published", opensAt);
   }
   const releaseByChapter = new Map(releases.data?.map((r) => [r.chapter_id, r]));
   const chapters = (course.data?.chapters ?? []).map((chapter) => {
@@ -159,17 +172,25 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {r?.opens_at ? date(r.opens_at) : r ? "立即开放" : "—"}
+                  {r?.opens_at ? date(r.opens_at) : state === "published" ? "立即开放" : "—"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => edit(c)}
-                  >
-                    <Pencil />
-                    设置
-                  </Button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {state === "published" ? (
+                      <Button variant="outline" size="sm" disabled={busy} onClick={() => void updateRelease(c, "paused")}>
+                        <Pause /> 暂停
+                      </Button>
+                    ) : (
+                      <>
+                        <Button size="sm" disabled={busy} onClick={() => void updateRelease(c, "published")}>
+                          <Send /> 立即发布
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={busy} onClick={() => edit(c)}>
+                          <CalendarClock /> 设置定时
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -187,36 +208,22 @@ export function Teaching({ classroomId, courseId }: { classroomId: number; cours
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>设置章节安排</DialogTitle>
+            <DialogTitle>设置定时开放</DialogTitle>
             <DialogDescription>
-              {editing?.title} · 开放时间采用当前设备时区
+              {editing?.title} · {TIME_ZONE}
             </DialogDescription>
           </DialogHeader>
-          <form inert={busy} aria-busy={busy} onSubmit={save} onChange={() => setDirty(true)}>
+          <form inert={busy} aria-busy={busy} onSubmit={schedule} onChange={() => setDirty(true)}>
             <ErrorNotice message={error} />
             <div className="field">
-              <Label htmlFor="release-status">状态</Label>
-              <SelectField
-                id="release-status"
-                value={status}
-                onValueChange={(value) => { setStatus(value as ChapterRelease["status"]); setDirty(true); }}
-              >
-                <option value="published">发布</option>
-                <option value="paused">暂停</option>
-              </SelectField>
-              <p className="hint">
-                暂停后阻止新的学习请求，已经产生的历史记录保留。
-              </p>
-            </div>
-            <div className="field">
-              <Label htmlFor="release-time">开放时间（可选）</Label>
+              <Label htmlFor="release-time">开放时间</Label>
               <Input
                 id="release-time"
                 type="datetime-local"
+                required
                 value={opensAt}
                 onChange={(e) => setOpensAt(e.target.value)}
               />
-              <p className="hint">时区：{TIME_ZONE}。留空则立即开放。</p>
             </div>
             <DialogFooter>
               <Button type="submit" disabled={busy}>

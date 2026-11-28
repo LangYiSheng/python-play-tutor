@@ -14,6 +14,7 @@
 .activity-rows { margin:0; padding:0; }
 .activity-rows li { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; align-items:center; gap:.85rem; padding:1rem 0; }
 .activity-rows li + li { border-top:1px solid var(--border); }
+.activity-rows.sortable li { grid-template-columns:auto auto minmax(0,1fr) auto auto; }
 .activity-icon { display:grid; place-items:center; background:var(--muted); border-radius:.55rem; width:2.4rem; height:2.4rem; }
 .activity-actions { display:flex; align-items:center; gap:.3rem; }
 .activity-status { display:inline-flex; gap:.4rem; align-items:center; font-size:.77rem; color:var(--muted-foreground); white-space:nowrap; }
@@ -29,12 +30,15 @@
 .mode-choices label:has(:checked) { border-color:var(--primary); background:var(--accent); }
 .mode-choices small { display:block; color:var(--muted-foreground); }
 .activity-editor-summary { margin-right:auto; align-self:center; font-size:.82rem; color:var(--muted-foreground); }
+.activity-editor .programming-picker { grid-template-columns:minmax(0,1fr); }
 @media(max-width:800px) {
   .activity-workspace { grid-template-columns:minmax(0,1fr); }
   .activity-chapters > div { display:flex; max-height:none; gap:.25rem; }
   .activity-chapters button { width:auto; flex:none; max-width:17rem; }
   .activity-rows li { grid-template-columns:auto minmax(0,1fr) auto; }
   .activity-actions { grid-column:2 / -1; }
+  .activity-rows.sortable li { grid-template-columns:auto minmax(0,1fr) auto; }
+  .activity-rows.sortable .activity-icon { display:none; }
 }
 @media(max-width:640px) {
   .activity-editor .activity-form-grid { grid-template-columns:minmax(0,1fr); }

@@ -342,6 +342,8 @@ def chapter_candidates(db, user, course_id, chapter_id):
                             & (Chapter.owner_id.is_(None) | (Chapter.owner_id == user.id)))
     query = query.with_only_columns(
             Question.id, Question.title, Question.kind, Question.status, Question.owner_id,
+            func.substr(Question.prompt, 1, 160).label("prompt_preview"),
+            Question.source["difficulty"].as_string().label("difficulty"),
             (func.json_array_length(Question.samples) > 0).label("has_samples"),
             Question.source["coding_type"].as_string().label("coding_type"),
             Question.source["usage"].as_string().label("usage"))
@@ -398,13 +400,13 @@ def _normalize_imported_cases(raw_cases, *, expected_key: str, field_name: str):
     if not isinstance(raw_cases, list):
         raise ValueError(f"{field_name} 必须为列表")
     out = []
-    for case in raw_cases:
-        if not isinstance(case, dict):
-            out.append(case)
+    for raw_case in raw_cases:
+        if not isinstance(raw_case, dict):
+            out.append(raw_case)
             continue
         out.append({
-            "input": case.get("input", ""),
-            expected_key: case.get("expected_output", case.get("output", "")),
+            "input": raw_case.get("input", ""),
+            expected_key: raw_case.get("expected_output", raw_case.get("output", "")),
         })
     return out
 

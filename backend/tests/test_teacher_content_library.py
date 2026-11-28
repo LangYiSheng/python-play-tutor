@@ -15,6 +15,34 @@ def question_body(key="bank-boolean", **changes):
             "answer": True, "chapter_ids": [179, 180], "source_type": "ai_generated", "status": "ready", **changes}
 
 
+def test_chapter_activity_order_is_atomic_idempotent_and_scoped(client, teacher, student, classroom):
+    root = f"/api/teacher/courses/{classroom['course_id']}"
+    path = root + "/chapters/179/activities/order"
+    headers = teacher["headers"]
+
+    def order():
+        rows = client.get(root + "/catalog", headers=headers).json()["activities"]
+        return [a["id"] for a in sorted(rows, key=lambda a: a["order_index"])
+                if a["chapter_id"] == 179 and a["kind"] in ("practice", "assessment")]
+
+    previous = order()
+    for key in ("order-a", "order-b"):
+        response = client.post(root + "/activities", headers=headers, json={
+            "id": key, "kind": "practice", "chapter_id": 179, "title": key, "published": False})
+        assert response.status_code == 201
+        previous.append(response.json()["id"])
+    assert previous == order()
+    desired = previous[::-1]
+    body = {"previous": previous, "ordered": desired}
+    assert client.put(path, headers=student["headers"], json=body).status_code == 403
+    assert client.put(path, headers=headers, json=body).status_code == 200
+    assert client.put(path, headers=headers, json=body).status_code == 200
+    for invalid in ([*desired[:-1], desired[0]], [*desired[:-1], "other-chapter"]):
+        assert client.put(path, headers=headers, json={"previous": desired, "ordered": invalid}).status_code == 409
+    assert client.put(path, headers=headers, json={"previous": previous, "ordered": previous}).status_code == 409
+    assert order() == desired
+
+
 def test_bank_question_can_be_unclassified_draft_then_reused_without_activity_coupling(client, db, teacher, classroom):
     headers = teacher["headers"]
     draft = client.post(f"/api/teacher/courses/{classroom['course_id']}/questions", headers=headers, json=question_body(status="draft", chapter_ids=[], answer=None))

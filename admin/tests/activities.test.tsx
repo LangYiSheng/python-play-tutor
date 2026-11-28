@@ -37,7 +37,10 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   const create = await screen.findByRole("button", { name: "新增客观题练习" });
   await waitFor(() => expect(create).toBeEnabled());
   await user.click(create);
-  await user.type(screen.getByRole("textbox", { name: "活动名称" }), "变量练习");
+  const title = screen.getByRole("textbox", { name: "活动名称" });
+  expect(title).toHaveValue("第一章 客观题练习");
+  await user.clear(title);
+  await user.type(title, "变量练习");
   expect(screen.getByRole("radio", { name: "按知识点出题" })).toBeChecked();
   await user.click(screen.getByRole("tab", { name: "知识点目标" }));
   expect(screen.queryByRole("checkbox", { name: "循环" })).not.toBeInTheDocument();
@@ -49,11 +52,13 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   expect(screen.getAllByRole("spinbutton", { name: /答对总数/ })).toHaveLength(1);
   expect(screen.getByRole("spinbutton", { name: /交互练习题至少/ })).toBeVisible();
   expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(1);
+  await user.click(screen.getByRole("button", { name: "应用到已选 2 个知识点" }));
+  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(2);
   await user.click(screen.getByRole("button", { name: "变量" }));
-  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(3);
+  expect(screen.getByRole("spinbutton", { name: /答对总数/ })).toHaveValue(2);
   expect(screen.getByRole("checkbox", { name: "表达式" })).toBeChecked();
   await user.click(screen.getByRole("checkbox", { name: "表达式" }));
-  expect(screen.getByText("按此目标至少需要 3 道不同题目，当前还缺 3 道。")).toBeVisible();
+  expect(screen.getByText("按此目标至少需要 2 道不同题目，当前还缺 2 道。")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "保存" }));
   expect(await screen.findByText("变量缺少可用编程题")).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "活动信息" }));
@@ -64,7 +69,7 @@ it("creates a chapter-scoped practice draft and preserves goals after a rejected
   expect(writes).toHaveLength(2);
   expect(writes[1]).toMatchObject({
     kind: "practice", chapter_id: 1, published: false, knowledge_point_ids: [11],
-    practice_rules: { goals: [{ knowledge_point_id: 11, total: 3, by_kind: { fill: 1 } }] },
+    practice_rules: { goals: [{ knowledge_point_id: 11, total: 2, by_kind: { fill: 1 } }] },
   });
   await user.click(await screen.findByRole("button", { name: "选题章节测验" }));
   expect(await screen.findByRole("checkbox", { name: "仅私有用例" })).toBeEnabled();
@@ -82,7 +87,7 @@ it("selects shared and untagged questions once and saves their final positions w
     {id: "both", title: "B 变量题", knowledge_point_ids: [11, 12]},
     {id: "expression", title: "A 表达式题", knowledge_point_ids: [12]},
     {id: "untagged", title: "C 综合题", knowledge_point_ids: []},
-  ].map(q => ({...q, chapter_ids: [1], owner_id: null, kind: "fill", status: "ready"}));
+  ].map(q => ({...q, chapter_ids: [1], owner_id: null, kind: q.id === "untagged" ? "boolean" : "fill", status: "ready"}));
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     if (init.method === "PUT") { update(url, JSON.parse(String(init.body))); return json({}); }
     return json(url.includes("/catalog") ? course : url.includes("/question-candidates") ? questions : []);
@@ -101,9 +106,41 @@ it("selects shared and untagged questions once and saves their final positions w
   expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("A 表达式题");
   await user.click(screen.getByRole("button", {name: "按知识点排序"}));
   expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("B 变量题");
+  await user.click(screen.getByRole("button", {name: "按题目类型排序"}));
+  expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("C 综合题");
   await user.click(screen.getByRole("button", {name: "保存"}));
   await waitFor(() => expect(update).toHaveBeenCalledWith(expect.stringContaining("/teacher/courses/7/activities/paper"),
-    expect.objectContaining({title: "固定题单", question_ids: ["both", "expression", "untagged"]})));
+    expect.objectContaining({title: "固定题单", question_ids: ["untagged", "both", "expression"]})));
+});
+
+it("defaults programming practice to a fixed list and shows chapter-wide previews, subtypes and samples", async () => {
+  const questions = [
+    { id: "a", title: "循环求和", knowledge_point_ids: [11], coding_type: "debug" },
+    { id: "b", title: "条件判断", knowledge_point_ids: [12], coding_type: "fill_code" },
+  ].map(q => ({...q, kind: "python", difficulty: "中", status: "ready", has_samples: true, prompt_preview: "编写 Python 程序"}));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/catalog")) return json({chapters: [{id: 1, title: "基础"}], activities: [],
+      knowledge_points: [{id:11, title:"循环", chapter_id:1}, {id:12, title:"判断", chapter_id:1}]});
+    if (url.includes("/question-candidates")) return json(questions);
+    if (url.endsWith("/questions/b")) return json({prompt:"完整题干", samples:[{input:"5", expected_output:"10"}]});
+    return json([]);
+  }));
+  const user = userEvent.setup();
+  render(<LearningTasks courseId={7}/>);
+  await user.click(await screen.findByRole("button", {name:"新增测验"}));
+  expect(screen.getByRole("textbox", {name:"活动名称"})).toHaveValue("基础 测验");
+  await user.click(screen.getByRole("button", {name:"取消"}));
+  await user.click(screen.getByRole("button", {name:"新增编程题练习"}));
+  expect(screen.getByRole("textbox", {name:"活动名称"})).toHaveValue("基础 编程题练习");
+  expect(screen.getByRole("radio", {name:"固定题单"})).toBeChecked();
+  expect(screen.queryByText("显示顺序")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", {name:"选择编程题"}));
+  expect(screen.getByText("程序改错")).toBeVisible();
+  expect(screen.getAllByText("难度：中")).toHaveLength(2);
+  await user.click(screen.getByRole("button", {name:"展开条件判断的详情"}));
+  expect(await screen.findByText("完整题干")).toBeVisible();
+  expect(screen.getByText("公开样例 1")).toBeVisible();
+  expect(screen.getByRole("checkbox", {name:"条件判断"})).not.toBeChecked();
 });
 
 it("previews cascading impact, requires an explicit confirmation, and refreshes after deletion", async () => {

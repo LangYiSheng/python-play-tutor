@@ -116,6 +116,8 @@ export interface Question {
 
 export type QuestionCandidate = Pick<Question, "id" | "title" | "kind" | "status" | "owner_id" | "knowledge_point_ids"> & {
   has_samples: boolean;
+  prompt_preview?: string;
+  difficulty?: string | null;
   coding_type?: string | null;
   usage?: string | null;
 };

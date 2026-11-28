@@ -459,6 +459,7 @@ def find_candidates(exam: dict[str, Any], variant: str, uid: str, pool: Sequence
                     "knowledge_points": pts,
                     "page": int(q.get("page") or 0),
                     "usedInOtherVariant": bool(in_other),
+                    "difficulty": str(q.get("difficulty") or ""),
                 },
             )
         )

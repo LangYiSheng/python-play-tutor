@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from fastapi import HTTPException
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,37 @@ QuestionIds = Annotated[list[str], Field(max_length=5000), AfterValidator(unique
 class ActivityQuestionsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     question_ids: QuestionIds
+
+
+class ActivityOrderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    previous: list[str]
+    ordered: list[str]
+
+
+def reorder_activities(db: Session, user: User, course_id: int, chapter_id: int,
+                       body: ActivityOrderInput) -> dict[str, bool]:
+    from app.curriculum import authoring_chapter
+
+    instance_id = teacher_instance_id(db, user, course_id, exclusive=True)
+    authoring_chapter(db, user, chapter_id, instance_id)
+    query = select(Activity).where(Activity.course_instance_id == instance_id, Activity.chapter_id == chapter_id,
+                                   Activity.kind.in_(("practice", "assessment")))
+    if user.role != "admin":
+        query = query.where(Activity.owner_id.is_(None) | (Activity.owner_id == user.id))
+    rows = sorted(db.scalars(query.order_by(Activity.id)), key=lambda item: item.content.get("order_index", 0))
+    by_id = {item.id: item for item in rows}
+    if len(body.ordered) != len(rows) or set(body.ordered) != set(by_id):
+        raise HTTPException(409, "本章活动已变更，请按最新列表重新排序")
+    if list(by_id) == body.ordered:
+        return {"ok": True}
+    if list(by_id) != body.previous:
+        raise HTTPException(409, "活动顺序已变更，请按最新列表重新排序")
+    for index, activity_id in enumerate(body.ordered, start=1):
+        item = by_id[activity_id]
+        item.content = {**item.content, "order_index": index}
+    commit_content(db, instance_id)
+    return {"ok": True}
 
 
 class ActivityInput(BaseModel):
@@ -60,8 +91,14 @@ def create_activity(body: ActivityInput, db: Session, user: User, course_id: int
     from app.curriculum import validate_activity_points
 
     validate_activity_points(db, user, body.chapter_id, body.knowledge_point_ids, instance_id)
+    order = body.order_index
+    if "order_index" not in body.model_fields_set:
+        highest = db.scalar(select(func.max(Activity.content["order_index"].as_integer())).where(
+            Activity.course_instance_id == instance_id, Activity.chapter_id == body.chapter_id,
+            Activity.kind.in_(("practice", "assessment"))))
+        order = (highest or 0) + 1
     content = {"published": body.published, "knowledge_point_ids": body.knowledge_point_ids,
-               "required": body.required if body.kind == "practice" else True, "order_index": body.order_index}
+               "required": body.required if body.kind == "practice" else True, "order_index": order}
     if body.kind == "practice":
         content["practice_kind"] = body.practice_kind
     item = Activity(

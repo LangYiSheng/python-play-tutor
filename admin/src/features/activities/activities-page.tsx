@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { BookOpen, CirclePause, ClipboardList, Clock3, Code2, FileCheck2, ListChecks, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Empty, ErrorNotice, PageHeader } from "@/components/common";
 import { WorkspaceSkeleton } from "@/components/skeletons";
@@ -11,6 +11,7 @@ import { useResource } from "@/lib/use-resource";
 import { ChapterMaterials } from "./chapter-materials";
 import { ActivityDialog } from "./editor-dialog";
 import { useActivityEditor } from "./use-editor";
+import { SortableActivities } from "./sortable-activities";
 import "./workspace.css";
 
 const categories = [
@@ -84,8 +85,8 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
   const deletion = useTableDelete<Activity>(a => scoped(`/teacher/activities/${encodeURIComponent(a.id)}`, courseId), reload, {courseId, kind: () => "activity"});
   const candidates = (questions.data ?? []).filter(q => q.status === "ready" && (editor.kind === "assessment"
     ? q.kind !== "interactive" : q.usage !== "assessment" && (q.kind === "python") === (editor.practiceKind === "programming") && (q.kind !== "python" || q.has_samples)));
-  const items = course.activities.filter(a => a.chapter_id === chapter.id && (a.kind === "practice" || a.kind === "assessment"))
-    .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0) || a.title.localeCompare(b.title, "zh-CN"));
+  const items = useMemo(() => course.activities.filter(a => a.chapter_id === chapter.id && (a.kind === "practice" || a.kind === "assessment"))
+    .sort((a,b) => (a.order_index ?? 0) - (b.order_index ?? 0)), [course.activities, chapter.id]);
   return <section className="surface min-w-0 self-start">
     <header className="activity-panel-heading">
       <h3 className="text-lg font-semibold">练习与测验</h3>
@@ -93,10 +94,10 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
         <Button key={key} variant="outline" onClick={() => editor.edit(null, false, key)}><Plus/>新增{label}</Button>)}</div>
     </header>
     <ErrorNotice message={!editor.open ? editor.error : ""}/>
-    {items.length ? <ul className="activity-rows">{items.map(a => {
+    {items.length ? <SortableActivities items={items} courseId={courseId} chapterId={chapter.id} reload={reload} renderRow={a => {
       const category = categories.find(c => c.key === (a.kind === "assessment" ? a.kind : a.practice_kind)) ?? categories[0];
       const Icon = category.icon;
-      return <li key={a.id}><span className="activity-icon"><Icon size={19}/></span>
+      return <><span className="activity-icon"><Icon size={19}/></span>
         <div className="min-w-0"><h3 className="break-words font-medium">{a.title}</h3>
           <div className="hint">{category.label} · {a.kind === "assessment" || a.required !== false ? "必做" : "选做"} · {a.practice_rules ? `${a.practice_rules.goals.length} 个知识点目标` : `${a.question_ids.length} 道题`}</div></div>
         <span className="activity-status" data-published={a.published !== false}>{a.published === false ? "草稿" : "已发布"}</span>
@@ -104,8 +105,8 @@ function ChapterActivities({ courseId, chapter, course, reload }: {
           {!a.practice_rules && <Button variant="ghost" size="sm" aria-label={`选题${a.title}`} onClick={() => editor.edit(a,true)}><ListChecks/>选题</Button>}
           <Button variant="ghost" size="sm" aria-label={`编辑${a.title}`} onClick={() => editor.edit(a)}><Pencil/>编辑</Button>
           <Button variant="ghost" size="icon" title={`删除${a.title}`} aria-label={`删除${a.title}`} onClick={() => deletion.ask([a])}><Trash2/></Button>
-        </div></li>;
-    })}</ul> : <Empty title="本章暂无活动" description="选择上方的活动类型，添加本章的第一组练习或测验。" />}
+        </div></>;
+    }}/> : <Empty title="本章暂无活动" description="选择上方的活动类型，添加本章的第一组练习或测验。" />}
     <DeleteSelection actions={deletion}/>
     <ActivityDialog editor={editor} course={{data:course}} questions={questions} candidates={candidates}/>
   </section>;

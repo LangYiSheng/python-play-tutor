@@ -107,6 +107,8 @@ function SwapBody({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge variant="outline">{c.chapter}</Badge>
+                  <Badge variant="secondary">{EXAM_TYPE_LABELS[c.type]}</Badge>
+                  <Badge variant="outline">{c.difficulty ? `难度：${c.difficulty}` : "难度未标注"}</Badge>
                   {c.knowledge_points.slice(0, 3).map((kp) => (
                     <Badge key={kp} variant="secondary">
                       {kp}

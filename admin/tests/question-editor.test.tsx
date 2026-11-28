@@ -82,18 +82,16 @@ it('supports approving with keyboard shortcut A and ArrowRight/ArrowLeft queue n
   expect(onApproved).toHaveBeenCalledTimes(1);
 });
 
-it('preserves public and private cases independently across tabs', async () => {
+it('preserves public and private cases independently in the shared editor', async () => {
   const put = vi.spyOn(api, 'put').mockResolvedValue({});
   const user = userEvent.setup();
   render(<Host initial={{ ...question, kind: 'python', samples: [{input: '1', output: '2'}] }} />);
   await user.click(screen.getByText('打开'));
-  await user.click(screen.getByRole('tab', {name: '测试用例'}));
   await user.click(screen.getByRole('button', {name: '复制'}));
   await user.type(screen.getByLabelText('标准输入'), '0');
   await user.click(screen.getByRole('button', {name: /私有用例 · 0/}));
   await user.click(screen.getByRole('button', {name: '添加用例'}));
   await user.type(screen.getByLabelText('预期输出'), 'private');
-  await user.click(screen.getByRole('tab', {name: '内容关联'}));
   await user.click(screen.getByText('保存题目'));
   expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
     samples: [{input: '1', output: '2'}, {input: '10', output: '2'}],
@@ -117,7 +115,6 @@ it('restores structured private targets intact, rejects malformed JSON and saves
   const target = { value: [2, false] };
   render(<Host initial={{ ...question, kind: 'interactive', interactive: exampleSource, answer: target }} />);
   await user.click(screen.getByText('打开'));
-  await user.click(screen.getByRole('tab',{name:'编写与试答'}));
   const html = screen.getByRole('textbox', { name: 'HTML 源码' });
   await user.clear(html);
   await user.type(html, '<p>新题面</p>');
@@ -143,7 +140,6 @@ it('applies a template only after confirmation and keeps source editable', async
   const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
   render(<Host initial={{ ...question, kind: 'interactive', interactive: exampleSource, answer: 1 }} />);
   await user.click(screen.getByText('打开'));
-  await user.click(screen.getByRole('tab',{name:'编写与试答'}));
   await user.click(screen.getByText('从示例开始'));
   const template = interactiveExamples[1];
   await user.click(screen.getByRole('combobox', { name: '教学示例' }));
@@ -242,10 +238,8 @@ it('saves python coding_type, usage, reference_solution and runs browser case ve
   await user.click(screen.getByText('打开'));
   expect(screen.getByLabelText('编程形式')).toHaveTextContent('程序填空');
   expect(screen.getByLabelText('教学用途')).toHaveTextContent('测验专用');
-  await user.click(screen.getByRole('tab', { name: '初始代码与提示' }));
   expect(screen.getByLabelText('参考答案代码（仅教师可见，用于一键验题）')).toHaveValue(ref);
 
-  await user.click(screen.getByRole('tab', { name: '测试用例' }));
   await user.click(screen.getByRole('button', { name: /用参考代码填充输出/ }));
   expect(pyValidation.generateOutputsFromReference).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole('button', { name: /一键验证全部用例/ }));

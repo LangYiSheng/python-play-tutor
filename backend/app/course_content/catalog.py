@@ -94,7 +94,7 @@ def teacher_courses(db: Session, user: User, course_id: int | None = None, view=
                 "published": a.content.get("published", True),
                 "question_ids": by_activity.get(a.id, []),
             }
-            for a in db.scalars(activities)
+            for a in db.scalars(activities.order_by(Activity.id))
         ],
         "npcs": [
             {"key": n.key, "name": n.name, "map_key": n.map_key, "tile_x": n.tile_x, "tile_y": n.tile_y}

@@ -114,7 +114,7 @@ export function ExamsTab({
   return (
     <div className="space-y-4">
       <ErrorNotice message={error} />
-      <div className="surface p-4 space-y-4">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm text-muted-foreground">
             基于客观题库智能抽取生成单卷或 A/B 平行卷，支持双向细目表及多格式导出（随课程包同步备份）。

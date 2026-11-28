@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_teacher
 from app.course_content.activities import ActivityInput, ActivityQuestionsInput, ActivityUpdate
+from app.course_content.activities import ActivityOrderInput, reorder_activities
 from app.course_content.activities import create_activity as _create_activity
 from app.course_content.activities import delete_activity as _delete_activity
 from app.course_content.activities import update_activity as _update_activity
@@ -71,6 +72,12 @@ def create_activity(
     body: ActivityInput, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)], course_id: int | None = None
 ):
     return _create_activity(body=body, db=db, user=user, course_id=course_id)
+
+
+@router.put("/teacher/courses/{course_id}/chapters/{chapter_id}/activities/order")
+def order_chapter_activities(course_id: int, chapter_id: int, body: ActivityOrderInput,
+                             db: Annotated[Session, Depends(get_db)], user: Annotated[User, Depends(require_teacher)]) -> dict[str, bool]:
+    return reorder_activities(db, user, course_id, chapter_id, body)
 
 
 @router.put("/teacher/courses/{course_id}/activities/{activity_id}")

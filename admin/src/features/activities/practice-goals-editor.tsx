@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { kinds } from "@/features/questions/types";
 import type { Point, PracticeGoal, PracticeRules, QuestionCandidate } from "@/lib/types";
 
@@ -22,6 +23,7 @@ export function PracticeGoalsEditor({ practiceKind, rules, points, candidates, o
     setGoals(rules.goals.map(item => item.knowledge_point_id === goal.knowledge_point_id ? goal : item));
   }
   const [focusedId, setFocusedId] = useState<number>();
+  const [batchTotal, setBatchTotal] = useState("2");
   const goal = rules.goals.find(item => item.knowledge_point_id === focusedId) ?? rules.goals[0];
   const point = points.find(item => item.id === goal?.knowledge_point_id);
   const pool = candidates?.filter(q => goal && q.knowledge_point_ids.includes(goal.knowledge_point_id));
@@ -36,6 +38,16 @@ export function PracticeGoalsEditor({ practiceKind, rules, points, candidates, o
     <div className="space-y-4">
       <fieldset className="min-w-0">
         <legend className="mb-2 text-sm font-medium">本章练习目标</legend>
+        {rules.goals.length > 1 && <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <label className="flex items-center gap-2">每个已选知识点答对
+            <Input className="w-20" type="number" min={1} max={500} value={batchTotal} onChange={e => setBatchTotal(e.target.value)}/> 道
+          </label>
+          <Button type="button" size="sm" variant="outline"
+            disabled={!Number.isInteger(Number(batchTotal)) || Number(batchTotal) < 1 || Number(batchTotal) > 500}
+            onClick={() => setGoals(rules.goals.map(item => ({...item, total: Number(batchTotal)})))}>
+            应用到已选 {rules.goals.length} 个知识点
+          </Button>
+        </div>}
         <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] overflow-hidden rounded-md border">
           <div aria-label="章节知识点" className="max-h-80 overflow-y-auto border-r bg-muted/30 p-1">
             {points.map(p => {
