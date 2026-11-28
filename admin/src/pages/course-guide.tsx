@@ -239,7 +239,7 @@ export function CourseGuide({
                 <Copy />
                 复制加入码
               </Button>
-              <Button variant="ghost" onClick={onCreateClass}>
+              <Button variant="outline" onClick={onCreateClass}>
                 <Plus />
                 再建一个班
               </Button>

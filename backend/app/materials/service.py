@@ -87,6 +87,18 @@ def extract_chapter_meta(title: str) -> tuple[int | None, str]:
     return parse_chapter_number(raw), raw
 
 
+def plan_material_chapter(title, chapters, owner_id):
+    raw = title.strip()[:200]
+    parsed_order, clean = extract_chapter_meta(raw)
+    for chapter in chapters:
+        if (chapter.title in (clean, raw)
+                and (owner_id is None or chapter.owner_id in (None, owner_id))):
+            return chapter.title, chapter.order_index, chapter.id
+    used = {chapter.order_index for chapter in chapters}
+    order = parsed_order if parsed_order is not None and parsed_order not in used else max(used, default=0) + 1
+    return clean, order, None
+
+
 def ensure_chapter_for_material(
     db: Session,
     *,
@@ -100,23 +112,11 @@ def ensure_chapter_for_material(
     sets order_index to that number (if unused) and strips the leading chapter-number prefix
     from the chapter title so the folder displays cleanly as '6. 数据存取与分析'.
     """
-    raw_clean = title.strip()[:200]
-    parsed_order, clean = extract_chapter_meta(raw_clean)
-    candidate_titles = {clean, raw_clean}
-    existing_query = select(Chapter).where(
-        Chapter.course_instance_id == instance_id,
-        Chapter.title.in_(candidate_titles),
-    )
-    if owner_id is not None:
-        existing_query = existing_query.where(Chapter.owner_id.is_(None) | (Chapter.owner_id == owner_id))
-    existing = db.scalar(existing_query.order_by(Chapter.order_index, Chapter.id))
-    if existing is not None:
-        return existing, False
-    used_orders = set(db.scalars(select(Chapter.order_index).where(Chapter.course_instance_id == instance_id)))
-    if parsed_order is not None and parsed_order not in used_orders:
-        next_order = parsed_order
-    else:
-        next_order = (max(used_orders) if used_orders else 0) + 1
+    chapters = db.scalars(select(Chapter).where(Chapter.course_instance_id == instance_id)
+                         .order_by(Chapter.order_index, Chapter.id)).all()
+    clean, next_order, existing_id = plan_material_chapter(title, chapters, owner_id)
+    if existing_id is not None:
+        return db.get(Chapter, existing_id), False
     chapter = Chapter(
         title=clean,
         order_index=next_order,
@@ -208,7 +208,7 @@ async def upload_material(
         if was_created:
             created_chapter = {"id": chapter.id, "title": chapter.title, "order_index": chapter.order_index}
     if selected_chapters is not None:
-        set_material_chapters(db, material.id, selected_chapters)
+        set_material_chapters(db, material.id, selected_chapters, required_by_default=material.kind == "pdf")
     material.title = title.strip()
     material.status = "queued"
     material.error = None
@@ -298,7 +298,7 @@ def update_material(material_id: int, body: MaterialUpdate, user: User, db: Sess
         for chapter_id in body.chapter_ids:
             authoring_chapter(db, user, chapter_id, instance_id)
         validate_material_links(db, material.id, body.chapter_ids)
-        set_material_chapters(db, material.id, body.chapter_ids)
+        set_material_chapters(db, material.id, body.chapter_ids, required_by_default=material.kind == "pdf")
     if "title" in body.model_fields_set:
         material.title = body.title
     commit_content(db, instance_id)

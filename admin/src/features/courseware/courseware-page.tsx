@@ -473,7 +473,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
               onRetry={(m) => void retryMaterial(m)}
             />
           ) : activeChapter ? (
-            <section key={activeChapter.id} className="page-enter surface flex flex-1 min-w-0 min-h-0 flex-col gap-4 overflow-y-auto p-5" aria-label={activeChapter.title}>
+            <section key={activeChapter.id} className="page-enter flex flex-1 min-w-0 min-h-0 flex-col gap-4 overflow-y-auto p-5" aria-label={activeChapter.title}>
               <header className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
                 <div className="flex items-center gap-2">
                   {!treeOpen && (
@@ -550,7 +550,7 @@ function CoursewareInner({ courseId }: { courseId: number }) {
               )}
             </section>
           ) : (
-            <section className="surface flex-1 space-y-3 p-6">
+            <section className="flex-1 space-y-3 p-6">
               {!treeOpen && (
                 <Button type="button" size="xs" variant="secondary" onClick={() => toggleTree(true)}>
                   <PanelLeftOpen /> 展开目录

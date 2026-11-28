@@ -41,7 +41,7 @@ export function useMaterialEditor(courseId: number, onSaved: () => void) {
     } else {
       setFiles(picked);
       setFile(picked[0] ?? null);
-      if (picked.length === 1 && !picked[0].name.toLowerCase().endsWith(".zip") && !title) {
+      if (picked.length === 1 && !picked[0].name.toLowerCase().endsWith(".zip") && (!title || title === file?.name.replace(/\.[^.]+$/, ""))) {
         setTitle(picked[0].name.replace(/\.[^.]+$/, ""));
       }
     }
@@ -96,6 +96,7 @@ export function useMaterialEditor(courseId: number, onSaved: () => void) {
   }
 
   return {
+    courseId,
     editing,
     setEditing,
     open,

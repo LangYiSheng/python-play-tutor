@@ -126,7 +126,7 @@ export function MaterialWorkspace({
 
   return (
     <section
-      className="surface flex flex-1 min-w-0 min-h-0 flex-col gap-2 p-3 lg:h-full lg:overflow-hidden"
+      className="flex flex-1 min-w-0 min-h-0 flex-col gap-2 p-3 lg:h-full lg:overflow-hidden"
       aria-label={material.title}
     >
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b pb-2">

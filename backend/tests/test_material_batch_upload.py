@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from sqlalchemy import select
 
 from app.materials.storage import get_storage
-from app.models import Chapter, Material
+from app.models import Chapter, Material, MaterialChapter
 
 VALID_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
 
@@ -66,6 +66,11 @@ def test_batch_upload_files_and_zip_archive(client, db, teacher, student, classr
     assert {item["title"] for item in payload["created"]} == {"ch1-slides", "ch1-notes"}
     assert len(payload["skipped"]) == 1
     assert payload["skipped"][0]["filename"] == "unsupported.exe"
+    for item in payload["created"]:
+        link = db.get(MaterialChapter, (item["id"], chapter.id))
+        assert link.required == (item["kind"] == "pdf")
+        if link.required:
+            assert link.rule == {"scope": "all"}
 
     # ZIP archive with UTF-8 PDF, GBK Chinese markdown, ignored __MACOSX, and unsupported jpg
     archive = _make_zip(
@@ -89,6 +94,27 @@ def test_batch_upload_files_and_zip_archive(client, db, teacher, student, classr
 
     stored = list(db.scalars(select(Material).where(Material.course_instance_id == db.info["fixture_course_instance_id"])))
     assert len(stored) >= 4
+
+
+def test_preview_and_import_allocate_identical_chapters_without_creating_content(client, db, teacher):
+    headers = teacher["headers"]
+    course_id = client.post("/api/teacher/courses", headers=headers, json={"name": "编排预览"}).json()["id"]
+    path = f"/api/teacher/courses/{course_id}/materials"
+    archive = _make_zip([("第六章数据.pdf", VALID_PDF, False), ("备注.md", b"text", True)])
+    manifest = [{"name": "概览.pdf", "size": len(VALID_PDF)}, {"name": "资料.zip", "size": len(archive)}]
+    preview = client.post(path + "/upload-preview", headers=headers, data={"manifest": json.dumps(manifest)},
+                          files=[("archives", ("资料.zip", archive))])
+    assert preview.status_code == 200, preview.text
+    rows = preview.json()["items"]
+    assert [(row["title"], row["chapter"] and row["chapter"]["order_index"]) for row in rows] == [
+        ("第六章数据", 6), ("概览", 7), ("备注", None)]
+    assert not db.scalar(select(Chapter.id).where(Chapter.course_instance_id == course_id))
+    assert not db.scalar(select(Material.id).where(Material.course_instance_id == course_id))
+    uploaded = client.post(path + "/upload-batch", headers=headers,
+                           files=[("files", ("概览.pdf", VALID_PDF)), ("files", ("资料.zip", archive))])
+    assert uploaded.status_code == 201, uploaded.text
+    assert [(row["title"], row["order_index"]) for row in uploaded.json()["created_chapters"]] == [
+        (row["chapter"]["title"], row["chapter"]["order_index"]) for row in rows if row["chapter"]]
 
 
 def test_batch_upload_rejects_full_course_package_zip(client, teacher, classroom) -> None:

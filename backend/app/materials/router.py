@@ -11,6 +11,7 @@ from app.auth import current_user, require_teacher
 from app.db import get_db
 from app.materials.batch_upload import upload_materials_batch as _upload_materials_batch
 from app.materials.contracts import MaterialUpdate
+from app.materials.upload_preview import upload_preview
 from app.materials.delivery import material_file as _material_file
 from app.materials.delivery import teacher_material_file as _teacher_material_file
 from app.materials.service import delete_material as _delete_material
@@ -23,6 +24,18 @@ from app.materials.service import upload_material as _upload_material
 from app.models import User
 
 router = APIRouter(tags=["materials"])
+
+
+@router.post("/teacher/courses/{course_id}/materials/upload-preview")
+def preview_upload(
+    course_id: int,
+    user: Annotated[User, Depends(require_teacher)],
+    db: Annotated[Session, Depends(get_db)],
+    manifest: Annotated[str, Form(max_length=100_000)],
+    archives: Annotated[list[UploadFile] | None, File()] = None,
+    title: Annotated[str | None, Form(max_length=200)] = None,
+):
+    return upload_preview(db, user, course_id, manifest, archives or [], title)
 
 
 @router.post("/teacher/courses/{course_id}/materials/upload", status_code=201)

@@ -178,7 +178,7 @@ export function ChapterTree({
 
   return (
     <aside
-      className="panel-slide-left surface flex flex-col gap-2 p-2.5 lg:h-full lg:min-h-0 lg:w-56 shrink-0"
+      className="panel-slide-left border-b border-border/60 lg:border-b-0 lg:border-r flex flex-col gap-2 p-2.5 lg:h-full lg:min-h-0 lg:w-56 shrink-0"
       aria-label="章节与资料目录"
     >
       <div className="flex items-center justify-between gap-1 shrink-0">

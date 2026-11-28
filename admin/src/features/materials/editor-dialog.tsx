@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { UploadPreview } from "./upload-preview";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Course } from "@/lib/types";
@@ -44,11 +44,6 @@ export function MaterialDialog({
   const accept = editing
     ? ".pdf,.txt,.md,.ppt,.pptx,.mp4,.webm"
     : ".pdf,.txt,.md,.ppt,.pptx,.mp4,.webm,.zip";
-  const singleIsDeck =
-    !editing && !isBatchMode && files.length === 1 && /\.(ppt|pptx|pdf)$/i.test(files[0].name);
-  const autoChapterWillApply =
-    !editing && chapterIds.length === 0 && (isBatchMode || singleIsDeck || files.length === 0);
-
   return (
     <Dialog
       open={open}
@@ -56,12 +51,9 @@ export function MaterialDialog({
         if (!busy) setOpen(v);
       }}
     >
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editing ? "编辑资料" : "上传资料"}</DialogTitle>
-          <DialogDescription>
-            文件保存在私有存储中，仅向有权限的学生开放。
-          </DialogDescription>
         </DialogHeader>
         <form
           inert={busy}
@@ -133,10 +125,7 @@ export function MaterialDialog({
                   <p className="text-sm font-medium">
                     {files.length === 1
                       ? files[0].name
-                      : `已选择 ${files.length} 个文件（${files
-                          .slice(0, 2)
-                          .map((f) => f.name)
-                          .join("、")}${files.length > 2 ? " 等" : ""}）`}
+                      : `已选择 ${files.length} 个文件`}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground">将文件拖到此处，或点击下方选择文件</p>
@@ -182,16 +171,12 @@ export function MaterialDialog({
               <p className="hint">可调整归属章节，或取消全部勾选使其进入未归类资料。</p>
             ) : chapterIds.length > 0 ? (
               <p className="hint">已选 {chapterIds.length} 个章节，资料将直接归入所选章节（不新建章节）。</p>
-            ) : autoChapterWillApply ? (
-              <p className="mt-2 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1.5 text-xs text-foreground">
-                {isBatchMode
-                  ? "未勾选章节时，导入的每份 PPT / PDF 课件将自动按文件名各自新建独立章节并关联。"
-                  : `未勾选章节时，上传 PPT / PDF 将自动以「${title.trim() || "课件名称"}」新建独立章节并关联；如需放进已有章节，勾选上方章节即可。`}
-              </p>
-            ) : (
-              <p className="hint">可以暂不归类，之后再关联章节。</p>
-            )}
+            ) : null}
           </fieldset>
+          {!editing && files.length > 0 && open && (
+            <UploadPreview courseId={editor.courseId} files={files} title={isBatchMode ? undefined : title}
+              chapters={(course.data?.chapters ?? []).filter(ch => chapterIds.includes(ch.id))} />
+          )}
           <DialogFooter>
             <Button
               type="button"

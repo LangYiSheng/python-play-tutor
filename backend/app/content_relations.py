@@ -57,11 +57,13 @@ def _validate_ids(db, parent, parent_id, model, ids):
         raise ValueError("引用的内容不存在或不属于同一班级课程")
 
 
-def set_material_chapters(db, material_id, ids):
+def set_material_chapters(db, material_id, ids, *, required_by_default=False):
     _validate_ids(db, Material, material_id, Chapter, ids)
     existing = set(material_chapter_ids(db, material_id))
     db.execute(delete(MaterialChapter).where(MaterialChapter.material_id == material_id, MaterialChapter.chapter_id.not_in(ids)))
-    db.add_all(MaterialChapter(material_id=material_id, chapter_id=key) for key in ids if key not in existing)
+    db.add_all(MaterialChapter(material_id=material_id, chapter_id=key, required=required_by_default,
+                               rule={"scope": "all"} if required_by_default else {})
+               for key in ids if key not in existing)
     db.flush()
 
 

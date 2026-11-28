@@ -108,8 +108,18 @@ def _store_validated_file(
         if was_created:
             created_chapter = {"id": chapter.id, "title": chapter.title, "order_index": chapter.order_index}
     if target_chapters is not None:
-        set_material_chapters(db, material.id, target_chapters)
+        set_material_chapters(db, material.id, target_chapters, required_by_default=material.kind == "pdf")
     return material, created_chapter
+
+
+def courseware_zip_entries(zipped: zipfile.ZipFile):
+    infos = [info for info in zipped.infolist() if not info.is_dir()]
+    if len(infos) > MAX_ZIP_ENTRIES:
+        return [], f"压缩包内文件过多（超过 {MAX_ZIP_ENTRIES} 个）", False
+    entries = [(info, _clean_filename(_decode_zip_name(info))) for info in infos]
+    if any(name.lower() == "manifest.yaml" for _, name in entries):
+        return [], "完整课程包请通过课程包页面导入", True
+    return entries, "", False
 
 
 def _extract_zip_candidates(
@@ -130,13 +140,9 @@ def _extract_zip_candidates(
         return extracted, skipped, False
 
     with zf:
-        infos = [info for info in zf.infolist() if not info.is_dir()]
-        if len(infos) > MAX_ZIP_ENTRIES:
-            skipped.append({"filename": filename, "reason": f"压缩包内文件过多（超过 {MAX_ZIP_ENTRIES} 个）"})
-            return extracted, skipped, False
-        entries = [(info, _clean_filename(_decode_zip_name(info))) for info in infos]
-        if any(name.lower() == "manifest.yaml" for _, name in entries):
-            return [], [{"filename": filename, "reason": "完整课程包请通过课程包页面导入"}], True
+        entries, reason, is_package = courseware_zip_entries(zf)
+        if reason:
+            return [], [{"filename": filename, "reason": reason}], is_package
         for index, (info, clean_name) in enumerate(entries):
             if not clean_name:
                 continue
