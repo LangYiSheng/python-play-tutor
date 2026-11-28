@@ -9,7 +9,7 @@
       <span class="question-kind">{{ kindName[question.kind] }}</span> <slot name="metadata" />
       <h3 :id="headingId">{{ index + 1 }}. {{ question.title }}</h3>
     </header>
-    <section class="problem-description"><p class="question-prompt">{{ question.prompt }}</p><details v-for="(hint, i) in question.hints ?? []" :key="i"><summary>提示 {{ i + 1 }}</summary><p>{{ hint }}</p></details></section>
+    <section v-if="displayPrompt || (question.hints?.length ?? 0) > 0" class="problem-description"><p v-if="displayPrompt" class="question-prompt">{{ displayPrompt }}</p><details v-for="(hint, i) in question.hints ?? []" :key="i"><summary>提示 {{ i + 1 }}</summary><p>{{ hint }}</p></details></section>
     <component :is="view.input" v-if="question.kind === 'interactive'" :key="interactiveResetKey" :question="question" :answer="answer"
       :disabled="readOnly || busy || Boolean(pendingMode) || !showSubmit"
       @runtime-change="interactiveRuntime = $event" @update:answer="$emit('update:answer', $event)" />
@@ -55,6 +55,18 @@ import { pendingSubmissionStates, submissionStatusName } from "./practicePresent
 const props = withDefaults(defineProps<{ question: Question; index: number; answer: AnswerValue; code: string; paperMode?: boolean; readOnly?: boolean; busy?: boolean; showSubmit?: boolean; pendingMode?: 'submit'; toolbarTarget?: string; result?: Submission; assistantFeedback?: AssistantFeedback; interactiveResetKey?: number; canResetInteractive?: boolean }>(), { readOnly: false, busy: false, showSubmit: true });
 defineEmits<{ openSingle: []; resetInteractive: []; runningChange: [running: boolean]; "update:answer": [value: AnswerValue]; "update:code": [value: string]; submit: [mode: "submit", runSample?: RunPythonSample, checkInteractive?: () => Promise<InteractiveResult>]; assistantFeedback: [feedback: AssistantFeedback] }>();
 const headingId = computed(() => `practice-question-${props.question.id}`);
+const displayPrompt = computed(() => {
+  const prompt = props.question.prompt.trim();
+  const title = props.question.title.trim();
+  if (!prompt || prompt === title) return "";
+  if (title && prompt.startsWith(title)) {
+    const rest = prompt.slice(title.length);
+    if (rest.startsWith("\n") || rest.startsWith("\r\n")) {
+      return rest.replace(/^\r?\n+/, "");
+    }
+  }
+  return prompt;
+});
 const view = computed(() => questionViews[props.question.kind]);
 const interactiveRuntime = shallowRef<ReturnType<typeof mountInteractivePractice>>();
 function getInteractiveState() {

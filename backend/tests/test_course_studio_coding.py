@@ -374,8 +374,126 @@ def test_coding_generate_repair_loop_and_failure_reporting(client, db, teacher, 
     assert job["result"]["created"] == 1
     assert job["result"]["failed"] == 1
     assert calls["fill"] == 2
-    assert calls["design"] == 2
+    assert calls["design"] == coding_engine.DEFAULT_MAX_ATTEMPTS
     assert any("独立盲解" in msg for msg in job["result"]["failures"])
+
+
+def test_coding_generate_escalating_repair_eval_and_debug_redesign(monkeypatch) -> None:
+    pages = [
+        {"page_no": 1, "text": "第二章 顺序结构：使用 input() 与 int()/float() 读取数据，掌握 // 与 % 运算。"},
+        {"page_no": 2, "text": "字符串方法 strip()、upper() 与切片。"},
+    ]
+    progress_log: list[str] = []
+    calls = {"design": 0, "debug": 0}
+
+    def fake_chat_json(self, messages, **kwargs):
+        system = str(messages[0]["content"])
+        user = str(messages[1]["content"])
+        all_user_text = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
+        if "独立答题验证器" in system:
+            if "平方计算" in user:
+                return {"code": "n = int(input())\nprint(n * n)\n"}, {}
+            return {"code": "a = int(input())\nb = int(input())\nprint(a // b)\n"}, {}
+
+        if 'coding_type = "design"' in user:
+            calls["design"] += 1
+            if calls["design"] == 1:
+                return (
+                    {
+                        "title": "平方计算",
+                        "prompt": "【题目描述】读入一个整数并输出它的平方。\n【输入格式】一行一个整数。\n【输出格式】一行一个整数。",
+                        "starter_code": "",
+                        "reference_solution": "n = eval(input())\nprint(n * n)\n",
+                        "hints": ["将整数与自身相乘"],
+                        "explanation": "读取整数后计算平方并输出。",
+                        "samples": [{"input": "3\n", "expected_output": "9\n"}, {"input": "-4\n", "expected_output": "16\n"}],
+                        "hidden_cases": [
+                            {"input": "0\n", "expected_output": "0\n"},
+                            {"input": "12\n", "expected_output": "144\n"},
+                            {"input": "-1\n", "expected_output": "1\n"},
+                        ],
+                    },
+                    {},
+                )
+            assert "int(input())" in all_user_text and "eval(input())" in all_user_text
+            return (
+                {
+                    "title": "平方计算",
+                    "prompt": "【题目描述】读入一个整数并输出它的平方。\n【输入格式】一行一个整数。\n【输出格式】一行一个整数。",
+                    "starter_code": "",
+                    "reference_solution": "n = int(input())\nprint(n * n)\n",
+                    "hints": ["使用 int(input()) 读取整数"],
+                    "explanation": "用 int(input()) 显式转换整数后计算平方并输出，避免使用 eval()。",
+                    "samples": [{"input": "3\n", "expected_output": "9\n"}, {"input": "-4\n", "expected_output": "16\n"}],
+                    "hidden_cases": [
+                        {"input": "0\n", "expected_output": "0\n"},
+                        {"input": "12\n", "expected_output": "144\n"},
+                        {"input": "-1\n", "expected_output": "1\n"},
+                    ],
+                },
+                {},
+            )
+
+        calls["debug"] += 1
+        if calls["debug"] <= 3:
+            if calls["debug"] >= 2:
+                assert "实质性错误" in all_user_text
+            # Subtle no-op bug: starter_code differs textually but still passes every test case!
+            return (
+                {
+                    "title": "无效改错示例",
+                    "prompt": "【题目描述】读入两个整数并输出它们的和。\n【输入格式】两行各一个整数。\n【输出格式】一行一个整数。",
+                    "starter_code": "a = int(input())\nb = int(input())\nprint(b + a)\n",
+                    "reference_solution": "a = int(input())\nb = int(input())\nprint(a + b)\n",
+                    "hints": ["检查加法表达式"],
+                    "explanation": "两数相加输出结果，测试无效改错题的自动重试与换题重出机制。",
+                    "samples": [{"input": "2\n3\n", "expected_output": "5\n"}, {"input": "-1\n4\n", "expected_output": "3\n"}],
+                    "hidden_cases": [
+                        {"input": "0\n0\n", "expected_output": "0\n"},
+                        {"input": "10\n20\n", "expected_output": "30\n"},
+                        {"input": "-5\n-6\n", "expected_output": "-11\n"},
+                    ],
+                },
+                {},
+            )
+
+        # Attempt 4 triggers fresh redesign after 2 targeted repairs failed.
+        assert "换题重出说明" in all_user_text
+        return (
+            {
+                "title": "整数商计算改错",
+                "prompt": "【题目描述】读入两个正整数 a 和 b，输出 a 整除 b 的整数商，请修复程序中的运算符错误。\n【输入格式】两行，每行一个正整数。\n【输出格式】一行一个整数。",
+                "starter_code": "a = int(input())\nb = int(input())\nprint(a / b)\n",
+                "reference_solution": "a = int(input())\nb = int(input())\nprint(a // b)\n",
+                "hints": ["Python 中 / 返回浮点数，整除应使用 //"],
+                "explanation": "Python 中普通除法 / 会返回浮点数，求整数商应改为整除运算符 //。",
+                "samples": [{"input": "7\n2\n", "expected_output": "3\n"}, {"input": "9\n3\n", "expected_output": "3\n"}],
+                "hidden_cases": [
+                    {"input": "1\n2\n", "expected_output": "0\n"},
+                    {"input": "100\n7\n", "expected_output": "14\n"},
+                    {"input": "15\n4\n", "expected_output": "3\n"},
+                ],
+            },
+            {},
+        )
+
+    monkeypatch.setattr(studio_llm.LLMClient, "chat_json", fake_chat_json)
+    llm = studio_llm.LLMClient({"api_key": "test-key", "base_url": "http://127.0.0.1:9999", "model": "deepseek-chat"})
+    res = coding_engine.generate_coding_exercises_from_pages(
+        pages,
+        llm,
+        coding_engine.LocalSubprocessCodingRunner(),
+        counts={"design": 1, "debug": 1},
+        chapter_label="第 2 章 · Python 语言基础",
+        enable_blind_solve=True,
+        on_progress=lambda _d, _t, msg: progress_log.append(msg),
+    )
+    assert res["failures"] == []
+    assert len(res["questions"]) == 2
+    assert calls["design"] == 2
+    assert calls["debug"] == 4
+    assert any("自动修复" in m for m in progress_log)
+    assert any("换题重出" in m for m in progress_log)
 
 
 def test_coding_generate_validation_production_guard_and_scope(client, db, teacher, classroom, monkeypatch) -> None:

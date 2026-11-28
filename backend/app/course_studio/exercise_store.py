@@ -55,7 +55,17 @@ def convert_generated_to_reborn(
     stem = str(raw.get("question") or "").strip()
     if len(stem) < 4:
         return None
-    title = (stem.splitlines()[0].strip()[:120]) or "AI 生成题目"
+    raw_title = str(raw.get("title") or "").strip()
+    if 4 <= len(raw_title) <= 120:
+        title = raw_title
+    else:
+        lines = [line.strip() for line in stem.splitlines() if line.strip()]
+        first_line = (lines[0] if lines else stem)[:120]
+        if len(lines) >= 2 and exercises_engine.is_generic_code_lead(first_line):
+            code_hint = " ; ".join(lines[1:])[:48]
+            title = f"{first_line}（{code_hint}）"[:120]
+        else:
+            title = first_line or "AI 生成题目"
     opts_raw = raw.get("options") if isinstance(raw.get("options"), dict) else {}
 
     options: list[str] = []

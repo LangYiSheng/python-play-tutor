@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import concurrent.futures as futures
 from difflib import SequenceMatcher
+import math
+import os
 import re
+import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Sequence
@@ -82,16 +87,67 @@ _CONCRETE_SNIPPET_RE = re.compile(
     r"|①.*②"
 )
 _TRIVIAL_EXPLANATION_RE = re.compile(r"^(?:选?\s*[A-Da-d]+|正确|错误|对|错|略|无|如题(?:所述)?)[。.!！]?$")
+_MONOLOGUE_EXPLANATION_RE = re.compile(
+    r"我(?:选择|改|设置|仔细看|决定|重新|可以自由|来重新|将(?:题目|选项|答案))"
+    r"|让我(?:重新|仔细|再)"
+    r"|等等[，,：:。？?!！]"
+    r"|重新计算|重新设计|算了[，,。！!]"
+    r"|题目(?:有误|设计有误|无效)|需要(?:修正|修改)|说明题目"
+    r"|选项中(?:没有|未提供)|选项未提供"
+    r"|为了(?:有错误题|符合已写|符合选项|生成有效)"
+    r"|改题目为|修改选项|保留原题|所以最终题目"
+    r"|设置\s*answer|答案应为|实际上[，,]?正确答案应为"
+    r"|改为\s*[a-dA-D](?:[^a-zA-Z0-9_]|$)"
+    r"|答案\s*[a-dA-D]\s*[。，,；;]?\s*解析[：:]"
+    r"|(?:但|而)材料(?:写|中|给)|材料中(?:例子|写)"
+    r"|为什么[？?]\s*因为|但实际输出是[^。！？?\n]{0,20}[？?]"
+)
+_EXPLANATION_MD_BOLD_RE = re.compile(r"(?<![A-Za-z0-9_])\*\*(?!\s)([^*\n]{1,60}?)(?<!\s)\*\*(?![A-Za-z0-9_])")
+_EXPLANATION_MD_HEADING_RE = re.compile(r"(?m)^[ \t]*#{1,4}[ \t]+")
+_EXPLANATION_MD_FENCE_RE = re.compile(r"(?m)^[ \t]*`{3,}[A-Za-z0-9_-]*[ \t]*\n?")
+_EXPLANATION_INLINE_CODE_RE = re.compile(r"`([^`\n]{1,80})`")
+_CONCLUDE_TRUE_RE = re.compile(
+    r"(?:因此|所以|故|综上)\s*(?:该说法|原说法|原题|本题|说法|表述|判断|结论|输出[^\s，。]{0,12})?(?<!不)(?<!非)(?<!未)正确$"
+)
+_CONCLUDE_FALSE_RE = re.compile(
+    r"(?:因此|所以|故|综上)\s*(?:该说法|原说法|原题|本题|说法|表述|判断|结论|题目)?(?:是|为)?(?<!无)(?<!不)(?<!没有)(?<!非)错误$"
+)
+_FORBIDDEN_EVAL_CALLS = frozenset(
+    {
+        "input", "open", "eval", "exec", "compile", "__import__", "breakpoint",
+        "help", "dir", "globals", "locals", "vars", "getattr", "setattr", "delattr",
+        "id", "hash", "memoryview",
+    }
+)
+_ERROR_QUESTION_RE = re.compile(r"报错|异常|错误类型|语法错误|无法运行|出错|抛出|Error|Exception")
+_OUTPUT_QUESTION_RE = re.compile(r"输出结果|运行结果|打印结果|显示结果|输出(?:为|是)|的值(?:为|是|等于)|计算结果(?:为|是|等于)")
+_TRUE_FALSE_CLAIM_RE = re.compile(
+    r"(?:输出结果|运行结果|打印结果|显示结果|的值|的结果)\s*(?<!不)(?:是|为|等于)\s*([^\s，,。？?\n]+(?:\s+[^\s，,。？?\n]+){0,3}?)\s*[。？?]?$"
+)
+_EXPR_STATEMENT_RE = re.compile(
+    r"表达式\s*`?([A-Za-z0-9_+\-*/%()\[\]{}'\".,:<>=!~&|^\s]{2,80}?)`?\s*的(?:计算结果|结果|值|返回值|输出)"
+)
+_INLINE_ASSIGN_RE = re.compile(
+    r"(?:已知|设|若|当)?(?:整数|浮点数|字符串|列表|变量|元组|字典|集合)?\s*([A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|-?\d+(?:\.\d+)?|True|False|None))"
+)
+_PROSE_OPTION_RE = re.compile(r"[\u4e00-\u9fff]{5,}")
+_MAX_SNIPPET_VERIFY_SECONDS = 0.8
+_TEMPLATE_LITERAL_RE = re.compile(
+    r"`[^`]*`|'[^']*'|\"[^\"]*\"|<[^>]+>|\b-?\d+(?:\.\d+)?\b|[A-Za-z_][A-Za-z0-9_]*\([^)]*\)"
+)
+_GENERIC_TITLE_RE = re.compile(
+    r"^(?:在\s*Python\s*中[，,]?\s*)?(?:执行|运行|阅读|分析)(?:以下|下面|如下)(?:的)?(?:Python\s*)?(?:代码|程序|语句)"
+)
 DIFFICULTY_PROFILES: dict[str, str] = {
     "balanced": (
         "难度定位：均衡进阶。以中等难度为主（约 20% 易、55% 中、25% 难）；避免只出照抄定义原文的送分题，"
-        "至少一半以上题目应考查代码执行结果追踪、边界条件、常见报错原因或易错概念辨析，干扰项需贴合常见误区。"
+        "同时避免扎堆出同一种‘执行以下代码后输出是…’的模板题，应在概念辨析、报错诊断、写法对比、场景应用、边界条件与代码追踪间均匀分布。"
     ),
     "foundational": (
-        "难度定位：基础巩固。以易/中为主（约 50% 易、40% 中、10% 难），覆盖核心概念、基础语法和简单短代码追踪，确保题意清晰无歧义。"
+        "难度定位：基础巩固。以易/中为主（约 50% 易、40% 中、10% 难），在核心概念、语法规则、场景用法、常见报错与简单短代码间均衡命题，确保题意清晰多样。"
     ),
     "challenging": (
-        "难度定位：综合拔高。以中/难为主（约 10% 易、45% 中、45% 难），重点考查多步代码追踪、嵌套逻辑、边界陷阱、可变对象/作用域与综合场景判断。"
+        "难度定位：综合拔高。以中/难为主（约 10% 易、45% 中、45% 难），在边界陷阱、可变对象/作用域辨析、异常原因定位、等价写法对比与多步代码追踪间多样化命题。"
     ),
 }
 _EXPLANATION_META_RE = re.compile(
@@ -240,13 +296,18 @@ def _select_avoid_stems(
 
 
 def clean_explanation(text: Any) -> str:
-    """Remove internal slide/page references from student-facing explanations."""
-    raw = str(text or "").strip()
+    """Remove internal slide/page references and stray Markdown syntax from student-facing explanations."""
+    raw = str(text or "").replace("\r\n", "\n").strip()
     if not raw:
         return ""
     cleaned = _EXPLANATION_META_RE.sub("", raw)
+    cleaned = _EXPLANATION_MD_FENCE_RE.sub("", cleaned)
+    cleaned = _EXPLANATION_MD_HEADING_RE.sub("", cleaned)
+    cleaned = _EXPLANATION_MD_BOLD_RE.sub(r"\1", cleaned)
+    cleaned = _EXPLANATION_INLINE_CODE_RE.sub(r"\1", cleaned)
     cleaned = re.sub(r"^[，,。；;：:\s]+", "", cleaned)
     cleaned = re.sub(r"([，,；;。！？!?])[，,；;：:]+", r"\1", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
@@ -271,6 +332,242 @@ def check_stem_self_contained(stem: str) -> str | None:
         return "题干引用了未附带的图表"
     if _SNIPPET_REF_RE.search(text) and not _stem_has_concrete_snippet(text):
         return "题干引用了代码或指令序列但未给出完整内容"
+    return None
+
+
+def check_explanation_clean(
+    explanation: str,
+    *,
+    canon_type: str = "",
+    answer: Any = None,
+) -> str | None:
+    """Reject explanations that leak LLM scratchpad self-talk or contradict the marked answer."""
+    text = (explanation or "").strip()
+    if not text:
+        return None
+    if _TRIVIAL_EXPLANATION_RE.match(text):
+        return "答案解析过于简略"
+    if _MONOLOGUE_EXPLANATION_RE.search(text):
+        return "答案解析包含模型草稿或改题自言自语"
+    if len(re.findall(r"[？?]", text)) >= 3:
+        return "答案解析包含过多反问自辩，不像面向学生的正式解析"
+    if canon_type == "true_false" and answer in {"a", "b"}:
+        main_body = re.split(r"\n+\s*(?:易错提醒|常见误区|注意(?:事项)?)[：:]", text, maxsplit=1)[0].strip() or text
+        parts = [seg.strip() for seg in re.split(r"[。！？!?\n]+", main_body) if seg.strip()]
+        tail = parts[-1] if parts else ""
+        if answer == "b" and _CONCLUDE_TRUE_RE.search(tail):
+            return "判断题答案与解析结论自相矛盾"
+        if answer == "a" and _CONCLUDE_FALSE_RE.search(tail):
+            return "判断题答案与解析结论自相矛盾"
+    return None
+
+
+def _is_safe_pure_python(code: str) -> tuple[bool, bool]:
+    """Validate pure deterministic Python via AST. Returns (is_safe, has_print)."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False, False
+    if not tree.body:
+        return False, False
+    has_print = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            return False, False
+        if isinstance(node, ast.Call):
+            fn = node.func
+            if isinstance(fn, ast.Name):
+                if fn.id in _FORBIDDEN_EVAL_CALLS:
+                    return False, False
+                if fn.id == "print":
+                    has_print = True
+            elif isinstance(fn, ast.Attribute) and fn.attr.startswith("__"):
+                return False, False
+    return True, has_print
+
+
+def _extract_verifiable_python(stem: str) -> str | None:
+    """Extract a self-contained pure Python snippet or expression evaluation script from a stem."""
+    if not stem or _ERROR_QUESTION_RE.search(stem) or "random" in stem.lower():
+        return None
+    if not _OUTPUT_QUESTION_RE.search(stem):
+        return None
+
+    # 1. Explicit fenced python block
+    fenced = re.search(r"```(?:python|py)?\s*\n(.*?)```", stem, re.S | re.I)
+    if fenced:
+        candidate = fenced.group(1).strip()
+        safe, has_print = _is_safe_pure_python(candidate)
+        if safe and has_print:
+            return candidate
+
+    # 2. Multi-line stem containing embedded Python lines after the leading prompt sentence
+    lines = [line.rstrip() for line in stem.splitlines()]
+    if len(lines) >= 2:
+        for start in range(1, len(lines)):
+            tail = "\n".join(lines[start:]).strip()
+            if not tail:
+                continue
+            safe, has_print = _is_safe_pure_python(tail)
+            if safe and has_print:
+                return tail
+            # Also try stopping before a trailing Chinese question line
+            for end in range(len(lines) - 1, start, -1):
+                mid = "\n".join(lines[start:end]).strip()
+                if not mid:
+                    continue
+                safe, has_print = _is_safe_pure_python(mid)
+                if safe and has_print:
+                    return mid
+
+    # 3. Single-line expression evaluation like "已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。"
+    expr_m = _EXPR_STATEMENT_RE.search(stem)
+    if expr_m:
+        expr = expr_m.group(1).strip()
+        if expr and not re.search(r"[\u4e00-\u9fff]", expr):
+            prefix = stem[: expr_m.start()]
+            assigns = [m.group(1).strip() for m in _INLINE_ASSIGN_RE.finditer(prefix)]
+            script = "\n".join([*assigns, f"print({expr})"])
+            safe, has_print = _is_safe_pure_python(script)
+            if safe and has_print:
+                return script
+    return None
+
+
+def _run_pure_python(code: str) -> tuple[bool, str]:
+    """Run AST-verified pure Python in an isolated short-lived subprocess."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONNOUSERSITE": "1",
+    }
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-B", "-c", code],
+            input="",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_MAX_SNIPPET_VERIFY_SECONDS,
+            env=env,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False, ""
+    if proc.returncode != 0:
+        return False, ""
+    return True, proc.stdout.replace("\r\n", "\n").strip()
+
+
+def _normalize_output_token(text: str) -> str:
+    s = (text or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in {"'", '"', "`"}:
+        s = s[1:-1]
+    return s.strip()
+
+
+def _outputs_equivalent(actual: str, candidate: str) -> bool:
+    a = _normalize_output_token(actual)
+    b = _normalize_output_token(candidate)
+    if a == b:
+        return True
+    try:
+        if float(a) == float(b) and ("." in a) == ("." in b):
+            return True
+    except ValueError:
+        pass
+    return False
+
+
+def is_generic_code_lead(line: str) -> bool:
+    """Return True if a stem's first line is a generic code-output boilerplate lead-in."""
+    return bool(_GENERIC_TITLE_RE.match((line or "").strip()))
+
+
+def opening_template_key(stem: str) -> str:
+    """Normalize line 1 into a structural opening skeleton to detect repetitive templates."""
+    first = next((line.strip() for line in (stem or "").splitlines() if line.strip()), "")
+    if not first:
+        return ""
+    skeleton = _TEMPLATE_LITERAL_RE.sub("", first)
+    key = squeeze_text(skeleton)
+    return key if len(key) >= 8 else ""
+
+
+def prune_monotonous_questions(
+    questions: Sequence[dict[str, Any]],
+    *,
+    target_count: int,
+    template_counts: dict[str, int] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split batch into template-diverse questions and excess monotonous clones."""
+    if target_count < 4:
+        return list(questions), []
+    cap = max(2, math.ceil(target_count / 3))
+    counts = dict(template_counts or {})
+    kept: list[dict[str, Any]] = []
+    overflow: list[dict[str, Any]] = []
+    for q in questions:
+        tpl = opening_template_key(str(q.get("question") or ""))
+        if tpl and counts.get(tpl, 0) >= cap:
+            overflow.append(q)
+            continue
+        if tpl:
+            counts[tpl] = counts.get(tpl, 0) + 1
+        kept.append(q)
+    return kept, overflow
+
+
+def verify_python_objective_question(
+    stem: str,
+    canon_type: str,
+    options: dict[str, str],
+    answer: Any,
+) -> str | None:
+    """Verify pure Python code/expression objective questions by executing the snippet."""
+    if canon_type not in {"single", "true_false", "fill_blank"}:
+        return None
+    code = _extract_verifiable_python(stem)
+    if not code:
+        return None
+    ok, actual = _run_pure_python(code)
+    if not ok or not actual or "\n" in actual:
+        return None
+
+    if canon_type == "single":
+        marked = str(options.get(str(answer or "").strip().lower(), "")).strip()
+        if not marked or _PROSE_OPTION_RE.search(marked):
+            return None
+        if _outputs_equivalent(actual, marked):
+            return None
+        # Only reject when options are concrete output values (not prose) and marked answer disagrees.
+        if all(not _PROSE_OPTION_RE.search(v) for v in options.values()):
+            return f"代码实际运行结果为 {actual!r}，与标注答案 {marked!r} 不一致"
+        return None
+
+    if canon_type == "true_false":
+        lead = stem.splitlines()[0].strip()
+        if re.search(r"不是|不为|不等于|不会输出|不能输出", lead):
+            return None
+        m = _TRUE_FALSE_CLAIM_RE.search(lead)
+        if not m:
+            return None
+        claimed = m.group(1).strip()
+        if not claimed or _PROSE_OPTION_RE.search(claimed):
+            return None
+        is_actually_true = _outputs_equivalent(actual, claimed)
+        expected_letter = "a" if is_actually_true else "b"
+        if str(answer) != expected_letter:
+            return f"代码实际运行结果为 {actual!r}，与判断题标注答案不一致"
+        return None
+
+    if canon_type == "fill_blank":
+        ans_items = answer if isinstance(answer, list) else [answer]
+        if ans_items and all(not _PROSE_OPTION_RE.search(str(a)) for a in ans_items):
+            if not any(_outputs_equivalent(actual, str(a)) for a in ans_items):
+                return f"代码实际运行结果为 {actual!r}，与填空题标注答案不一致"
     return None
 
 
@@ -337,6 +634,7 @@ def build_blocks(kind: str, count: int, avoid: Sequence[str] = (), *, difficulty
         "题目要分散在不同的知识点上，不要集中在同一页。",
         "page_number 填题目依据的那一块材料的编号（只填数字）。",
         DIFFICULTY_PROFILES.get(difficulty, DIFFICULTY_PROFILES["balanced"]),
+        "提问方式必须多样化：同一批题目应在概念辨析、报错诊断、写法对比、场景选型、边界特例与代码追踪间轮换，严禁多道题重复使用“在Python中，执行以下代码后，输出结果是……”同一模板（此类代码输出题最多占本批三分之一）。",
         "题干必须 100% 自包含：若考查代码执行、指令序列或计算过程，必须把完整代码/指令序列直接写进题干，严禁出现未附内容的“上述指令/以下代码/如图”等引用。",
     ]
     if canon == "multiple":
@@ -369,6 +667,7 @@ def build_quota_blocks(
         f'题型：{label}（type 填 "{prompt_kind}"），共 {batch_total} 道。',
         "page_number 填题目依据的那一块材料的编号（只填数字）。",
         DIFFICULTY_PROFILES.get(difficulty, DIFFICULTY_PROFILES["balanced"]),
+        "提问方式必须多样化：同一批题目应在概念辨析、报错诊断、写法对比、场景选型、边界特例与代码追踪间轮换，严禁多道题重复使用“在Python中，执行以下代码后，输出结果是……”同一模板（此类代码输出题最多占本批三分之一）。",
         "题干必须 100% 自包含：若考查代码执行、指令序列或计算过程，必须把完整代码/指令序列直接写进题干，严禁出现未附内容的“上述指令/以下代码/如图”等引用。",
     ]
     if canon == "multiple":
@@ -495,12 +794,22 @@ def normalize_question(
     norm_points = [str(p).strip() for p in (points or []) if str(p).strip()][:6]
 
     explanation = clean_explanation(raw.get("explanation"))
-    if explanation and _TRIVIAL_EXPLANATION_RE.match(explanation):
-        return None, "答案解析过于简略"
+    exp_issue = check_explanation_clean(explanation, canon_type=canon, answer=answer)
+    if exp_issue:
+        return None, exp_issue
+    py_issue = verify_python_objective_question(stem, canon, options, answer)
+    if py_issue:
+        return None, py_issue
     raw_diff = str(raw.get("difficulty") or "").strip()
     norm_diff = _DIFFICULTY_MAP.get(raw_diff, raw_diff if raw_diff in ("易", "中", "难") else "")
+    raw_title = str(raw.get("title") or "").strip()
+    clean_title = (
+        raw_title[:80]
+        if 4 <= len(raw_title) <= 80 and not _PAGE_WORDS.search(raw_title) and not is_generic_code_lead(raw_title)
+        else ""
+    )
 
-    return {
+    out_item: dict[str, Any] = {
         "type": canon,
         "question": stem,
         "options": options,
@@ -509,7 +818,10 @@ def normalize_question(
         "difficulty": norm_diff,
         "knowledge_points": norm_points,
         "page": page,
-    }, ""
+    }
+    if clean_title:
+        out_item["title"] = clean_title
+    return out_item, ""
 
 
 def parse_questions(
@@ -659,12 +971,14 @@ def _generate_kind(
     ]
     last = ""
     collected: list[dict[str, Any]] = []
+    monotonous_overflow: list[dict[str, Any]] = []
     seen_stems: set[str] = set()
+    template_counts: dict[str, int] = {}
     all_rejected: list[str] = []
     summary = ""
     for attempt in range(2):
         try:
-            raw_data, _usage = llm.chat_json(messages, model=model, temperature=0.4, max_tokens=max(4000, count * 600))
+            raw_data, _usage = llm.chat_json(messages, model=model, temperature=0.5)
             questions, kind_summary, rejected = parse_questions(raw_data, kind, valid_pages, single_blank_only=single_blank_only)
         except llm_mod.LLMUnavailable:
             raise
@@ -677,11 +991,22 @@ def _generate_kind(
                 break
             return [], "", f"{TYPE_LABELS[kind]}：{exc}"
         summary = summary or kind_summary
+        questions, overflow = prune_monotonous_questions(
+            questions,
+            target_count=count,
+            template_counts=template_counts,
+        )
+        if overflow:
+            monotonous_overflow.extend(overflow)
+            rejected.extend(["题干句式雷同（同一提问模板过多）"] * len(overflow))
         all_rejected.extend(rejected)
         for q in questions:
             k_s = stem_key(q["question"])
             if k_s and k_s not in seen_stems:
                 seen_stems.add(k_s)
+                tpl = opening_template_key(q["question"])
+                if tpl:
+                    template_counts[tpl] = template_counts.get(tpl, 0) + 1
                 collected.append(q)
         need = count - len(collected)
         if need <= 0 or (attempt == 0 and not rejected and collected):
@@ -696,11 +1021,19 @@ def _generate_kind(
                     "role": "user",
                     "content": (
                         f"上一轮有题目未通过质检（原因：{reasons}）。"
-                        f"请补充生成 {need} 道新的{TYPE_LABELS[kind]}，务必把完整代码或指令序列直接写进题干、"
-                        f"不引用图表或页码，并给出不少于 25 字的详尽解析。仅输出 JSON。{existing_hint}"
+                        f"请补充生成 {need} 道新的{TYPE_LABELS[kind]}，务必改用概念辨析、报错诊断、写法对比、场景应用或边界条件等不同角度，"
+                        f"禁止再重复“在Python中，执行以下代码后，输出结果是……”句式，同时确保代码/指令完整、不引用图表页码，且先在 reasoning 验算无误后再输出正式解析。仅输出 JSON。{existing_hint}"
                     ),
                 }
             ]
+    if len(collected) < count and monotonous_overflow:
+        for q in monotonous_overflow:
+            if len(collected) >= count:
+                break
+            k_s = stem_key(q["question"])
+            if k_s and k_s not in seen_stems:
+                seen_stems.add(k_s)
+                collected.append(q)
     if collected or not last:
         note = (
             f"{TYPE_LABELS[kind]}：有 {len(all_rejected)} 道不合格已丢弃（{'、'.join(sorted(set(all_rejected)))}）"
@@ -926,7 +1259,9 @@ def generate_by_point_quotas(
             {"role": "user", "content": user},
         ]
         qs: list[dict[str, Any]] = []
+        batch_overflow: list[dict[str, Any]] = []
         seen_batch_stems: set[str] = set()
+        batch_template_counts: dict[str, int] = {}
         all_rejected: list[str] = []
         last_err = ""
         for attempt in range(2):
@@ -934,17 +1269,27 @@ def generate_by_point_quotas(
                 raw_data, _ = llm.chat_json(
                     messages,
                     model=model,
-                    temperature=0.4,
-                    max_tokens=min(8000, max(4000, batch_need * 600)),
+                    temperature=0.5,
                 )
                 batch_qs, batch_sum, rejected = parse_questions(raw_data, k, valid_pages, single_blank_only=single_blank_only)
                 summary = summary or batch_sum
                 last_err = ""
+                batch_qs, overflow = prune_monotonous_questions(
+                    batch_qs,
+                    target_count=batch_need,
+                    template_counts=batch_template_counts,
+                )
+                if overflow:
+                    batch_overflow.extend(overflow)
+                    rejected.extend(["题干句式雷同（同一提问模板过多）"] * len(overflow))
                 all_rejected.extend(rejected)
                 for q in batch_qs:
                     ks = stem_key(q["question"])
                     if ks and ks not in seen_batch_stems:
                         seen_batch_stems.add(ks)
+                        tpl = opening_template_key(q["question"])
+                        if tpl:
+                            batch_template_counts[tpl] = batch_template_counts.get(tpl, 0) + 1
                         qs.append(q)
                 if len(qs) >= batch_need or (attempt == 0 and not rejected and qs):
                     break
@@ -956,7 +1301,8 @@ def generate_by_point_quotas(
                             "role": "user",
                             "content": (
                                 f"上一轮有题目未通过质检（原因：{reasons}）。请再补充 {remain} 道合格的{TYPE_LABELS[k]}，"
-                                "确保题干完整给出代码或指令序列、不引用图表或页码，并给出不少于 25 字的详尽解析。仅输出 JSON。"
+                                "务必改用概念辨析、报错诊断、写法对比、场景应用或边界条件等不同角度，禁止再重复“在Python中，执行以下代码后，输出结果是……”句式，"
+                                "同时先在 reasoning 字段验算无误后再输出正式题面与解析。仅输出 JSON。"
                             ),
                         }
                     ]
@@ -966,6 +1312,14 @@ def generate_by_point_quotas(
                 last_err = str(exc)
                 if attempt == 0:
                     continue
+        if len(qs) < batch_need and batch_overflow:
+            for q in batch_overflow:
+                if len(qs) >= batch_need:
+                    break
+                ks = stem_key(q["question"])
+                if ks and ks not in seen_batch_stems:
+                    seen_batch_stems.add(ks)
+                    qs.append(q)
         if last_err and not qs:
             notes.append(f"{TYPE_LABELS[k]}第 {b_idx + 1} 批生成失败：{last_err}")
             continue
@@ -1238,8 +1592,18 @@ def validate_xuexitong_export(questions: Sequence[dict[str, Any]], *, preserve_o
             exp_text = str(q.get("explanation") or "").strip()
             if not exp_text:
                 warnings.append(f"第 {idx} 题缺少答案解析")
-            elif len(exp_text) < 12 or _TRIVIAL_EXPLANATION_RE.match(exp_text):
-                warnings.append(f"第 {idx} 题答案解析偏简略（仅 {len(exp_text)} 字）")
+            else:
+                ans_norm = xuexitong_answer(q).lower() if qtype == "true_false" else q.get("answer")
+                exp_issue = check_explanation_clean(exp_text, canon_type=qtype, answer=ans_norm)
+                if exp_issue == "答案解析过于简略" or (exp_issue is None and len(exp_text) < 12):
+                    warnings.append(f"第 {idx} 题答案解析偏简略（仅 {len(exp_text)} 字）")
+                elif exp_issue:
+                    warnings.append(f"第 {idx} 题解析异常：{exp_issue}")
+            opts_dict = q.get("options") if isinstance(q.get("options"), dict) else {}
+            ans_for_py = xuexitong_answer(q).lower() if qtype == "true_false" else q.get("answer")
+            py_issue = verify_python_objective_question(stem, qtype, opts_dict, ans_for_py)
+            if py_issue:
+                warnings.append(f"第 {idx} 题答案疑有误：{py_issue}")
 
     txt = export_xuexitong_txt(ordered, preserve_order=True)
     blocks = [b.strip() for b in txt.split("\n\n") if b.strip()]
@@ -1255,3 +1619,105 @@ def validate_xuexitong_export(questions: Sequence[dict[str, Any]], *, preserve_o
     if nums != list(range(1, len(ordered) + 1)):
         errors.append("导出文本题号不连续")
     return {"ok": not errors, "total": len(ordered), "errors": errors, "warnings": warnings}
+
+
+def _format_question_for_explanation(no: int, q: dict[str, Any]) -> str:
+    """Format one verified question with locked stem/options/answer for dedicated explanation generation."""
+    raw_kind = str(q.get("type") or q.get("kind") or "").strip().lower()
+    canon = canonical_type(raw_kind)
+    label = TYPE_LABELS.get(canon, "编程题" if raw_kind in {"python", "fill_code", "debug", "design"} else raw_kind or "试题")
+    coding_sub = str(q.get("coding_type") or "").strip()
+    if coding_sub:
+        label = f"{label}（{coding_sub}）"
+    lines = [f"【第 {no} 题 · {label}】"]
+    title = str(q.get("title") or "").strip()
+    if title:
+        lines.append(f"标题：{title}")
+    stem = str(q.get("question") or q.get("prompt") or "").strip()
+    lines.append(f"题干：\n{stem}")
+    options = q.get("options")
+    if isinstance(options, dict) and options:
+        opt_lines = [f"{k.upper()}. {options[k]}" for k in "abcdefgh" if str(options.get(k) or "").strip()]
+        if opt_lines:
+            lines.append("选项：\n" + "\n".join(opt_lines))
+    elif isinstance(options, list) and options:
+        opt_lines = [f"{chr(65 + i)}. {v}" for i, v in enumerate(options[:8]) if str(v or "").strip()]
+        if opt_lines:
+            lines.append("选项：\n" + "\n".join(opt_lines))
+    locked_answer = answer_text({**q, "type": canon}) if canon in TYPE_LABELS else str(q.get("answer") or "").strip()
+    if locked_answer:
+        lines.append(f"已核验标准答案：{locked_answer}")
+    starter = str(q.get("starter_code") or "").strip()
+    if starter:
+        lines.append(f"初始代码：\n{starter}")
+    ref_code = str(q.get("reference_solution") or "").strip()
+    if ref_code:
+        lines.append(f"已通过沙箱的参考代码：\n{ref_code}")
+    kps = [str(p).strip() for p in (q.get("knowledge_points") or []) if str(p).strip()]
+    if kps:
+        lines.append("关联知识点：" + "、".join(kps[:3]))
+    return "\n".join(lines)
+
+
+def generate_question_explanations(
+    questions: Sequence[dict[str, Any]],
+    llm: llm_mod.LLMClient,
+    *,
+    pages: Sequence[dict[str, Any]] = (),
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Generate or rewrite clean student-facing explanations for already-verified questions."""
+    if not questions:
+        return {"explanations": {}, "flags": {}, "rejected": []}
+    formatted = "\n\n".join(
+        _format_question_for_explanation(idx, q) for idx, q in enumerate(questions, start=1)
+    )
+    notes = build_context(pages, max_chars=8000) if pages else "（无附加参考材料，请仅依据题干与已核验标准答案编写）"
+    user_prompt = prompts.PROMPT_EXERCISE_EXPLANATION_USER.format(questions=formatted, notes=notes)
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": prompts.PROMPT_EXERCISE_EXPLANATION_SYSTEM},
+        {"role": "user", "content": user_prompt},
+    ]
+    raw_data, _usage = llm.chat_json(
+        messages,
+        model=model,
+        temperature=0.2,
+    )
+    data = extract_json_payload(raw_data) if isinstance(raw_data, str) else raw_data
+    items = data.get("explanations") if isinstance(data, dict) else (data if isinstance(data, list) else None)
+    if not isinstance(items, list):
+        raise ValueError("解析生成结果缺少 explanations 数组")
+
+    explanations: dict[int, str] = {}
+    flags: dict[int, str] = {}
+    rejected: list[str] = []
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            no = int(entry.get("no") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not 1 <= no <= len(questions):
+            continue
+        flag = str(entry.get("flag") or "ok").strip().lower()
+        if flag == "mismatch":
+            reason = str(entry.get("flag_reason") or "题干与标准答案存在矛盾").strip()[:200]
+            flags[no] = reason
+            continue
+        q = questions[no - 1]
+        canon = canonical_type(str(q.get("type") or q.get("kind") or ""))
+        ans = q.get("answer")
+        if canon == "true_false":
+            x_ans = xuexitong_answer({**q, "type": canon}).lower()
+            ans = x_ans if x_ans in {"a", "b"} else ans
+        cleaned = clean_explanation(entry.get("explanation"))
+        if not cleaned:
+            rejected.append(f"第 {no} 题解析为空")
+            continue
+        issue = check_explanation_clean(cleaned, canon_type=canon, answer=ans)
+        if issue:
+            rejected.append(f"第 {no} 题：{issue}")
+            continue
+        explanations[no] = cleaned[:2000]
+    return {"explanations": explanations, "flags": flags, "rejected": rejected}

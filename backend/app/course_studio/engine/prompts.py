@@ -44,6 +44,8 @@ _SPECS: dict[str, tuple[str, frozenset[str]]] = {
     "PROMPT_EXERCISE_SYSTEM": ("exercise_system", frozenset()),
     "PROMPT_EXERCISE_USER": ("exercise_user", frozenset({"blocks", "knowledge", "notes"})),
     "EXERCISE_KNOWLEDGE_BLOCK": ("exercise_knowledge", frozenset({"points"})),
+    "PROMPT_EXERCISE_EXPLANATION_SYSTEM": ("exercise_explanation_system", frozenset()),
+    "PROMPT_EXERCISE_EXPLANATION_USER": ("exercise_explanation_user", frozenset({"questions", "notes"})),
     "PROMPT_EXERCISE_LINK_SYSTEM": ("exercise_link_system", frozenset()),
     "PROMPT_EXERCISE_LINK_USER": ("exercise_link_user", frozenset({"points", "questions"})),
     "PROMPT_CODING_EXERCISE_SYSTEM": ("coding_exercise_system", frozenset()),
@@ -122,6 +124,8 @@ PROMPT_SCRIPT_EXPAND: str = _TEXTS["script_expand"]
 PROMPT_EXERCISE_SYSTEM: str = _TEXTS["exercise_system"]
 PROMPT_EXERCISE_USER: str = _TEXTS["exercise_user"]
 EXERCISE_KNOWLEDGE_BLOCK: str = _TEXTS["exercise_knowledge"]
+PROMPT_EXERCISE_EXPLANATION_SYSTEM: str = _TEXTS["exercise_explanation_system"]
+PROMPT_EXERCISE_EXPLANATION_USER: str = _TEXTS["exercise_explanation_user"]
 PROMPT_EXERCISE_LINK_SYSTEM: str = _TEXTS["exercise_link_system"]
 PROMPT_EXERCISE_LINK_USER: str = _TEXTS["exercise_link_user"]
 PROMPT_CODING_EXERCISE_SYSTEM: str = _TEXTS["coding_exercise_system"]

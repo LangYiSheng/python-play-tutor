@@ -520,7 +520,7 @@ def extract_knowledge_points(
     usage: dict[str, Any] = {}
     problem = ""
     for _ in range(2):
-        raw_data, usage = llm.chat_json(messages, model=model, temperature=0.2, max_tokens=8000)
+        raw_data, usage = llm.chat_json(messages, model=model, temperature=0.2)
         try:
             parsed_sections = parse_points(raw_data, sections, valid_pages)
             break

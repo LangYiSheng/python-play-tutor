@@ -17,7 +17,7 @@ def test_resumed_calibration_uses_matching_report_and_dismissal_preserves_histor
     previous = NarrationRun(material_id=material.id, kind="pipeline", status="failed", started_at=start,
         finished_at=start + timedelta(minutes=10), progress={"stage": "calibrate", "done": 1, "total": 13})
     report = NarrationCalibration(material_id=material.id, created_at=start + timedelta(minutes=1), windows=13,
-        report={"complete": False, "calibrate_version": "cal-v4", "next_index": 2, "windows_done": 2,
+        report={"complete": False, "calibrate_version": "cal-v5", "next_index": 2, "windows_done": 2,
                 "pages_seen": 8, "pages": 50, "windows": 13, "revisions": {str(i): "rev" for i in range(1, 51)}})
     job = NarrationJob(material_id=material.id, kind="pipeline", status="failed", started_at=start + timedelta(minutes=20),
         finished_at=start + timedelta(minutes=30), message="作者期模型请求失败，请稍后重试",

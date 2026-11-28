@@ -45,6 +45,44 @@ describe("public judge sample feedback", () => {
     expect(section.text()).toContain("切片左闭右开");
     wrapper.unmount();
   });
+  it("deduplicates prompt when it matches title or repeats the title as its first line", () => {
+    const singleLine = mount(PracticeQuestionCard, {
+      props: {
+        question: {
+          id: "q-dup-1",
+          title: "已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。",
+          kind: "boolean",
+          prompt: "已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。",
+          options: [],
+          samples: [],
+        },
+        index: 6,
+        answer: null,
+        code: "",
+      },
+    });
+    expect(singleLine.find(".question-prompt").exists()).toBe(false);
+    expect(singleLine.get("h3").text()).toContain("7. 已知整数 x = 2025");
+    singleLine.unmount();
+
+    const multiLine = mount(PracticeQuestionCard, {
+      props: {
+        question: {
+          id: "q-dup-2",
+          title: "执行以下代码后，输出结果是 'ytho'。",
+          kind: "boolean",
+          prompt: "执行以下代码后，输出结果是 'ytho'。\n\ns = \"= python= \"\nprint(s.strip(\" =np\"))",
+          options: [],
+          samples: [],
+        },
+        index: 0,
+        answer: null,
+        code: "",
+      },
+    });
+    expect(multiLine.get(".question-prompt").text()).toBe('s = "= python= "\nprint(s.strip(" =np"))');
+    multiLine.unmount();
+  });
   it("shows safe public diagnostics in formal summaries without case output or private fields", async () => {
     vi.spyOn(pythonRunner,'createPythonRunner').mockReturnValue({run:vi.fn(),ready:async()=>[],dispose:vi.fn()});
     const pinia = createPinia();

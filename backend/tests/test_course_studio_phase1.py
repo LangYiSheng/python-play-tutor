@@ -305,6 +305,217 @@ def test_exercise_self_contained_validation_and_auto_retry() -> None:
     assert any("解析偏简略" in w for w in check["warnings"])
 
 
+def test_exercise_blocks_monologue_contradiction_and_wrong_python_output() -> None:
+    # 1. Exact real-world failure: model writes scratchpad self-correction inside explanation
+    _, reason_mono = exercises.normalize_question(
+        {
+            "type": "judge",
+            "question": "在Python中，执行以下代码后，输出结果是 'ytho'。\n\ns = \"= python= \"\nprint(s.strip(\" =np\"))",
+            "options": {"a": "正确", "b": "错误"},
+            "answer": "a",
+            "explanation": "左端删除 '=' 后但材料中例子输出是 'ytho'，我仔细看材料后确认最终输出 'ytho' 正确。",
+            "page_number": 1,
+        },
+        "true_false",
+        {1},
+    )
+    assert "自言自语" in reason_mono
+
+    # 2. Exact real-world failure: x = 2025, x // 100 % 10 == 0 is True, yet answer marked False ("b")
+    _, reason_expr = exercises.normalize_question(
+        {
+            "type": "judge",
+            "question": "在Python中，已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。",
+            "options": {"a": "正确", "b": "错误"},
+            "answer": "b",
+            "explanation": "2025 除以 100 整除得 20，再对 10 取余得 0。",
+            "page_number": 1,
+        },
+        "true_false",
+        {1},
+    )
+    assert "实际运行结果" in reason_expr
+
+    # 3. Exact real-world failure: Python snippet prints 6, yet marked answer option is "10"
+    _, reason_code = exercises.normalize_question(
+        {
+            "type": "single",
+            "question": "在Python中执行以下代码，输出结果是（ ）。\na = 5\nb = 2\nc = a // b + a % b * b ** 2\nprint(c)",
+            "options": {"a": "10", "b": "5", "c": "7", "d": "8"},
+            "answer": "a",
+            "explanation": "先算幂运算 b ** 2 得 4，再算整除和取余。",
+            "page_number": 1,
+        },
+        "single",
+        {1},
+    )
+    assert "实际运行结果" in reason_code and "6" in reason_code
+
+    # 4. Contradiction between judge answer and explanation conclusion (without Python execution)
+    _, reason_contra = exercises.normalize_question(
+        {
+            "type": "judge",
+            "question": "Python 中元组创建后支持原地修改元素。",
+            "options": {"a": "正确", "b": "错误"},
+            "answer": "a",
+            "explanation": "元组属于不可变序列，创建后无法修改内部元素，因此该说法错误。",
+            "page_number": 1,
+        },
+        "true_false",
+        {1},
+    )
+    assert "矛盾" in reason_contra
+
+    # 5. Clean self-consistent questions with internal `reasoning` pass and strip `reasoning`
+    ok_q, ok_reason = exercises.normalize_question(
+        {
+            "reasoning": "2025 // 100 = 20, 20 % 10 = 0，与题干说法一致，因此答案为 a。",
+            "type": "judge",
+            "question": "在Python中，已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。",
+            "options": {"a": "正确", "b": "错误"},
+            "answer": "a",
+            "difficulty": "中",
+            "explanation": "// 与 % 同优先级按从左到右结合：2025 // 100 得 20，再计算 20 % 10 得 0，因此该说法正确。",
+            "page_number": 1,
+        },
+        "true_false",
+        {1},
+    )
+    assert ok_reason == "" and ok_q is not None
+    assert "reasoning" not in ok_q
+    assert ok_q["answer"] == "a"
+
+    ok_strip, ok_strip_reason = exercises.normalize_question(
+        {
+            "type": "judge",
+            "question": "在Python中，执行以下代码后，输出结果是 'ytho'。\n\ns = \"= python= \"\nprint(s.strip(\" =np\"))",
+            "options": {"a": "正确", "b": "错误"},
+            "answer": "a",
+            "difficulty": "中",
+            "explanation": "strip(' =np') 会从字符串两端持续移除属于集合 {' ', '=', 'n', 'p'} 的字符：左端依次去掉 '='、空格、'p' 后遇到 'y' 停止；右端依次去掉空格、'='、'n' 后遇到 'o' 停止，最终得到 'ytho'。",
+            "page_number": 1,
+        },
+        "true_false",
+        {1},
+    )
+    assert ok_strip_reason == "" and ok_strip is not None
+
+    # 6. Pre-export validator flags legacy wrong-answer & monologue questions in existing bank
+    audit = exercises.validate_xuexitong_export(
+        [
+            {
+                "type": "true_false",
+                "question": "在Python中，已知整数 x = 2025，表达式 x // 100 % 10 的值为 0。",
+                "options": {"a": "正确", "b": "错误"},
+                "answer": "b",
+                "explanation": "我设置 answer 为 b 是错误的。需要修正：答案为 a。",
+            }
+        ]
+    )
+    assert any("解析异常" in w for w in audit["warnings"])
+    assert any("答案疑有误" in w for w in audit["warnings"])
+
+
+def test_exercise_prunes_monotonous_templates_and_generates_diverse_titles() -> None:
+    from app.course_studio import exercise_store
+
+    # 1. Opening template skeleton collapses boilerplate clones regardless of literal values
+    k1 = exercises.opening_template_key("在Python中，执行以下代码后，输出结果是 3。\nprint(1 + 2)")
+    k2 = exercises.opening_template_key("在Python中，执行以下代码后，输出结果是 'ytho'。\nprint('ytho')")
+    k3 = exercises.opening_template_key("在Python中，执行以下代码后，输出结果是 <class 'str'>。\nprint(type('a'))")
+    k4 = exercises.opening_template_key("在Python中，字符串属于不可变序列，无法通过下标原地修改字符。")
+    assert k1 == k2 == k3 and k1 != k4
+
+    # 2. Batch of 6 all using the same boilerplate gets capped to 2 and triggers angle-diverse retry
+    calls: list[list[dict]] = []
+
+    class MonotonousThenDiverseLLM:
+        def chat_json(self, messages, **kwargs):
+            calls.append(messages)
+            if len(calls) == 1:
+                return {
+                    "questions": [
+                        {
+                            "title": f"代码输出题{i}",
+                            "type": "judge",
+                            "question": f"在Python中，执行以下代码后，输出结果是 {i}。\nprint({i})",
+                            "options": {"a": "正确", "b": "错误"},
+                            "answer": "a",
+                            "difficulty": "易",
+                            "explanation": f"print({i}) 直接向标准输出打印整数 {i}，结果与题干一致。",
+                            "page_number": 1,
+                        }
+                        for i in range(1, 7)
+                    ],
+                    "summary": "输出",
+                }, {}
+            return {
+                "questions": [
+                    {
+                        "title": "字符串不可变性辨析",
+                        "type": "judge",
+                        "question": "在Python中，可以直接执行 s[0] = 'A' 原地修改字符串的第一个字符。",
+                        "options": {"a": "正确", "b": "错误"},
+                        "answer": "b",
+                        "difficulty": "中",
+                        "explanation": "Python 字符串是不可变对象，尝试按索引赋值会抛出 TypeError，需通过拼接或切片生成新字符串。",
+                        "page_number": 1,
+                    },
+                    {
+                        "title": "split() 默认与空格参数差异",
+                        "type": "judge",
+                        "question": "对含连续多个空格的字符串，s.split() 与 s.split(' ') 的切分结果完全相同。",
+                        "options": {"a": "正确", "b": "错误"},
+                        "answer": "b",
+                        "difficulty": "中",
+                        "explanation": "无参 split() 会折叠连续空白并忽略首尾空格，而 split(' ') 每次遇到单个空格都切分，会产生空字符串元素。",
+                        "page_number": 1,
+                    },
+                ],
+                "summary": "字符串",
+            }, {}
+
+    res = exercises.generate_exercises_from_pages(
+        [{"page_no": 1, "text": "Python print 输出、字符串不可变性与 split() 切分差异。"}],
+        MonotonousThenDiverseLLM(),  # type: ignore[arg-type]
+        counts={"true_false": 4},
+    )
+    assert len(calls) == 2
+    assert "句式雷同" in calls[1][-1]["content"]
+    assert len(res["questions"]) == 4
+    # At most 2 boilerplate clones kept, replaced by concept & comparison questions
+    clones = [q for q in res["questions"] if exercises.opening_template_key(q["question"]) == k1]
+    assert len(clones) == 2
+
+    # 3. Title resolution prefers descriptive model title, and adds code preview fallback for generic leads
+    p_named = exercise_store.convert_generated_to_reborn(
+        {
+            "title": "strip() 两端字符集去除",
+            "type": "true_false",
+            "question": "在Python中，执行以下代码后，输出结果是 'ytho'。\ns = '= python= '\nprint(s.strip(' =np'))",
+            "answer": "a",
+        },
+        stable_id="q-named",
+        chapter_id=1,
+        knowledge_point_ids=[],
+        source={},
+    )
+    assert p_named is not None and p_named["title"] == "strip() 两端字符集去除"
+
+    p_fallback = exercise_store.convert_generated_to_reborn(
+        {
+            "type": "true_false",
+            "question": "在Python中，执行以下代码后，输出结果是 3。\nx = [1, 2, 3]\nprint(len(x))",
+            "answer": "a",
+        },
+        stable_id="q-fb",
+        chapter_id=1,
+        knowledge_point_ids=[],
+        source={},
+    )
+    assert p_fallback is not None and "len(x)" in p_fallback["title"]
+
+
 def test_exercise_near_duplicate_detection_and_avoid_prioritization() -> None:
     # Near-duplicate fill/boolean/single rewordings are caught
     assert exercises.is_near_duplicate_stem(
@@ -618,3 +829,114 @@ def test_judge_service_timestamps_include_timezone(client, db, teacher) -> None:
     body = res.json()
     assert body["checked_at"] and ("+" in body["checked_at"] or body["checked_at"].endswith("Z"))
     assert body["worker_seen_at"] and ("+" in body["worker_seen_at"] or body["worker_seen_at"].endswith("Z"))
+
+
+def test_dedicated_explanation_prompt_cleans_markdown_rejects_rambling_and_isolates_mismatch() -> None:
+    from app.course_studio.engine import prompts as engine_prompts
+
+    assert "锁定事实" in engine_prompts.PROMPT_EXERCISE_EXPLANATION_SYSTEM
+    assert "explanations" in engine_prompts.PROMPT_EXERCISE_EXPLANATION_USER
+
+    # 1. clean_explanation strips Chinese/English Markdown bold, backticks, and headings without harming Python ** power operator
+    cleaned = exercises.clean_explanation(
+        "### **核心依据**：先算 `b ** 2` 得 **4**，返回值为 **True**。\n```python\nx = 1\n```\n**易错提醒**：注意运算符优先级。"
+    )
+    assert "**" not in cleaned.replace("b ** 2", "")
+    assert "`" not in cleaned
+    assert "b ** 2" in cleaned
+    assert "True" in cleaned
+    assert cleaned.startswith("核心依据：")
+    assert "\n易错提醒：" in cleaned
+
+    # 1b. Two-section true_false explanation checks main 判断依据 body rather than trailing 易错提醒
+    valid_two_part = (
+        "判断依据：2025 // 100 得 20，20 % 10 得 0，因此原说法正确。\n"
+        "易错提醒：不要把整除与普通除法混淆，否则因此计算错误。"
+    )
+    assert exercises.check_explanation_clean(valid_two_part, canon_type="true_false", answer="a") is None
+    assert (
+        exercises.check_explanation_clean(valid_two_part, canon_type="true_false", answer="b")
+        == "判断题答案与解析结论自相矛盾"
+    )
+
+    # 2. check_explanation_clean catches rhetorical self-argument rambling like real-world strip() failure
+    rambling = (
+        "原字符串两端依次删除。但实际输出是'ytho'? 因为左端删到'y'停止。"
+        "但'y'在集合中吗? 为什么? 因为集合不含'y'。最终输出'ytho'。"
+    )
+    assert exercises.check_explanation_clean(rambling, canon_type="true_false", answer="a") is not None
+
+    # 3. Dedicated generate_question_explanations isolates mismatch flags and cleans valid outputs
+    captured: list[list[dict]] = []
+
+    class FakeExplainLLM:
+        def chat_json(self, messages, **kwargs):
+            captured.append(messages)
+            return (
+                {
+                    "explanations": [
+                        {
+                            "no": 1,
+                            "flag": "ok",
+                            "flag_reason": "",
+                            "explanation": (
+                                "**判断依据**：strip(' =np') 按字符集移除首尾字符，先算两端依次剥离，最终输出 'ytho'，因此该说法正确。\n"
+                                "**易错提醒**：strip() 只处理字符串两端，不影响中间字符。"
+                            ),
+                        },
+                        {
+                            "no": 2,
+                            "flag": "mismatch",
+                            "flag_reason": "代码实际输出 6，但标准答案标为 10",
+                            "explanation": "",
+                        },
+                        {
+                            "no": 3,
+                            "flag": "ok",
+                            "flag_reason": "",
+                            "explanation": (
+                                "解题思路：用 int(input()) 读取整数后计算 n ** 2 并输出。\n"
+                                "关键细节：幂运算可用 n ** 2 或 n * n。\n"
+                                "易错提醒：input() 返回字符串，必须先转为 int。"
+                            ),
+                        },
+                    ]
+                },
+                {},
+            )
+
+    res = exercises.generate_question_explanations(
+        [
+            {
+                "type": "judge",
+                "title": "strip() 两端字符集去除",
+                "question": "执行 s = '= python= '; print(s.strip(' =np')) 输出 'ytho'。",
+                "options": {"a": "正确", "b": "错误"},
+                "answer": "a",
+                "knowledge_points": ["字符串常用方法"],
+            },
+            {
+                "type": "single",
+                "title": "运算符优先级",
+                "question": "a=5; b=2; print(a // b + a % b * b ** 2)",
+                "options": {"a": "10", "b": "6", "c": "7", "d": "8"},
+                "answer": "a",
+            },
+            {
+                "kind": "python",
+                "coding_type": "design",
+                "title": "整数平方计算",
+                "prompt": "【题目描述】输入整数 n，输出其平方。",
+                "reference_solution": "n = int(input())\nprint(n ** 2)\n",
+            },
+        ],
+        FakeExplainLLM(),
+    )
+    assert len(captured) == 1
+    assert "锁定事实" in captured[0][0]["content"]
+    assert "已核验标准答案：正确" in captured[0][1]["content"]
+    assert "已通过沙箱的参考代码" in captured[0][1]["content"]
+    assert 1 in res["explanations"] and "**" not in res["explanations"][1]
+    assert 3 in res["explanations"] and "n ** 2" in res["explanations"][3]
+    assert 2 not in res["explanations"] and "实际输出 6" in res["flags"][2]
+    assert res["rejected"] == []

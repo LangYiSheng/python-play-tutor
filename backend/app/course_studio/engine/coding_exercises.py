@@ -38,6 +38,7 @@ MAX_STDERR_CHARS = 8_192
 DEFAULT_TIMEOUT_SECONDS = 2.5
 SLOW_CASE_WARNING_MS = 1_000
 MAX_CODING_CONTEXT_CHARS = 16_000
+DEFAULT_MAX_ATTEMPTS = 4
 
 _FORBIDDEN_IMPORTS = frozenset(
     {
@@ -222,8 +223,8 @@ def _type_specific_rules(coding_type: str) -> str:
         return (
             "题型要求【程序改错 debug】：\n"
             "- 先编写完整可运行的 reference_solution；\n"
-            "- 在其基础上定向注入 1–2 处本章学生最常犯的真实错误（如类型未转换、运算符优先级、边界差一、切片端点遗漏、格式化槽位错位、条件遗漏等）生成 starter_code；\n"
-            "- 必须确保 starter_code 在至少 1 个公开样例上运行报错或输出错误；\n"
+            "- 在其基础上定向注入 1–2 处本章学生最常犯的**实质性可复现错误**（如漏掉 int()/float() 类型转换、整除 // 与普通除法 / 混淆、运算符优先级漏括号、切片右边界差一、临界比较符 >= 与 > 写反、条件遗漏等）生成 starter_code，严禁只改注释、变量名或等价写法；\n"
+            "- **必须确保至少 1 个公开样例和若干隐藏用例的输入能精准触发该 Bug**，使原始 starter_code 运行报错或输出与正确结果明显不同；\n"
             "- 题干清晰说明程序本应实现的功能（易/中可说明大致错误处数，难可不提示具体位置）。"
         )
     return (
@@ -406,7 +407,10 @@ def validate_coding_item_static(item: dict[str, Any]) -> tuple[list[str], list[s
     if dup_inputs > 0:
         warnings.append(f"存在 {dup_inputs} 组重复测试输入")
 
-    if len(explanation) < 15:
+    exp_issue = exercises_engine.check_explanation_clean(explanation)
+    if exp_issue:
+        errors.append(exp_issue)
+    elif len(explanation) < 15:
         warnings.append("答案解析偏短，建议审校时补充思路说明")
 
     return errors, warnings
@@ -609,6 +613,51 @@ def _is_duplicate_coding(
     return False
 
 
+def _build_repair_guidance(errors: Sequence[str], coding_type: str) -> str:
+    """Turn raw sandbox/static verification errors into concrete, actionable repair instructions."""
+    joined = "\n".join(str(e) for e in errors)
+    tips: list[str] = []
+    if "禁止调用 eval()" in joined or "禁止调用 exec()" in joined:
+        tips.append(
+            "关于禁止 eval()/exec()：请彻底删除所有 eval()/exec()（特别是 eval(input())），"
+            "改用显式解析，如 int(input())、float(input())、input().strip() 或 map(float, input().split())，"
+            "并同步确保题干【输入格式】与样例输入格式完全匹配。"
+        )
+    if "禁止传入提示语参数" in joined:
+        tips.append("关于 input()：将所有 input('...') 替换为无参 input()。")
+    if "未作修改即可通过全部" in joined or "通过了全部公开样例" in joined:
+        if coding_type == "debug":
+            tips.append(
+                "关于改错题 starter_code 全部通过：你注入的 Bug 在当前所有测试输入上都没有触发。"
+                "请保持正确的 reference_solution 不变，在 starter_code 中注入会真实改变输出或触发报错的实质性错误"
+                "（例如去掉 int()/float() 转换、把 // 误写成 /、把 >= 误写成 >、切片边界差一或优先级漏括号），"
+                "同时确保至少 1 组公开样例和若干隐藏用例的输入精准踩中该错误，让未修改的 starter_code 必定失败。"
+            )
+        else:
+            tips.append(
+                "关于 starter_code 直接通过：请确保 starter_code 中填空区已替换为占位符（如 pass），"
+                "未补全前绝对不能通过全部测试用例。"
+            )
+    if "骨架不一致" in joined or "填空区" in joined:
+        tips.append(
+            "关于程序填空骨架：starter_code 与 reference_solution 在 `# === 填空区 N 开始 ===` 与 "
+            "`# === 填空区 N 结束 ===` 标记之外的每一行必须逐字符完全一致，只替换标记内部代码。"
+        )
+    if "独立盲解" in joined:
+        tips.append(
+            "关于独立盲解不一致：说明仅看题干与公开样例容易产生多种理解（如输出小数位数、空格/换行、"
+            "边界条件或四舍五入约定不够明确）。请把题干【输入格式】【输出格式】与边界规则写得毫无歧义，"
+            "使任何正确实现都会产生完全一致的 stdout。"
+        )
+    if "运行失败" in joined:
+        tips.append(
+            "关于参考答案运行失败：请核对 reference_solution 的语法、输入行数/类型解析与所有样例及隐藏用例的 input 是否一一对应。"
+        )
+    if not tips:
+        return ""
+    return "\n\n针对性修复指引：\n" + "\n".join(f"{idx}. {tip}" for idx, tip in enumerate(tips, start=1))
+
+
 def generate_coding_exercises_from_pages(
     pages: Sequence[dict[str, Any]],
     llm: llm_mod.LLMClient,
@@ -623,7 +672,7 @@ def generate_coding_exercises_from_pages(
     existing_items: Sequence[dict[str, Any]] = (),
     allowed_syntax_note: str = "",
     enable_blind_solve: bool = True,
-    max_attempts: int = 2,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     on_progress: Callable[[int, int, str], None] | None = None,
     on_item: Callable[[dict[str, Any]], None] | None = None,
     check_cancel: Callable[[], None] | None = None,
@@ -703,12 +752,22 @@ def generate_coding_exercises_from_pages(
         last_errors: list[str] = []
         accepted_item: dict[str, Any] | None = None
         accepted_warnings: list[str] = []
+        total_attempts = max(1, int(max_attempts))
 
-        for attempt in range(max(1, int(max_attempts))):
+        for attempt in range(total_attempts):
             if check_cancel is not None:
                 check_cancel()
+            is_fresh_redesign = attempt >= 3 and attempt == total_attempts - 1
+            if attempt > 0 and on_progress is not None:
+                stage = "换题重出" if is_fresh_redesign else "自动修复"
+                on_progress(
+                    idx - 1,
+                    total,
+                    f"第 {idx}/{total} 题未通过验题，正在{stage}（第 {attempt}/{total_attempts - 1} 次重试）…",
+                )
+            temp = 0.55 if is_fresh_redesign else (0.25 if attempt > 0 else 0.4)
             try:
-                raw, _ = llm.chat_json(messages, temperature=0.4)
+                raw, _ = llm.chat_json(messages, temperature=temp)
             except (llm_mod.LLMFailed, llm_mod.LLMUnavailable) as exc:
                 last_errors = [f"第 {attempt + 1} 轮模型调用失败：{exc}"]
                 if isinstance(exc, llm_mod.LLMUnavailable):
@@ -766,15 +825,36 @@ def generate_coding_exercises_from_pages(
                     accepted_warnings = sync_warnings
                     break
 
-            if attempt + 1 < max_attempts:
+            next_attempt = attempt + 1
+            if next_attempt < total_attempts:
                 feedback = "\n".join(f"- {err}" for err in last_errors[:8])
-                messages = messages[:2] + [
-                    {"role": "assistant", "content": json.dumps(item, ensure_ascii=False)[:6000]},
-                    {
-                        "role": "user",
-                        "content": f"上一轮生成的编程题未通过自动沙箱验题，问题如下：\n{feedback}\n\n请逐项修复后重新输出完整 JSON 对象。",
-                    },
-                ]
+                guidance = _build_repair_guidance(last_errors, coding_type)
+                next_is_redesign = next_attempt >= 3 and next_attempt == total_attempts - 1
+                if next_is_redesign:
+                    prev_title = item.get("title") or "上一草稿"
+                    messages = [
+                        messages[0],
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{user_prompt}\n\n"
+                                f"【换题重出说明】此前构思的题目「{prev_title}」经过多次修复仍未通过自动沙箱验题，主要失败原因：\n"
+                                f"{feedback}{guidance}\n\n"
+                                "请彻底放弃旧题面，换一个本章内全新的、逻辑更清晰且无歧义的场景重新命制 1 道完整编程题，严格规避上述问题。"
+                            ),
+                        },
+                    ]
+                else:
+                    messages = messages[:2] + [
+                        {"role": "assistant", "content": json.dumps(item, ensure_ascii=False)[:10_000]},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"上一轮生成的编程题未通过自动沙箱验题，问题如下：\n{feedback}{guidance}\n\n"
+                                "请逐项修复后重新输出完整 JSON 对象。"
+                            ),
+                        },
+                    ]
 
         if accepted_item is not None:
             verified_questions.append(accepted_item)
